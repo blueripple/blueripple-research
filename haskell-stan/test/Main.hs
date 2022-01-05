@@ -106,9 +106,7 @@ runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C g
     $ "Running: model="
     <> SC.rinModel rin <> " using model data=" <> SC.rinData rin
     <> maybe "" (" and GQ data=" <>) (SC.rinGQ rin)
-  let --workDir = SC.rinModelDir rin -- fromMaybe "stan" mWorkDir
-      outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
---      nSamples = 1000
+  let outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
       stancConfig =
         (CS.makeDefaultStancConfig (toString $ SC.rinModelDir rin <> "/" <> SC.rinModel rin)) {CS.useOpenCL = False}
   stanConfig <-

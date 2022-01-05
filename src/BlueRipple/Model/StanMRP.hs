@@ -61,16 +61,39 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
+import qualified Stan.ModelConfig as SM
 
-type BuilderM d = SB.StanBuilderM () d
+type BuilderM md gq = SB.StanBuilderM md gq
 
-buildDataWranglerAndCode :: (Typeable d)
-                         => SB.StanGroupBuilderM d ()
-                         -> env
-                         -> SB.StanBuilderM env d ()
-                         -> d
-                         -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
-buildDataWranglerAndCode groupM env builderM d =
+buildDataWranglerAndCode :: forall md gq st cd r.(SC.KnitStan st cd r, Typeable md, Typeable gq)
+                         => SB.StanGroupBuilderM md gq ()
+                         -> SB.StanBuilderM md gq ()
+                         -> K.ActionWithCacheTime r md
+                         -> K.ActionWithCacheTime r gq
+                         -> K.Sem r (SC.DataWrangler md gq SB.DataSetGroupIntMaps (), SB.StanCode)
+buildDataWranglerAndCode groupM builderM modelData_C gqData_C = do
+  modelDat <- K.ignoreCacheTime modelData_C
+  gqDat <- K.ignoreCacheTime gqData_C
+  let builderWithWrangler = do
+        SB.buildGroupIndexes
+        builderM
+        modelJsonF <- SB.buildModelJSONFromDataM
+        gqJsonF <- SB.buildGQJSONFromDataM
+        modelIntMapsBuilder <- SB.modelIntMapsBuilder
+        gqIntMapsBuilder <- SB.gqIntMapsBuilder
+        let modelWrangle md = (modelIntMapsBuilder md, modelJsonF)
+            gqWrangle gq = (gqIntMapsBuilder gq, gqJsonF)
+            wrangler :: SC.DataWrangler md gq SB.DataSetGroupIntMaps () =
+              SC.Wrangle
+              SC.TransientIndex
+              modelWrangle
+              (Just gqWrangle)
+        return wrangler
+      resE = SB.runStanBuilder modelDat gqDat groupM builderWithWrangler
+  K.knitEither $ fmap (\(bs, dw) -> (dw, SB.code bs)) resE
+
+
+{-
   let builderWithWrangler = do
         SB.buildGroupIndexes
         builderM
@@ -81,33 +104,32 @@ buildDataWranglerAndCode groupM env builderM d =
           $ \d -> (intMapsBuilder d, jsonF)
       resE = SB.runStanBuilder d env groupM builderWithWrangler
   in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
-
+-}
 runMRPModel :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
                )
             => Bool
-            -> Maybe Text
-            -> Text
-            -> Text
-            -> SC.DataWrangler a b ()
+            -> SC.RunnerInputNames
+            -> SC.StanMCParameters
+            -> BR.StanParallel
+            -> SC.DataWrangler md gq b ()
             -> SB.StanCode
             -> Text
-            -> SC.ResultAction r a b () c
-            -> K.ActionWithCacheTime r a
-            -> BR.StanParallel
-            -> Maybe Int
-            -> Maybe Double
-            -> Maybe Int
+            -> SC.ResultAction r md gq b () c
+            -> K.ActionWithCacheTime r md
+            -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C stanParallel mNSamples mAdaptDelta mMaxTreeDepth =
-  K.wrapPrefix "StanMRP" $ do
-  K.logLE K.Info $ "Running: model=" <> modelName <> " using data=" <> dataName
-  let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
-      outputLabel = modelName <> "_" <> dataName
-      nSamples = fromMaybe 1000 mNSamples
+runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode ppName resultAction modeData_C gqData_C =
+  K.wrapPrefix "StanMRP.runModel" $ do
+  K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
+    <> " using data=" <> SC.rinData runnerInputNames
+    <> maybe "" (" and GQ data=" <>) (SC.rinGQ runnerInputNames)
+  let outputLabel = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
       stancConfig =
-        (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
+        (SM.makeDefaultStancConfig (toString $ SC.rinModelDir runnerInputNames
+                                     <> "/" <> SC.rinModel runnerInputNames)) {CS.useOpenCL = False}
+--        (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
       threadsM = Just $ case BR.cores stanParallel of
         BR.MaxCores -> -1
         BR.FixedCores n -> n
@@ -115,27 +137,20 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
     SC.setSigFigs 4
     . SC.noLogOfSummary
 --    . SC.noDiagnose
-    <$> SM.makeDefaultModelRunnerConfig
-    workDir
-    (modelName <> "_model")
+    <$> SM.makeDefaultModelRunnerConfig @st @cd
+    runnerInputNames
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
-    (Just $ dataName <> ".json")
-    (Just $ outputLabel)
-    (BR.parallelChains stanParallel)
-    threadsM
-    (Just nSamples)
-    (Just nSamples)
-    mAdaptDelta
-    mMaxTreeDepth
+    smcParameters
     (Just stancConfig)
   let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
   when clearCache $ do
     K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
-  modelDep <- SM.modelCacheTime stanConfig
+  modelDep <- SM.modelDependency $ SC.mrcInputNames config
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
-  K.logLE (K.Debug 1) $ "houseDataDep: " <> show (K.cacheTime data_C)
-  let dataModelDep = const <$> modelDep <*> data_C
+  K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
+  K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)
+  let dataModelDep = const <$> modelDep <*> modelData_C <*> gqData_C
       getResults s () inputAndIndex_C = return ()
       unwraps = [SR.UnwrapNamed ppName ppName]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
@@ -147,7 +162,8 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       SC.UnCacheable -- we cannot use a Cacheable index here
       resultAction
       ()
-      data_C
+      modelData_C
+      gqData_C
 
 -- Basic group declarations, indexes and Json are produced automatically
 addGroup :: Typeable d
@@ -344,8 +360,8 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
 data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
-                      => (BuilderM d a, a -> BuilderM d SB.StanExpr) -- (outside of loop, inside of loop)
+addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
+                      => (BuilderM md gq a, a -> BuilderM md gq SB.StanExpr) -- (outside of loop, inside of loop)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -353,8 +369,8 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
 --                      -> Set.Set Text -- subset of groups to loop over
                       -> (rPS -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
-                      -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
-                      -> BuilderM d SB.StanVar
+                      -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
+                      -> BuilderM md gq SB.StanVar
 addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
@@ -366,7 +382,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
       sizeName = "N_" <> namedPS
       indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
   SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
-  rowInfos <- SB.rowBuilders <$> get
+  modelRowInfos <- SB.modelRowBuilders <$> get
   modelGroupsDHM <- do
     case DHash.lookup rttModel rowInfos of
       Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
@@ -383,12 +399,12 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
   case mPSGroup of
     Nothing -> do
       SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
-      return ()
+      pure ()
     Just gtt -> do
-      rims <- SB.rowBuilders <$> get
+      rims <- SB.gqRowBuilders <$> get
       let psDataMissingErr = "addPostStratification: Post-stratification data-set "
                              <> psDataSetName
-                             <> " is missing from rowBuilders."
+                             <> " is missing from GQ rowBuilders."
           groupIndexMissingErr =  "addPostStratification: group "
                                   <> SB.taggedGroupName gtt
                                   <> " is missing from post-stratification data-set ("
