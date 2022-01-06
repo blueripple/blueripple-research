@@ -131,7 +131,9 @@ samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
 {-# INLINEABLE samplesText #-}
 
 samplerCSVText :: SamplerCSV M.U -> Text
-samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
+samplerCSVText (SamplerCSV sd ad td h s) =
+  T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td] <> "\n"
+
 {-# INLINEABLE samplerCSVText #-}
 
 {-

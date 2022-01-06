@@ -673,6 +673,15 @@ data GroupModel = BaseG
 instance Flat.Flat GroupModel
 type instance FI.VectorFor GroupModel = Vector.Vector
 
+data DensityTransform = RawDensity | LogDensity | QuantileDensity Int deriving (Show, Eq, Ord, Generic)
+instance Flat.Flat DensityTransform
+type instance FI.VectorFor DensityTransform = Vector.Vector
+
+printDensityTransform :: DensityTransform -> Text
+printDensityTransform RawDensity = "Raw"
+printDensityTransform LogDensity = "Log"
+printDensityTransform (QuantileDensity n) = "Quantile_" <> show n
+
 data DensityModel = BaseD
                   | PlusEduD
                   | PlusRaceD
@@ -707,6 +716,7 @@ getVotes CompositeVS =
 
 data Model = Model { voteSource :: VoteSource
                    , groupModel :: GroupModel
+                   , densityTransform :: DensityTransform
                    , densityModel :: DensityModel
                    }  deriving (Show, Eq, Ord, Generic)
 
@@ -714,7 +724,10 @@ instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
 
 modelLabel :: Model -> Text
-modelLabel (Model vs gm dm) = printVoteSource vs <> "_" <> show gm <> "_" <> show dm
+modelLabel m = printVoteSource (voteSource m)
+               <> "_" <> show (groupModel m)
+               <> "_" <> printDensityTransformation (densityTransform m)
+               <> "_" <> show (densityModel m)
 
 densityModelBuilder :: forall md gq. (Typeable md, Typeable gq)
                     => DensityModel
@@ -1235,10 +1248,17 @@ wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
---densityRowFromData :: SB.MatrixRowFromData (F.Record q)
-densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
 
---densityPredictor :: F.Record rs -> Vector.Vector Double
+densityMatrixRowFromData :: DensityTransform
+                         -> f (F.FrameRec DistrictDemDataR)
+                         -> SB.MatrixRowFromData (F.Record DistrictDemDataR)
+densityMatrixRowFromData RawDensity _ = SB.MatrixRowFromData "Density" 1 (F.rgetField @DT.PopPerSqMile r)
+densityMatrixRowFromData LogDensity _ = SB.MatrixRowFromData "Density" 1 logDensityPredictor
+densityMatrixRowFromData (QuantileDensity n) dat = undefined
+--  SB.MatrixRowFromData "Density" 1
+
+
+densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
 densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
 
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
