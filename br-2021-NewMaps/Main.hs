@@ -258,7 +258,7 @@ newMapAnalysis stanParallelCfg parallel = do
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
-  let postInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
+  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
 {-
   pumsTX <- K.ignoreCacheTime $ fmap (onlyState "TX" . BRE.pumsRows) ccesAndPums_C
   debugPUMS pumsTX
@@ -266,22 +266,22 @@ newMapAnalysis stanParallelCfg parallel = do
 -}
 
   ncPaths <-  postPaths "NC_Congressional"
-  BR.brNewPost ncPaths postInfo "NC" $ do
+  BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
               <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
     newMapsTest False stanParallelCfg parallel ncNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-{-
+  let postInfoTX = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.UnPublished Nothing)
   txPaths <- postPaths "TX_Congressional"
-  BR.brNewPost txPaths postInfo "TX" $ do
+  BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
             <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
     newMapsTest False stanParallelCfg parallel txNMPS postInfo (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX" . BRE.pumsRows) ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
--}
+
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation

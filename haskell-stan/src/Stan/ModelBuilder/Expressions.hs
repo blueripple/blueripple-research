@@ -1,23 +1,16 @@
 {-# LANGUAGE DataKinds #-}
---{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Stan.ModelBuilder.Expressions where
@@ -576,6 +569,24 @@ printIndexedAlg (IndexF _) = Left "Should not call printExpr before binding decl
 printIndexedAlg (VectorizedF _ _) = Left "Should not call printExpr before resolving vectorization use (VectorizedF)"
 printIndexedAlg (IndexesF _) = Left "Should not call printExpr before resolving indexes use (IndexesF)"
 printIndexedAlg (VectorFunctionF f e argEs) = Left "Should not call printExpr before resolving vectorization use (VectorFunctionF)"
+
+{-
+data StanFormatConfig = StanFormatConfig
+                        { sfcMaxChars :: Int
+                        , sfcBrackets :: [(Char, Char)]
+                        , sfcIndent
+                        , sfcSplitAt :: [Char]
+                        }
+
+reformatStanLine :: StanFormatConfig -> Int -> Text -> Text
+reformatStanLine c curIndent t = concat $ go curIndent t
+  where
+    splitLine n = T.splitAt (sfcMaxChars c - n)
+    lastSplittable =
+    go :: Int -> Text -> [Text]
+    go n x =
+      let (l, t) = splitLine n t
+-}
 
 {-
 bindIndexCoAlg ::  VarBindingStore -> StanExpr -> RecM (StanExprF StanExpr)

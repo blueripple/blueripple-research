@@ -37,34 +37,27 @@ type Parser  = Parsec Void Text
 
 commentLine :: Parser Text
 commentLine = (\c t -> toText ([c] ++ t)) <$> char '#' <*> manyTill anySingle eol
+{-# INLINEABLE commentLine #-}
 
 commentSection :: Parser Text
 commentSection = T.intercalate "\n" <$> some commentLine
-
-untilComma :: Parser Text
-untilComma = takeWhileP (Just "non-comma") f where
-  f x = x /= ',' && x /= '\n'
-
---commaFirst :: Parser a -> Parser a
---commaFirst p = flip const <$> char ',' <*> p
+{-# INLINEABLE commentSection #-}
 
 csvLines :: Parser a -> Parser [[a]]
 csvLines p = line `endBy` eol where
   line = p `sepBy` (char ',')
-
-  --const <$> sepBy1 p (char ',') <*> eol
+{-# INLINEABLE csvLines #-}
 
 headerLine :: Parser [Text]
 headerLine = fmap T.pack <$> (const <$> (many $ noneOf [',','\n','\r']) `sepBy` (char ',') <*> eol)
-
---dataLine :: Parser [Double]
---dataLine = csvLine $ L.signed space L.float
+{-# INLINEABLE headerLine #-}
 
 type SampleCol r = M.Vector r Double
 type Samples r = M.Array r M.Ix2 Double
 
 samples :: Parser (Samples M.U)
 samples = M.fromLists' M.Seq . (fmap (fmap SCI.toRealFloat)) <$> csvLines (L.signed hspace L.scientific)
+{-# INLINEABLE samples #-}
 
 data SamplerCSV r = SamplerCSV
   { samplerDetails :: Text
@@ -82,8 +75,8 @@ samplerCSV = do
   sSamples <- samples
   tDetails <- commentSection
   _ <- takeRest
---  eof
   return $ SamplerCSV sDetails aDetails tDetails header sSamples
+{-# INLINEABLE samplerCSV #-}
 
 data GQCSV r = GQCSV
   {
@@ -99,6 +92,7 @@ gqCSV = do
   gqSamples <- samples
   _ <- takeRest
   return $ GQCSV details header gqSamples
+{-# INLINEABLE gqCSV #-}
 
 mergeSamplerAndGQCSVs :: FilePath -> FilePath -> FilePath -> IO ()
 mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
@@ -106,15 +100,12 @@ mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
     >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ samplerFP ++ " does not exist!")
   fmap not (Dir.doesFileExist gqFP)
     >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " does not exist!")
-  --Dir.doesFileExist mergedFP
-  --    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " already exists!")
   let handleParse = either (M.throwM . userError . errorBundlePretty) return
   s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
-  putTextLn $ "Parsed samplerCSV. Samples have size" <> show (M.size $ samplerSamples s)
   gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
-  putTextLn $ "Parsed gqCSV. Samples have size" <> show (M.size $ gqSamples gq)
   s' <- addReplaceGQToSamplerCSV gq s
   writeFileText mergedFP $ samplerCSVText s'
+{-# INLINEABLE mergeSamplerAndGQCSVs #-}
 
 addReplaceGQToSamplerCSV :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
 addReplaceGQToSamplerCSV gq s = do
@@ -129,15 +120,19 @@ addReplaceGQToSamplerCSV gq s = do
   slices <- traverse (either (samplerSamples s M.<!?) (gqSamples gq M.<!?)) colChoices
   newSamples <- M.computeAs M.U <$> M.stackSlicesM 1 slices
   return $ s { samplerHeader = newHeader, samplerSamples = newSamples}
+{-# INLINEABLE addReplaceGQToSamplerCSV #-}
 
 headerText :: [Text] -> Text
 headerText = T.intercalate ","
+{-# INLINEABLE headerText #-}
 
 samplesText :: Samples M.U -> [Text]
 samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
+{-# INLINEABLE samplesText #-}
 
 samplerCSVText :: SamplerCSV M.U -> Text
 samplerCSVText (SamplerCSV sd ad td h s) = T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td]
+{-# INLINEABLE samplerCSVText #-}
 
 {-
 addReplaceGQToSamplerCSV' :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
