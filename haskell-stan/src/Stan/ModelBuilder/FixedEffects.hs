@@ -106,7 +106,7 @@ rName ds = "R_" <> SB.dataSetName ds <> "_ast"
 rInvName :: SB.RowTypeTag r -> Text
 rInvName ds = "R_" <> SB.dataSetName ds <> "_ast_inverse"
 
-matrixDims :: SME.StanType -> SB.StanBuilderM env d (SME.StanDim, SME.StanDim)
+matrixDims :: SME.StanType -> SB.StanBuilderM md gq (SME.StanDim, SME.StanDim)
 matrixDims t = case t of
   SME.StanMatrix (rd, cd) -> return (rd, cd)
   _ -> SB.stanBuildError "Non matrix given to FixedEffects.matrixDims"
@@ -114,8 +114,8 @@ matrixDims t = case t of
 fixedEffectsQR_Data :: SME.StanVar
                     -> SB.RowTypeTag r
                     -> Maybe SME.StanVar
-                    -> SB.StanBuilderM env d (FEMatrixes
-                                             , SME.StanVar -> SB.StanBuilderM env d SME.StanVar -- Y - mean(X)
+                    -> SB.StanBuilderM md gq (FEMatrixes
+                                             , SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- Y - mean(X)
                                              )
 fixedEffectsQR_Data xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) rttFE wgtsM = do
   colKey <- case colDim of
@@ -159,20 +159,20 @@ fixedEffectsQR_Data xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim)
 fixedEffectsQR_Data _ _ _ = SB.stanBuildError "fixedEffectsQR_Data: called with non-matrix argument."
 
 
-addFixedEffectsParametersAndPriors :: forall k r1 r2 d env. (Typeable d)
-                                   => FixedEffectsModel k env d
+addFixedEffectsParametersAndPriors :: forall k r1 r2 md gq. (Typeable md, Typeable gq)
+                                   => FixedEffectsModel k md gq
                                    -> FEMatrixes
                                    -> SB.RowTypeTag r1
                                    -> SB.RowTypeTag r2
                                    -> Maybe Text
-                                   -> SB.StanBuilderM env d (MakeVecE env d -- Y -> Y * theta (or Y * beta)
-                                                            , MakeVecE env d  -- Y ->  m (Y * beta)
+                                   -> SB.StanBuilderM md gq (MakeVecE md gq -- Y -> Y * theta (or Y * beta)
+                                                            , MakeVecE md gq  -- Y ->  m (Y * beta)
                                                             )
 addFixedEffectsParametersAndPriors feModel feMatrixes rttFE rttModeled mVarSuffix
   = fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix
 
 
-checkModelDataConsistency :: FixedEffectsModel k env d -> FEMatrixes -> SB.StanBuilderM env d ()
+checkModelDataConsistency :: FixedEffectsModel k md gq -> FEMatrixes -> SB.StanBuilderM md gq ()
 checkModelDataConsistency model (NoQR _ _) = if thinQR model
                                              then SB.stanBuildError "thinQR is true in model but matrices are NoQR"
                                              else return ()
@@ -181,13 +181,13 @@ checkModelDataConsistency model (ThinQR _ _ _) = if thinQR model
                                                  then return ()
                                                  else SB.stanBuildError "thinQR is false in model but matrices are ThinQR"
 
-fixedEffectsQR_Parameters :: FixedEffectsModel k env d
+fixedEffectsQR_Parameters :: FixedEffectsModel k md gq
                           -> SB.RowTypeTag rFE
                           -> SB.RowTypeTag rM
                           -> FEMatrixes
                           -> Maybe Text
-                          -> SB.StanBuilderM env d (MakeVecE env d  -- theta
-                                                   , MakeVecE env d -- X -> X * beta
+                          -> SB.StanBuilderM md gq (MakeVecE md gq  -- theta
+                                                   , MakeVecE md gq -- X -> X * beta
                                                    )
 fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix = do
   checkModelDataConsistency feModel feMatrixes
@@ -195,13 +195,13 @@ fixedEffectsQR_Parameters feModel rttFE rttModeled feMatrixes mVarSuffix = do
     NonInteractingFE _ fePrior -> feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix
     InteractingFE _ gtt gm  -> feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix
 
-colDimAndDimKeys :: FEMatrixes -> SB.StanBuilderM env d (SME.StanDim, SME.IndexKey, SME.IndexKey)
+colDimAndDimKeys :: FEMatrixes -> SB.StanBuilderM md gq (SME.StanDim, SME.IndexKey, SME.IndexKey)
 colDimAndDimKeys feMatrixes =
   case SME.varType (xM feMatrixes) of
     SME.StanMatrix (SME.NamedDim rk, SME.NamedDim ck) -> return (SME.NamedDim ck, rk, ck)
     _ -> SB.stanBuildError $ "colDimAndDimKeys: Bad type (" <> show (SME.varType (xM feMatrixes)) <> ")"
 
-reIndex :: SME.IndexKey -> SME.IndexKey -> SME.StanVar -> SB.StanBuilderM env d SME.StanVar
+reIndex :: SME.IndexKey -> SME.IndexKey -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar
 reIndex oldK newK sv =
   let (sv', hasChanged) = SME.varChangeIndexKey oldK newK sv
   in if hasChanged
@@ -209,7 +209,7 @@ reIndex oldK newK sv =
      else SB.stanBuildError $ "reIndex: Failed to re-index matrix with fixed-effects data crosswalk. "
           <> "oldKey=" <> show oldK <> "; newKey=" <> show newK <> "; M=" <> show sv
 
-vectorizedBetaMult :: SME.StanVar -> SME.StanVar -> SB.StanBuilderM env d SME.StanExpr
+vectorizedBetaMult :: SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 vectorizedBetaMult betaVar x = case x of
   SB.StanVar mName (SB.StanMatrix (SB.NamedDim rowKey, _)) -> return $ x `SB.matMult` betaVar
   _ -> SB.stanBuildError
@@ -217,7 +217,7 @@ vectorizedBetaMult betaVar x = case x of
        <> " called with non-matrix or matrix with non-indexed row-dimension. x="
        <> show x
 
-addVecPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM env d ()
+addVecPrior :: SB.RowTypeTag r -> SME.IndexKey -> SME.StanVar -> SME.StanExpr -> SB.StanBuilderM md gq ()
 addVecPrior rttFE colIndexKey var priorE = do
   SB.inBlock SB.SBModel
     $ SB.useDataSetForBindings rttFE
@@ -229,8 +229,8 @@ feParametersNoInteraction :: FEMatrixes
                           -> SB.RowTypeTag r
                           -> SME.StanExpr
                           -> Maybe Text
-                          -> SB.StanBuilderM env d ( MakeVecE env d  -- Y -> Y * theta (or Y -> Y * beta)
-                                                   , MakeVecE env d -- Y -> Y * beta
+                          -> SB.StanBuilderM md gq ( MakeVecE md gq  -- Y -> Y * theta (or Y -> Y * beta)
+                                                   , MakeVecE md gq -- Y -> Y * beta
                                                    )
 feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix = do
   let xVar = xM feMatrixes
@@ -253,12 +253,12 @@ feParametersNoInteraction feMatrixes rttFE fePrior mVarSuffix = do
 
 feParametersWithInteraction :: FEMatrixes
                             -> SB.GroupTypeTag k
-                            -> SGM.GroupModel env d
+                            -> SGM.GroupModel md gq
                             -> SB.RowTypeTag rFE
                             -> SB.RowTypeTag rM
                             -> Maybe Text
-                            -> SB.StanBuilderM env d (MakeVecE env d -- Q * theta (or X * beta)
-                                                     , MakeVecE env d  -- X -> X * beta
+                            -> SB.StanBuilderM md gq (MakeVecE md gq -- Q * theta (or X * beta)
+                                                     , MakeVecE md gq  -- X -> X * beta
                                                      )
 feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   (SB.IntIndex groupSize _) <- SB.rowToGroupIndex <$> SB.indexMap rttModeled gtt -- has to be vs modeled group since that is where groups are defined
@@ -268,12 +268,12 @@ feParametersWithInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
 
 feBinaryInteraction :: FEMatrixes
                     -> SB.GroupTypeTag k
-                    -> SGM.GroupModel env d
+                    -> SGM.GroupModel md gq
                     -> SB.RowTypeTag rFE
                     -> SB.RowTypeTag rM
                     -> Maybe Text
-                    -> SB.StanBuilderM env d (MakeVecE env d -- Q * {-eps, eps} (or X * {-eps, eps})
-                                             , MakeVecE env d -- X -> X * beta
+                    -> SB.StanBuilderM md gq (MakeVecE md gq -- Q * {-eps, eps} (or X * {-eps, eps})
+                                             , MakeVecE md gq -- X -> X * beta
                                              )
 feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   let xName = SME.varName $ xM feMatrixes
@@ -303,12 +303,12 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
 
 feNonBinaryInteraction :: FEMatrixes
                        -> SB.GroupTypeTag k
-                       -> SGM.GroupModel env d
+                       -> SGM.GroupModel md gq
                        -> SB.RowTypeTag rFE
                        -> SB.RowTypeTag rM
                        -> Maybe Text
-                       -> SB.StanBuilderM env d ( MakeVecE env d  -- Q * Theta (or X * Beta)
-                                                , MakeVecE env d -- X -> X * beta
+                       -> SB.StanBuilderM md gq ( MakeVecE md gq  -- Q * Theta (or X * Beta)
+                                                , MakeVecE md gq -- X -> X * beta
                                                 )
 feNonBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   let xName = SME.varName $ xM feMatrixes

@@ -115,9 +115,11 @@ mGQExeConfig rin smp = do
 
 data RScripts = None | ShinyStan [SR.UnwrapJSON] | Loo | Both [SR.UnwrapJSON] deriving (Show, Eq, Ord)
 
-writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.ModelRunnerConfig -> K.Sem r ()
-writeRScripts rScripts config = do
-  let rSamplesPrefix = SC.finalPrefix (SC.mrcInputNames config)
+writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.InputDataType -> SC.ModelRunnerConfig -> K.Sem r ()
+writeRScripts rScripts idt config = do
+  let rSamplesPrefix = case idt of
+        SC.ModelData -> SC.modelPrefix (SC.mrcInputNames config)
+        SC.GQData -> SC.finalPrefix (SC.mrcInputNames config)
   let write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) rSamplesPrefix  <> fromMaybe "" mSuffix <> ".R") t
       writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
       writeLoo = write Nothing $ SR.looScript config rSamplesPrefix 10
@@ -295,7 +297,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         K.logLE K.Info "Running stan diagnostics"
         K.liftKnit $ CS.diagnoseCSD modelSamplesFileNames
       K.logLE K.Diagnostic "writing R scripts for new model run."
-      writeRScripts @st @cd rScriptsToWrite config
+      writeRScripts @st @cd rScriptsToWrite SC.ModelData config
       return res
     mGQRes_C <- case (SC.mrcStanExeGQConfigM config) of
       Nothing -> pure Nothing
@@ -307,6 +309,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
           SC.combineData $ SC.mrcInputNames config
           mRes <- maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneGQ [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.knitMaybe "There was an error running GQ for a chain." mRes
+        writeRScripts @st @cd rScriptsToWrite SC.GQData config
         return $ Just res_C
     return (modelRes_C, mGQRes_C)
   let outputFileNames = SC.finalSamplesFileNames config
