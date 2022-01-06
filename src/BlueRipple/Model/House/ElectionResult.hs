@@ -621,11 +621,6 @@ ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
 --  K.ignoreCacheTime states_C >>= BR.logFrame
   return $ (,) <$> states_C <*> districts_C
 
-
-
-
-
---
 groupBuilder :: forall rs ks.
                 ( F.ElemOf rs BR.StateAbbreviation
                 , F.ElemOf rs DT.CollegeGradC
@@ -697,11 +692,11 @@ type instance FI.VectorFor DensityModel = Vector.Vector
 data VoteSource = HouseVS | PresVS | CompositeVS deriving (Show, Eq, Ord, Generic)
 instance Flat.Flat VoteSource
 type instance FI.VectorFor VoteSource = Vector.Vector
+
 printVoteSource :: VoteSource -> Text
 printVoteSource HouseVS = "HouseVotes"
 printVoteSource PresVS = "PresVotes"
 printVoteSource CompositeVS = "CompositeVotes"
-
 
 getVotes :: VoteSource -> (F.Record CCESByCDR -> Int, F.Record CCESByCDR -> Int)
 getVotes HouseVS = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
@@ -726,7 +721,7 @@ type instance FI.VectorFor Model = Vector.Vector
 modelLabel :: Model -> Text
 modelLabel m = printVoteSource (voteSource m)
                <> "_" <> show (groupModel m)
-               <> "_" <> printDensityTransformation (densityTransform m)
+               <> "_" <> printDensityTransform (densityTransform m)
                <> "_" <> show (densityModel m)
 
 densityModelBuilder :: forall md gq. (Typeable md, Typeable gq)
@@ -1035,7 +1030,11 @@ electionModel :: forall rs ks r.
               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
 electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running turnout/pref model if necessary."
+  densityData <- districtRows <$> K.ignoreCacheTime dat_C
   let jsonDataName = modelLabel model <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+      densityRowFromData :: (F.ElemOf ls DT.PopPerSqMile) => SB.MatrixRowFromData (F.Record ls)
+      densityRowFromData = densityMatrixRowFromData (densityTransform model) densityData
+
       dataAndCodeBuilder :: MRP.BuilderM CCESAndPUMS (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
@@ -1249,17 +1248,35 @@ wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 
-densityMatrixRowFromData :: DensityTransform
-                         -> f (F.FrameRec DistrictDemDataR)
-                         -> SB.MatrixRowFromData (F.Record DistrictDemDataR)
-densityMatrixRowFromData RawDensity _ = SB.MatrixRowFromData "Density" 1 (F.rgetField @DT.PopPerSqMile r)
-densityMatrixRowFromData LogDensity _ = SB.MatrixRowFromData "Density" 1 logDensityPredictor
-densityMatrixRowFromData (QuantileDensity n) dat = undefined
+densityMatrixRowFromData :: (F.ElemOf rs DT.PopPerSqMile)
+                         => DensityTransform
+                         -> F.FrameRec DistrictDemDataR
+                         -> SB.MatrixRowFromData (F.Record rs)
+densityMatrixRowFromData RawDensity _ = (SB.MatrixRowFromData "Density" 1 f)
+  where
+   f = Vector.fromList . pure . F.rgetField @DT.PopPerSqMile
+densityMatrixRowFromData LogDensity _ =
+  (SB.MatrixRowFromData "Density" 1 logDensityPredictor)
+densityMatrixRowFromData (QuantileDensity n) dat = SB.MatrixRowFromData "Density" 1 f where
+  sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.list) dat
+  quantileSize = List.length sortedData `div` n
+  quantilesExtra = List.length sortedData `rem` n
+  quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
+  quantileBreaks = fmap (\k -> sortedData List.!! quantileMaxIndex k) $ [1..n]
+  indexedBreaks = zip quantileBreaks [1..n] -- should this be 0 centered??
+  go x [] = n
+  go x ((y, k): xs) = if x < y then k else go x xs
+  quantileF x = go x indexedBreaks
+  g x = Vector.fromList [realToFrac $ quantileF x]
+  f = g . F.rgetField @DT.PopPerSqMile
+
+
 --  SB.MatrixRowFromData "Density" 1
 
 
-densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
-densityPredictor r = let x = F.rgetField @DT.PopPerSqMile r in Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
+--densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
+logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
+safeLogV x =  Vector.fromList $ [if x < 1e-12 then 0 else Numeric.log x] -- won't matter because Pop will be 0 here
 
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4
 raceAlone4FromRace5 DT.R5_Other = DT.RA4_Other

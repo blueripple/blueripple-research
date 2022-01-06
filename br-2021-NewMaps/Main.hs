@@ -346,15 +346,17 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
                    $ SB.emptyGroupSet
       modelDir =  "br-2021-NewMaps/stanGQ"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      psInfo name = (mapGroup, name, psGroupSet)
+      psInfo name model = (mapGroup, name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model), psGroupSet)
       model2020 :: BRE.Model
                 -> Text
                 -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
-        =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name) ccesAndPums2020_C
-  extantBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  proposedBaseHV <- model2020 (BRE.Model BRE.HouseVS BRE.BaseG BRE.BaseD) (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+        =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
+  let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
+      baseQuantile = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity 5) BRE.BaseD
+  extantBaseHV <- model2020 baseQuantile (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- model2020 baseQuantile (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
   extantPlusStateHV
     <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
