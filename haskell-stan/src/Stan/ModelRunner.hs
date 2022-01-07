@@ -251,7 +251,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
   K.logLE K.Info "running Model (if necessary)"
   let modelSamplesFileNames = SC.modelSamplesFileNames config
   checkClangEnv
-  checkDir (SC.mrcModelDir config) >>= K.knitMaybe "Model directory is missing!"
+  createDirIfNecessary (SC.mrcModelDir config)
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.

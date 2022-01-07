@@ -242,8 +242,8 @@ addInteractions rtt gm groups nInteracting mSuffix = do
     <> show (length groupList)
     <> ")"
   let indexSize (DHash.Some gtt) = do
-        (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
-        return indexSize
+        (SB.IntIndex is _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
+        return is
   iSizes <- traverse indexSize groupList
   minSize <- SB.stanBuildMaybe "addInteractions: empty groupList" $ FL.fold FL.minimum iSizes
   when (minSize < 2) $ SB.stanBuildError "addInteractions: Index with size < 2"
@@ -254,6 +254,7 @@ addInteractions rtt gm groups nInteracting mSuffix = do
       betaVar l = SB.StanVar (betaName l) (betaType l)
       betaVars = betaVar <$> groupCombos
   SB.groupModel' betaVars gm
+
 
 -- generate all possible collections of distinct elements of a given length from a list
 choices :: [a] -> Int -> [[a]]

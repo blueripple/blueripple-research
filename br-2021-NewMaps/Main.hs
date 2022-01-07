@@ -354,7 +354,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
-      baseQuantile = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity 5) BRE.BaseD
+      baseQuantile = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity 10) BRE.BaseD
   extantBaseHV <- model2020 baseQuantile (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   proposedBaseHV <- model2020 baseQuantile (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
