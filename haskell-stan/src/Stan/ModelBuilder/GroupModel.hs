@@ -30,24 +30,22 @@ import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
 type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
 
-data HierarchicalParameterization env d = Centered SB.StanExpr -- beta prior
-                                        | NonCentered SB.StanExpr (SB.StanVar -> SB.StanVar -> SB.StanBuilderM env d ()) -- raw prior and declaration of transformed
+data HierarchicalParameterization md gq = Centered SB.StanExpr -- beta prior
+                                        | NonCentered SB.StanExpr (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
 
-data GroupModel env d = BinarySymmetric SB.StanExpr -- epsilon prior
-                      | BinaryHierarchical HyperParameters (HierarchicalParameterization env d)
-                      | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
-                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization env d)
+data GroupModel md gq = BinarySymmetric SB.StanExpr -- epsilon prior
+                     | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
+                     | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
+                     | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
 
-
-
-groupModel :: SB.StanVar -> GroupModel env d -> SB.StanBuilderM env d SB.StanVar
+groupModel :: SB.StanVar -> GroupModel md gq -> SB.StanBuilderM md gq SB.StanVar
 groupModel bv gm = do
   gmRes <- groupModel' [bv] gm
   case gmRes of
     (x:[]) -> return x
     _ -> SB.stanBuildError "groupModel: Returned a number of variables /= 1.  This should never happen!"
 
-groupModel' :: [SB.StanVar] -> GroupModel env d -> SB.StanBuilderM env d [SB.StanVar]
+groupModel' :: [SB.StanVar] -> GroupModel md gq -> SB.StanBuilderM md gq [SB.StanVar]
 groupModel' bvs (BinarySymmetric priorE) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   traverse_ declareOne bvs
@@ -103,7 +101,7 @@ rawName t = t <> "_raw"
 -- some notes:
 -- The array of vectors is vectorizing over those vectors, so you can think of it as an array of columns
 -- The matrix version is looping over columns and setting each to the prior.
-groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
+groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM md gq ()
 groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
   let loopsFromDims = SB.loopOverNamedDims
   SB.inBlock SB.SBModel $ case bt of
@@ -115,19 +113,19 @@ groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
     SB.StanMatrix (SB.NamedDim rowKey, colDim) -> loopsFromDims [colDim] $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne rowKey (SB.var bv) `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
 
-addHyperParameters :: HyperParameters -> SB.StanBuilderM env d ()
+addHyperParameters :: HyperParameters -> SB.StanBuilderM md gq ()
 addHyperParameters hps = do
    let f ((SB.StanVar sn st), (t, eF)) = do
          v <- SB.inBlock SB.SBParameters $ SB.stanDeclare sn st t
          SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ eF v --SB.var v `SB.vectorSample` e
    traverse_ f $ Map.toList hps
 
-hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel env d
+hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
   hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   bp = SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
 
-hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel env d
+hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalNonCenteredFixedMeanNormal mean sigmaVar sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
   hpps = one (sigmaVar, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
   rp = SB.stdNormal

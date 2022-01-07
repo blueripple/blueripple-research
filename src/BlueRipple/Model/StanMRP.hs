@@ -92,19 +92,6 @@ buildDataWranglerAndCode groupM builderM modelData_C gqData_C = do
       resE = SB.runStanBuilder modelDat gqDat groupM builderWithWrangler
   K.knitEither $ fmap (\(bs, dw) -> (dw, SB.code bs)) resE
 
-
-{-
-  let builderWithWrangler = do
-        SB.buildGroupIndexes
-        builderM
-        jsonF <- SB.buildJSONFromDataM
-        intMapsBuilder <- SB.intMapsBuilder
-        return
-          $ SC.Wrangle SC.TransientIndex
-          $ \d -> (intMapsBuilder d, jsonF)
-      resE = SB.runStanBuilder d env groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
--}
 runMRPModel :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
@@ -165,19 +152,18 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
       gqData_C
 
 -- Basic group declarations, indexes and Json are produced automatically
-addGroup :: Typeable d
-           => SB.RowTypeTag r
+addGroup :: SB.RowTypeTag r
            -> SB.StanExpr
-           -> SB.GroupModel env d
+           -> SB.GroupModel md gq
            -> SB.GroupTypeTag k
            -> Maybe Text
-           -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
+           -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanVar)
 addGroup rtt binaryPrior gm gtt mVarSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
   let gn = SB.taggedGroupName gtt
       gs t = t <> fromMaybe "" mVarSuffix <> "_" <> gn
-  when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
+  when (indexSize < 2) $ SB.stanBuildError "StanMRP.addGroup: Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = gs "eps"
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare en SB.StanReal ""
@@ -196,13 +182,39 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
         return (modelTerm, betaVar)
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-addInteractions2 :: Typeable d
-                 => SB.RowTypeTag r
-                 -> SB.GroupModel env d
+addMultivariateHierarchical :: SB.RowTypeTag r
+                            -> SB.GroupModel md gq
+                            -> SB.GroupModel md gq
+                            -> SB.GroupTypeTag k1
+                            -> SB.GroupTypeTag k2
+                            -> Maybe Text
+                            -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanVar)
+addMultivariateHierarchical rtt binaryGM nonBinaryGM gttExch gttComp mSuffix = do
+--  (SB.IntIndex exchN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttExch
+--  when (exchN <= 2)
+--    $ SB.stanBuildError "StanMRP.addMultivariateHierarchical: exchangeable context has 2 or fewer contexts."
+  (SB.IntIndex compN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttComp
+  when (compN < 2)
+    $ SB.stanBuildError "StanMRP.addMultivariateHierarchical: there are <2 components!"
+  let nameExch = SB.taggedGroupName gttExch
+      nameComp = SB.taggedGroupName gttComp
+  let binaryMVH = do
+        let ev' = SB.StanVar ("eps_" <> nameComp) (SB.StanVector (SB.NamedDim nameExch))
+        ev <- SB.groupModel ev binaryGM
+        let bE = SB.bracket $ SB.csExprs (SB.var ev :| [SB.negate $ SB.var ev])
+            indexedE = SB.indexBy be nameComp
+        vectorizedE <- vectorizeVar ("eps_" <> nameComp) bE
+
+
+  if compN == 2 then binaryMVH else nonBinaryMCH
+
+
+addInteractions2 :: SB.RowTypeTag r
+                 -> SB.GroupModel md gq
                  -> SB.GroupTypeTag k1
                  -> SB.GroupTypeTag k2
                  -> Maybe Text
-                 -> SB.StanBuilderM env d SB.StanVar
+                 -> SB.StanBuilderM md gq SB.StanVar
 addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize1 _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt1
