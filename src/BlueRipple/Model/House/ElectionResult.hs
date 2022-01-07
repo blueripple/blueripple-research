@@ -660,6 +660,7 @@ data GroupModel = BaseG
                  | PlusStateG
                  | PlusSexEduG
                  | PlusRaceEduG
+                 | PlusStateRaceG
                  | PlusInteractionsG
                  | PlusStateAndStateRaceG
                  | PlusStateAndStateInteractionsG
@@ -872,24 +873,28 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
        groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
    (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
    (gEduT, eduTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "T")
-   (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
 --   gStateT <- MRP.addGroup voteData binaryPrior (hierGroupModel stateGroup) stateGroup (Just "T")
    (gSexP, sexPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "P")
    (gEduP, eduPV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) educationGroup (Just "P")
-   (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
    let modelSpecific BaseG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          return (\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                 ,\d -> SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT]
                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                 ,\d -> SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP]
                 )
        modelSpecific PlusStateG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
          (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
          let logitT d = SB.multiOp "+" $ d :| [gRaceT, gSexT, gEduT, gStateT]
              logitP d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, gStateP]
          return (logitT, logitT, logitP, logitP)
        modelSpecific PlusSexEduG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          let hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaSexEdu" <> s) sigmaPrior SB.STZNone
          sexEduT <- MRP.addInteractions2 voteData (hierGM "T") sexGroup educationGroup (Just "T")
          vSexEduT <- SB.inBlock SB.SBModel $ SB.vectorizeVar sexEduT (SB.dataSetName voteData)
@@ -901,6 +906,8 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
              logitP_ps d = SB.multiOp "+" $ d :| [gRaceP, gSexP, gEduP, SB.var sexEduP]
          return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
        modelSpecific PlusRaceEduG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          let groups = MRP.addGroupForInteractions raceGroup
                       $ MRP.addGroupForInteractions educationGroup mempty
              hierGM s = SB.hierarchicalCenteredFixedMeanNormal 0 ("sigmaRaceEdu" <> s) sigmaPrior SB.STZNone
@@ -913,7 +920,30 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
              logitP_sample d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var vRaceEduP)
              logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var raceEduP)
          return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
+       modelSpecific PlusStateRaceG = do
+         let hyperPriorE = SB.normal Nothing (SB.scalar $ show 5)
+         (stateRaceTE, stateRaceTV) <- MRP.addMultivariateHierarchical
+                                     voteData
+                                     undefined
+                                     (True, hyperPriorE, hyperPriorE, hyperPriorE, 4)
+                                     stateGroup
+                                     raceGroup
+                                     (Just "T")
+         (stateRacePE, stateRacePV) <- MRP.addMultivariateHierarchical
+                                       voteData
+                                       undefined
+                                       (True, hyperPriorE, hyperPriorE, hyperPriorE, 4)
+                                       stateGroup
+                                       raceGroup
+                                       (Just "P")
+         let logitT_sample d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRaceTE]
+             logitT_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRaceTE]
+             logitP_sample d = SB.multiOp "+" $ d :| [gSexP, gEduP, stateRacePE]
+             logitP_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRacePE]
+         return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
        modelSpecific PlusInteractionsG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          let groups = MRP.addGroupForInteractions raceGroup
                       $ MRP.addGroupForInteractions sexGroup
                       $ MRP.addGroupForInteractions educationGroup mempty
@@ -928,6 +958,8 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
              logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP] ++ fmap SB.var interP)
          return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
        modelSpecific PlusStateAndStateRaceG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
          (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
          let groups = MRP.addGroupForInteractions stateGroup
@@ -943,6 +975,8 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
              logitP_ps d = SB.multiOp "+" $ d :| ([gRaceP, gSexP, gEduP, gStateP] ++ fmap SB.var interP)
          return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
        modelSpecific PlusStateAndStateInteractionsG = do
+         (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
+         (gRaceP, racePV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "P") raceGroup (Just "P")
          (gStateT, stateTV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "T") stateGroup (Just "T")
          (gStateP, statePV) <- MRP.addGroup voteData binaryPrior (groupModelMR stateGroup "P") stateGroup (Just "P")
          let iGroupRace = MRP.addGroupForInteractions stateGroup

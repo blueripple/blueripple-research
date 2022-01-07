@@ -184,29 +184,55 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
 
 addMultivariateHierarchical :: SB.RowTypeTag r
                             -> SB.GroupModel md gq
-                            -> SB.GroupModel md gq
+                            -> (Bool, SB.StanExpr, SB.StanExpr, SB.StanExpr, Double) -- priors for multinormal parameters
                             -> SB.GroupTypeTag k1
                             -> SB.GroupTypeTag k2
                             -> Maybe Text
                             -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanVar)
-addMultivariateHierarchical rtt binaryGM nonBinaryGM gttExch gttComp mSuffix = do
---  (SB.IntIndex exchN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttExch
---  when (exchN <= 2)
---    $ SB.stanBuildError "StanMRP.addMultivariateHierarchical: exchangeable context has 2 or fewer contexts."
+addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, lkjP) gttExch gttComp mSuffix = do
+  SB.setDataSetForBindings rtt
   (SB.IntIndex compN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttComp
   when (compN < 2)
     $ SB.stanBuildError "StanMRP.addMultivariateHierarchical: there are <2 components!"
   let nameExch = SB.taggedGroupName gttExch
       nameComp = SB.taggedGroupName gttComp
-  let binaryMVH = do
+      suffix = fromMaybe "" mSuffix
+      binaryMVH = do
         let ev' = SB.StanVar ("eps_" <> nameComp) (SB.StanVector (SB.NamedDim nameExch))
-        ev <- SB.groupModel ev binaryGM
+        ev <- SB.groupModel ev' binaryGM
         let bE = SB.bracket $ SB.csExprs (SB.var ev :| [SB.negate $ SB.var ev])
-            indexedE = SB.indexBy be nameComp
-        vectorizedE <- vectorizeVar ("eps_" <> nameComp) bE
-
-
-  if compN == 2 then binaryMVH else nonBinaryMCH
+            indexedE = SB.indexBy bE nameComp
+        vectorizedV <- SB.inBlock SB.SBModel $ SB.vectorizeExpr ("eps_" <> nameComp) bE (SB.dataSetName rtt)
+        return (SB.var vectorizedV, vectorizedV)
+      nonBinaryMVH = do
+        let muV = SB.StanVar ("mu" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
+            tauV = SB.StanVar ("tau" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
+            sigmaV = SB.StanVar ("sigma" <> suffix <> "_" <> nameComp) SB.StanReal
+            lkjV = SB.StanVar ("L" <> suffix <> "_" <> nameComp) (SB.StanCholeskyFactorCorr $ SB.NamedDim nameComp)
+            lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjP) :| [])
+            hierHPs = Map.fromList
+              [
+                (muV, ("", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnMuE))
+              , (tauV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnTauE))
+              , (sigmaV, ("<lower=0>", \v -> SB.var v `SB.vectorSample` mnSigmaE))
+              , (lkjV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` lkjPriorE))
+              ]
+            betaV' = SB.StanVar ("beta_" <> nameComp <> "_" <> nameExch) (SB.StanArray [SB.NamedDim nameComp] $ SB.StanVector $ SB.NamedDim nameExch)
+            dpmE =  SB.function "diag_pre_multiply" (SB.var tauV :| [SB.var lkjV])
+            hm = case mnCentered of
+              True ->
+                let betaPriorE = SB.function "multi_normal_cholesky" (SB.var muV :| [dpmE])
+                in SB.Centered betaPriorE
+              False ->
+                let nonCenteredF beta@(SB.StanVar sn st) betaRaw = SB.inBlock SB.SBTransformedParameters $ do
+                      bv' <- SB.stanDeclare sn st ""
+                      SB.addExprLine ("nonCentered for multivariateHierarchical: " <> show betaV')
+                        $ SB.var bv' `SB.eq` SB.var muV `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+                in SB.NonCentered SB.stdNormal nonCenteredF
+            gm = SB.Hierarchical SB.STZNone hierHPs hm
+        betaV <- SB.groupModel betaV' gm
+        return (SB.var betaV, betaV)
+  if compN == 2 then binaryMVH else nonBinaryMVH
 
 
 addInteractions2 :: SB.RowTypeTag r

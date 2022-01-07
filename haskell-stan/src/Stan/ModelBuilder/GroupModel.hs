@@ -23,19 +23,21 @@ module Stan.ModelBuilder.GroupModel
 
 import Prelude hiding (All)
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.SumToZero as STZ
 import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
 type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
+type BetaPrior md gq = SB.StanVar -> SB.StanBuilderM md gq ()
 
-data HierarchicalParameterization md gq = Centered SB.StanExpr -- beta prior
-                                        | NonCentered SB.StanExpr (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
+data HierarchicalParameterization md gq = Centered (BetaPrior md gq)-- beta prior
+                                        | NonCentered (BetaPrior md gq) (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
 
-data GroupModel md gq = BinarySymmetric SB.StanExpr -- epsilon prior
+data GroupModel md gq = BinarySymmetric (BetaPrior md gq) -- epsilon prior
                      | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
-                     | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
+                     | NonHierarchical STZ.SumToZero (BetaPrior md gq) -- beta prior
                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
 
 groupModel :: SB.StanVar -> GroupModel md gq -> SB.StanBuilderM md gq SB.StanVar
@@ -101,18 +103,23 @@ rawName t = t <> "_raw"
 -- some notes:
 -- The array of vectors is vectorizing over those vectors, so you can think of it as an array of columns
 -- The matrix version is looping over columns and setting each to the prior.
-groupBetaPrior :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM md gq ()
-groupBetaPrior bv@(SB.StanVar bn bt) priorE = do
+groupBetaPrior :: BetaPrior md gq -> SB.StanVar -> SB.StanBuilderM md gq ()
+groupBetaPrior f v = SB.inBlock SB.SBModel $ SB.addExprLine "groupBetaPrior" (f v)
+
+{-
+groupBetaPrior :: SB.StanVar -> IndexedPrior -> SB.StanBuilderM md gq ()
+groupBetaPrior bv@(SB.StanVar bn bt) (IndexedPrior priorE mSet) = do
   let loopsFromDims = SB.loopOverNamedDims
+      vectorizing x = maybe (SB.vectorizedOne x) (SB.vectorized . Set.insert x) mSet
   SB.inBlock SB.SBModel $ case bt of
     SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
-    SB.StanVector (SB.NamedDim ik) -> SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne ik (SB.var bv) `SB.vectorSample` priorE
+    SB.StanVector (SB.NamedDim ik) -> SB.addExprLine "groupBetaPrior" $ vectorizing ik $ (SB.var bv) `SB.vectorSample` priorE
     SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
     SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
     SB.StanArray dims (SB.StanVector (SB.NamedDim ik)) -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne ik (SB.var bv) `SB.vectorSample` priorE
     SB.StanMatrix (SB.NamedDim rowKey, colDim) -> loopsFromDims [colDim] $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne rowKey (SB.var bv) `SB.vectorSample` priorE
     _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
-
+-}
 addHyperParameters :: HyperParameters -> SB.StanBuilderM md gq ()
 addHyperParameters hps = do
    let f ((SB.StanVar sn st), (t, eF)) = do
