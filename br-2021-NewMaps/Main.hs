@@ -356,8 +356,9 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
       baseQuantile = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity 10) BRE.BaseD
       stateRaceQuantile = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity 5) BRE.BaseD
-  extantBaseHV <- model2020 stateRaceQuantile (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  proposedBaseHV <- model2020 stateRaceQuantile (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+      partiallyPooledQuantile = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG (BRE.QuantileDensity 5) BRE.BaseD
+  extantBaseHV <- model2020 partiallyPooledQuantile (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- model2020 partiallyPooledQuantile (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
   extantPlusStateHV
     <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)

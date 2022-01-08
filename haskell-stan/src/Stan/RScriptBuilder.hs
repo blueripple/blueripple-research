@@ -117,7 +117,7 @@ shinyStanScript config unwrapJSONs =
                 <> unwrapCode
 --                <> "stanFit@stanModel <- " <> rStanModel config
                 <> rMessageText "Launching shinystan...." <> "\n"
-                <> "launch_shinystan(stanFit)\n"
+                <> "launch_shinystan(stanfit)\n"
   in rScript
 
 looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text

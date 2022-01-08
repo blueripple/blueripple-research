@@ -188,7 +188,7 @@ addMultivariateHierarchical :: SB.RowTypeTag r
                             -> SB.GroupTypeTag k1
                             -> SB.GroupTypeTag k2
                             -> Maybe Text
-                            -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanVar)
+                            -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanExpr)
 addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, lkjP) gttExch gttComp mSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex compN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttComp
@@ -198,12 +198,13 @@ addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, l
       nameComp = SB.taggedGroupName gttComp
       suffix = fromMaybe "" mSuffix
       binaryMVH = do
-        let ev' = SB.StanVar ("eps_" <> nameComp) (SB.StanVector (SB.NamedDim nameExch))
+        let ev' = SB.StanVar ("eps" <> suffix <> "_" <> nameComp) (SB.StanVector (SB.NamedDim nameExch))
         ev <- SB.groupModel ev' binaryGM
         let bE = SB.bracket $ SB.csExprs (SB.var ev :| [SB.negate $ SB.var ev])
             indexedE = SB.indexBy bE nameComp
-        vectorizedV <- SB.inBlock SB.SBModel $ SB.vectorizeExpr ("eps_" <> nameComp) bE (SB.dataSetName rtt)
-        return (SB.var vectorizedV, vectorizedV)
+        vectorizedV <- SB.inBlock SB.SBModel
+                       $ SB.vectorizeExpr ("eps" <> suffix <> "_" <> nameComp) bE (SB.dataSetName rtt)
+        return (SB.var vectorizedV, indexedE)
       nonBinaryMVH = do
         let muV = SB.StanVar ("mu" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
             tauV = SB.StanVar ("tau" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
@@ -214,10 +215,11 @@ addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, l
               [
                 (muV, ("", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnMuE))
               , (tauV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnTauE))
-              , (sigmaV, ("<lower=0>", \v -> SB.var v `SB.vectorSample` mnSigmaE))
               , (lkjV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` lkjPriorE))
               ]
-            betaV' = SB.StanVar ("beta_" <> nameComp <> "_" <> nameExch) (SB.StanArray [SB.NamedDim nameExch] $ SB.StanVector $ SB.NamedDim nameComp)
+            betaV' = SB.StanVar
+                     ("beta" <> suffix <> "_" <> nameComp <> "_" <> nameExch)
+                     (SB.StanArray [SB.NamedDim nameExch] $ SB.StanVector $ SB.NamedDim nameComp)
             dpmE =  SB.function "diag_pre_multiply" (SB.var tauV :| [SB.var lkjV])
             vSet = Set.fromList [nameExch, nameComp]
             hm = case mnCentered of
@@ -228,15 +230,18 @@ addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, l
               False ->
                 let nonCenteredF beta@(SB.StanVar sn st) betaRaw = SB.inBlock SB.SBTransformedParameters $ do
                       bv' <- SB.stanDeclare sn st ""
-                      SB.addExprLine ("nonCentered for multivariateHierarchical: " <> show betaV')
+                      SB.stanForLoopB "k" Nothing nameExch
+                        $ SB.addExprLine ("nonCentered for multivariateHierarchical: " <> show betaV')
+                        $ SB.vectorizedOne nameComp
                         $ SB.var bv' `SB.eq` SB.var muV `SB.plus` (dpmE `SB.times` SB.var betaRaw)
-                    rawPriorF v = SB.addExprLine "StanMRP.addMultivariateHierarchical"
-                      $ SB.vectorized vSet $ SB.var v `SB.eq` SB.stdNormal
+                    rawPriorF v = SB.stanForLoopB "k" Nothing nameExch
+                      $ SB.addExprLine "StanMRP.addMultivariateHierarchical"
+                      $ SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` SB.stdNormal
                 in SB.NonCentered rawPriorF nonCenteredF
             gm = SB.Hierarchical SB.STZNone hierHPs hm
         betaV <- SB.groupModel betaV' gm
         vectorizedBetaV <- SB.inBlock SB.SBModel $ SB.vectorizeVar betaV (SB.dataSetName rtt)
-        return (SB.var vectorizedBetaV, betaV)
+        return (SB.var vectorizedBetaV, SB.var betaV)
   if compN == 2 then binaryMVH else nonBinaryMVH
 
 
