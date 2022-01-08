@@ -285,14 +285,14 @@ feBinaryInteraction feMatrixes gtt gm rttFE rttModeled mVarSuffix = do
   let vecE x sv = SME.vectorizedOne colIndexKey $ SME.function "dot_product" $ SB.var x :| [pmMatE sv]
       matVecE sv ik x = fmap SB.var $ SBB.vectorizeExpr (varName "epsVec") (vecE x sv) ik
   case gm of
-    SGM.BinarySymmetric epsPriorE -> case feMatrixes of
+    SGM.BinarySymmetric ePriorE -> case feMatrixes of
       NoQR _ _ -> do
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "eps") (SME.StanVector colDim) ""
-        addVecPrior rttFE colIndexKey epsVar epsPriorE
+        addVecPrior rttFE colIndexKey epsVar ePriorE
         return (matVecE epsVar, matVecE epsVar)
       ThinQR _ _ (QRMatrixes _ _ rInvVar) -> do
         thetaVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare (varName "theta") (SME.StanVector colDim) ""
-        addVecPrior rttFE colIndexKey thetaVar epsPriorE
+        addVecPrior rttFE colIndexKey thetaVar ePriorE
         betaVar <- SB.inBlock SB.SBTransformedParameters $ do
           SB.stanDeclareRHS (varName "beta") (SME.StanVector colDim) ""
             $ SME.vectorizedOne colIndexKey

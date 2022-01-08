@@ -1,18 +1,12 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.GroupModel
   (
@@ -35,9 +29,9 @@ type BetaPrior md gq = SB.StanVar -> SB.StanBuilderM md gq ()
 data HierarchicalParameterization md gq = Centered (BetaPrior md gq)-- beta prior
                                         | NonCentered (BetaPrior md gq) (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
 
-data GroupModel md gq = BinarySymmetric (BetaPrior md gq) -- epsilon prior
+data GroupModel md gq = BinarySymmetric SB.StanExpr -- epsilon prior
                      | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
-                     | NonHierarchical STZ.SumToZero (BetaPrior md gq) -- beta prior
+                     | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
 
 groupModel :: SB.StanVar -> GroupModel md gq -> SB.StanBuilderM md gq SB.StanVar
@@ -51,42 +45,44 @@ groupModel' :: [SB.StanVar] -> GroupModel md gq -> SB.StanBuilderM md gq [SB.Sta
 groupModel' bvs (BinarySymmetric priorE) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   traverse_ declareOne bvs
-  traverse (\bv -> groupBetaPrior bv priorE) bvs
+  let bPriorM v = SB.addExprLine "Stan.GroupModel.groupModel'" $ SB.var v `SB.eq` priorE
+  traverse (\bv -> groupBetaPrior bPriorM bv) bvs
   return bvs
 
-groupModel' bvs (BinaryHierarchical hps (Centered betaPriorE)) = do
+groupModel' bvs (BinaryHierarchical hps (Centered bPriorM)) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   addHyperParameters hps
   traverse_ declareOne bvs
-  traverse (\bv -> groupBetaPrior bv betaPriorE) bvs
+  traverse (\bv -> groupBetaPrior bPriorM bv) bvs
   return bvs
 
-groupModel' bvs (BinaryHierarchical hps (NonCentered rawPriorE nonCenteredF)) = do
+groupModel' bvs (BinaryHierarchical hps (NonCentered rPriorM nonCenteredF)) = do
   let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   brvs <- traverse declareRaw bvs
 --  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
   let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
   traverse_ declareBeta bvs
   addHyperParameters hps
-  traverse (\brv -> groupBetaPrior brv rawPriorE) brvs
+  traverse (\brv -> groupBetaPrior rPriorM brv) brvs
   return bvs
 
 groupModel' bvs (NonHierarchical stz priorE) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   when (stz /= STZQR) $ traverse_ declareOne bvs --do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
   traverse_ (\bv -> STZ.sumToZero bv stz) bvs
-  traverse_ (\bv -> groupBetaPrior bv priorE) bvs
+  let bPriorM v = SB.addExprLine "Stan.GroupModel.groupModel'" $ SB.var v `SB.eq` priorE
+  traverse_ (\bv -> groupBetaPrior bPriorM bv) bvs
   return bvs
 
-groupModel' bvs (Hierarchical stz hps (Centered betaPrior)) = do
+groupModel' bvs (Hierarchical stz hps (Centered bPriorM)) = do
   let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
   addHyperParameters hps
   traverse_ declareOne bvs
   traverse_ (\bv -> STZ.sumToZero bv stz) bvs
-  traverse_ (\bv -> groupBetaPrior bv betaPrior) bvs
+  traverse_ (\bv -> groupBetaPrior bPriorM bv) bvs
   return bvs
 
-groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
+groupModel' bvs (Hierarchical stz hps (NonCentered rPriorM nonCenteredF)) = do
   let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
   brvs <- traverse declareRaw bvs
   traverse (\brv -> STZ.sumToZero brv stz) brvs -- ?
@@ -94,7 +90,7 @@ groupModel' bvs (Hierarchical stz hps (NonCentered rawPrior nonCenteredF)) = do
   let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
   traverse_ declareBeta bvs
   addHyperParameters hps
-  traverse_ (\brv -> groupBetaPrior brv rawPrior) brvs
+  traverse_ (\brv -> groupBetaPrior rPriorM brv) brvs
   return bvs
 
 rawName :: Text -> Text
@@ -104,7 +100,7 @@ rawName t = t <> "_raw"
 -- The array of vectors is vectorizing over those vectors, so you can think of it as an array of columns
 -- The matrix version is looping over columns and setting each to the prior.
 groupBetaPrior :: BetaPrior md gq -> SB.StanVar -> SB.StanBuilderM md gq ()
-groupBetaPrior f v = SB.inBlock SB.SBModel $ SB.addExprLine "groupBetaPrior" (f v)
+groupBetaPrior f v = SB.inBlock SB.SBModel $ f v
 
 {-
 groupBetaPrior :: SB.StanVar -> IndexedPrior -> SB.StanBuilderM md gq ()
@@ -130,12 +126,12 @@ addHyperParameters hps = do
 hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
   hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  bp = SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
+  bp v = SB.addExprLine "Stan.GroupModel.hierarchicalCenteredFixedNormal" $ SB.var v `SB.eq` SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
 
 hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalNonCenteredFixedMeanNormal mean sigmaVar sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
   hpps = one (sigmaVar, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  rp = SB.stdNormal
+  rp v = SB.addExprLine "Stan.GroupModel.hierarchicalNonCenteredFixedMeanNormal" $ SB.var v `SB.eq`SB.stdNormal
   ncF (SB.StanVar sn st) brv = do
     SB.stanDeclareRHS sn st "" $ SB.var brv `SB.times` SB.var sigmaVar
     return ()
