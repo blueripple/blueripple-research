@@ -217,21 +217,26 @@ addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, l
               , (sigmaV, ("<lower=0>", \v -> SB.var v `SB.vectorSample` mnSigmaE))
               , (lkjV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` lkjPriorE))
               ]
-            betaV' = SB.StanVar ("beta_" <> nameComp <> "_" <> nameExch) (SB.StanArray [SB.NamedDim nameComp] $ SB.StanVector $ SB.NamedDim nameExch)
+            betaV' = SB.StanVar ("beta_" <> nameComp <> "_" <> nameExch) (SB.StanArray [SB.NamedDim nameExch] $ SB.StanVector $ SB.NamedDim nameComp)
             dpmE =  SB.function "diag_pre_multiply" (SB.var tauV :| [SB.var lkjV])
+            vSet = Set.fromList [nameExch, nameComp]
             hm = case mnCentered of
               True ->
-                let betaPriorE = SB.function "multi_normal_cholesky" (SB.var muV :| [dpmE])
+                let betaPriorE v = SB.addExprLine "StanMRP.addMultivariateHierarchical"
+                      $ SB.vectorized vSet $ SB.var v `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var muV :| [dpmE])
                 in SB.Centered betaPriorE
               False ->
                 let nonCenteredF beta@(SB.StanVar sn st) betaRaw = SB.inBlock SB.SBTransformedParameters $ do
                       bv' <- SB.stanDeclare sn st ""
                       SB.addExprLine ("nonCentered for multivariateHierarchical: " <> show betaV')
                         $ SB.var bv' `SB.eq` SB.var muV `SB.plus` (dpmE `SB.times` SB.var betaRaw)
-                in SB.NonCentered SB.stdNormal nonCenteredF
+                    rawPriorF v = SB.addExprLine "StanMRP.addMultivariateHierarchical"
+                      $ SB.vectorized vSet $ SB.var v `SB.eq` SB.stdNormal
+                in SB.NonCentered rawPriorF nonCenteredF
             gm = SB.Hierarchical SB.STZNone hierHPs hm
         betaV <- SB.groupModel betaV' gm
-        return (SB.var betaV, betaV)
+        vectorizedBetaV <- SB.inBlock SB.SBModel $ SB.vectorizeVar betaV (SB.dataSetName rtt)
+        return (SB.var vectorizedBetaV, betaV)
   if compN == 2 then binaryMVH else nonBinaryMVH
 
 

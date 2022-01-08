@@ -30,9 +30,9 @@ data HierarchicalParameterization md gq = Centered (BetaPrior md gq)-- beta prio
                                         | NonCentered (BetaPrior md gq) (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
 
 data GroupModel md gq = BinarySymmetric SB.StanExpr -- epsilon prior
-                     | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
-                     | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
-                     | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
+                      | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
+                      | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
+                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
 
 groupModel :: SB.StanVar -> GroupModel md gq -> SB.StanBuilderM md gq SB.StanVar
 groupModel bv gm = do

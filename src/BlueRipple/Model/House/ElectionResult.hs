@@ -774,8 +774,9 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
                 (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               ]
-            cPrior s = SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
-            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+            cPriorF s v = SB.addExprLine "ELectionResult.densityModel"
+              $ SB.vectorizedOne (SB.taggedGroupName raceGroup) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
+            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPriorF s)
             raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
         (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
         (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
@@ -788,8 +789,9 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
                 (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               ]
-            cPrior s = SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
-            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+            cPriorF s v = SB.addExprLine "ELectionResult.densityModel"
+              $ SB.vectorizedOne (SB.taggedGroupName raceGroup) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
+            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPriorF s)
             raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
         (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
         (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
@@ -815,28 +817,31 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
                 (muV s, ("", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
               ]
-            rawPrior = SB.stdNormal --SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
+            rawPriorF v = SB.addExprLine "ELectionResult.densityModel"
+              $ SB.vectorizedOne (SB.taggedGroupName raceGroup) $ SB.var v `SB.eq` SB.stdNormal --SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
             centerF s bv@(SB.StanVar sn st) brv = do
               bv' <- SB.stanDeclare sn st ""
               SB.stanForLoopB "k" Nothing colIndexKey
                 $ SB.stanForLoopB "g" Nothing "Race"
                 $ SB.addExprLine "PlusNCHRaceD"
                 $ SB.var bv' `SB.eq` (SB.var (muV s) `SB.plus`  (SB.var (sigmaV s) `SB.times`  SB.var brv))
-            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.NonCentered rawPrior (centerF s))
+            raceDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.NonCentered rawPriorF (centerF s))
             raceDensityFEM s = SFE.InteractingFE True raceGroup (raceDensityGM s)
         (thetaRaceTMultF, betaRaceTMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "T") feMatrices cdData voteData (Just "T")
         (thetaRacePMultF, betaRacePMultF) <- SFE.addFixedEffectsParametersAndPriors (raceDensityFEM "P") feMatrices cdData voteData (Just "P")
         return (thetaRaceTMultF, betaRaceTMultF, thetaRacePMultF, betaRacePMultF)
       modelSpecific PlusHStateD = do
-        let mu s = "muStateDensity" <> s
-            sigma s = "sigmaStateDensity" <> s
+        let muV s = SB.StanVar ("muStateDensity" <> s) SB.StanReal
+            sigmaV s = SB.StanVar ("sigmaStateDensity" <> s) SB.StanReal
             hyperParameters s = M.fromList
               [
-                (SB.StanVar (mu s) SB.StanReal, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
-              , (SB.StanVar (sigma s) SB.StanReal, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+              , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               ]
-            cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
-            stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPrior s)
+            cPriorF s v = SB.addExprLine "ELectionResult.densityModel"
+              $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
+--            cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
+            stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPriorF s)
             stateDensityFEM s = SFE.InteractingFE True stateGroup (stateDensityGM s)
         (thetaStateTMultF, betaStateTMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "T") feMatrices cdData voteData (Just "T")
         (thetaStatePMultF, betaStatePMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "P") feMatrices cdData voteData (Just "P")
@@ -863,12 +868,16 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
            (muV gtt s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
          , (sigmaV gtt s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` sigmaPrior))
          ]
-       hierGroupModel gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.Centered $ SB.normal (Just $ SB.var $ muV gtt s) (SB.var $ sigmaV gtt s))
+       cPriorF gtt s v = SB.addExprLine "ELectionResult.groupModel"
+                         $ SB.vectorizedOne (SB.taggedGroupName gtt) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV gtt s) (SB.var $ sigmaV gtt s)
+       hierGroupModel gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.Centered $ cPriorF gtt s)
        ncGMCenterF gtt s bv@(SB.StanVar sn st) brv = do
          bv' <- SB.stanDeclare sn st ""
          SB.addExprLine ("nonCentered for " <> SB.taggedGroupName gtt)
            $ SB.vectorizedOne (SB.taggedGroupName gtt) (SB.var bv' `SB.eq` (SB.var (muV gtt s) `SB.plus`  (SB.var (sigmaV gtt s) `SB.times`  SB.var brv)))
-       hierGroupModelNC gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.NonCentered SB.stdNormal (ncGMCenterF gtt s))
+       rawPriorF gtt s v = SB.addExprLine "ELectionResult.groupModel"
+         $ SB.vectorizedOne (SB.taggedGroupName gtt) $ SB.var v `SB.eq` SB.stdNormal
+       hierGroupModelNC gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.NonCentered (rawPriorF gtt s) (ncGMCenterF gtt s))
        gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
        groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
    (gSexT, sexTV) <- MRP.addGroup voteData binaryPrior (simpleGroupModel 1) sexGroup (Just "T")
@@ -937,9 +946,9 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
                                        raceGroup
                                        (Just "P")
          let logitT_sample d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRaceTE]
-             logitT_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRaceTE]
+             logitT_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, SB.var stateRaceTV]
              logitP_sample d = SB.multiOp "+" $ d :| [gSexP, gEduP, stateRacePE]
-             logitP_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, stateRacePE]
+             logitP_ps d = SB.multiOp "+" $ d :| [gSexT, gEduT, SB.var stateRacePV]
          return (logitT_sample, logitT_ps, logitP_sample, logitP_ps)
        modelSpecific PlusInteractionsG = do
          (gRaceT, raceTV) <- MRP.addGroup voteData binaryPrior (hierGroupModel raceGroup "T") raceGroup (Just "T")
