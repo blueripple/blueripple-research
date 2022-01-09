@@ -975,28 +975,28 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
          let hyperPriorE = SB.normal Nothing (SB.scalar $ show 2)
          (stateSexTE, stateSexTE') <- MRP.addMultivariateHierarchical
                                      voteData
-                                     (hierGroupModelNC stateGroup "T")
+                                     (hierGroupModelNC stateGroup "ST")
                                      (False, hyperPriorE, hyperPriorE, hyperPriorE, 4)
                                      stateGroup
                                      sexGroup
                                      (Just "T")
          (stateSexPE, stateSexPE') <- MRP.addMultivariateHierarchical
                                      voteData
-                                     (hierGroupModelNC stateGroup "P")
+                                     (hierGroupModelNC stateGroup "SP")
                                      (False, hyperPriorE, hyperPriorE, hyperPriorE, 4)
                                      stateGroup
                                      sexGroup
                                      (Just "P")
          (stateEduTE, stateEduTE') <- MRP.addMultivariateHierarchical
                                      voteData
-                                     (hierGroupModelNC stateGroup "T")
+                                     (hierGroupModelNC stateGroup "ET")
                                      (False, hyperPriorE, hyperPriorE, hyperPriorE, 4)
                                      stateGroup
                                      educationGroup
                                      (Just "T")
          (stateEduPE, stateEduPE') <- MRP.addMultivariateHierarchical
                                      voteData
-                                     (hierGroupModelNC stateGroup "P")
+                                     (hierGroupModelNC stateGroup "EP")
                                      (False, hyperPriorE, hyperPriorE, hyperPriorE, 4)
                                      stateGroup
                                      educationGroup
