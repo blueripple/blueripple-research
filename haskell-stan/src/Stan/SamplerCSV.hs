@@ -20,6 +20,7 @@ import qualified Data.List as L
 import qualified System.Directory as Dir
 import Control.Exception (throwIO)
 import GHC.IO.Exception (userError)
+import qualified Say
 
 --import Control.Applicative.Combinators
 
@@ -104,6 +105,7 @@ mergeSamplerAndGQCSVs samplerFP gqFP mergedFP = do
   s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
   gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
   s' <- addReplaceGQToSamplerCSV gq s
+  Say.say $ "Merge complete.  Writing " <> toText mergedFP
   writeFileText mergedFP $ samplerCSVText s'
 {-# INLINEABLE mergeSamplerAndGQCSVs #-}
 

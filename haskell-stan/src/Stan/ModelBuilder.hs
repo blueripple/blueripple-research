@@ -73,7 +73,7 @@ type ModelBlock = T.Text
 
 type GeneratedQuantitiesBlock = T.Text
 
-data GeneratedQuantities = NoLL | OnlyLL | All
+data GeneratedQuantities = NoGQ | NoLL | OnlyLL | All
 
 data StanModel = StanModel
   { functionsBlock :: Maybe FunctionsBlock,
@@ -1498,6 +1498,7 @@ stanModelAsText gq sm =
       <> maybeSection "transformed parameters" (transformedParametersBlockM sm)
       <> section "model" (modelBlock sm)
       <> case gq of
+           NoGQ -> ""
            NoLL -> maybeSection "generated quantities" (generatedQuantitiesBlockM sm)
            OnlyLL -> section "generated quantities" (genLogLikelihoodBlock sm)
            All ->

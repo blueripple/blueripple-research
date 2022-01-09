@@ -26,12 +26,20 @@ data RunnerInputNames = RunnerInputNames
   , rinData :: Text
   }  deriving (Show, Ord, Eq)
 
+noGQSuffix :: Text
+noGQSuffix = "_noGQ"
+
+rinModelNoGQ :: RunnerInputNames -> Text
+rinModelNoGQ rin = rinModel rin <> noGQSuffix
 
 modelDirPath :: RunnerInputNames -> Text -> FilePath
 modelDirPath rin fName = toString $ rinModelDir rin <> "/" <> fName
 
 modelPath :: RunnerInputNames -> FilePath
 modelPath rin = modelDirPath rin $ rinModel rin
+
+modelNoGQPath :: RunnerInputNames -> FilePath
+modelNoGQPath rin = modelDirPath rin $ rinModel rin <> noGQSuffix
 
 dirPath :: RunnerInputNames -> Text -> Text -> FilePath
 dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
@@ -57,6 +65,7 @@ data StanMCParameters = StanMCParameters
 
 data ModelRunnerConfig = ModelRunnerConfig
   { mrcStanMakeConfig :: CS.MakeConfig
+  , mrcStanMakeNoGQConfig :: CS.MakeConfig
   , mrcStanExeModelConfig :: CS.StanExeConfig
   , mrcStanExeGQConfigM :: Maybe (Int -> CS.StanExeConfig)
   , mrcStanSummaryConfig :: CS.StansummaryConfig
@@ -75,12 +84,19 @@ samplesPrefixCacheKey rin = rinModelDir rin <> "/" <> rinModel rin <> "/" <> rin
 modelFileName :: RunnerInputNames -> Text
 modelFileName rin = rinModel rin <> ".stan"
 
+modelNoGQFileName :: RunnerInputNames -> Text
+modelNoGQFileName rin = rinModel rin <> noGQSuffix <> ".stan"
+
 addModelDirectory :: RunnerInputNames -> Text -> Text
 addModelDirectory rin x = rinModelDir rin <> "/" <> x
 
 modelDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 modelDependency rin = K.fileDependency (toString modelFile)  where
   modelFile = addModelDirectory rin (modelFileName rin)
+
+modelNoGQDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelNoGQDependency rin = K.fileDependency (toString modelFile)  where
+  modelFile = addModelDirectory rin (modelNoGQFileName rin)
 
 modelDataFileName :: RunnerInputNames -> Text
 modelDataFileName rin = rinData rin <> ".json"

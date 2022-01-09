@@ -102,7 +102,12 @@ spreadDiffNormal = do
   S.setDataSetForBindings resultsData
   spreadDiffV <- SBB.addRealData resultsData "diff" Nothing Nothing spreadDiff
   let normal m s = SD.normal (Just $ SE.scalar $ show m) $ SE.scalar $ show s
-      muModel = SGM.hierarchicalCenteredFixedMeanNormal 0 "sigma_mu_fav" (normal 0 3) SGM.STZNone
+      sigmaVar = S.StanVar "sigma_mu_fav" S.StanReal
+      hpps = one (sigmaVar, ("<lower=0>",\v -> S.var v `S.vectorSample` normal 0 3))
+      betaPrior v = S.addExprLine "spreadDiffNormal"
+        $ S.vectorizedOne "Results" $ S.var v `S.vectorSample` S.normal (Just $ S.scalar "0") (S.var sigmaVar)
+      muModel = SGM.Hierarchical SGM.STZNone hpps (SGM.Centered betaPrior)
+--        SGM.hierarchicalCenteredFixedMeanNormal 0 "sigma_mu_fav" (normal 0 3) SGM.STZNone
   mu_favV <- SGM.groupModel (S.StanVar "mu_fav" $ S.StanVector $ S.NamedDim "Favorite") muModel
   sigmaV <- S.inBlock S.SBParameters $ S.stanDeclare "sigma" S.StanReal ""
   S.inBlock S.SBModel $ S.addExprLines "priors"

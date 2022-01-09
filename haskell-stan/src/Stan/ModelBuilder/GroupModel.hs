@@ -126,12 +126,13 @@ addHyperParameters hps = do
 hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
   hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  bp v = SB.addExprLine "Stan.GroupModel.hierarchicalCenteredFixedNormal" $ SB.var v `SB.eq` SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
+  bp v = SB.addExprLine "Stan.GroupModel.hierarchicalCenteredFixedNormal"
+    $ SB.var v `SB.vectorSample` SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
 
 hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel md gq
 hierarchicalNonCenteredFixedMeanNormal mean sigmaVar sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
   hpps = one (sigmaVar, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  rp v = SB.addExprLine "Stan.GroupModel.hierarchicalNonCenteredFixedMeanNormal" $ SB.var v `SB.eq`SB.stdNormal
+  rp v = SB.addExprLine "Stan.GroupModel.hierarchicalNonCenteredFixedMeanNormal" $ SB.var v `SB.vectorSample` SB.stdNormal
   ncF (SB.StanVar sn st) brv = do
     SB.stanDeclareRHS sn st "" $ SB.var brv `SB.times` SB.var sigmaVar
     return ()

@@ -1237,10 +1237,10 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
               (Just psGroup)
         postStrat
 
-{-
+
         SB.generateLogLikelihood' voteData ((distT, logitT_ps <$> thetaTMultF (SB.dataSetName voteData) q', votes)
                                              :| [(distP, logitP_ps <$> thetaPMultF (SB.dataSetName voteData) q', dVotes)])
--}
+
         return ()
 
       addModelIdAndYear :: F.Record (ks V.++ '[ModeledShare])

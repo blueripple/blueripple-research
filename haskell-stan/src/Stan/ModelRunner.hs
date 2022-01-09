@@ -47,15 +47,19 @@ makeDefaultModelRunnerConfig :: forall st cd r. SC.KnitStan st cd r
   -> Maybe CS.StancConfig
   -> K.Sem r SC.ModelRunnerConfig
 makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfigM = do
-  writeModel runnerInputNames modelM
+  writeModel runnerInputNames True modelM
+  writeModel runnerInputNames False modelM
   stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelPath runnerInputNames)
   let stanMakeConfig = stanMakeConfig' {CS.stancFlags = stancConfigM}
+  stanMakeNoGQConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelNoGQPath runnerInputNames)
+  let stanMakeNoGQConfig = stanMakeNoGQConfig' {CS.stancFlags = stancConfigM}
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig [])
   return $
     SC.ModelRunnerConfig
       stanMakeConfig
+      stanMakeNoGQConfig
       (sampleExeConfig runnerInputNames stanMCParameters)
       (mGQExeConfig runnerInputNames stanMCParameters)
       stanSummaryConfig
@@ -67,16 +71,18 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
 
 writeModel ::  K.KnitEffects r
   => SC.RunnerInputNames
+  -> Bool
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
   -> Maybe (SB.GeneratedQuantities, SB.StanModel)
   -> K.Sem r ()
-writeModel runnerInputNames modelM = do
+writeModel runnerInputNames noGQ modelM = do
   let modelDir = SC.rinModelDir runnerInputNames
-      modelName = SC.rinModel runnerInputNames
+      modelName = let mn = SC.rinModel runnerInputNames in mn <> if noGQ then SC.noGQSuffix else ""
   case modelM of
     Nothing -> return ()
-    Just (gq, m) -> do
+    Just (gq', m) -> do
       createDirIfNecessary modelDir
+      let gq = if noGQ then SB.NoGQ else gq'
       modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDir modelName
       case modelState of
         SB.New -> K.logLE K.Diagnostic "Given model was new."
@@ -88,7 +94,7 @@ writeModel runnerInputNames modelM = do
 
 sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
 sampleExeConfig rin smp =
-    (CS.makeDefaultSample (toString $  SC.rinModel rin) Nothing)
+    (CS.makeDefaultSample (toString $  SC.rinModelNoGQ rin) Nothing)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
     , CS.output = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> ".csv")
     , CS.numChains = Just $ SC.smcNumChains smp
@@ -256,15 +262,16 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   (modelIndices_C, gqIndices_C) <- wrangleData @st @cd config dataWrangler cb md_C gq_C toPredict
+  curModelNoGQ_C <- SC.modelNoGQDependency $ SC.mrcInputNames config
   curModel_C <- SC.modelDependency $ SC.mrcInputNames config
   -- run model and/or build gq samples as necessary
   (modelResDep, mGQResDep) <- do
-    let runModelDeps = (,) <$> modelIndices_C <*> curModel_C -- indices carries data update time
+    let runModelDeps = (,) <$> modelIndices_C <*> curModelNoGQ_C -- indices carries data update time
         runModel = do
           let modelExeConfig = SC.mrcStanExeModelConfig config
-          K.logLE K.Diagnostic $ "Running Model: " <> SC.rinModel (SC.mrcInputNames config)
+          K.logLE K.Diagnostic $ "Running Model: " <> SC.rinModelNoGQ (SC.mrcInputNames config)
           K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine modelExeConfig)
-          K.liftKnit $ CS.stan (SC.modelPath $ SC.mrcInputNames config) modelExeConfig
+          K.liftKnit $ CS.stan (SC.modelNoGQPath $ SC.mrcInputNames config) modelExeConfig
           K.logLE K.Diagnostic $ "Finished " <> SC.rinModel (SC.mrcInputNames config)
         runGQDeps = (,,) <$> modelIndices_C <*> gqIndices_C <*> curModel_C
         runOneGQ n = case SC.mrcStanExeGQConfigM config of
@@ -289,8 +296,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."
-      K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
-      K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
+      K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeNoGQConfig config))
+      K.liftKnit $ CS.make (SC.mrcStanMakeNoGQConfig config)
       SC.combineData (SC.mrcInputNames config)
       res <- runModel
       when (SC.mrcRunDiagnose config) $ do
@@ -306,6 +313,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency gqSamplesFileNames
         res_C <- K.updateIf gqSamplesFileDep runGQDeps $ const $ do
           K.logLE K.Diagnostic "Stan GQ outputs older than model input data, GQ input data or model code. Running GQ."
+          K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
+          K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
           SC.combineData $ SC.mrcInputNames config
           mRes <- maybe Nothing (const $ Just ()) . sequence <$> K.sequenceConcurrently (fmap runOneGQ [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.knitMaybe "There was an error running GQ for a chain." mRes
