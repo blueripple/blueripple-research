@@ -878,7 +878,7 @@ groupModelBuilder groupModel binaryPrior sigmaPrior voteData = do
          SB.addExprLine ("nonCentered for " <> SB.taggedGroupName gtt)
            $ SB.vectorizedOne (SB.taggedGroupName gtt) (SB.var bv' `SB.eq` (SB.var (muV gtt s) `SB.plus`  (SB.var (sigmaV gtt s) `SB.times`  SB.var brv)))
        rawPriorF gtt s v = SB.addExprLine "ELectionResult.groupModel"
-         $ SB.vectorizedOne (SB.taggedGroupName gtt) $ SB.var v `SB.eq` SB.stdNormal
+         $ SB.vectorizedOne (SB.taggedGroupName gtt) $ SB.var v `SB.vectorSample` SB.stdNormal
        hierGroupModelNC :: forall k gq md.SB.GroupTypeTag k -> Text -> SB.GroupModel gq md
        hierGroupModelNC gtt s = SB.Hierarchical SB.STZNone (hierHPs gtt s) (SB.NonCentered (rawPriorF gtt s) (ncGMCenterF gtt s))
        gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt

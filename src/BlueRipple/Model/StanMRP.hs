@@ -203,7 +203,7 @@ addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, l
         let bE = SB.bracket $ SB.csExprs (SB.var ev :| [SB.negate $ SB.var ev])
             indexedE = SB.indexBy bE nameComp
         vectorizedV <- SB.inBlock SB.SBModel
-                       $ SB.vectorizeExpr ("eps" <> suffix <> "_" <> nameComp) bE (SB.dataSetName rtt)
+                       $ SB.vectorizeExpr ("eps" <> suffix <> "_" <> nameComp) indexedE (SB.dataSetName rtt)
         return (SB.var vectorizedV, indexedE)
       nonBinaryMVH = do
         let muV = SB.StanVar ("mu" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
