@@ -128,11 +128,11 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
     smcParameters
     (Just stancConfig)
-  let resultCacheKey = "stan/MRP/result/" <> SC.finalPrefix runnerInputNames <> ".bin"
+  let resultCacheKey = "stan/MRP/result/" <> SC.mergedPrefix SC.MRFull runnerInputNames <> ".bin"
   when clearCache $ do
     SM.deleteStaleFiles  @BR.SerializerC @BR.CacheData stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
-  modelDep <- SM.modelDependency runnerInputNames
+  modelDep <- SM.modelDependency SC.MRFull runnerInputNames
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
   K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
   K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)

@@ -67,7 +67,7 @@ type CCESDataWrangler ks b = SC.DataWrangler
 type StateASER5 = BR.StateAbbreviation ': DT.CatColsASER5
 
 ccesDataWrangler2 :: CCESDataWrangler StateASER5 (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c _ -> "stan/index/" <> SC.finalPrefix (SC.mrcInputNames c) <> ".bin") f Nothing g where
+ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c _ -> "stan/index/" <> SC.outputPrefix SC.MRFull (SC.mrcInputNames c) <> ".bin") f Nothing g where
   enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
@@ -187,7 +187,7 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
                 (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) Nothing Nothing Nothing)
                 (Just stancConfig)
   let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> "_" <> modelName <> ".bin"
-  modelDep <- SC.modelDependency $ SC.mrcInputNames stanConfig
+  modelDep <- SC.modelDependency SC.MRFull $ SC.mrcInputNames stanConfig
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
       getResults s tp inputAndIndex_C _ = do
         (input, _) <- K.ignoreCacheTime inputAndIndex_C

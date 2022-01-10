@@ -52,13 +52,13 @@ rSetWorkingDirectory config dirBase = do
   return $ "setwd(\"" <> cwd <> "\")"
 -}
 
-rReadStanCSV :: SC.ModelRunnerConfig -> T.Text -> Text
-rReadStanCSV config fitName = fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> toText x <> "\"") (SC.finalSamplesFileNames config) <> ")"
+rReadStanCSV :: SC.ModelRun -> SC.ModelRunnerConfig -> T.Text -> Text
+rReadStanCSV mr config fitName = fitName <> " <- read_stan_csv(" <> rArray (\x -> "\"" <> toText x <> "\"") (SC.finalSamplesFileNames mr config) <> ")"
 
-rStanModel :: SC.ModelRunnerConfig -> T.Text
-rStanModel config =
+rStanModel :: SC.ModelRun -> SC.ModelRunnerConfig -> T.Text
+rStanModel mr config =
   let rin = SC.mrcInputNames config
-      in "stan_model(" <> SC.rinModelDir rin <> "/" <> SC.modelFileName rin <> ")"
+      in "stan_model(" <> SC.rinModelDir rin <> "/" <> SC.modelFileName mr rin <> ")"
 
 llName :: Text -> Text
 llName = ("ll_" <>)
@@ -100,9 +100,9 @@ unwrap :: UnwrapJSON -> T.Text
 unwrap (UnwrapNamed jn rn) = rn <> " <- jsonData $ " <> jn <> "\n"
 unwrap (UnwrapExpr je rn) = rn <> " <- " <> je <> "\n"
 
-shinyStanScript :: SC.ModelRunnerConfig -> [UnwrapJSON] -> T.Text
-shinyStanScript config unwrapJSONs =
-  let readStanCSV = rReadStanCSV config "stanfit"
+shinyStanScript :: SC.ModelRun -> SC.ModelRunnerConfig -> [UnwrapJSON] -> T.Text
+shinyStanScript mr config unwrapJSONs =
+  let readStanCSV = rReadStanCSV mr config "stanfit"
       unwrapCode = if null unwrapJSONs
                    then ""
                    else
@@ -120,9 +120,9 @@ shinyStanScript config unwrapJSONs =
                 <> "launch_shinystan(stanfit)\n"
   in rScript
 
-looOne :: SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
-looOne config fitName mLooName nCores =
-  let readStanCSV = rReadStanCSV config fitName
+looOne :: SC.ModelRun -> SC.ModelRunnerConfig -> Text -> Maybe Text -> Int -> Text
+looOne mr config fitName mLooName nCores =
+  let readStanCSV = rReadStanCSV mr config fitName
       psisName = "psis_" <> fitName
       looName = fromMaybe ("loo_" <> fitName) mLooName
       samplesName = "samples_" <> fitName
@@ -142,16 +142,16 @@ looOne config fitName mLooName nCores =
                  <> rMessageText ("E.g., 'ppc_loo_pit_qq(y,as.matrix(" <> samplesName <> "$y_ppred)," <> psisName <> "$log_weights)'") <> "\n"
   in rScript
 
-looScript ::  SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
-looScript config looName nCores =
-  let justLoo = looOne config "stanfit" (Just looName) nCores
+looScript ::  SC.ModelRun -> SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
+looScript mr config looName nCores =
+  let justLoo = looOne mr config "stanfit" (Just looName) nCores
   in addLibs libsForLoo <> justLoo
 
 
 compareScript ::  Foldable f
-              => f SC.ModelRunnerConfig -> Int -> Maybe Text -> Text
-compareScript configs nCores mOutCSV =
-  let  doOne (n, c) = looOne c (SC.finalPrefix $ SC.mrcInputNames c) (Just $ "model" <> show n) nCores
+              => SC.ModelRun -> f SC.ModelRunnerConfig -> Int -> Maybe Text -> Text
+compareScript mr configs nCores mOutCSV =
+  let  doOne (n, c) = looOne mr c (SC.outputPrefix mr $ SC.mrcInputNames c) (Just $ "model" <> show n) nCores
        (numModels, configList) = Foldl.fold ((,) <$> Foldl.length <*> Foldl.list) configs
        compare = "c <- loo_compare(" <> T.intercalate "," (("model" <>) . show <$> [1..numModels]) <> ")\n"
        writeTable = rMessage "c,simplify=FALSE" <> "\n"
@@ -176,9 +176,9 @@ type LOO_DataR = [ELPD_Diff, SE_Diff, ELPD_Loo, SE_ELPD_Loo, P_Loo, SE_P_Loo, LO
 type LOO_R = Model : LOO_DataR
 
 compareModels :: forall st cd r f. (SC.KnitStan st cd r, Traversable f)
-              => f (Text, SC.ModelRunnerConfig) -> Int -> K.Sem r (F.FrameRec LOO_R)
-compareModels configs nCores = do
-  let script = compareScript (snd <$> configs) nCores Nothing
+              => SC.ModelRun -> f (Text, SC.ModelRunnerConfig) -> Int -> K.Sem r (F.FrameRec LOO_R)
+compareModels mr configs nCores = do
+  let script = compareScript mr (snd <$> configs) nCores Nothing
   let cp = Process.proc "R" ["BATCH", "--no-save", "--no-restore"]
   K.liftKnit  @IO $ putTextLn "Running R for loo comparisons..."
   rOut <- toText <$> (K.liftKnit $ Process.readCreateProcess cp (toString script))

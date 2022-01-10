@@ -46,34 +46,28 @@ makeDefaultModelRunnerConfig :: forall st cd r. SC.KnitStan st cd r
   -> SC.StanMCParameters
   -> Maybe CS.StancConfig
   -> K.Sem r SC.ModelRunnerConfig
-makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfigM = do
-  stanMakeNoGQConfig <- do
-    writeModel runnerInputNames MVNoGQ modelM
-    stanMakeNoGQConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelNoGQPath runnerInputNames)
-    return $  stanMakeNoGQConfig' {CS.stancFlags = stancConfigM}
-  mStanMakeOnlyLLConfig <- case modelM of
-    Nothing -> return Nothing
-    Just (_, m) -> case SB.genLogLikelihoodBlock m == T.empty of
-      True -> return Nothing
-      False -> do
-        writeModel runnerInputNames MVOnlyLL modelM
-        stanOnlyLLConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelOnlyLLPath runnerInputNames)
-        return $ Just $ stanOnlyLLConfig' {CS.stancFlags = stancConfigM}
-  stanMakeConfig <- do
-    writeModel runnerInputNames MVFull modelM
-    stanMakeConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelPath runnerInputNames)
-    return $  stanMakeConfig' {CS.stancFlags = stancConfigM}
+makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters mStancConfig = do
+  let doOnlyLL = case modelM of
+        Nothing -> False
+        Just (_, m) ->  SB.genLogLikelihoodBlock m /= T.empty
+      stanMakeConfig mr = do
+        writeModel runnerInputNames mr modelM
+        stanMakeNoGQConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelPath mr runnerInputNames)
+        return $  stanMakeNoGQConfig' {CS.stancFlags = mStancConfig}
+  stanMakeNoGQConfig <- stanMakeConfig SC.MRNoGQ
+  stanMakeOnlyLLConfig <- stanMakeConfig SC.MROnlyLL
+  stanMakeFullConfig <- stanMakeConfig SC.MRFull
+  let makeConfigs :: SC.ModelRun -> CS.MakeConfig
+      makeConfigs SC.MRNoGQ = stanMakeNoGQConfig
+      makeConfigs SC.MROnlyLL = stanMakeOnlyLLConfig
+      makeConfigs SC.MRFull = stanMakeFullConfig
   stanSummaryConfig <-
     K.liftKnit $
       CS.useCmdStanDirForStansummary (CS.makeDefaultSummaryConfig [])
   return $
     SC.ModelRunnerConfig
-      stanMakeNoGQConfig
-      mStanMakeOnlyLLConfig
-      stanMakeConfig
-      (sampleExeConfig runnerInputNames stanMCParameters)
-      (onlyLLExeConfig runnerInputNames stanMCParameters)
-      (gqExeConfig runnerInputNames stanMCParameters)
+      doOnlyLL
+      makeConfigs
       stanSummaryConfig
       runnerInputNames
       stanMCParameters
@@ -81,32 +75,25 @@ makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters stancConfi
       True
 {-# INLINEABLE makeDefaultModelRunnerConfig #-}
 
-data ModelVersion = MVNoGQ | MVOnlyLL | MVFull deriving (Show, Eq)
-
-modelSuffix :: ModelVersion -> Text
-modelSuffix MVNoGQ = SC.noGQSuffix
-modelSuffix MVOnlyLL = SC.onlyLLSuffix
-modelSuffix MVFull = ""
-
-modelGQ :: ModelVersion -> SB.GeneratedQuantities -> SB.GeneratedQuantities
-modelGQ MVNoGQ _ = SB.NoGQ
-modelGQ MVOnlyLL _ = SB.OnlyLL
-modelGQ MVFull x = x
+modelGQ :: SC.ModelRun -> SB.GeneratedQuantities -> SB.GeneratedQuantities
+modelGQ SC.MRNoGQ _ = SB.NoGQ
+modelGQ SC.MROnlyLL _ = SB.OnlyLL
+modelGQ SC.MRFull x = SB.NoLL
 
 writeModel ::  K.KnitEffects r
   => SC.RunnerInputNames
-  -> ModelVersion
+  -> SC.ModelRun
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
   -> Maybe (SB.GeneratedQuantities, SB.StanModel)
   -> K.Sem r ()
-writeModel runnerInputNames modelVersion modelM = do
+writeModel runnerInputNames modelRun modelM = do
   let modelDir = SC.rinModelDir runnerInputNames
-      modelName = SC.rinModel runnerInputNames <> modelSuffix modelVersion
+      modelName = SC.modelName modelRun runnerInputNames
   case modelM of
     Nothing -> return ()
     Just (gq', m) -> do
       createDirIfNecessary modelDir
-      let gq = modelGQ modelVersion gq'
+      let gq = modelGQ modelRun gq'
       modelState <- K.liftKnit $ SB.renameAndWriteIfNotSame gq m modelDir modelName
       case modelState of
         SB.New -> K.logLE K.Diagnostic "Given model was new."
@@ -118,9 +105,9 @@ writeModel runnerInputNames modelVersion modelM = do
 
 sampleExeConfig :: SC.RunnerInputNames -> SC.StanMCParameters -> CS.StanExeConfig
 sampleExeConfig rin smp =
-    (CS.makeDefaultSample (toString $  SC.rinModelNoGQ rin) Nothing)
+    (CS.makeDefaultSample (toString $  SC.modelName SC.MRNoGQ rin) Nothing)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
-    , CS.output = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> ".csv")
+    , CS.output = Just (SC.outputDirPath rin $ SC.outputPrefix SC.MRNoGQ rin <> ".csv")
     , CS.numChains = Just $ SC.smcNumChains smp
     , CS.numThreads = Just $ SC.smcNumThreads smp
     , CS.numSamples = SC.smcNumSamplesM smp
@@ -131,29 +118,16 @@ sampleExeConfig rin smp =
     }
 {-# INLINEABLE sampleExeConfig #-}
 
-onlyLLExeConfig :: SC.RunnerInputNames
+gqExeConfig :: SC.ModelRun
+                -> SC.RunnerInputNames
                 -> SC.StanMCParameters
                 -> Int
                 -> CS.StanExeConfig
-onlyLLExeConfig rin smp n = do
-  (CS.makeDefaultGenerateQuantities (toString $ SC.rinModelOnlyLL rin) n)
+gqExeConfig mr rin smp n = do
+  (CS.makeDefaultGenerateQuantities (toString $ SC.modelName mr rin) n)
     { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
-    , CS.fittedParams = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> "_" <> show n <> ".csv")
-    , CS.output = Just (SC.outputDirPath rin $ SC.onlyLLPrefix rin <> "_gq" <> show n <> ".csv")
-    , CS.randomSeed = SC.smcRandomSeed smp
-    }
-{-# INLINEABLE onlyLLExeConfig #-}
-
-
-gqExeConfig :: SC.RunnerInputNames
-            -> SC.StanMCParameters
-            -> Int
-            -> CS.StanExeConfig
-gqExeConfig rin smp n = do
-  (CS.makeDefaultGenerateQuantities (toString $ SC.rinModel rin) n)
-    { CS.inputData = Just (SC.dataDirPath rin $ SC.combinedDataFileName rin)
-    , CS.fittedParams = Just (SC.outputDirPath rin $ SC.modelPrefix rin <> "_" <> show n <> ".csv")
-    , CS.output = Just (SC.outputDirPath rin $ SC.finalPrefix rin <> "_gq" <> show n <> ".csv")
+    , CS.fittedParams = Just (SC.outputDirPath rin $ SC.outputPrefix SC.MRNoGQ rin <> "_" <> show n <> ".csv")
+    , CS.output = Just (SC.outputDirPath rin $ SC.outputPrefix mr rin <> "_" <> show n <> ".csv")
     , CS.randomSeed = SC.smcRandomSeed smp
     }
 {-# INLINEABLE gqExeConfig #-}
@@ -171,15 +145,12 @@ shinyOf x@(ShinyStan _) = x
 shinyOf Loo = None
 shinyOf (Both x) = ShinyStan x
 
-writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> Text -> SC.ModelRunnerConfig -> K.Sem r ()
-writeRScripts rScripts rSamplesPrefix config = do
-{-  let rSamplesPrefix = case idt of
-        SC.ModelData -> SC.modelPrefix (SC.mrcInputNames config)
-        SC.GQData -> SC.finalPrefix (SC.mrcInputNames config)
--}
-  let write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) rSamplesPrefix  <> fromMaybe "" mSuffix <> ".R") t
-      writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript config ujs
-      writeLoo = write Nothing $ SR.looScript config rSamplesPrefix 10
+writeRScripts :: forall st cd r. SC.KnitStan st cd r => RScripts -> SC.ModelRun -> SC.ModelRunnerConfig -> K.Sem r ()
+writeRScripts rScripts mr config = do
+  let scriptPrefix = SC.mergedPrefix mr $ SC.mrcInputNames config
+      write mSuffix t = writeFileText (SC.rDirPath (SC.mrcInputNames config) scriptPrefix   <> fromMaybe "" mSuffix <> ".R") t
+      writeShiny ujs = write (Just "_shinystan") $ SR.shinyStanScript mr config ujs
+      writeLoo = write Nothing $ SR.looScript mr config scriptPrefix 10
   case rScripts of
     None -> pure ()
     ShinyStan ujs -> writeShiny ujs
@@ -306,102 +277,87 @@ runModel :: forall st cd md gq b p c r.
   -> K.Sem r c
 runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C = K.wrapPrefix "Stan.ModelRunner.runModel" $ do
   K.logLE K.Info "running Model (if necessary)"
-  let modelSamplesFileNames = SC.modelSamplesFileNames config
+  let runnerInputNames = SC.mrcInputNames config
+      stanMCParameters = SC.mrcStanMCParameters config
   checkClangEnv
   createDirIfNecessary (SC.mrcModelDir config)
   createDirIfNecessary (SC.mrcModelDir config <> "/data") -- json inputs
   createDirIfNecessary (SC.mrcModelDir config <> "/output") -- csv model run output
   createDirIfNecessary (SC.mrcModelDir config <> "/R") -- scripts to load fit into R for shinyStan or loo.
   (modelIndices_C, gqIndices_C) <- wrangleData @st @cd config dataWrangler cb md_C gq_C toPredict
-  curModelNoGQ_C <- SC.modelNoGQDependency $ SC.mrcInputNames config
-  curModel_C <- SC.modelDependency $ SC.mrcInputNames config
+  curModelNoGQ_C <- SC.modelDependency SC.MRNoGQ runnerInputNames
+  curModel_C <- SC.modelDependency SC.MRFull runnerInputNames
   -- run model and/or build gq samples as necessary
   (modelResDep, mGQResDep) <- do
     let runModel = do
-          let modelExeConfig = SC.mrcStanExeModelConfig config
-          K.logLE K.Diagnostic $ "Running Model: " <> SC.rinModelNoGQ (SC.mrcInputNames config)
+          let modelExeConfig = sampleExeConfig runnerInputNames stanMCParameters
+          K.logLE K.Diagnostic $ "Running Model: " <> SC.modelName SC.MRNoGQ runnerInputNames
           K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine modelExeConfig)
-          K.liftKnit $ CS.stan (SC.modelNoGQPath $ SC.mrcInputNames config) modelExeConfig
-          K.logLE K.Diagnostic $ "Finished " <> SC.rinModel (SC.mrcInputNames config)
-        runOneLL n = do
-          let llExeConfig = SC.mrcStanExeOnlyLLConfig config n
-          K.logLE K.Diagnostic $ "Generating log likelihood"
-          K.logLE K.Diagnostic $ "Using fitted parameters from model " <> SC.rinModel (SC.mrcInputNames config)
-          K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ llExeConfig)
-          K.liftKnit $ CS.stan (SC.modelOnlyLLPath $ SC.mrcInputNames config) llExeConfig
-          K.logLE K.Diagnostic $ "Finished generating log likelihood"
+          K.liftKnit $ CS.stan (SC.modelPath SC.MRNoGQ runnerInputNames) modelExeConfig
+          K.logLE K.Diagnostic $ "Finished " <> SC.modelName SC.MRNoGQ runnerInputNames
+        runOneGQ mr n = do
+          let exeConfig = gqExeConfig mr runnerInputNames stanMCParameters n
+          K.logLE K.Diagnostic $ "Generating " <> show mr
+          K.logLE K.Diagnostic $ "Using fitted parameters from model " <> SC.modelName SC.MRNoGQ runnerInputNames
+          K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ exeConfig)
+          K.liftKnit $ CS.stan (SC.modelPath mr runnerInputNames) exeConfig
+          K.logLE K.Diagnostic $ "Finished generating " <> show mr
           K.logLE K.Diagnostic $ "Merging samples..."
-          samplesFP <- K.knitMaybe "runModel.runOneLL: fittedParams field is Nothing in ll StanExeConfig"
-            $ CS.fittedParams llExeConfig
-          llFP <- K.knitMaybe "runModel.runOneLL: output field is Nothing in ll StanExeConfig" $ CS.output llExeConfig
+          samplesFP <- K.knitMaybe "runModel.runOneGQ: fittedParams field is Nothing in exeConfig"
+            $ CS.fittedParams exeConfig
+          llFP <- K.knitMaybe "runModel.runOneGQ: output field is Nothing in exeConfig" $ CS.output exeConfig
           let mergedFP = SC.outputDirPath (SC.mrcInputNames config)
-                $ SC.llPrefix (SC.mrcInputNames config) <> "_" <> show n <> ".csv"
+                $ SC.mergedPrefix mr runnerInputNames <> "_" <> show n <> ".csv"
           K.liftKnit $ SCSV.appendGQsToSamplerCSV samplesFP llFP mergedFP
-        runOneGQ n = do
-          let gqExeConfig = SC.mrcStanExeGQConfig config n
-          gqName <- case SC.rinGQ (SC.mrcInputNames config) of
-            Nothing -> K.knitError "runModel.runGQ: Trying to run GQ setup but GQ name not set (rinGQ is Nothing)"
-            Just name -> return name
-          K.logLE K.Diagnostic $ "Running GQ: " <> gqName
-          K.logLE K.Diagnostic $ "Using results from model " <> SC.rinModel (SC.mrcInputNames config)
-          K.logLE K.Diagnostic $ "Command: " <> toText (CS.toStanExeCmdLine $ gqExeConfig)
-          K.liftKnit $ CS.stan (SC.modelPath $ SC.mrcInputNames config) gqExeConfig
-          K.logLE K.Diagnostic $ "Finished GQ: " <> gqName
-          K.logLE K.Diagnostic $ "Merging samples..."
-          samplesFP <- K.knitMaybe "runModel.runOneGQ: fittedParams field is Nothing in gq StanExeConfig" $ CS.fittedParams gqExeConfig
-          gqFP <- K.knitMaybe "runModel.runOneGQ: output field is Nothing in gq StanExeConfig" $ CS.output gqExeConfig
-          mergedFP <- K.knitMaybe "runModel.runOneGQ: gqPrefix returned Nothing when building mergedFP" $ do
-            gqPrefix <- SC.gqPrefix (SC.mrcInputNames config)
-            return $ SC.outputDirPath (SC.mrcInputNames config) $ gqPrefix <> "_" <> show n <> ".csv"
-          K.liftKnit $ SCSV.appendGQsToSamplerCSV samplesFP gqFP mergedFP
     SC.combineData (SC.mrcInputNames config)  -- this only does anything if either data set has changed
+    let modelSamplesFileNames =  SC.samplesFileNames SC.MRNoGQ config
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     let runModelDeps = (,) <$> modelIndices_C <*> curModelNoGQ_C -- indices carries data update time
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."
-      K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeNoGQConfig config))
-      K.liftKnit $ CS.make (SC.mrcStanMakeNoGQConfig config)
+      K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config SC.MRNoGQ))
+      K.liftKnit $ CS.make (SC.mrcStanMakeConfig config SC.MRNoGQ)
       res <- runModel
       when (SC.mrcRunDiagnose config) $ do
         K.logLE K.Info "Running stan diagnostics"
         K.liftKnit $ CS.diagnoseCSD modelSamplesFileNames
       K.logLE K.Diagnostic "writing R scripts for new model run."
-      writeRScripts @st @cd (shinyOf rScriptsToWrite) (SC.modelPrefix $ SC.mrcInputNames config) config
+      writeRScripts @st @cd (shinyOf rScriptsToWrite) SC.MRNoGQ config
       return res
-    case SC.mrcStanMakeOnlyLLConfigM config of
-      Nothing -> return ()
-      Just llOnlyMakeConfig -> do
-        curModelOnlyLL_C <- SC.modelOnlyLLDependency $ SC.mrcInputNames config
+    case SC.mrcDoOnlyLL config of
+      False -> return ()
+      True -> do
+        curModelOnlyLL_C <- SC.modelDependency SC.MROnlyLL runnerInputNames
         let runLLDeps  = (,) <$> modelIndices_C <*> curModelOnlyLL_C -- indices carries data update time
-        let onlySamplesFileNames = SC.onlyLLSamplesFileNames config
+        let onlySamplesFileNames = SC.samplesFileNames SC.MROnlyLL config
         onlyLLSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency onlySamplesFileNames
         K.updateIf onlyLLSamplesFileDep runLLDeps $ \_ -> do
+          let llOnlyMakeConfig = SC.mrcStanMakeConfig config SC.MROnlyLL
           K.logLE K.Diagnostic "Stan log likelihood  outputs older than model input data or model code. Generating LL."
           K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine llOnlyMakeConfig)
           K.liftKnit $ CS.make llOnlyMakeConfig
           mRes <- maybe Nothing (const $ Just ()) . sequence
-                  <$> K.sequenceConcurrently (fmap runOneLL [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
+                  <$> K.sequenceConcurrently (fmap (runOneGQ SC.MROnlyLL) [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.knitMaybe "There was an error generating LL for a chain." mRes
-        writeRScripts @st @cd (looOf rScriptsToWrite) (SC.llPrefix $ SC.mrcInputNames config) config
+        writeRScripts @st @cd (looOf rScriptsToWrite) SC.MROnlyLL config
         return ()
-    mGQRes_C <- case SC.gqSamplesFileNames config of
+    mGQRes_C <- case SC.rinGQ runnerInputNames of
       Nothing -> pure Nothing
-      Just gqSamplesFileNames -> do
+      Just _ -> do
         let runGQDeps = (,,) <$> modelIndices_C <*> gqIndices_C <*> curModel_C
-        gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency gqSamplesFileNames
+        gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency (SC.samplesFileNames SC.MRFull config)
         res_C <- K.updateIf gqSamplesFileDep runGQDeps $ const $ do
           K.logLE K.Diagnostic "Stan GQ outputs older than model input data, GQ input data or model code. Running GQ."
-          K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config))
-          K.liftKnit $ CS.make (SC.mrcStanMakeConfig config)
+          K.logLE (K.Debug 1) $ "Make CommandLine: " <> show (CS.makeConfigToCmdLine (SC.mrcStanMakeConfig config SC.MRFull))
+          K.liftKnit $ CS.make (SC.mrcStanMakeConfig config SC.MRFull)
 --          SC.combineData $ SC.mrcInputNames config
           mRes <- maybe Nothing (const $ Just ()) . sequence
-                <$> K.sequenceConcurrently (fmap runOneGQ [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
+                <$> K.sequenceConcurrently (fmap (runOneGQ SC.MRFull) [1 .. (SC.smcNumChains $ SC.mrcStanMCParameters config)])
           K.knitMaybe "There was an error running GQ for a chain." mRes
-        gqPrefix <- K.knitMaybe "runModel (updating GQ): gqPrefix is Nothing!" $ SC.gqPrefix $ SC.mrcInputNames config
-        writeRScripts @st @cd (shinyOf rScriptsToWrite) gqPrefix config
+        writeRScripts @st @cd (shinyOf rScriptsToWrite) SC.MRFull config
         return $ Just res_C
     return (modelRes_C, mGQRes_C)
-  let outputFileNames = SC.finalSamplesFileNames config
+  let outputFileNames = SC.finalSamplesFileNames SC.MRFull config
       outputDep = case mGQResDep of
         Nothing -> modelResDep
         Just gqResDep -> const <$> gqResDep <*> modelResDep
@@ -409,7 +365,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         K.logLE K.Diagnostic "Stan summary older output.  Re-summarizing."
         K.logLE (K.Debug 1) $
           "Summary command: "
-          <> show ((CS.cmdStanDir . SC.mrcStanMakeConfig $ config) ++ "/bin/stansummary")
+          <> show ((CS.cmdStanDir $ SC.mrcStanMakeConfig config SC.MRFull) ++ "/bin/stansummary")
           <> " "
           <> T.intercalate " " (fmap T.pack (CS.stansummaryConfigToCmdLine (SC.mrcStanSummaryConfig config)))
         summary <- K.liftKnit $ CS.stansummary ((SC.mrcStanSummaryConfig config) {CS.sampleFiles = csvFileNames})
@@ -429,8 +385,8 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         Just gqResDep -> Just $ (\a b _ -> (a, b)) <$> gq_C <*> gqIndices_C <*> gqResDep
   case makeResult of
     SC.UseSummary f -> do
-      let summaryFileName = fromMaybe (SC.modelSummaryFileName config) $ SC.gqSummaryFileName config
-          samplesFileNames = SC.finalSamplesFileNames config
+      let summaryFileName = SC.summaryFileName SC.MRFull config
+          samplesFileNames = SC.finalSamplesFileNames SC.MRFull config
       summary <-  getSummary samplesFileNames (SC.outputDirPath (SC.mrcInputNames config) summaryFileName)
       when (SC.mrcLogSummary config) $ do
         K.logLE K.Info $ "Stan Summary:\n"
@@ -444,16 +400,15 @@ data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord
 
 deleteStaleFiles :: forall st cd r.SC.KnitStan st cd r => SC.ModelRunnerConfig -> [StaleFiles] -> K.Sem r ()
 deleteStaleFiles config staleFiles = do
-  let modelSamplesFilePaths = SC.modelSamplesFileNames config
-      gqSamplesFilePaths = SC.gqSamplesFileNames config
-      modelSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.modelSummaryFileName config
-      mGQSummaryPath = SC.outputDirPath (SC.mrcInputNames config) <$> SC.gqSummaryFileName config
+  let samplesFilePaths = concat $ fmap (\mr -> SC.samplesFileNames mr config) [SC.MRNoGQ, SC.MROnlyLL, SC.MRFull]
+      modelSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.summaryFileName SC.MRNoGQ config
+      gqSummaryPath = SC.outputDirPath (SC.mrcInputNames config) $ SC.summaryFileName SC.MRFull config
       modelDataPath = SC.dataDirPath (SC.mrcInputNames config) $ SC.modelDataFileName $ SC.mrcInputNames config
       mGQDataPath = SC.dataDirPath (SC.mrcInputNames config) <$> (SC.gqDataFileName $ SC.mrcInputNames config)
       toDelete x = case x of
         StaleData -> [modelDataPath] ++ maybe [] one mGQDataPath
-        StaleOutput -> modelSamplesFilePaths ++ fromMaybe [] gqSamplesFilePaths
-        StaleSummary -> [modelSummaryPath] ++ maybe [] one mGQSummaryPath
+        StaleOutput -> samplesFilePaths
+        StaleSummary -> [modelSummaryPath, gqSummaryPath]
       exists fp = K.liftKnit $ Dir.doesFileExist fp >>= \x -> return $ if x then Just fp else Nothing
       filesToDelete = ordNub $ concat $ toDelete <$> staleFiles
   extantPaths <- catMaybes <$> traverse exists filesToDelete

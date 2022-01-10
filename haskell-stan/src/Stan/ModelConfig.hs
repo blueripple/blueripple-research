@@ -26,34 +26,38 @@ data RunnerInputNames = RunnerInputNames
   , rinData :: Text
   }  deriving (Show, Ord, Eq)
 
-noGQSuffix :: Text
-noGQSuffix = "_noGQ"
-
--- for model file/samples/dep
-onlyLLSuffix :: Text
-onlyLLSuffix = "_onlyLL"
+data ModelRun = MRNoGQ | MROnlyLL | MRFull deriving (Show, Eq)
 
 -- for merged samples
 llSuffix :: Text
 llSuffix = "_LL"
 
-rinModelNoGQ :: RunnerInputNames -> Text
-rinModelNoGQ rin = rinModel rin <> noGQSuffix
+modelSuffix :: ModelRun -> Text
+modelSuffix MRNoGQ = "_noGQ"
+modelSuffix MROnlyLL = "_onlyLL"
+modelSuffix MRFull = "_GQ"
+{-# INLINEABLE modelSuffix #-}
 
-rinModelOnlyLL :: RunnerInputNames -> Text
-rinModelOnlyLL rin = rinModel rin <> onlyLLSuffix
+unmergedSamplesSuffix :: ModelRun -> Text
+unmergedSamplesSuffix = modelSuffix
+{-# INLINEABLE unmergedSamplesSuffix #-}
+
+mergedSamplesSuffix :: ModelRun -> Text
+mergedSamplesSuffix MRNoGQ = "_noGQ"
+mergedSamplesSuffix MROnlyLL = "_ll"
+mergedSamplesSuffix MRFull = ""
+{-# INLINEABLE mergedSamplesSuffix #-}
+
+modelName :: ModelRun -> RunnerInputNames -> Text
+modelName mr rin = rinModel rin <> modelSuffix mr
+{-# INLINEABLE modelName #-}
 
 modelDirPath :: RunnerInputNames -> Text -> FilePath
 modelDirPath rin fName = toString $ rinModelDir rin <> "/" <> fName
 
-modelPath :: RunnerInputNames -> FilePath
-modelPath rin = modelDirPath rin $ rinModel rin
-
-modelNoGQPath :: RunnerInputNames -> FilePath
-modelNoGQPath rin = modelDirPath rin $ rinModel rin <> noGQSuffix
-
-modelOnlyLLPath :: RunnerInputNames -> FilePath
-modelOnlyLLPath rin = modelDirPath rin $ rinModel rin <> onlyLLSuffix
+modelPath :: ModelRun -> RunnerInputNames -> FilePath
+modelPath mr rin = modelDirPath rin $ modelName mr rin
+{-# INLINEABLE modelPath #-}
 
 dirPath :: RunnerInputNames -> Text -> Text -> FilePath
 dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
@@ -77,13 +81,11 @@ data StanMCParameters = StanMCParameters
   , smcRandomSeed :: Maybe Int
   } deriving (Show, Eq, Ord)
 
+data StanExeConfigWrapper = MultiThreadedExeConfig CS.StanExeConfig |  SingleThreadedExeConfig (Int -> CS.StanExeConfig)
+
 data ModelRunnerConfig = ModelRunnerConfig
-  { mrcStanMakeNoGQConfig :: CS.MakeConfig
-  , mrcStanMakeOnlyLLConfigM :: Maybe CS.MakeConfig
-  , mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeModelConfig :: CS.StanExeConfig
-  , mrcStanExeOnlyLLConfig :: Int -> CS.StanExeConfig
-  , mrcStanExeGQConfig :: Int -> CS.StanExeConfig
+  { mrcDoOnlyLL :: Bool
+  , mrcStanMakeConfig :: ModelRun -> CS.MakeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcInputNames :: RunnerInputNames
   , mrcStanMCParameters :: StanMCParameters
@@ -94,32 +96,15 @@ data ModelRunnerConfig = ModelRunnerConfig
 mrcModelDir :: ModelRunnerConfig -> Text
 mrcModelDir = rinModelDir . mrcInputNames
 
-samplesPrefixCacheKey :: RunnerInputNames -> Text
-samplesPrefixCacheKey rin = rinModelDir rin <> "/" <> rinModel rin <> "/" <> rinData rin
-
-modelFileName :: RunnerInputNames -> Text
-modelFileName rin = rinModel rin <> ".stan"
-
-modelNoGQFileName :: RunnerInputNames -> Text
-modelNoGQFileName rin = rinModel rin <> noGQSuffix <> ".stan"
-
-modelOnlyLLFileName :: RunnerInputNames -> Text
-modelOnlyLLFileName rin = rinModel rin <> onlyLLSuffix <> ".stan"
+modelFileName :: ModelRun -> RunnerInputNames -> Text
+modelFileName mr rin = modelName mr rin <> ".stan"
 
 addModelDirectory :: RunnerInputNames -> Text -> Text
 addModelDirectory rin x = rinModelDir rin <> "/" <> x
 
-modelDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
-modelDependency rin = K.fileDependency (toString modelFile)  where
-  modelFile = addModelDirectory rin (modelFileName rin)
-
-modelNoGQDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
-modelNoGQDependency rin = K.fileDependency (toString modelFile)  where
-  modelFile = addModelDirectory rin (modelNoGQFileName rin)
-
-modelOnlyLLDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
-modelOnlyLLDependency rin = K.fileDependency (toString modelFile)  where
-  modelFile = addModelDirectory rin (modelOnlyLLFileName rin)
+modelDependency :: K.KnitEffects r => ModelRun -> RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelDependency mr rin = K.fileDependency (toString modelFile)  where
+  modelFile = addModelDirectory rin (modelFileName mr rin)
 
 modelDataFileName :: RunnerInputNames -> Text
 modelDataFileName rin = rinData rin <> ".json"
@@ -171,43 +156,27 @@ dataDependency rin = do
 
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r)
 
-modelPrefix :: RunnerInputNames -> Text
-modelPrefix rin = rinModel rin <> "_" <> rinData rin
+outputPrefix :: ModelRun -> RunnerInputNames -> Text
+outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> unmergedSamplesSuffix mr where
+  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
 
-gqPrefix :: RunnerInputNames -> Maybe Text
-gqPrefix rin = fmap (\t -> modelPrefix rin <> "_" <> t) $ rinGQ rin
+mergedPrefix :: ModelRun -> RunnerInputNames -> Text
+mergedPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> mergedSamplesSuffix mr where
+  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
 
-llPrefix :: RunnerInputNames -> Text
-llPrefix rin = modelPrefix rin <> llSuffix
-
-onlyLLPrefix :: RunnerInputNames -> Text
-onlyLLPrefix rin = modelPrefix rin <> onlyLLSuffix
-
-finalPrefix :: RunnerInputNames -> Text
-finalPrefix rin = modelPrefix rin <> (maybe "" ("_" <>) $ rinGQ rin)
-
-samplesFileNames :: ModelRunnerConfig -> Text -> [FilePath]
-samplesFileNames config prefix =
+samplesFileNames :: ModelRun -> ModelRunnerConfig -> [FilePath]
+samplesFileNames mr config =
   let rin = mrcInputNames config
       numChains = smcNumChains $ mrcStanMCParameters config
-  in outputDirPath rin . (\n -> prefix <> "_" <> show n <> ".csv") <$> [1..numChains]
+  in outputDirPath rin . (\n -> outputPrefix mr rin <> "_" <> show n <> ".csv") <$> [1..numChains]
 
-modelSamplesFileNames :: ModelRunnerConfig -> [FilePath]
-modelSamplesFileNames config = samplesFileNames config (modelPrefix $ mrcInputNames config)
+mergedSamplesFP :: ModelRun -> ModelRunnerConfig -> Int -> FilePath
+mergedSamplesFP MRNoGQ _ _ = error "mergedFP: called with MRNoGQ argument!"
+mergedSamplesFP mr config n = outputDirPath (mrcInputNames config) $ mergedPrefix mr (mrcInputNames config) <> "_" <> show n <> ".csv"
 
--- from GQ
-onlyLLSamplesFileNames :: ModelRunnerConfig -> [FilePath]
-onlyLLSamplesFileNames config = samplesFileNames config (modelPrefix (mrcInputNames config) <> onlyLLSuffix)
-
--- after merging
-llSamplesFileNames :: ModelRunnerConfig -> [FilePath]
-llSamplesFileNames config = samplesFileNames config (modelPrefix (mrcInputNames config) <> llSuffix)
-
-gqSamplesFileNames :: ModelRunnerConfig -> Maybe [FilePath]
-gqSamplesFileNames config = fmap (samplesFileNames config) (gqPrefix $ mrcInputNames config)
-
-finalSamplesFileNames :: ModelRunnerConfig -> [FilePath]
-finalSamplesFileNames config = samplesFileNames config (finalPrefix $ mrcInputNames config)
+finalSamplesFileNames :: ModelRun -> ModelRunnerConfig -> [FilePath]
+finalSamplesFileNames MRNoGQ config = samplesFileNames MRNoGQ config
+finalSamplesFileNames mr config = fmap (mergedSamplesFP mr config) $ [1..(smcNumChains $ mrcStanMCParameters config)]
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }
@@ -288,8 +257,9 @@ emptyResult = SkipSummary $ \_ _ _ -> return ()
 sampleFile :: T.Text -> Maybe Int -> FilePath
 sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"
 
-modelSummaryFileName :: ModelRunnerConfig -> T.Text
-modelSummaryFileName config = modelPrefix (mrcInputNames config) <> "_summary.json"
-
+summaryFileName :: ModelRun -> ModelRunnerConfig -> T.Text
+summaryFileName mr config = outputPrefix mr (mrcInputNames config) <> "_summary.json"
+{-
 gqSummaryFileName :: ModelRunnerConfig -> Maybe T.Text
 gqSummaryFileName config = fmap (<> "_summary.json") $ gqPrefix (mrcInputNames config)
+-}

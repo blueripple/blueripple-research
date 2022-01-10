@@ -27,12 +27,12 @@ import Control.Lens (view)
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
   runMatchupsModel True 1
-{-  runMatchupsModel False 2
+  runMatchupsModel False 2
   runMatchupsModel True 2
   runMatchupsModel False 1
   runMatchupsModel False 1
   runMatchupsModel False 2
--}
+
 
 runMatchupsModel :: forall st cd r.(K.KnitEffects r, KE.CacheEffects r) => Bool -> Int -> K.Sem r ()
 runMatchupsModel clearCaches matchupsId = do
@@ -122,7 +122,7 @@ runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C g
   when clearCaches $ do
     SMR.deleteStaleFiles @st @cd stanConfig [SMR.StaleData]
     K.clearIfPresent @Text @cd resultCacheKey
-  modelDep <- SC.modelDependency $ SC.mrcInputNames stanConfig
+  modelDep <- SC.modelDependency SC.MRFull $ SC.mrcInputNames stanConfig
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
   K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
   K.logLE (K.Debug 1) $ "gqDataDep: " <> show (K.cacheTime gqData_C)
