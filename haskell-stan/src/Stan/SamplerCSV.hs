@@ -14,7 +14,10 @@ import qualified Data.Massiv.Array as M
 import qualified Control.Foldl as FL
 import qualified Data.Map as Map
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
+--import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy.Builder as TB
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.IO as TL
 import qualified Data.Scientific as SCI
 import qualified Data.List as L
 import qualified System.Directory as Dir
@@ -124,19 +127,48 @@ addReplaceGQToSamplerCSV gq s = do
   return $ s { samplerHeader = newHeader, samplerSamples = newSamples}
 {-# INLINEABLE addReplaceGQToSamplerCSV #-}
 
+appendGQsToSamplerCSV :: FilePath -> FilePath -> FilePath -> IO ()
+appendGQsToSamplerCSV samplerFP gqFP mergedFP = do
+  fmap not (Dir.doesFileExist samplerFP)
+    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ samplerFP ++ " does not exist!")
+  fmap not (Dir.doesFileExist gqFP)
+    >>= flip when (M.throwM $ userError $ "mergeSamplerAndGQCSVs: "++ gqFP ++ " does not exist!")
+  let handleParse = either (M.throwM . userError . errorBundlePretty) return
+  s <-  parse samplerCSV samplerFP <$> readFileText samplerFP >>= handleParse
+  gq <- parse gqCSV gqFP <$> readFileText gqFP >>= handleParse
+  s' <- appendGQSamples gq s
+  Say.say $ "Merge complete.  Writing " <> toText mergedFP
+  writeFileText mergedFP $ samplerCSVText s'
+{-# INLINEABLE appendGQsToSamplerCSV #-}
+
+appendGQSamples :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)
+appendGQSamples gq s = do
+  let newHeader = samplerHeader s ++ gqHeader gq
+  newSamples <- M.computeAs M.U <$> M.appendM (M.Dim 1) (samplerSamples s) (gqSamples gq)
+  return $ s { samplerHeader = newHeader, samplerSamples = newSamples}
+{-# INLINEABLE appendGQSamples #-}
+
+
 headerText :: [Text] -> Text
 headerText = T.intercalate ","
 {-# INLINEABLE headerText #-}
 
-samplesText :: Samples M.U -> [Text]
-samplesText = fmap (T.intercalate "," . fmap show) . M.toLists
+samplesText :: Samples M.U -> Text
+samplesText = T.intercalate "\n" . fmap (T.intercalate "," . fmap show) . M.toLists
 {-# INLINEABLE samplesText #-}
+
+samplesText' :: Samples M.U -> TL.Text
+samplesText' = TB.toLazyText . M.foldOuterSlice rowToCSVBldr where
+  cb = TB.singleton ','
+  comma n tb = if n > 0 then cb <> tb else tb
+  rowToCSVBldr row = M.ifoldMono (\n x -> comma n (TB.fromText $ show x)) row <> TB.singleton '\n'
+{-# INLINEABLE samplesText' #-}
 
 samplerCSVText :: SamplerCSV M.U -> Text
 samplerCSVText (SamplerCSV sd ad td h s) =
-  T.intercalate "\n" [sd, headerText h, ad, T.intercalate "\n" (samplesText s), td] <> "\n"
-
+  T.intercalate "\n" [sd, headerText h, ad, samplesText s, td] <> "\n"
 {-# INLINEABLE samplerCSVText #-}
+
 
 {-
 addReplaceGQToSamplerCSV' :: M.MonadThrow m => GQCSV M.U -> SamplerCSV M.U -> m (SamplerCSV M.U)

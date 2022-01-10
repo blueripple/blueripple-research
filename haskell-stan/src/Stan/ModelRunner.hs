@@ -292,7 +292,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
             mergedFP <- K.knitMaybe "runModel.runOneGQ: gqPrefix returned Nothing when building mergedFP" $ do
               gqPrefix <- SC.gqPrefix (SC.mrcInputNames config)
               return $ SC.outputDirPath (SC.mrcInputNames config) $ gqPrefix <> "_" <> show n <> ".csv"
-            K.liftKnit $ SCSV.mergeSamplerAndGQCSVs samplesFP gqFP mergedFP
+            K.liftKnit $ SCSV.appendGQsToSamplerCSV samplesFP gqFP mergedFP
     modelSamplesFilesDep <- K.oldestUnit <$> traverse K.fileDependency modelSamplesFileNames
     modelRes_C <- K.updateIf modelSamplesFilesDep runModelDeps $ \_ -> do
       K.logLE K.Diagnostic "Stan model outputs older than model input data or model code.  Rebuilding Stan exe and running."

@@ -115,7 +115,7 @@ shinyStanScript config unwrapJSONs =
                 <> rMessageText "Loading csv output.  Might take a minute or two..." <> "\n"
                 <> readStanCSV <> "\n"
                 <> unwrapCode
---                <> "stanFit@stanModel <- " <> rStanModel config
+--                <> "stanfit@stanModel <- " <> rStanModel config
                 <> rMessageText "Launching shinystan...." <> "\n"
                 <> "launch_shinystan(stanfit)\n"
   in rScript
@@ -144,7 +144,7 @@ looOne config fitName mLooName nCores =
 
 looScript ::  SC.ModelRunnerConfig -> T.Text-> Int -> T.Text
 looScript config looName nCores =
-  let justLoo = looOne config "stanFit" (Just looName) nCores
+  let justLoo = looOne config "stanfit" (Just looName) nCores
   in addLibs libsForLoo <> justLoo
 
 
