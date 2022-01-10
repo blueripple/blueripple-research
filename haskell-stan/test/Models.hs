@@ -123,6 +123,7 @@ spreadDiffNormal = do
         $ SE.vectorizedOne "Matchups"
         $ SD.familyExp SD.normalDist (S.var mu_favV, S.var sigmaV)
       return ()
+  SBB.generateLogLikelihood resultsData SD.normalDist (return (S.var mu_favV, S.var sigmaV)) spreadDiffV
 
 -- the getParameter function feels like an incantation.  Need to simplify.
 type ModelReturn = ([(Text, [Double])],[Double], [Double],[(Text, [Double])])
