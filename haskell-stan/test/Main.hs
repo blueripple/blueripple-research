@@ -27,11 +27,12 @@ import Control.Lens (view)
 main :: IO ()
 main = KE.knitToIO KE.defaultConfig $ do
   runMatchupsModel True 1
-  runMatchupsModel False 2
+{-  runMatchupsModel False 2
   runMatchupsModel True 2
   runMatchupsModel False 1
   runMatchupsModel False 1
   runMatchupsModel False 2
+-}
 
 runMatchupsModel :: forall st cd r.(K.KnitEffects r, KE.CacheEffects r) => Bool -> Int -> K.Sem r ()
 runMatchupsModel clearCaches matchupsId = do

@@ -29,8 +29,19 @@ data RunnerInputNames = RunnerInputNames
 noGQSuffix :: Text
 noGQSuffix = "_noGQ"
 
+-- for model file/samples/dep
+onlyLLSuffix :: Text
+onlyLLSuffix = "_onlyLL"
+
+-- for merged samples
+llSuffix :: Text
+llSuffix = "_LL"
+
 rinModelNoGQ :: RunnerInputNames -> Text
 rinModelNoGQ rin = rinModel rin <> noGQSuffix
+
+rinModelOnlyLL :: RunnerInputNames -> Text
+rinModelOnlyLL rin = rinModel rin <> onlyLLSuffix
 
 modelDirPath :: RunnerInputNames -> Text -> FilePath
 modelDirPath rin fName = toString $ rinModelDir rin <> "/" <> fName
@@ -40,6 +51,9 @@ modelPath rin = modelDirPath rin $ rinModel rin
 
 modelNoGQPath :: RunnerInputNames -> FilePath
 modelNoGQPath rin = modelDirPath rin $ rinModel rin <> noGQSuffix
+
+modelOnlyLLPath :: RunnerInputNames -> FilePath
+modelOnlyLLPath rin = modelDirPath rin $ rinModel rin <> onlyLLSuffix
 
 dirPath :: RunnerInputNames -> Text -> Text -> FilePath
 dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
@@ -64,10 +78,12 @@ data StanMCParameters = StanMCParameters
   } deriving (Show, Eq, Ord)
 
 data ModelRunnerConfig = ModelRunnerConfig
-  { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanMakeNoGQConfig :: CS.MakeConfig
+  { mrcStanMakeNoGQConfig :: CS.MakeConfig
+  , mrcStanMakeOnlyLLConfigM :: Maybe CS.MakeConfig
+  , mrcStanMakeConfig :: CS.MakeConfig
   , mrcStanExeModelConfig :: CS.StanExeConfig
-  , mrcStanExeGQConfigM :: Maybe (Int -> CS.StanExeConfig)
+  , mrcStanExeOnlyLLConfig :: Int -> CS.StanExeConfig
+  , mrcStanExeGQConfig :: Int -> CS.StanExeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
   , mrcInputNames :: RunnerInputNames
   , mrcStanMCParameters :: StanMCParameters
@@ -87,6 +103,9 @@ modelFileName rin = rinModel rin <> ".stan"
 modelNoGQFileName :: RunnerInputNames -> Text
 modelNoGQFileName rin = rinModel rin <> noGQSuffix <> ".stan"
 
+modelOnlyLLFileName :: RunnerInputNames -> Text
+modelOnlyLLFileName rin = rinModel rin <> onlyLLSuffix <> ".stan"
+
 addModelDirectory :: RunnerInputNames -> Text -> Text
 addModelDirectory rin x = rinModelDir rin <> "/" <> x
 
@@ -97,6 +116,10 @@ modelDependency rin = K.fileDependency (toString modelFile)  where
 modelNoGQDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 modelNoGQDependency rin = K.fileDependency (toString modelFile)  where
   modelFile = addModelDirectory rin (modelNoGQFileName rin)
+
+modelOnlyLLDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelOnlyLLDependency rin = K.fileDependency (toString modelFile)  where
+  modelFile = addModelDirectory rin (modelOnlyLLFileName rin)
 
 modelDataFileName :: RunnerInputNames -> Text
 modelDataFileName rin = rinData rin <> ".json"
@@ -154,6 +177,12 @@ modelPrefix rin = rinModel rin <> "_" <> rinData rin
 gqPrefix :: RunnerInputNames -> Maybe Text
 gqPrefix rin = fmap (\t -> modelPrefix rin <> "_" <> t) $ rinGQ rin
 
+llPrefix :: RunnerInputNames -> Text
+llPrefix rin = modelPrefix rin <> llSuffix
+
+onlyLLPrefix :: RunnerInputNames -> Text
+onlyLLPrefix rin = modelPrefix rin <> onlyLLSuffix
+
 finalPrefix :: RunnerInputNames -> Text
 finalPrefix rin = modelPrefix rin <> (maybe "" ("_" <>) $ rinGQ rin)
 
@@ -165,6 +194,14 @@ samplesFileNames config prefix =
 
 modelSamplesFileNames :: ModelRunnerConfig -> [FilePath]
 modelSamplesFileNames config = samplesFileNames config (modelPrefix $ mrcInputNames config)
+
+-- from GQ
+onlyLLSamplesFileNames :: ModelRunnerConfig -> [FilePath]
+onlyLLSamplesFileNames config = samplesFileNames config (modelPrefix (mrcInputNames config) <> onlyLLSuffix)
+
+-- after merging
+llSamplesFileNames :: ModelRunnerConfig -> [FilePath]
+llSamplesFileNames config = samplesFileNames config (modelPrefix (mrcInputNames config) <> llSuffix)
 
 gqSamplesFileNames :: ModelRunnerConfig -> Maybe [FilePath]
 gqSamplesFileNames config = fmap (samplesFileNames config) (gqPrefix $ mrcInputNames config)

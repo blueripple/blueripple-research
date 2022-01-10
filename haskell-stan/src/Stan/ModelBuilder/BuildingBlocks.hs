@@ -141,7 +141,7 @@ generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
 
 generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, SB.StanBuilderM md gq args, SME.StanVar) -> SB.StanBuilderM md gq ()
-generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBGeneratedQuantities $ do
+generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
   let dsName = SB.dataSetName rtt
       dim = SME.NamedDim dsName
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
