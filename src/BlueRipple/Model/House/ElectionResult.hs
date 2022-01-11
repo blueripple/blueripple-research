@@ -686,6 +686,7 @@ data DensityModel = BaseD
                   | PlusInteractionsD
                   | PlusNCHRaceD
                   | PlusHStateD
+                  | PlusNCHStateD
                   deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat DensityModel
@@ -818,7 +819,7 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
                 (muV s, ("", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.vectorizedOne colIndexKey (SB.var v) `SB.vectorSample` SB.stdNormal))
               ]
-            rawPriorF v = SB.addExprLine "ELectionResult.densityModel"
+            rawPriorF v = SB.addExprLine "ElectionResult.densityModel"
               $ SB.vectorizedOne (SB.taggedGroupName raceGroup) $ SB.var v `SB.eq` SB.stdNormal --SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
             centerF s bv@(SB.StanVar sn st) brv = do
               bv' <- SB.stanDeclare sn st ""
@@ -843,6 +844,28 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
               $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
 --            cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
             stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPriorF s)
+            stateDensityFEM s = SFE.InteractingFE True stateGroup (stateDensityGM s)
+        (thetaStateTMultF, betaStateTMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "T") feMatrices cdData voteData (Just "T")
+        (thetaStatePMultF, betaStatePMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "P") feMatrices cdData voteData (Just "P")
+        return (thetaStateTMultF, betaStateTMultF, thetaStatePMultF, betaStatePMultF)
+      modelSpecific PlusNCHStateD = do
+        let muV s = SB.StanVar ("muStateDensity" <> s) SB.StanReal
+            sigmaV s = SB.StanVar ("sigmaStateDensity" <> s) SB.StanReal
+            hyperParameters s = M.fromList
+              [
+                (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+              , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+              ]
+            rawPriorF v = SB.stanForLoopB "k" Nothing colIndexKey
+              $ SB.addExprLine "ElectionResult.densityModel"
+              $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var v `SB.vectorSample` SB.stdNormal
+            centerF s bv@(SB.StanVar sn st) brv = do
+              bv' <- SB.stanDeclare sn st ""
+              SB.stanForLoopB "k" Nothing colIndexKey
+                $ SB.stanForLoopB "g" Nothing "State"
+                $ SB.addExprLine "PlusNCHStateD"
+                $ SB.var bv' `SB.eq` (SB.var (muV s) `SB.plus`  (SB.var (sigmaV s) `SB.times`  SB.var brv))
+            stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.NonCentered rawPriorF $ centerF s)
             stateDensityFEM s = SFE.InteractingFE True stateGroup (stateDensityGM s)
         (thetaStateTMultF, betaStateTMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "T") feMatrices cdData voteData (Just "T")
         (thetaStatePMultF, betaStatePMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "P") feMatrices cdData voteData (Just "P")
