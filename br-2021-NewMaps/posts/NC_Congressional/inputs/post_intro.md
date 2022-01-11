@@ -14,10 +14,14 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
+Update: As promised in our original post, as we improve the model, we’ll update
+these recommendations.  For details of the mdoel updates, please see
+the methods section!
+
 In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
 
-1. Dem-lean by district in NC: our demographic model vs. historical data
-2. Districts worthy of Dem donor support
+1. Dem-lean by district in NC: our demographic model vs. historical data (*updated*)
+2. Districts worthy of Dem donor support (*updated*)
 3. Coming next from Blue Ripple
 4. Coda #1: Demographics of the new vs. old NC districts
 5. Coda #2: Brief intro to our methods (for non-experts)

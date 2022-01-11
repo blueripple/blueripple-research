@@ -263,7 +263,7 @@ newMapAnalysis stanParallelCfg parallel = do
   debugPUMS pumsTX
   K.knitError "STOP"
 -}
-  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) Nothing)
+  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
@@ -354,11 +354,12 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
-      baseQuantile = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity 10) BRE.BaseD
-      stateRaceQuantile = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity 5) BRE.BaseD
-      partiallyPooledQuantile = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG (BRE.QuantileDensity 5) BRE.BaseD
-  extantBaseHV <- model2020 partiallyPooledQuantile (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  proposedBaseHV <- model2020 partiallyPooledQuantile (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+      baseQuantile n = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity n) BRE.BaseD
+      stateRaceQuantile n = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity n) BRE.BaseD
+      partiallyPooledQuantile n = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG (BRE.QuantileDensity n) BRE.BaseD
+      partiallyPooledLog = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG BRE.LogDensity BRE.BaseD
+  extantBaseHV <- model2020 partiallyPooledLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- model2020 partiallyPooledLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
   extantPlusStateHV
     <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
