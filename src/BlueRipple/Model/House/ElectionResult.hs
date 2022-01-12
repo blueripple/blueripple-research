@@ -853,8 +853,8 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
             sigmaV s = SB.StanVar ("sigmaStateDensity" <> s) (SB.StanVector $ SB.NamedDim colIndexKey)
             hyperParameters s = M.fromList
               [
-                (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
-              , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                (muV s, ("", \v -> SB.vectorizedOne colIndexKey $ SB.var v `SB.vectorSample` SB.stdNormal))
+              , (sigmaV s, ("<lower=0>", \v -> SB.vectorizedOne colIndexKey $ SB.var v `SB.vectorSample` SB.stdNormal))
               ]
             rawPriorF v = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup)
 --                          $ SB.stanForLoopB "k" Nothing colIndexKey
