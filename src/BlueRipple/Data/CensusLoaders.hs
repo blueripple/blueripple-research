@@ -326,9 +326,9 @@ censusDemographicsRecode rows =
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
 
       edFld :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-      edFld  = let ed4ToCG ed4 = if ed4 == BRC.E4_CollegeGrad then DT.Grad else DT.NonGrad
-                   edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
+      edFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
                      g DT.Grad BRC.E4_CollegeGrad = True
+                     g DT.Grad BRC.E4_SomeCollege = True
                      g DT.Grad _ = False
                      g _ _ = True
                    edAggFRec = BRK.toAggFRec edAggF
