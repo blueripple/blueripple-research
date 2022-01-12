@@ -501,7 +501,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
     (daveModelColonnade tableCellStyle)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
-  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
+--  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
   let proposedByModelShare = modelShareSort proposedBaseHV --proposedPlusStateAndStateRace_RaceDensityNC
   proposedDemo <- K.ignoreCacheTime proposedDemo_C
   _ <- K.addHvega Nothing Nothing

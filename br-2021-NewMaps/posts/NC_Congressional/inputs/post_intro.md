@@ -14,16 +14,15 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-Update: As promised in our original post, as we improve the model, we’ll update
-these recommendations.  For details of the mdoel updates, please see
-the methods section!
+Update: As promised in our original post, as we improve the model[^modelChanges], we’ll update
+these recommendations.
 
 In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
 
 1. Dem-lean by district in NC: our demographic model vs. historical data (*updated*)
-2. Districts worthy of Dem donor support (*updated*)
+2. Districts worthy of Dem donor support
 3. Coming next from Blue Ripple
-4. Coda #1: Demographics of the new vs. old NC districts
+4. Coda #1: Demographics of the new NC districts
 5. Coda #2: Brief intro to our methods (for non-experts)
 
 ## 1. Dem-lean by district in NC: our demographic model vs. historical data
@@ -51,3 +50,19 @@ estimates of Democratic candidate votes, Republican candidate votes and votes
 for other candidates.  We’ve taken those numbers and computed 2-party vote share
 for the Democratic candidate, that is, D Votes/(D Votes + R Votes). That makes it
 comparable with the Demographic model which also produces 2-party vote share.
+
+[^modelChanges]: Our initial model was a relatively simple Bayesian Monte-Carlo
+estimation of binomial models for turnout and party preference in each of our
+demographic categories. In particular, we did *not* use the state-specific information
+in the data to inform the predictions in a particular state, instead pooling all
+the data for fitting.
+In the new version, we are using partial-pooling at the state level, allowing the
+fitting procedure itself to decide how much to allow the state-level probabilities
+to vary from the nationwide ones.
+We’ve also introduced some ability for the distributions of coefficients to have
+correlation structure, meaning that, for example, if within the data it was more likely
+that in states with higher-than-average turnout of white voters there was also
+higher-than-average turnout of Hispanic voters, the fit adjusts accordingly. Right now,
+this is limited to the race category: we treat sex, education and density as if their
+effects on turnout and preference are uncorrelated to each other and race.  Fixing that
+is our next step.  Stay tuned!
