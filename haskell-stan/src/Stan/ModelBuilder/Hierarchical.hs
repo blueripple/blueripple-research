@@ -32,7 +32,10 @@ combineRowFuncs rFuncs =
       fF = (\r -> V.concat . fmap ($r)) <$> FL.premap snd FL.list
   in FL.fold ((,) <$> nF <*> fF) rFuncs
 
-groupRowFunc :: (r -> k) -> (k -> Int)
+groupRowFunc :: (r -> k) -> (k -> Int) -> Int -> (Int, r -> V.Vector Double)
+groupRowFunc rToKey keyToIndex numKeys = if numKeys == 2 then binary else nonBinary
+  where
+
 
 designMatrix :: SB.RowTypeTag r -> Text -> Int -> (r -> V.Vector Double) -> SB.StanBuilderM md gq ()
 designMatrix rtt name rowFunction = do
