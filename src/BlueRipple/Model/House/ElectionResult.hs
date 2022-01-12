@@ -840,7 +840,7 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
                 (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               ]
-            cPriorF s v = SB.addExprLine "ELectionResult.densityModel"
+            cPriorF s v = SB.addExprLine "ElectionResult.densityModel"
               $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var v `SB.eq` SB.normal (Just $ SB.var $ muV s) (SB.var $ sigmaV s)
 --            cPrior s = SB.normal (Just $ SB.name $ mu s) (SB.name $ sigma s)
             stateDensityGM s = SB.Hierarchical SB.STZNone (hyperParameters s) (SB.Centered $ cPriorF s)
@@ -849,16 +849,17 @@ densityModelBuilder densityModelType feMatrices fePrior voteData cdData = do
         (thetaStatePMultF, betaStatePMultF) <- SFE.addFixedEffectsParametersAndPriors (stateDensityFEM "P") feMatrices cdData voteData (Just "P")
         return (thetaStateTMultF, betaStateTMultF, thetaStatePMultF, betaStatePMultF)
       modelSpecific PlusNCHStateD = do
-        let muV s = SB.StanVar ("muStateDensity" <> s) SB.StanReal
-            sigmaV s = SB.StanVar ("sigmaStateDensity" <> s) SB.StanReal
+        let muV s = SB.StanVar ("muStateDensity" <> s) (SB.StanVector $ SB.NamedDim colIndexKey)
+            sigmaV s = SB.StanVar ("sigmaStateDensity" <> s) (SB.StanVector $ SB.NamedDim colIndexKey)
             hyperParameters s = M.fromList
               [
                 (muV s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               , (sigmaV s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
               ]
-            rawPriorF v = SB.stanForLoopB "k" Nothing colIndexKey
-              $ SB.addExprLine "ElectionResult.densityModel"
-              $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var v `SB.vectorSample` SB.stdNormal
+            rawPriorF v = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup)
+--                          $ SB.stanForLoopB "k" Nothing colIndexKey
+                          $ SB.addExprLine "ElectionResult.densityModel"
+                          $ SB.vectorizedOne colIndexKey $ SB.var v `SB.vectorSample` SB.stdNormal
             centerF s bv@(SB.StanVar sn st) brv = do
               bv' <- SB.stanDeclare sn st ""
               SB.stanForLoopB "k" Nothing colIndexKey
