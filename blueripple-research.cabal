@@ -129,6 +129,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
+                 , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames

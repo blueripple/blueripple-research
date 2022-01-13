@@ -47,6 +47,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import qualified Data.Time.Clock as Time
 import qualified Data.Vector as Vector
+import qualified Data.Vector.Unboxed as VU
 import qualified Data.Hashable as Hashable
 import qualified Say
 import qualified System.Directory as Dir
@@ -1316,7 +1317,7 @@ addColumnMJsonOnce rtt name st sc toMX = do
     else return $ SME.StanVar name st
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
-data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, rowLength :: Int, rowVec :: r -> Vector.Vector Double }
+data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, rowLength :: Int, rowVec :: r -> VU.Vector Double }
 
 add2dMatrixJson :: (Typeable md, Typeable gq)
                 => RowTypeTag r
