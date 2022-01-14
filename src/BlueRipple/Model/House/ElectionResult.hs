@@ -725,54 +725,46 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir datYear (psGroup, 
         let distP = SB.binomialLogitDist hVotes
 
         -- design matrix
-        let datDMRow = designMatrixRow @CCESWithDensity
-        dm <- addDesignMatrix voteData designMatrixRow
+        let dmBetaE dm beta =  SB.vectorizedOne "K_EMDM" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
+            datDMRow = designMatrixRow @CCESWithDensity
+        dmVoteData <- addDesignMatrix voteData designMatrixRow
         let addDMParameterAndPriors s = do
               let dmDim = SB.NamedDim "K_EMDM"
                   dmVec = SB.StanVector (SB.NamedDim "K_EMDM")
                   stName =  SB.taggedGroupName stateGroup
                   stDim = SB.NamedDim stName
+                  lkjParameter = 4
+                  lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
               (mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
-                mu' <- SB.stanDeclare ("mu" <> s) dmVec
-                tau' <- SB.stanDeclare ("tau" <> s) dmVec
-                lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactor dmDim
-                betaRaw' <- SB.stanDeclare ("beta" <> s "_raw") (SB.StanMatrix (stDim, dmDim))
+                mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
+                tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
+                lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactor dmDim) ""
+                betaRaw' <- SB.stanDeclare ("beta" <> s "_raw") (SB.StanMatrix (stDim, dmDim)) ""
                 return (mu', tau', lCorr', betaRaw')
-              SB.inBlock SB.SBTransformedParameters $ do
+              beta <- SB.inBlock SB.SBTransformedParameters $ do
                 beta' <- SB.stanDeclare ("beta" <> s) (SB.StanArray [stDim] dmVec) ""
+                let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
                 SB.stanForLoopB "s" Nothing stName
                   $ SB.addExprLine "electionModelDM"
-                  $ SB.var beta' `SB.eq` SB.var mu `SB.plus`
+                  $ SB.var beta' `SB.eq` SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+                  return beta'
+              dmBeta_v <- SB.inBlock SB.SBModel $ do
+                SB.vectorizedOne stName $ SB.var muV `SB.vectorSample` SB.stdNormal
+                SB.vectorizedOne stName $ SB.var tauV `SB.vectorSample` SB.stdNormal
+                SB.vectorizedOne stName $ SB.var lCorr `SB.vectorSample` lkjPrior
+                SB.vectorizeExpr ("beta" <> s <> "_v") (dmBetaE dmVoteData beta) (SB.dataSetName voteData)
+              return dmBeta_v
 
-        -- fixed effects (density)
-        let normal x = SB.normal Nothing $ SB.scalar $ show x
-            fePrior = normal 2
-        (feMatrices, centerF) <- SFE.addFixedEffectsData cdData  densityRowFromData (Just pplWgtsCD)--(SFE.FixedEffects 1 densityPredictor)
-        (thetaTMultF, betaTMultF, thetaPMultF, betaPMultF) <- densityModelBuilder (densityModel model) feMatrices fePrior voteData cdData
-
-        (q', feCDT, feCDP) <- SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
-          q <- SB.stanBuildEither $ SFE.qrM SFE.qM feMatrices
-          reIndexedQ <- SFE.reIndex (SB.dataSetName cdData) (SB.crosswalkIndexKey cdData) q
-          feCDT' <- thetaTMultF (SB.dataSetName voteData) reIndexedQ
-          feCDP' <- thetaPMultF (SB.dataSetName voteData) reIndexedQ
-          return (reIndexedQ, feCDT', feCDP')
---        SB.stanBuildError $ "Q'="  <> show q'
-
-        -- groups
-        let binaryPrior = normal 2
-            sigmaPrior = normal 2
-        (logitT_sample, logitT_ps, logitP_sample, logitP_ps) <- groupModelBuilder (groupModel model) binaryPrior sigmaPrior voteData
-
-        let serialSample = do
-              SB.sampleDistV voteData distT (logitT_sample feCDT) votes
-              SB.sampleDistV voteData distP (logitP_sample feCDP) dVotes
-            parallelSample = do
-              SB.parallelSampleDistV "turnout" voteData distT (logitT_sample feCDT) votes
-              SB.parallelSampleDistV "preference" voteData distP (logitP_sample feCDP) dVotes
-
-        if parallel then parallelSample else serialSample
+        dmBetaT_v <- addDMParameters "T"
+        dmBetaP_v <- addDMParameters "P"
+        let logitTE =
+        SB.sampleDistV voteData distT  betaT_v votes
+        SB.sampleDistV voteData distP betaP_v dVotes
 
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
+        dmPS <- addDesignMatrix psData designMatrixRow
+
+  --HERE--
 
         let psPreCompute = do
               mv <- SB.add2dMatrixData psData densityRowFromData (Just 0) Nothing --(Vector.singleton . getDensity)
