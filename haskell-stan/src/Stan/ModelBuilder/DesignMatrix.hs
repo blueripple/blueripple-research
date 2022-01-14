@@ -66,7 +66,7 @@ combineRowFuncs rFuncs =
   in FL.fold ((,) <$> nF <*> fF) rFuncs
 -}
 
-boundedEnumRowFunc :: forall k r.(Enum k, Bounded k, Eq k) => (r -> k) -> (Int, r -> V.Vector Double)
+boundedEnumRowFunc :: forall r k.(Enum k, Bounded k, Eq k) => (r -> k) -> (Int, r -> V.Vector Double)
 boundedEnumRowFunc rToKey = case numKeys of
   1 -> error "Single element enum given to boundedEnumRowFunc"
   2 -> binary

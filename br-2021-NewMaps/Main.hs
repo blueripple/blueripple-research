@@ -246,9 +246,21 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
     return $ (F.rcast . addRace5 <$> cdDataSER)
 
 
+prepCCESDM :: (K.KnitMany r, BR.CacheEffects r)
+           => Bool
+           -> K.ActionWithCacheTime r (F.FrameRec BRE.DistrictDemDataR)
+           -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESByCDR)
+           -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensity))
+prepCCESDM clearCaches ddd_C cces_C = do
+  let cacheKey = "data/newMaps/ccesWithDensity.bin"
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ((,) <$> ddd_C <*> cces_C)
+    $ \(ddd, cces) -> K.knitEither $ BRE.addPopDensByDistrict ddd cces
+
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do
   ccesAndPums_C <-  BRE.prepCCESAndPums False
+  ccesWD_C <- prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
   let addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -268,7 +280,9 @@ newMapAnalysis stanParallelCfg parallel = do
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
               <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
-    newMapsTest False stanParallelCfg parallel ncNMPS postInfoNC (K.liftActionWithCacheTime ccesAndPums_C)
+    newMapsTest False stanParallelCfg parallel ncNMPS postInfoNC
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
@@ -277,7 +291,9 @@ newMapAnalysis stanParallelCfg parallel = do
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
             <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
-    newMapsTest False stanParallelCfg parallel txNMPS postInfoTX (K.liftActionWithCacheTime ccesAndPums_C)
+    newMapsTest False stanParallelCfg parallel txNMPS postInfoTX
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX" . BRE.pumsRows) ccesAndPums_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
 
@@ -323,15 +339,17 @@ newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
             -> Bool
             -> NewMapPostSpec
             -> BR.PostInfo
+            -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensity)
             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
             -> K.Sem r ()
-newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
+newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndPums_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
   let (NewMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
   K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
+      ccesWD_2020 = fmap (F.filterFrame ((==2020) . F.rgetField @BR.Year)) ccesWD_C
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => F.FrameRec xs -> F.FrameRec xs
       onlyState = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
@@ -346,21 +364,33 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesAndPums_C
                    $ SB.emptyGroupSet
       modelDir =  "br-2021-NewMaps/stanGQ"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      psInfo name model = (mapGroup, name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model), psGroupSet)
+      psInfo name model = (mapGroup
+                          , name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)
+                          , psGroupSet
+                          )
+      psInfoDM name model = (mapGroup
+                            , name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)
+                            , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
+                            )
       model2020 :: BRE.Model
                 -> Text
                 -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
+      modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      modelDM m name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 (psInfoDM name m) ccesWD_2020
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
       baseQuantile n = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity n) BRE.BaseD
       stateRaceQuantile n = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity n) BRE.BaseD
       partiallyPooledQuantile n = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG (BRE.QuantileDensity n) BRE.BaseD
       partiallyPooledLog = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG BRE.LogDensity BRE.BaseD
       partiallyPooledDLog = BRE.Model BRE.HouseVS BRE.PartiallyPooledStateG BRE.LogDensity BRE.PlusNCHStateD
-  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+      dmModel = BRE.Model BRE.HouseVS BRE.DMG BRE.LogDensity BRE.DMD
+--  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+--  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+  extantBaseHV <- modelDM dmModel (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- modelDM dmModel (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
   extantPlusStateHV
     <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
