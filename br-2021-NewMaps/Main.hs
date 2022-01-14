@@ -369,7 +369,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
                           , psGroupSet
                           )
       psInfoDM name model = (mapGroup
-                            , name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)
+                            , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)
                             , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                             )
       model2020 :: BRE.Model
