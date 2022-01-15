@@ -742,6 +742,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         -- design matrix
         let datDMRow = designMatrixRow @CCESWithDensity
         dmVoteData <- DM.addDesignMatrix voteData datDMRow
+        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
         let addDMParametersAndPriors (DM.DesignMatrixRow n _) g lkjParameter s = SB.useDataSetForBindings voteData $ do
               let dmDimName = n <> "_Cols"
                   dmDim = SB.NamedDim dmDimName
@@ -776,12 +777,16 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                   , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
                   ]
 --                SB.vectorizeExpr ("beta" <> s) (dmBetaE dmVoteData beta) (SB.dataSetName voteData)
-              return beta
+              return (beta, mu, tau)
 
-        betaT <- addDMParametersAndPriors datDMRow stateGroup 4 "T"
-        betaP <- addDMParametersAndPriors datDMRow stateGroup 4 "P"
+        (betaT, muT, tauT) <- addDMParametersAndPriors datDMRow stateGroup 4 "T"
+        (betaP, muP, tauP) <- addDMParametersAndPriors datDMRow stateGroup 4 "P"
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
         SB.useDataSetForBindings voteData $ do
+          SB.inBlock SB.SBGeneratedQuantities $ do
+            DM.splitToGroupVars datDMRow muT
+            DM.splitToGroupVars datDMRow muP
+
           let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVoteData betaT) (SB.dataSetName voteData)
               vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVoteData betaP) (SB.dataSetName voteData)
           voteDataBetaT_v <- SB.inBlock SB.SBModel vecT

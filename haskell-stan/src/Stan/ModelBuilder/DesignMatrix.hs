@@ -99,13 +99,14 @@ designMatrixIndexes (DesignMatrixRow _ dmps)= SL.scan rowPartScan dmps where
   rowPartScan = SL.Scan rowPartScanStep 1
 
 -- adds J_Group and Group_Design_Index for all parts of row
-addDesignMatrixIndexes :: (Typeable md, Typeable gq) => DesignMatrixRow r -> SB.StanBuilderM md gq ()
-addDesignMatrixIndexes dmr = do
+addDesignMatrixIndexes :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq ()
+addDesignMatrixIndexes rtt dmr = do
   let addEach (gName, gSize, gStart) = do
         sv <- SB.addFixedIntJson ("J_" <> gName) Nothing gSize
         SB.addDeclBinding gName sv
+        SB.addUseBindingToDataSet rtt gName sv
         SB.addFixedIntJson (gName <> "_" <> dmName dmr <> "_Index") Nothing gStart
-        return ()
+        pure ()
   traverse_ addEach $ designMatrixIndexes dmr
 
 -- we assume we've already checked the dimension
@@ -114,8 +115,9 @@ splitToGroupVar dName gName v@(SB.StanVar n st) = do
   let newVarName = n <> "_" <> gName
       index = gName <> "_" <> dName <> "_Index"
       namedDimE x = SB.stanDimToExpr $ SB.NamedDim x
-      segment x = SB.function "segment" $ SB.var x :| [SB.name index, namedDimE gName]
-      block d x = SB.function "block" $ SB.var x :| [SB.scalar "1", SB.name index, namedDimE d, namedDimE gName]
+      vecDM = SB.vectorizedOne (dName <> "_Cols")
+      segment x = vecDM $ SB.function "segment" $ SB.var x :| [SB.name index, namedDimE gName]
+      block d x = vecDM $ SB.function "block" $ SB.var x :| [SB.scalar "1", SB.name index, namedDimE d, namedDimE gName]
   case st of
     SB.StanVector _ -> SB.stanDeclareRHS newVarName (SB.StanVector $ SB.NamedDim gName) "" $ segment v
     SB.StanArray [SB.NamedDim d] (SB.StanVector _) -> do
@@ -130,7 +132,7 @@ splitToGroupVar dName gName v@(SB.StanVar n st) = do
 -- this doesn't depend on r
 splitToGroupVars :: DesignMatrixRow r -> SB.StanVar -> SB.StanBuilderM md gq [SB.StanVar]
 splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
-  let designColName = "K_" <> n
+  let designColName = n <> "_Cols"
   case st of
     SB.StanVector d -> when (d /= SB.NamedDim designColName)
       $ SB.stanBuildError $ "DesignMatrix.splitTogroupVars: vector to split has wrong dimension: " <> show d
