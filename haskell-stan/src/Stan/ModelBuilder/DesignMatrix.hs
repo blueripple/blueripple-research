@@ -11,7 +11,7 @@
 module Stan.ModelBuilder.DesignMatrix where
 
 import Prelude hiding (All)
---import qualified Stan.ModelBuilder.Distributions as SD
+import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder as SB
 
 import qualified Control.Foldl as FL
@@ -21,14 +21,6 @@ import qualified Data.Array as Array
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Vector.Unboxed as V
-import Streamly.Internal.Data.SVar (dumpSVar)
---import qualified Data.Dependent.HashMap as DHash
---import qualified Data.Dependent.Sum as DSum
---import qualified Stan.ModelBuilder.SumToZero as STZ
---import Stan.ModelBuilder.SumToZero (SumToZero(..))
-
---data NEGroupInfo r k = HGroupInfo (r -> V.Vector Double)
---newtype NEGroups r = HGroups DHash.DHashMap SB.GroupTypeTag
 
 data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: Text
                                                  , dmrpLength :: Int
@@ -42,6 +34,9 @@ instance Contravariant DesignMatrixRowPart where
 data DesignMatrixRow r = DesignMatrixRow { dmName :: Text
                                          , dmParts :: [DesignMatrixRowPart r]
                                          }
+
+dmColIndexName :: DesignMatrixRow r -> Text
+dmColIndexName dmr = dmName dmr <> "_Cols"
 
 instance Contravariant DesignMatrixRow where
   contramap g (DesignMatrixRow n dmrps) = DesignMatrixRow n $ fmap (contramap g) dmrps
@@ -184,4 +179,44 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g (muSigma, tauSigma, lkjPara
         , vecDM $ SB.var tau `SB.vectorSample` normal tauSigma
         , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
         ]
-  return (beta, mu, tau, lCorr)
+  pure (beta, mu, tau, lCorr)
+
+
+centerDataMatrix :: (Typeable md, Typeable gq)
+                 => SB.StanVar -- matrix
+                 -> Maybe SB.StanVar -- row weights
+                 -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
+                                          , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                                          )
+centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
+  colIndexKey <- case mt of
+    SB.StanMatrix (rowDim, colDim) -> case colDim of
+      SB.NamedDim indexKey -> pure indexKey
+      _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: column dimension of given matrix must be a named dimension"
+    _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: Given argument must be a marix."
+  centeredXV <- SB.inBlock SB.SBTransformedData $ do
+    meanFunction <- case mwgtsV of
+      Nothing -> return $ "mean(" <> mn <> "[,k])"
+      Just (SB.StanVar wgtsName _) -> do
+        SBB.weightedMeanFunction
+        return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> mn <> "[,k])"
+    meanXV <- SB.stanDeclare ("mean_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
+    centeredXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
+    SB.stanForLoopB "k" Nothing colIndexKey $ do
+      SB.addStanLine $ "mean_" <> mn <> "[k] = " <> meanFunction
+      SB.addStanLine $ "centered_" <>  mn <> "[,k] = " <> mn <> "[,k] - mean_" <> mn <> "[k]"
+    pure centeredXV'
+  let centeredX mv@(SB.StanVar sn st) =
+        case st of
+          cmt@(SB.StanMatrix (_, SB.NamedDim colIndexKey)) -> SB.inBlock SB.SBTransformedData $ do
+            cv <- SB.stanDeclare ("centered_" <> sn) cmt ""
+            SB.stanForLoopB "k" Nothing colIndexKey $ do
+              SB.addStanLine $ "centered_" <> sn <> "[,k] = " <> sn <> "[,k] - mean_" <> mn <> "[k]"
+            return cv
+          _ -> SB.stanBuildError
+               $ "centeredX (from DesignMatrix.centerDataMatrix called with x="
+               <> show mt
+               <> "): called with mv="
+               <> show mv
+               <> " which is not a matrix type with indexed column dimension."
+  pure (centeredXV, centeredX)

@@ -741,41 +741,33 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         -- design matrix
         let datDMRow = designMatrixRow @CCESWithDensity
         dmVoteData <- DM.addDesignMatrix voteData datDMRow
-        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData (Just pplWgts)
-        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
-          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
-          _ -> SB.stanBuildError "electionModelDM: Unexpected return type from fixedEffectsQR_Data"
+        (cDMVoteData, centeringF) <- DM.centerDataMatrix dmVoteData Nothing
+--        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData Nothing
+--        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
+--          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
+--          _ -> SB.stanBuildError "electionModelDM: Unexpected return type from fixedEffectsQR_Data"
 
         DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
 
         (betaT, muT, tauT, lT) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "T")
         (betaP, muP, tauP, lP) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "P")
 
-        (thetaT, thetaP, meansT, meansP, sigmasT, sigmasP) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedParameters $ do
-          let SB.StanVar _ betaType = betaT
-              SB.StanVar _ muType = muT
-              SB.StanVar _ tauType = tauT
-              applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
-                                  $ SB.var x `SB.eq` (rInvV `SB.matMult` y)
-              thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
-          thetaT <- SB.stanDeclare "thetaT" betaType ""
-          thetaFromBeta thetaT betaT
-          thetaP <- SB.stanDeclare "thetaP" betaType ""
-          thetaFromBeta thetaP betaP
-          mP <- SB.stanDeclareRHS "meansT" muType "" $ (rInvV `SB.matMult` muT)
-          mT <- SB.stanDeclareRHS "meansP" muType "" $ (rInvV `SB.matMult` muP)
-          sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ (rInvV `SB.matMult` tauT)
-          sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ (rInvV `SB.matMult` tauP)
-          return (thetaT, thetaP, mT, mP, sT, sP)
-
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
         SB.useDataSetForBindings voteData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
-            DM.splitToGroupVars datDMRow meansT
-            DM.splitToGroupVars datDMRow meansP
+{-            let SB.StanVar _ muType = muT
+                SB.StanVar _ tauType = tauT
+                vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
+            mT <- SB.stanDeclareRHS "meansT" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muT)
+            mP <- SB.stanDeclareRHS "meansP" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muP)
+            sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauT)
+            sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauP)
+-}
+            DM.splitToGroupVars datDMRow muT
+            DM.splitToGroupVars datDMRow muP
 
-          let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE qV betaT) (SB.dataSetName voteData)
-              vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE qV betaP) (SB.dataSetName voteData)
+          let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE cDMVoteData betaT) (SB.dataSetName voteData)
+              vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE cDMVoteData betaP) (SB.dataSetName voteData)
           voteDataBetaT_v <- SB.inBlock SB.SBModel vecT
           voteDataBetaP_v <- SB.inBlock SB.SBModel vecP
           SB.sampleDistV voteData distT (SB.var voteDataBetaT_v) votes
@@ -790,13 +782,23 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
         let psPreCompute = do
               cDMPS <- centeringF dmPS
-              psThetaT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE cDMPS thetaT) (SB.dataSetName psData)
-              psThetaP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE cDMPS thetaP) (SB.dataSetName psData)
-              pure (psThetaT_v, psThetaP_v)
+{-              let SB.StanVar _ betaType = betaT
+                  vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
+                  applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
+                                       $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
+                  thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
+              thetaT <- SB.stanDeclare "thetaT" betaType ""
+              thetaFromBeta thetaT betaT
+              thetaP <- SB.stanDeclare "thetaP" betaType ""
+              thetaFromBeta thetaP betaP
+-}
+              psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE cDMPS betaT) (SB.dataSetName psData)
+              psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE cDMPS betaP) (SB.dataSetName psData)
+              pure (psT_v, psP_v)
 
-            psExprF (psThetaT_v, psThetaP_v) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psThetaT_v)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psThetaP_v)
+            psExprF (psT_v, psP_v) = do
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psT_v)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psP_v)
               pure $ SB.var pT `SB.times` SB.var pD
 
         let postStrat =
