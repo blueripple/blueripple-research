@@ -141,3 +141,47 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
     SB.StanMatrix (d, _)  -> when (d /= SB.NamedDim designColName)
       $ SB.stanBuildError $ "DesignMatrix.splitTogroupVars: matrix to split has wrong row-dimension: " <> show d
   traverse (\(g, _, _) -> splitToGroupVar n g v) $ designMatrixIndexes dmr
+
+addDMParametersAndPriors :: (Typeable md, Typeable gq)
+                         => SB.RowTypeTag r -- for bindings
+                         -> DesignMatrixRow r
+                         -> SB.GroupTypeTag k -- exchangeable contexts
+                         -> (Double, Double, Double) -- prior widths and lkj parameter
+                         -> Maybe Text -- suffix for varnames
+                         -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+addDMParametersAndPriors rtt (DesignMatrixRow n _) g (muSigma, tauSigma, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
+  let dmDimName = n <> "_Cols"
+      dmDim = SB.NamedDim dmDimName
+      dmVec = SB.StanVector dmDim
+      vecDM = SB.vectorizedOne dmDimName
+      gName =  SB.taggedGroupName g
+      gDim = SB.NamedDim gName
+      gVec = SB.StanVector gDim
+      vecG = SB.vectorizedOne gName
+      s = fromMaybe "" mS
+      normal x = SB.normal Nothing (SB.scalar $ show x)
+      dmBetaE dm beta = vecDM $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
+      lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
+  (mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
+    mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
+    tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
+    lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactorCorr dmDim) ""
+    betaRaw' <- SB.stanDeclare ("beta" <> s <> "_raw") (SB.StanArray [gDim] $ SB.StanVector dmDim) ""
+    return (mu', tau', lCorr', betaRaw')
+  beta <- SB.inBlock SB.SBTransformedParameters $ do
+    beta' <- SB.stanDeclare ("beta" <> s) (SB.StanArray [gDim] dmVec) ""
+    let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
+    SB.stanForLoopB "s" Nothing gName
+      $ SB.addExprLine "electionModelDM"
+      $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
+    return beta'
+  SB.inBlock SB.SBModel $ do
+      SB.stanForLoopB "g" Nothing gName
+        $ SB.addExprLine "addDMParametersAndPriors"
+        $ vecDM $ SB.var betaRaw `SB.vectorSample` SB.stdNormal
+      SB.addExprLines "addParametersAndPriors" $
+        [vecDM $ SB.var mu `SB.vectorSample` normal muSigma
+        , vecDM $ SB.var tau `SB.vectorSample` normal tauSigma
+        , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
+        ]
+  return (beta, mu, tau, lCorr)

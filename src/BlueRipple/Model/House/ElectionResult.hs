@@ -720,13 +720,12 @@ electionModelDM :: forall rs ks r.
 electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   when (groupModel model /= DMG || densityModel model /= DMD) $ K.knitError $ "electionModelDM called with wrong model type: " <> show model
---  densityData <- districtRows <$> K.ignoreCacheTime dat_C
   let jsonDataName = "DM_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM (F.FrameRec CCESWithDensity) (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
         voteData <- SB.dataSetTag @(F.Record CCESWithDensity) SC.ModelData "VoteData"
---        pplWgtsCD <- SB.addCountData cdData "Citizens" (F.rgetField @PUMS.Citizens)
+        pplWgts <- SB.addCountData voteData "Surveyed" (F.rgetField @Surveyed) -- for weighted centering
 
         -- Turnout
         cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
@@ -742,53 +741,41 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         -- design matrix
         let datDMRow = designMatrixRow @CCESWithDensity
         dmVoteData <- DM.addDesignMatrix voteData datDMRow
-        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
-        let addDMParametersAndPriors (DM.DesignMatrixRow n _) g lkjParameter s = SB.useDataSetForBindings voteData $ do
-              let dmDimName = n <> "_Cols"
-                  dmDim = SB.NamedDim dmDimName
-                  dmVec = SB.StanVector dmDim
-                  vecDM = SB.vectorizedOne dmDimName
-                  gName =  SB.taggedGroupName g
-                  gDim = SB.NamedDim gName
-                  gVec = SB.StanVector gDim
-                  vecG = SB.vectorizedOne gName
-                  dmBetaE dm beta = vecDM $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-                  lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
-              (mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
-                mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
-                tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
-                lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactorCorr dmDim) ""
-                betaRaw' <- SB.stanDeclare ("beta" <> s <> "_raw") (SB.StanArray [gDim] $ SB.StanVector dmDim) ""
-                return (mu', tau', lCorr', betaRaw')
-              beta <- SB.inBlock SB.SBTransformedParameters $ do
-                beta' <- SB.stanDeclare ("beta" <> s) (SB.StanArray [gDim] dmVec) ""
-                let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
-                SB.stanForLoopB "s" Nothing gName
-                  $ SB.addExprLine "electionModelDM"
-                  $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
-                return beta'
-              SB.inBlock SB.SBModel $ do
-                SB.stanForLoopB "g" Nothing gName
-                  $ SB.addExprLine "addDMParametersAndPriors"
-                  $ vecDM $ SB.var betaRaw `SB.vectorSample` SB.stdNormal
-                SB.addExprLines "addParametersAndPriors" $
-                  [vecDM $ SB.var mu `SB.vectorSample` SB.stdNormal
-                  , vecDM $ SB.var tau `SB.vectorSample` SB.stdNormal
-                  , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
-                  ]
---                SB.vectorizeExpr ("beta" <> s) (dmBetaE dmVoteData beta) (SB.dataSetName voteData)
-              return (beta, mu, tau)
+        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData (Just pplWgts)
+        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
+          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
+          _ -> SB.stanBuildError "electionModelDM: Unexpected return type from fixedEffectsQR_Data"
 
-        (betaT, muT, tauT) <- addDMParametersAndPriors datDMRow stateGroup 4 "T"
-        (betaP, muP, tauP) <- addDMParametersAndPriors datDMRow stateGroup 4 "P"
+        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
+
+        (betaT, muT, tauT, lT) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "T")
+        (betaP, muP, tauP, lP) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "P")
+
+        (thetaT, thetaP, meansT, meansP, sigmasT, sigmasP) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedParameters $ do
+          let SB.StanVar _ betaType = betaT
+              SB.StanVar _ muType = muT
+              SB.StanVar _ tauType = tauT
+              applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
+                                  $ SB.var x `SB.eq` (rInvV `SB.matMult` y)
+              thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
+          thetaT <- SB.stanDeclare "thetaT" betaType ""
+          thetaFromBeta thetaT betaT
+          thetaP <- SB.stanDeclare "thetaP" betaType ""
+          thetaFromBeta thetaP betaP
+          mP <- SB.stanDeclareRHS "meansT" muType "" $ (rInvV `SB.matMult` muT)
+          mT <- SB.stanDeclareRHS "meansP" muType "" $ (rInvV `SB.matMult` muP)
+          sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ (rInvV `SB.matMult` tauT)
+          sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ (rInvV `SB.matMult` tauP)
+          return (thetaT, thetaP, mT, mP, sT, sP)
+
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
         SB.useDataSetForBindings voteData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
-            DM.splitToGroupVars datDMRow muT
-            DM.splitToGroupVars datDMRow muP
+            DM.splitToGroupVars datDMRow meansT
+            DM.splitToGroupVars datDMRow meansP
 
-          let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVoteData betaT) (SB.dataSetName voteData)
-              vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVoteData betaP) (SB.dataSetName voteData)
+          let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE qV betaT) (SB.dataSetName voteData)
+              vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE qV betaP) (SB.dataSetName voteData)
           voteDataBetaT_v <- SB.inBlock SB.SBModel vecT
           voteDataBetaP_v <- SB.inBlock SB.SBModel vecP
           SB.sampleDistV voteData distT (SB.var voteDataBetaT_v) votes
@@ -799,17 +786,17 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
 
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
---        SB.addRowKeyIntMap psData psGroup F.rcast
         dmPS <- DM.addDesignMatrix psData designMatrixRow
 
         let psPreCompute = do
-              psBetaT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS betaT) (SB.dataSetName psData)
-              psBetaP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS betaP) (SB.dataSetName psData)
-              pure (psBetaT_v, psBetaP_v)
+              cDMPS <- centeringF dmPS
+              psThetaT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE cDMPS thetaT) (SB.dataSetName psData)
+              psThetaP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE cDMPS thetaP) (SB.dataSetName psData)
+              pure (psThetaT_v, psThetaP_v)
 
-            psExprF (psBetaT_v, psBetaP_v) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psBetaT_v)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psBetaP_v)
+            psExprF (psThetaT_v, psThetaP_v) = do
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psThetaT_v)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psThetaP_v)
               pure $ SB.var pT `SB.times` SB.var pD
 
         let postStrat =
