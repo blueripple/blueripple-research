@@ -742,13 +742,21 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let datDMRow = designMatrixRow @CCESWithDensity
         dmVoteData <- DM.addDesignMatrix voteData datDMRow
         (cDMVoteData, centeringF) <- DM.centerDataMatrix dmVoteData Nothing
+        let dmVD = dmVoteData
+            centerF = pure . id
 --        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData Nothing
 --        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
 --          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
 --          _ -> SB.stanBuildError "electionModelDM: Unexpected return type from fixedEffectsQR_Data"
 
         DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
-
+        (alphaT, alphaP) <- SB.inBlock SB.SBParameters $ do
+          aT <- SB.stanDeclare "alphaT" SB.StanReal ""
+          aP <- SB.stanDeclare "alphaP" SB.StanReal ""
+          return (aT, aP)
+        SB.inBlock SB.SBModel $ do
+          SB.addExprLine "electionModelDM" $ SB.var alphaT `SB.vectorSample` SB.stdNormal
+          SB.addExprLine "electionModelDM" $ SB.var alphaP `SB.vectorSample` SB.stdNormal
         (betaT, muT, tauT, lT) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "T")
         (betaP, muP, tauP, lP) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "P")
 
@@ -766,8 +774,8 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
             DM.splitToGroupVars datDMRow muT
             DM.splitToGroupVars datDMRow muP
 
-          let vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE cDMVoteData betaT) (SB.dataSetName voteData)
-              vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE cDMVoteData betaP) (SB.dataSetName voteData)
+          let vecT = SB.vectorizeExpr "voteDataBetaT" (SB.var alphaT `SB.plus` dmBetaE dmVD betaT) (SB.dataSetName voteData)
+              vecP = SB.vectorizeExpr "voteDataBetaP" (SB.var alphaP `SB.plus` dmBetaE dmVD betaP) (SB.dataSetName voteData)
           voteDataBetaT_v <- SB.inBlock SB.SBModel vecT
           voteDataBetaP_v <- SB.inBlock SB.SBModel vecP
           SB.sampleDistV voteData distT (SB.var voteDataBetaT_v) votes
@@ -781,7 +789,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         dmPS <- DM.addDesignMatrix psData designMatrixRow
 
         let psPreCompute = do
-              cDMPS <- centeringF dmPS
+              cDMPS <- centerF dmPS
 {-              let SB.StanVar _ betaType = betaT
                   vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
                   applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
@@ -792,8 +800,8 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               thetaP <- SB.stanDeclare "thetaP" betaType ""
               thetaFromBeta thetaP betaP
 -}
-              psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE cDMPS betaT) (SB.dataSetName psData)
-              psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE cDMPS betaP) (SB.dataSetName psData)
+              psT_v <- SB.vectorizeExpr "psBetaT" (SB.var alphaT `SB.plus` dmBetaE cDMPS betaT) (SB.dataSetName psData)
+              psP_v <- SB.vectorizeExpr "psBetaP" (SB.var alphaP `SB.plus` dmBetaE cDMPS betaP) (SB.dataSetName psData)
               pure (psT_v, psP_v)
 
             psExprF (psT_v, psP_v) = do
