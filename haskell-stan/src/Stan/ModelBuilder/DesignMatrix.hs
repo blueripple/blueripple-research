@@ -220,3 +220,19 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
                <> show mv
                <> " which is not a matrix type with indexed column dimension."
   pure (centeredXV, centeredX)
+
+-- take a matrix x and return (thin) Q, R and inv(R)
+-- as Q_x, R_x, invR_x
+-- see https://mc-stan.org/docs/2_28/stan-users-guide/QR-reparameterization.html
+thinQR :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar)
+thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) = do
+   let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
+       qRHS = SB.function "qr_thin_Q" (one $ SB.var xVar) `SB.times` srE
+   qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
+   let rType = SB.StanMatrix (colDim, colDim)
+       rRHS = SB.function "qr_thin_R" (one $ SB.var xVar) `SB.divide` srE
+   rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
+   let riRHS = SB.function "inverse" (one $ SB.var rV)
+   rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
+   return (qV, rV, rInvV)
+thinQR x = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x

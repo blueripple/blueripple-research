@@ -741,9 +741,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         -- design matrix
         let datDMRow = designMatrixRow @CCESWithDensity
         dmVoteData <- DM.addDesignMatrix voteData datDMRow
-        (cDMVoteData, centeringF) <- DM.centerDataMatrix dmVoteData Nothing
-        let dmVD = dmVoteData
-            centerF = pure . id
+        (cDMVoteData, centerF') <- DM.centerDataMatrix dmVoteData Nothing
+        let dmVD = cDMVoteData
+            centerF = centerF'
 --        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData Nothing
 --        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
 --          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
