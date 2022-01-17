@@ -183,26 +183,29 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g (muSigma, tauSigma, lkjPara
 
 
 centerDataMatrix :: (Typeable md, Typeable gq)
-                 => SB.StanVar -- matrix
-                 -> Maybe SB.StanVar -- row weights
-                 -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
-                                          , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
-                                          )
-centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
+             => Bool
+             -> SB.StanVar -- matrix
+             -> Maybe SB.StanVar -- row weights
+             -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
+                                      , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                                      )
+centerDataMatrix skipAlphaCol mV@(SB.StanVar mn mt) mwgtsV = do
   colIndexKey <- case mt of
     SB.StanMatrix (rowDim, colDim) -> case colDim of
       SB.NamedDim indexKey -> pure indexKey
       _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: column dimension of given matrix must be a named dimension"
     _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: Given argument must be a marix."
+  let mStart = if skipAlphaCol then Just (SB.scalar "2") else Nothing
   centeredXV <- SB.inBlock SB.SBTransformedData $ do
     meanFunction <- case mwgtsV of
       Nothing -> return $ "mean(" <> mn <> "[,k])"
       Just (SB.StanVar wgtsName _) -> do
         SBB.weightedMeanFunction
         return $ "weighted_mean(to_vector(" <> wgtsName <> "), " <> mn <> "[,k])"
-    meanXV <- SB.stanDeclare ("mean_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
+    meanXV <- SB.stanDeclareRHS ("mean_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
+      $ SB.function "rep_vector"  (SB.scalar "0" :| [SB.indexSize colIndexKey])
     centeredXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
-    SB.stanForLoopB "k" Nothing colIndexKey $ do
+    SB.stanForLoopB "k" mStart colIndexKey $ do
       SB.addStanLine $ "mean_" <> mn <> "[k] = " <> meanFunction
       SB.addStanLine $ "centered_" <>  mn <> "[,k] = " <> mn <> "[,k] - mean_" <> mn <> "[k]"
     pure centeredXV'
@@ -210,7 +213,7 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
         case st of
           cmt@(SB.StanMatrix (_, SB.NamedDim colIndexKey)) -> SB.inBlock SB.SBTransformedData $ do
             cv <- SB.stanDeclare ("centered_" <> sn) cmt ""
-            SB.stanForLoopB "k" Nothing colIndexKey $ do
+            SB.stanForLoopB "k" mStart colIndexKey $ do
               SB.addStanLine $ "centered_" <> sn <> "[,k] = " <> sn <> "[,k] - mean_" <> mn <> "[k]"
             return cv
           _ -> SB.stanBuildError
@@ -227,12 +230,12 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
 thinQR :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar)
 thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) = do
    let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
-       qRHS = SB.function "qr_thin_Q" (one $ SB.var xVar) `SB.times` srE
+       qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE xVar) `SB.times` srE
    qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
    let rType = SB.StanMatrix (colDim, colDim)
-       rRHS = SB.function "qr_thin_R" (one $ SB.var xVar) `SB.divide` srE
+       rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
    rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
-   let riRHS = SB.function "inverse" (one $ SB.var rV)
+   let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
    rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
    return (qV, rV, rInvV)
 thinQR x = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x

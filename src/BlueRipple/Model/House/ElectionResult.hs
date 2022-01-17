@@ -661,9 +661,13 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.HispC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
-                => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "EMDM" [sexP, eduP, raceP, densP]
+                => Bool -> DM.DesignMatrixRow (F.Record rs)
+designMatrixRow addAlpha = DM.DesignMatrixRow "EMDM" $
+  if addAlpha
+  then [alphaP, sexP, eduP, raceP, densP]
+  else [sexP, eduP, raceP, densP]
   where
+    alphaP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     (sexN, sexF) = DM.boundedEnumRowFunc @(F.Record rs) (F.rgetField @DT.SexC)
     sexP = DM.DesignMatrixRowPart "Sex" sexN sexF
     (eduN, eduF) = DM.boundedEnumRowFunc @(F.Record rs) (F.rgetField @DT.CollegeGradC)
@@ -739,71 +743,85 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let distP = SB.binomialLogitDist hVotes
 
         -- design matrix
-        let datDMRow = designMatrixRow @CCESWithDensity
-        dmVoteData <- DM.addDesignMatrix voteData datDMRow
-        (cDMVoteData, centerF') <- DM.centerDataMatrix dmVoteData Nothing
-        let dmVD = cDMVoteData
-            centerF = centerF'
---        (qrMatrices, centeringF) <- SFE.fixedEffectsQR_Data dmVoteData voteData Nothing
---        (cDMVoteData, qV, rV, rInvV) <- case qrMatrices of
---          SFE.ThinQR _ c (SFE.QRMatrixes q r rI) -> return (c, q, r, rI)
---          _ -> SB.stanBuildError "electionModelDM: Unexpected return type from fixedEffectsQR_Data"
+        let useAlpha = True
+            center = False
+            qr = False
+        let datDMRow = designMatrixRow @CCESWithDensity useAlpha
+        DM.addDesignMatrixIndexes voteData (designMatrixRow useAlpha) -- for splits in GQ
+        (dmVD, mCenterF, mRInvV) <- do
+          dmVDBase <- DM.addDesignMatrix voteData datDMRow
+          (dmVDC, mCF) <- case center of
+            True -> do
+              (dmVDC', cF) <- DM.centerDataMatrix useAlpha dmVDBase Nothing
+              return (dmVDC', Just cF)
+            False -> return (dmVDBase, Nothing)
+          (dmV, mRInvV) <- case qr of
+            True -> do
+              (qV, rV, rInvV) <- SB.useDataSetForBindings voteData $ DM.thinQR dmVDC
+              return (qV, Just rInvV)
+            False -> return (dmVDC, Nothing)
+          return (dmV, mCF, mRInvV)
 
-        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
-        (alphaT, alphaP) <- SB.inBlock SB.SBParameters $ do
-          aT <- SB.stanDeclare "alphaT" SB.StanReal ""
-          aP <- SB.stanDeclare "alphaP" SB.StanReal ""
-          return (aT, aP)
-        SB.inBlock SB.SBModel $ do
-          SB.addExprLine "electionModelDM" $ SB.var alphaT `SB.vectorSample` SB.stdNormal
-          SB.addExprLine "electionModelDM" $ SB.var alphaP `SB.vectorSample` SB.stdNormal
         (betaT, muT, tauT, lT) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "T")
         (betaP, muP, tauP, lP) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-        SB.useDataSetForBindings voteData $ do
-          SB.inBlock SB.SBGeneratedQuantities $ do
-{-            let SB.StanVar _ muType = muT
-                SB.StanVar _ tauType = tauT
-                vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
-            mT <- SB.stanDeclareRHS "meansT" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muT)
-            mP <- SB.stanDeclareRHS "meansP" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muP)
-            sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauT)
-            sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauP)
--}
-            DM.splitToGroupVars datDMRow muT
-            DM.splitToGroupVars datDMRow muP
-
-          let vecT = SB.vectorizeExpr "voteDataBetaT" (SB.var alphaT `SB.plus` dmBetaE dmVD betaT) (SB.dataSetName voteData)
-              vecP = SB.vectorizeExpr "voteDataBetaP" (SB.var alphaP `SB.plus` dmBetaE dmVD betaP) (SB.dataSetName voteData)
-          voteDataBetaT_v <- SB.inBlock SB.SBModel vecT
-          voteDataBetaP_v <- SB.inBlock SB.SBModel vecP
+            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVD betaT) (SB.dataSetName voteData)
+            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVD betaP) (SB.dataSetName voteData)
+        SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
+          voteDataBetaT_v <- vecT
+          voteDataBetaP_v <- vecP
           SB.sampleDistV voteData distT (SB.var voteDataBetaT_v) votes
           SB.sampleDistV voteData distP (SB.var voteDataBetaP_v) dVotes
 
-          SB.generateLogLikelihood' voteData ((distT, SB.var <$> vecT, votes)
-                                              :| [(distP, SB.var <$> vecP, dVotes)])
+        -- split parameters back to input categories after undoing QR, if necessary
+        SB.useDataSetForBindings voteData $ do
+          SB.inBlock SB.SBGeneratedQuantities $ do
+            case mRInvV of
+              Nothing -> do
+                DM.splitToGroupVars datDMRow muT
+                DM.splitToGroupVars datDMRow muP
+              Just rInvV -> do
+                let SB.StanVar _ muType = muT
+                    SB.StanVar _ tauType = tauT
+                    vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
+                mT <- SB.stanDeclareRHS "meansT" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muT)
+                mP <- SB.stanDeclareRHS "meansP" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muP)
+                sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauT)
+                sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauP)
+                DM.splitToGroupVars datDMRow mT
+                DM.splitToGroupVars datDMRow mP
+
+        SB.generateLogLikelihood' voteData ((distT, SB.var <$> vecT, votes)
+                                             :| [(distP, SB.var <$> vecP, dVotes)])
 
 
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
-        dmPS <- DM.addDesignMatrix psData designMatrixRow
+        dmPS' <- DM.addDesignMatrix psData (designMatrixRow useAlpha)
 
         let psPreCompute = do
-              cDMPS <- centerF dmPS
-{-              let SB.StanVar _ betaType = betaT
-                  vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
-                  applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
-                                       $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
-                  thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
-              thetaT <- SB.stanDeclare "thetaT" betaType ""
-              thetaFromBeta thetaT betaT
-              thetaP <- SB.stanDeclare "thetaP" betaType ""
-              thetaFromBeta thetaP betaP
--}
-              psT_v <- SB.vectorizeExpr "psBetaT" (SB.var alphaT `SB.plus` dmBetaE cDMPS betaT) (SB.dataSetName psData)
-              psP_v <- SB.vectorizeExpr "psBetaP" (SB.var alphaP `SB.plus` dmBetaE cDMPS betaP) (SB.dataSetName psData)
-              pure (psT_v, psP_v)
+              dmPS <- case mCenterF of
+                Nothing -> return dmPS'
+                Just cF -> cF dmPS'
+              case mRInvV of
+                Nothing -> do
+                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS betaT) (SB.dataSetName psData)
+                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS betaP) (SB.dataSetName psData)
+                  pure (psT_v, psP_v)
+                Just rInvV -> do
+                  let SB.StanVar _ betaType = betaT
+                      vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
+                      applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
+                                           $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
+                      thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
+                  thetaT <- SB.stanDeclare "thetaT" betaType ""
+                  thetaFromBeta thetaT betaT
+                  thetaP <- SB.stanDeclare "thetaP" betaType ""
+                  thetaFromBeta thetaP betaP
 
+                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS thetaT) (SB.dataSetName psData)
+                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS thetaP) (SB.dataSetName psData)
+                  pure (psT_v, psP_v)
             psExprF (psT_v, psP_v) = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psT_v)
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psP_v)
