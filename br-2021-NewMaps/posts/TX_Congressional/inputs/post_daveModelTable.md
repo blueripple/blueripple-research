@@ -1,7 +1,6 @@
 ## 2. Districts worthy of Dem donor support
 Based on the results above, we think there are five good options
-for Dem donors in TX: TX-15, TX-28, TX-34, TX-38 and TX-24.
-
+for Dem donors in TX:
 - TX-15 is competitive in both models and we think a slight lean R but winnable for the Dems.
 - TX-28 and TX-34 might look safe, but we are concerned that these could be hard to win,
 especially in a bad year for team Blue.
@@ -9,13 +8,15 @@ especially in a bad year for team Blue.
 historically but winnable demographically.  These are places where resources now,
 especially spent on organizing, could make a large difference.
 
+A few points on “plausible long-shots”:
+(Feel free to skip if you’ve read our discussion of these sorts of districts in other analyses.)
 Our findings in TX-38 and TX-24 deserve particular discussion. These look to be "safe R"
 given the voting patterns in the precincts within them,
 but our demographic model suggests they should be much more Dem-leaning, and maybe even Dem-winnable.
 What might this mean? One way to answer this question is to consider the difference between the two models.
 Our demographic model asks: if the voting-age citizens of this district turned out and voted like similar people
-in other parts of the country and state,  what would we expect the outcome of this election to be?
-Whereas the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
+in other parts of the country and state, what would we expect the outcome of this election to be?
+In contrast, the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
 vote as they have in previous elections. This points to a few possible reasons why a historically
 deep-red district like TX-38 might look flippable in our model -- including, but not limited to, the following:
 
@@ -35,7 +36,8 @@ But our model suggests that if you want to support Team Blue in TX,
 and are open to the idea of supporting some long-shot candidates,
 then donating to a Dem in TX-38 or TX-24 might fit the bill.
 
-Finally, a few overarching observations.
+A few overarching observations:
+(Again, these similar to points we’ve made in prior analyses.)
 As with many gerrymandered maps, this one makes the minority party very
 safe in their small number of districts and the majority somewhat less safe in theirs.
 Although the historical analysis has most of the R districts about

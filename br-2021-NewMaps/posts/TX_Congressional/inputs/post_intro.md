@@ -1,20 +1,23 @@
 # New Congressional Maps, New Dem Strategy: Our TX Analysis
 
-The 2022 Congressional elections will involve new district maps in
-all 50 states.
-Districts will be reshaped, created, and eliminated,
-which will change Dems’ odds in each race.
-How can donors figure out which races have the biggest “bang for buck”
+Like all states, Texas is locking down new disrict maps, which affect
+Democrat’s odds in 2022 COngressional races. In this reshaped landscape,
+how can donors focus their attention on races with the biggest “bang for buck”
 for flipping tenuous GOP seats or protecting vulnerable Dems?
 
-To help answer that question, we’ve been building and refining a demographic
+To help answer that question, we’ve continued to build and refine
+a demographic
 model that predicts Democratic lean in each district based on its
 makeup in terms of race, sex, education, and population density.
 We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-In this post, we’re focusing on Texas. Here’s what we’ll cover:
+This post focuses on Texas. (If you’re interested in other states,
+check out [our analysis of NC][NCPost].) Here’s what we’ll cover:
+
+[NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
+
 
 1. Dem-lean by district in TX: our demographic model vs. historical data
 2. Districts worthy of Dem donor support
@@ -24,6 +27,7 @@ In this post, we’re focusing on Texas. Here’s what we’ll cover:
 
 ## 1. Dem-lean by district in TX: our demographic model vs. historical data
 
+*Introduction:* (Feel free to skip this part if you’ve already read our prior state analyses.)
 Our “demographic” model forecasts the potential Democratic lean of each
 new district in TX based on attributes like race, education, age, and
 population density. In the graph and table below,

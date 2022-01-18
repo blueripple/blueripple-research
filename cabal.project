@@ -2,7 +2,7 @@ packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics, beam-migrate
 --ghc 9.2
 --allow-newer: base
 --           , template-haskell
@@ -53,7 +53,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 23031a074688dcf4b2e7936838214a6c9a8345ff
+  tag: d7f3238eba6726c12ac89e0f6fd00fa2f4c1704c
 
 source-repository-package
   type: git
@@ -64,7 +64,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: 450d59bb2a2cf28ebcbd7b8b597ca1daf98b8f95
+  tag: d7eadcb1c6815593e7d81f4734074f8f9ec4cec8
 
 source-repository-package
   type: git
