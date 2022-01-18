@@ -744,7 +744,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
         -- design matrix
         let useAlpha = True
-            center = False
+            center = True
             qr = False
         let datDMRow = designMatrixRow @CCESWithDensity useAlpha
         DM.addDesignMatrixIndexes voteData (designMatrixRow useAlpha) -- for splits in GQ
@@ -757,7 +757,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
             False -> return (dmVDBase, Nothing)
           (dmV, mRInvV) <- case qr of
             True -> do
-              (qV, rV, rInvV) <- SB.useDataSetForBindings voteData $ DM.thinQR dmVDC
+              (qV, rV, rInvV) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedData $ DM.thinQR dmVDC
               return (qV, Just rInvV)
             False -> return (dmVDC, Nothing)
           return (dmV, mCF, mRInvV)

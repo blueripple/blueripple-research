@@ -207,13 +207,14 @@ centerDataMatrix skipAlphaCol mV@(SB.StanVar mn mt) mwgtsV = do
     centeredXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
     SB.stanForLoopB "k" mStart colIndexKey $ do
       SB.addStanLine $ "mean_" <> mn <> "[k] = " <> meanFunction
+    SB.stanForLoopB "k" Nothing colIndexKey $ do
       SB.addStanLine $ "centered_" <>  mn <> "[,k] = " <> mn <> "[,k] - mean_" <> mn <> "[k]"
     pure centeredXV'
   let centeredX mv@(SB.StanVar sn st) =
         case st of
           cmt@(SB.StanMatrix (_, SB.NamedDim colIndexKey)) -> SB.inBlock SB.SBTransformedData $ do
             cv <- SB.stanDeclare ("centered_" <> sn) cmt ""
-            SB.stanForLoopB "k" mStart colIndexKey $ do
+            SB.stanForLoopB "k" Nothing colIndexKey $ do
               SB.addStanLine $ "centered_" <> sn <> "[,k] = " <> sn <> "[,k] - mean_" <> mn <> "[k]"
             return cv
           _ -> SB.stanBuildError
