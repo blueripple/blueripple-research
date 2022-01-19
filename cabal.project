@@ -2,7 +2,7 @@ packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics, beam-migrate
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics, beam-migrate, foldl-statistics:hashable
 --ghc 9.2
 --allow-newer: base
 --           , template-haskell

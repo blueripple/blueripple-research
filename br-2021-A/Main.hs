@@ -82,16 +82,11 @@ import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.SumToZero as SB
+import qualified Stan.ModelBuilder.GroupModel as SGM
+import qualified Stan.ModelBuilder.FixedEffects as SFE
 import qualified Stan.Parameters as SP
 import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
 import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.DataFrames as DT
 import BlueRipple.Data.DataFrames (raceId')
@@ -165,7 +160,7 @@ ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
 
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 
-wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonLatinx) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 
 ra4WhiteNonGrad r = ra4White r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
@@ -1066,7 +1061,7 @@ race4Pums r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r)
 wnhPums r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
-
+{-
 cpsVGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
 cpsVGroupBuilder districts states = do
   cpsVTag <- SB.addDataSetToGroupBuilder "CPSV" (SB.ToFoldable BRE.cpsVRows)
@@ -1099,38 +1094,39 @@ cpsVGroupBuilder districts states = do
   SB.addGroupIndexForDataSet wngGroup acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
   SB.addGroupIndexForDataSet ageGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
+-}
 
-ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS ()
+ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
 ccesGroupBuilder districts states = do
-  ccesTag <- SB.addDataSetToGroupBuilder "CCES" (SB.ToFoldable BRE.ccesRows)
-  SB.addGroupIndexForDataSet cdGroup ccesTag $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet stateGroup ccesTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet raceGroup ccesTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-  SB.addGroupIndexForDataSet wnhGroup ccesTag $ SB.makeIndexFromEnum wnhCCES
-  SB.addGroupIndexForDataSet sexGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet educationGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet wngGroup ccesTag $ SB.makeIndexFromEnum wnhNonGradCCES
-  SB.addGroupIndexForDataSet ageGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-  cdData <- SB.addDataSetToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
-  SB.addGroupIndexForCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
-  acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
-  SB.addGroupIndexForDataSet cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet wngGroup acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet ageGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
-  acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-  SB.addGroupIndexForDataSet cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
-  SB.addGroupIndexForDataSet stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
-  SB.addGroupIndexForDataSet wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
-  SB.addGroupIndexForDataSet sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
-  SB.addGroupIndexForDataSet educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForDataSet wngGroup acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
-  SB.addGroupIndexForDataSet ageGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  ccesTag <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable BRE.ccesRows)
+  SB.addGroupIndexForData cdGroup ccesTag $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForData stateGroup ccesTag $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData raceGroup ccesTag $ SB.makeIndexFromEnum (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+  SB.addGroupIndexForData wnhGroup ccesTag $ SB.makeIndexFromEnum wnhCCES
+  SB.addGroupIndexForData sexGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForData educationGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForData wngGroup ccesTag $ SB.makeIndexFromEnum wnhNonGradCCES
+  SB.addGroupIndexForData ageGroup ccesTag $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  cdData <- SB.addModelDataToGroupBuilder "CD" (SB.ToFoldable BRE.districtRows)
+  SB.addGroupIndexForModelCrosswalk cdData $ SB.makeIndexFromFoldable show districtKey districts
+  acsData_W <- SB.addGQDataToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh)
+  SB.addGroupIndexForData cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForData stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForData wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForData sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForData educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForData wngGroup acsData_W $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForData ageGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
+  acsData_NW <- SB.addGQDataToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh))
+  SB.addGroupIndexForData cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
+  SB.addGroupIndexForData stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForData wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
+  SB.addGroupIndexForData sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
+  SB.addGroupIndexForData educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
+  SB.addGroupIndexForData wngGroup acsData_NW $ SB.makeIndexFromEnum wnhNonGradPums
+  SB.addGroupIndexForData ageGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SimpleAgeC)
   return ()
 
 pumsPSGroups  :: SB.GroupSet
@@ -1146,18 +1142,18 @@ pumsPSGroups = SB.addGroupToSet cdGroup
 
 --
 districtSpecificTurnoutModel :: (K.KnitEffects r, BR.CacheEffects r)
-                          => Bool -- clear cache
-                          -> Bool -- include state/race interaction term?
-                          -> SSTData
-                          -> [Int]
-                          -> K.ActionWithCacheTime r BRE.CCESAndPUMS
-                          -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]
-                                                              , Map Text [Double]
-                                                              , Map Text [Double]
-                                                              , Map Text [Double]
-                                                              , Map Text [Double]
-                                                              )
-                                     )
+                             => Bool -- clear cache
+                             -> Bool -- include state/race interaction term?
+                             -> SSTData
+                             -> [Int]
+                             -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+                             -> K.Sem r (K.ActionWithCacheTime r (Map Text [Double]
+                                                                 , Map Text [Double]
+                                                                 , Map Text [Double]
+                                                                 , Map Text [Double]
+                                                                 , Map Text [Double]
+                                                                 )
+                                        )
 districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYears_C =
   K.wrapPrefix "districtSpecificTurnoutModel" $ do
   let modelDir = "br-2021-A/stan/" <> nameSSTData dataSource
@@ -1167,14 +1163,14 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM BRE.CCESAndPUMS ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
       dataAndCodeBuilder totalF succF withSDRace = do
         -- data & model
 --        cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
         modelDataRT <- case dataSource of
-          SSTD_CPS -> SB.dataSetTag @modelRow "CPSV"
-          SSTD_CCES -> SB.dataSetTag @modelRow "CCES"
-        cdDataRT <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) "CD"
+          SSTD_CPS -> SB.dataSetTag @modelRow SC.ModelData "CPSV"
+          SSTD_CCES -> SB.dataSetTag @modelRow SC.ModelData "CCES"
+        cdDataRT <- SB.dataSetTag @(F.Record BRE.DistrictDemDataR) SC.ModelData "CD"
         SB.addDataSetsCrosswalk modelDataRT cdDataRT cdGroup
         SB.setDataSetForBindings modelDataRT
         vTotal <- SB.addCountData modelDataRT "T" totalF
@@ -1184,25 +1180,32 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
             sigmaPrior = normal 2
             fePrior = normal 2
             sumToZeroPrior = normal 0.01
-            simpleGroupModel x = SB.NonHierarchical SB.STZNone (normal x)
-            muH gn s = "mu" <> s <> "_" <> gn
-            sigmaH gn s = "sigma" <> s <> "_" <> gn
-            hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>", SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
-            hierGroupModel' gn s = SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
+            simpleGroupModel x = SGM.NonHierarchical SB.STZNone (normal x)
+            muH gn s = SB.StanVar ("mu" <> s <> "_" <> gn) SB.StanReal
+            sigmaH gn s = SB.StanVar ("sigma" <> s <> "_" <> gn) SB.StanReal
+            hierHPs gn s = M.fromList [(muH gn s, ("", \v -> SB.var v `SB.vectorSample` SB.stdNormal))
+                                      , (sigmaH gn s, ("<lower=0>", \v -> SB.var v `SB.vectorSample` SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))
+                                      ]
+            hierGroupModel' gn s = SGM.Hierarchical
+                                   SB.STZNone
+                                   (hierHPs gn s)
+                                   (SGM.Centered $ \v -> SB.addExprLine "districtSpecificTurnoutModel"
+                                                         $ SB.var v `SB.vectorSample` SB.normal (Just $ SB.var $ muH gn s) (SB.var $ sigmaH gn s))
             hierGroupModel gtt s = hierGroupModel' (SB.taggedGroupName gtt) s
 --              let gn = SB.taggedGroupName gtt
 --              in SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
-            groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
+            groupModelMR gtt s = SGM.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
 
 
         alphaE <- SB.intercept "alpha" (normal 2)
-        (feCDE, betaE, _) <- MRP.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
-                                  True
-                                  fePrior
-                                  cdDataRT
-                                  modelDataRT
-                                  (MRP.FixedEffects 1 densityPredictor)
+        (feCDE, betaE, _) <- SFE.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
+                             SFE.NonInteractingFE True
+                             True
+                             fePrior
+                             cdDataRT
+                             modelDataRT
+                             (SB.MatrixRowFromData 1 densityPredictor)
         gSexE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) sexGroup Nothing
         gRaceE <- MRP.addGroup modelDataRT binaryPrior (hierGroupModel raceGroup "T") raceGroup Nothing
         gAgeE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) ageGroup Nothing
@@ -1211,22 +1214,22 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
         gStateE <- MRP.addGroup modelDataRT binaryPrior (groupModelMR stateGroup "") stateGroup Nothing
         gCDE <- MRP.addGroup modelDataRT binaryPrior (groupModelMR cdGroup "") cdGroup Nothing
         let dist = SB.binomialLogitDist vSucc vTotal
-            hierWNHState = SB.hierarchicalCenteredFixedMeanNormal 0 "wnhState" sigmaPrior SB.STZNone
+            hierWNHState = SGM.hierarchicalCenteredFixedMeanNormal 0 "wnhState" sigmaPrior SB.STZNone
         gWNHState <- MRP.addInteractions2 modelDataRT hierWNHState wnhGroup stateGroup Nothing
         vGWNHState <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHState modelDataRT
         (logitPE_sample, logitPE) <- case withSDRace of
           True -> do
-            let hierWNHCD = SB.hierarchicalCenteredFixedMeanNormal 0 "wnhCD" sigmaPrior SB.STZNone
+            let hierWNHCD = SGM.hierarchicalCenteredFixedMeanNormal 0 "wnhCD" sigmaPrior SB.STZNone
             gWNHCD <- MRP.addInteractions2 modelDataRT hierWNHCD wnhGroup cdGroup Nothing
             vGWNHCD <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHCD modelDataRT
-            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.useVar vGWNHState, SB.useVar vGWNHCD]
-                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.useVar gWNHState, SB.useVar gWNHCD])
+            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.var vGWNHState, SB.var vGWNHCD]
+                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.var gWNHState, SB.var gWNHCD])
           False ->
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE])
 
         let logitPE_NI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
-            logitPE_SI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.useVar gWNHState, gCDE]
+            logitPE_SI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.var gWNHState, gCDE]
         SB.sampleDistV modelDataRT dist logitPE_sample
 
         -- generated quantities
@@ -1272,12 +1275,12 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
         return ()
 
       extractTestResults :: K.KnitEffects r
-                         => SC.ResultAction r d SB.DataSetGroupIntMaps () (Map Text [Double]
-                                                                          , Map Text [Double]
-                                                                          , Map Text [Double]
-                                                                          , Map Text [Double]
-                                                                          , Map Text [Double]
-                                                                          )
+                         => SC.ResultAction r md gq SB.DataSetGroupIntMaps () (Map Text [Double]
+                                                                              , Map Text [Double]
+                                                                              , Map Text [Double]
+                                                                              , Map Text [Double]
+                                                                              , Map Text [Double]
+                                                                              )
       extractTestResults = SC.UseSummary f where
         f summary _ aAndEb_C = do
           let eb_C = fmap snd aAndEb_C
@@ -1367,7 +1370,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM BRE.CCESAndPUMS ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
       dataAndCodeBuilder totalF succF withStateRace = do
         -- data & model
   --      cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
@@ -1384,23 +1387,23 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
             sigmaPrior = normal 2
             fePrior = normal 2
             sumToZeroPrior = normal 0.01
-            simpleGroupModel x = SB.NonHierarchical SB.STZNone (normal x)
+            simpleGroupModel x = SGM.NonHierarchical SB.STZNone (normal x)
             muH gn s = "mu" <> s <> "_" <> gn
             sigmaH gn s = "sigma" <> s <> "_" <> gn
             hierHPs gn s = M.fromList [(muH gn s, ("", SB.stdNormal)), (sigmaH gn s, ("<lower=0>", SB.normal (Just $ SB.scalar "0") (SB.scalar "2")))]
-            hierGroupModel' gn s = SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
+            hierGroupModel' gn s = SGM.Hierarchical SB.STZNone (hierHPs gn s) (SGM.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
             hierGroupModel gtt s = hierGroupModel' (SB.taggedGroupName gtt) s
 --              let gn = SB.taggedGroupName gtt
 --              in SB.Hierarchical SB.STZNone (hierHPs gn s) (SB.Centered $ SB.normal (Just $ SB.name $ muH gn s) (SB.name $ sigmaH gn s))
             gmSigmaName gtt suffix = "sigma" <> suffix <> "_" <> SB.taggedGroupName gtt
-            groupModelMR gtt s = SB.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
+            groupModelMR gtt s = SGM.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
         alphaE <- SB.intercept "alpha" (normal 2)
-        (feCDE, xBetaE, _) <- MRP.addFixedEffects
+        (feCDE, xBetaE, _) <- SFE.addFixedEffects
                                   True
                                   fePrior
                                   cdDataRT
                                   modelDataRT
-                                  (MRP.FixedEffects 1 densityPredictor)
+                                  (SB.MatrixRowFromData 1 densityPredictor)
         gSexE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) sexGroup Nothing
         gRaceE <- MRP.addGroup modelDataRT binaryPrior (hierGroupModel raceGroup "") raceGroup Nothing
         gAgeE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) ageGroup Nothing
@@ -1410,11 +1413,11 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
         let dist = SB.binomialLogitDist vSucc vTotal
         (logitPE_sample, logitPE) <- case withStateRace of
           True -> do
-            let hierGM = SB.hierarchicalCenteredFixedMeanNormal 0 "sigmaWNHState" sigmaPrior SB.STZNone
+            let hierGM = SGM.hierarchicalCenteredFixedMeanNormal 0 "sigmaWNHState" sigmaPrior SB.STZNone
             gWNHState <- MRP.addInteractions2 modelDataRT hierGM wnhGroup stateGroup Nothing
             vGWNHState <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHState modelDataRT
-            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.useVar vGWNHState]
-                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.useVar gWNHState])
+            return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.var vGWNHState]
+                     , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.var gWNHState])
           False ->
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE])

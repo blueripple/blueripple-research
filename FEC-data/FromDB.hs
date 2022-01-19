@@ -55,8 +55,8 @@ import           Data.Time.Calendar.WeekDate    ( toWeekDate )
 import           Data.Time.LocalTime            ( LocalTime(..)
                                                 , TimeOfDay(..)
                                                 )
-import           Data.Time.Clock (utctDay)                 
-import           Data.Time.Clock.System (getSystemTime, systemToUTCTime)                 
+import           Data.Time.Clock (utctDay)
+import           Data.Time.Clock.System (getSystemTime, systemToUTCTime)
 import           Data.Tuple.Select              ( sel1
                                                 , sel2
                                                 , sel3
@@ -331,7 +331,7 @@ candidateMoneySummary dbConn officeM stateM districtM
       $ do
 --          candidateWithForecast <- allCandsWithForecasts -- this has only candidateID col
           candidate             <- candidatesInElection
-          totals <- allTotals          
+          totals <- allTotals
           B.guard_ (FEC._candidate_totals_candidate_id totals `B.references_` candidate) -- only include candidates for whom we have fcast data
           indSupport <- B.leftJoin_
             aggregatedIESupport
@@ -342,7 +342,7 @@ candidateMoneySummary dbConn officeM stateM districtM
           partyExpenditures <- B.leftJoin_
             aggregatedPartyExpenditures
             (\(id, _) -> (id `B.references_` candidate))
-          
+
           pure
             ( ( candidate ^. FEC.candidate_id
               , candidate ^. FEC.candidate_name
@@ -676,7 +676,7 @@ moneySummaryCSV = do
           <> T.pack (TP.printf "%.0f" io)
           <> ","
           <> T.pack (TP.printf "%.0f" pe)
-  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2020_senate.db"
+  dbConn <- SL.open "/Users/adam/DataScience/DBs/FEC2022_senate.db"
   let
     header
       = "candidate_id,candidate_name,state_abbreviation,congressional_district,party,cash_on_hand,disbursements,receipts,ind_support,ind_oppose,party_expenditures"
@@ -685,16 +685,12 @@ moneySummaryCSV = do
       let (y, m, d) = toGregorian day in show y ++ wZero m ++ wZero d
   rows <- candidateMoneySummary
           dbConn
-          Nothing  
+          Nothing
           Nothing
           Nothing
   let fname =
-        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/allMoney_20200902.csv"
+        "/Users/adam/BlueRipple/data-sets/data/campaign-finance/senateMoney_20220119.csv"
   handle <- Sys.openFile fname Sys.WriteMode
   T.hPutStrLn handle header
   mapM (T.hPutStrLn handle . tupleToCSV) rows
   Sys.hClose handle
-
-
-
-
