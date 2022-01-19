@@ -2,7 +2,7 @@ packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics, beam-migrate
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable, beam-migrate
 --ghc 9.2
 --allow-newer: base
 --           , template-haskell
@@ -85,7 +85,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: d1724eae4b1838b0cad8eab8817124f4a723f3ef
+  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
 
 --source-repository-package
 --  type: git

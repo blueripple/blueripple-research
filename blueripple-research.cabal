@@ -91,7 +91,7 @@ library  haskell-stan
                , foldl >= 1.4 && < 1.5
                , Frames >= 0.6.1 && < 0.8
                , Frames-streamly >= 0.2.0
-               , hashable >= 1.3 && < 1.4
+               , hashable >= 1.3 && < 1.6
                , hs-cmdstan >= 0.1 && < 0.2
                , here
                , knit-haskell >= 0.9 && < 0.11
@@ -385,7 +385,7 @@ executable mrp-model
                , discrimination
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10
-               , hashable >= 1.2 && < 1.4
+               , hashable
                , lens >= 4.16 && < 5
                , log-domain < 0.13
                , mtl >= 2.1 && < 2.3.0
