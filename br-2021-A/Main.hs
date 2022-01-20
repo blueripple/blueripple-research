@@ -54,6 +54,7 @@ import qualified Data.Time.Calendar            as Time
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
+import qualified Data.Vector.Unboxed as VU
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
@@ -153,7 +154,7 @@ districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField 
 districtPredictors r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)
                                          , realToFrac $F.rgetField @BRE.Incumbency r]
 
-densityPredictor r = Vector.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)]
+densityPredictor r = VU.fromList $ [Numeric.log (F.rgetField @DT.PopPerSqMile r)]
 
 --acsWhite :: F.Record BRE.PUMSByCDR -> Bool
 ra4White = (== DT.RA4_White) . F.rgetField @DT.RaceAlone4C
@@ -1200,12 +1201,12 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 
         alphaE <- SB.intercept "alpha" (normal 2)
         (feCDE, betaE, _) <- SFE.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
-                             SFE.NonInteractingFE True
-                             True
-                             fePrior
+                             (SFE.NonInteractingFE True fePrior)
                              cdDataRT
                              modelDataRT
-                             (SB.MatrixRowFromData 1 densityPredictor)
+                             Nothing
+                             (SB.MatrixRowFromData "Density" 1 densityPredictor)
+                             Nothing
         gSexE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) sexGroup Nothing
         gRaceE <- MRP.addGroup modelDataRT binaryPrior (hierGroupModel raceGroup "T") raceGroup Nothing
         gAgeE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) ageGroup Nothing
