@@ -1199,30 +1199,43 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
             groupModelMR gtt s = SGM.hierarchicalCenteredFixedMeanNormal 0 (gmSigmaName gtt s) sigmaPrior SB.STZNone
 
 
-        alphaE <- SB.intercept "alpha" (normal 2)
-        (feCDE, betaE, _) <- SFE.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
+        alphaE <- SB.var <$> SB.intercept "alpha" (normal 2)
+        (feMatrices, centerF) <- SFE.addFixedEffectsData
+                                 cdDataRT
+                                 (SB.MatrixRowFromData "Density" 1 densityPredictor)
+                                 Nothing
+        let baseFEM = (SFE.NonInteractingFE True fePrior)
+        (thetaMultF, betaMultF) <- SFE.addFixedEffectsParametersAndPriors baseFEM feMatrices cdDataRT modelDataRT Nothing
+        (q', feCDE) <- SB.inBlock SB.SBModel $ SB.useDataSetForBindings modelDataRT $ do
+          q <- SB.stanBuildEither $ SFE.qrM SFE.qM feMatrices
+          reIndexedQ <- SFE.reIndex (SB.dataSetName cdDataRT) (SB.crosswalkIndexKey cdDataRT) q
+          feCD' <- thetaMultF (SB.dataSetName modelDataRT) reIndexedQ
+          return (reIndexedQ, feCD')
+{-
+        (feCDMVE, betaE, _) <- SFE.addFixedEffects -- @(F.Record BRE.DistrictDemDataR)
                              (SFE.NonInteractingFE True fePrior)
                              cdDataRT
                              modelDataRT
                              Nothing
                              (SB.MatrixRowFromData "Density" 1 densityPredictor)
                              Nothing
-        gSexE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) sexGroup Nothing
-        gRaceE <- MRP.addGroup modelDataRT binaryPrior (hierGroupModel raceGroup "T") raceGroup Nothing
-        gAgeE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) ageGroup Nothing
-        gEduE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) educationGroup Nothing
-        gWNGE <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) wngGroup Nothing
-        gStateE <- MRP.addGroup modelDataRT binaryPrior (groupModelMR stateGroup "") stateGroup Nothing
-        gCDE <- MRP.addGroup modelDataRT binaryPrior (groupModelMR cdGroup "") cdGroup Nothing
-        let dist = SB.binomialLogitDist vSucc vTotal
+-}
+        (gSexE, _) <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) sexGroup Nothing
+        (gRaceE, _) <- MRP.addGroup modelDataRT binaryPrior (hierGroupModel raceGroup "T") raceGroup Nothing
+        (gAgeE, _) <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) ageGroup Nothing
+        (gEduE, _) <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) educationGroup Nothing
+        (gWNGE, _) <- MRP.addGroup modelDataRT binaryPrior (simpleGroupModel 1) wngGroup Nothing
+        (gStateE, _) <- MRP.addGroup modelDataRT binaryPrior (groupModelMR stateGroup "") stateGroup Nothing
+        (gCDE, _) <- MRP.addGroup modelDataRT binaryPrior (groupModelMR cdGroup "") cdGroup Nothing
+        let dist = SB.binomialLogitDist vTotal
             hierWNHState = SGM.hierarchicalCenteredFixedMeanNormal 0 "wnhState" sigmaPrior SB.STZNone
         gWNHState <- MRP.addInteractions2 modelDataRT hierWNHState wnhGroup stateGroup Nothing
-        vGWNHState <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHState modelDataRT
+        vGWNHState <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHState (SB.dataSetName modelDataRT)
         (logitPE_sample, logitPE) <- case withSDRace of
           True -> do
             let hierWNHCD = SGM.hierarchicalCenteredFixedMeanNormal 0 "wnhCD" sigmaPrior SB.STZNone
             gWNHCD <- MRP.addInteractions2 modelDataRT hierWNHCD wnhGroup cdGroup Nothing
-            vGWNHCD <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHCD modelDataRT
+            vGWNHCD <- SB.inBlock SB.SBModel $ SB.vectorizeVar gWNHCD (SB.dataSetName modelDataRT)
             return $ (SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.var vGWNHState, SB.var vGWNHCD]
                      , SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE, SB.var gWNHState, SB.var gWNHCD])
           False ->
@@ -1231,26 +1244,26 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 
         let logitPE_NI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, gCDE]
             logitPE_SI = SB.multiOp "+" $ alphaE :| [feCDE, gSexE, gRaceE, gAgeE, gEduE, gWNGE, gStateE, SB.var gWNHState, gCDE]
-        SB.sampleDistV modelDataRT dist logitPE_sample
+        SB.sampleDistV modelDataRT dist logitPE_sample vSucc
 
         -- generated quantities
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
-        SB.generateLogLikelihood modelDataRT dist logitPE
+        SB.generateLogLikelihood modelDataRT dist (pure logitPE) vSucc
 
 --        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
-        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_WNH"
+        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH"
 --        SB.duplicateDataSetBindings acsData_W  [("ACS_WNH_State","State")]
 --        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
 --        SB.addDataSetIndexes acsData_W modelDataRT pumsPSGroupRowMap
 
 --        acsData_NW <- SB.addDataSet "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
-        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) "ACS_NWNH"
+        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_NWNH"
 --        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
 
 --        SB.addDataSetIndexes acsData_NW modelDataRT pumsPSGroupRowMap
 
         let postStratByState nameHead modelExp dataSet =
-              MRP.addPostStratification @BRE.CCESAndPUMS
+              MRP.addPostStratification
                 (\ik -> return $ SB.familyExp dist ik modelExp)
                 (Just nameHead)
                 modelDataRT
