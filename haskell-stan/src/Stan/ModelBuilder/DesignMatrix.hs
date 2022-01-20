@@ -73,6 +73,10 @@ boundedEnumRowFunc rToKey = case numKeys of
     oneZero r x = if rToKey r == x then 1 else 0
     nonBinary = (numKeys, \r -> V.fromList $ fmap (oneZero r) keys)
 
+boundedEnumRowPart :: (Enum k, Bounded k, Eq k) => Text -> (r -> k) -> DesignMatrixRowPart r
+boundedEnumRowPart name f = DesignMatrixRowPart name n vf
+  where (n, vf) = boundedEnumRowFunc f
+
 -- adds matrix (name_dataSetName)
 -- adds K_name for col dimension (also <NamedDim name_Cols>)
 -- row dimension should be N_dataSetNamer  (which is <NamedDim dataSetName)

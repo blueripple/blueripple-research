@@ -255,7 +255,7 @@ prepCCESDM clearCaches ddd_C cces_C = do
   let cacheKey = "data/newMaps/ccesWithDensity.bin"
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey ((,) <$> ddd_C <*> cces_C)
-    $ \(ddd, cces) -> K.knitEither $ BRE.addPopDensByDistrict ddd cces
+    $ \(ddd, cces) -> K.knitEither $ BRE.addPopDensByDistrictToCCES ddd cces
 
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do

@@ -973,13 +973,15 @@ addDataSetsCrosswalk :: forall k rFrom rTo md gq.(Typeable md, Typeable gq, Type
                      -> GroupTypeTag k
                      -> StanBuilderM md gq ()
 addDataSetsCrosswalk  rttFrom rttTo gtt = do
+{-
   when (inputDataType rttFrom /= inputDataType rttTo)
     $ stanBuildError
     $ "addDataSetsCrosswalk: From=" <> dataSetName rttFrom
     <> " (" <> show (inputDataType rttFrom) <> ")  and to="
     <> dataSetName rttTo <> " (" <> show (inputDataType rttTo)
     <> ") have different input data types (Model/GQ)"
-  let idt = inputDataType rttFrom
+-}
+  let --idt = inputDataType rttFrom
       gttX :: GroupTypeTag k = GroupTypeTag $ "I_" <> (dataSetName rttTo)
   fromToGroup <- rowToGroup <$> indexMap rttFrom gtt -- rFrom -> k
   toGroupToIndexE <- groupKeyToGroupIndex <$> indexMap rttTo gttX -- k -> Either Text Int

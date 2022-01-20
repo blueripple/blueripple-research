@@ -550,12 +550,21 @@ prepCCESAndPums clearCache = do
 
 
 type CCESWithDensity = CCESByCDR V.++ '[DT.PopPerSqMile]
-addPopDensByDistrict :: F.FrameRec DistrictDemDataR -> F.FrameRec CCESByCDR -> Either Text (F.FrameRec CCESWithDensity)
-addPopDensByDistrict ddd cces = do
+addPopDensByDistrictToCCES :: F.FrameRec DistrictDemDataR -> F.FrameRec CCESByCDR -> Either Text (F.FrameRec CCESWithDensity)
+addPopDensByDistrictToCCES ddd cces = do
   let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
       (joined, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] cces ddd'
   when (not $ null missing) $ Left $ "missing keys in join of density data to cces: " <> show missing
   Right joined
+
+type PUMSWithDensity = PUMSByCDR V.++ '[DT.PopPerSqMile]
+addPopDensByDistrictToPUMS :: F.FrameRec DistrictDemDataR -> F.FrameRec PUMSByCDR -> Either Text (F.FrameRec PUMSWithDensity)
+addPopDensByDistrictToPUMS ddd cces = do
+  let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
+      (joined, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] cces ddd'
+  when (not $ null missing) $ Left $ "missing keys in join of density data to pums: " <> show missing
+  Right joined
+
 
 race5FromCPS :: F.Record CPSVByCDR -> DT.Race5
 race5FromCPS r =
