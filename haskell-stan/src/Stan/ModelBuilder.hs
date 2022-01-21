@@ -10,7 +10,6 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -19,6 +18,7 @@
 module Stan.ModelBuilder
 (
   module Stan.ModelBuilder
+  , module Stan.ModelBuilder.BuilderTypes
   , module Stan.ModelBuilder.Expressions
   , module Stan.ModelBuilder.Distributions
   )
@@ -28,6 +28,7 @@ import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
 import Stan.ModelBuilder.Expressions
 import Stan.ModelBuilder.Distributions
+import Stan.ModelBuilder.BuilderTypes
 
 import Prelude hiding (All)
 import qualified Control.Foldl as Foldl
@@ -62,49 +63,6 @@ import Stan.ModelConfig (InputDataType(..))
 import Knit.Report (crimson)
 import qualified Data.Hashable.Lifted as Hashable
 
-type FunctionsBlock = T.Text
-
-type DataBlock = T.Text
-
-type TransformedDataBlock = T.Text
-
-type ParametersBlock = T.Text
-
-type TransformedParametersBlock = T.Text
-
-type ModelBlock = T.Text
-
-type GeneratedQuantitiesBlock = T.Text
-
-data GeneratedQuantities = NoGQ | NoLL | OnlyLL | All
-
-data StanModel = StanModel
-  { functionsBlock :: Maybe FunctionsBlock,
-    dataBlock :: DataBlock,
-    transformedDataBlockM :: Maybe TransformedDataBlock,
-    parametersBlock :: ParametersBlock,
-    transformedParametersBlockM :: Maybe TransformedParametersBlock,
-    modelBlock :: ModelBlock,
-    generatedQuantitiesBlockM :: Maybe GeneratedQuantitiesBlock,
-    genLogLikelihoodBlock :: GeneratedQuantitiesBlock
-  }
-  deriving (Show, Eq, Ord)
-
-data StanBlock = SBFunctions
-               | SBData
-               | SBTransformedData
-               | SBParameters
-               | SBTransformedParameters
-               | SBModel
-               | SBGeneratedQuantities
-               | SBLogLikelihood deriving (Show, Eq, Ord, Enum, Bounded, Array.Ix)
-
-data WithIndent = WithIndent Text Int
-
-data StanCode = StanCode { curBlock :: StanBlock
-                         , blocks :: Array.Array StanBlock WithIndent
-                         }
-
 
 stanCodeToStanModel :: StanCode -> StanModel
 stanCodeToStanModel (StanCode _ a) =
@@ -124,61 +82,15 @@ stanCodeToStanModel (StanCode _ a) =
 emptyStanCode :: StanCode
 emptyStanCode = StanCode SBData (Array.listArray (minBound, maxBound) $ repeat (WithIndent mempty 2))
 
-data JSONSeriesFold row where
-  JSONSeriesFold :: Stan.StanJSONF row Aeson.Series -> JSONSeriesFold row
-
-instance Semigroup (JSONSeriesFold row) where
-  (JSONSeriesFold a) <> (JSONSeriesFold b) = JSONSeriesFold (a <> b)
-
-instance Monoid (JSONSeriesFold row) where
-  mempty = JSONSeriesFold $ pure mempty
-
--- f is existential here.  We supply the choice when we *construct* a ToFoldable
-data ToFoldable d row where
-  ToFoldable :: Foldable f => (d -> f row) -> ToFoldable d row
-
 applyToFoldable :: Foldl.Fold row a -> ToFoldable d row -> d -> a
 applyToFoldable fld (ToFoldable f) = Foldl.fold fld . f
 
 applyToFoldableM :: Monad m => Foldl.FoldM m row a -> ToFoldable d row -> d -> m a
 applyToFoldableM fldM (ToFoldable f) = Foldl.foldM fldM . f
 
-data GroupTypeTag k where
-  GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
-
-CE.deriveArgDict ''GroupTypeTag
-
-taggedGroupName :: GroupTypeTag k -> Text
-taggedGroupName (GroupTypeTag n) = n
-
-instance GADT.GEq GroupTypeTag where
-  geq gta@(GroupTypeTag n1) gtb@(GroupTypeTag n2) =
-    case Reflection.eqTypeRep (Reflection.typeOf gta) (Reflection.typeOf gtb) of
-      Just Reflection.HRefl -> if n1 == n2 then Just Reflection.Refl else Nothing
-      _ -> Nothing
-
-instance GADT.GShow GroupTypeTag where
-  gshowsPrec _ (GroupTypeTag n) s = s ++ "GTT (name= " ++ toString n ++ ")"
-
-
-instance Hashable.Hashable (Some.Some GroupTypeTag) where
-  hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
-  hashWithSalt m (Some.Some (GroupTypeTag n)) = hashWithSalt m n
-
-data IntIndex row = IntIndex { i_Size :: Int, i_Index :: row -> Either Text Int }
-
-data MakeIndex r k where
-  GivenIndex :: Ord k => (Map k Int) -> (r -> k) -> MakeIndex r k
-  FoldToIndex :: Ord k =>  (Foldl.Fold r (Map k Int)) -> (r -> k) -> MakeIndex r k
---  SupplementalIndex :: (Ord k, Foldable f) => f k -> MakeIndex r k
-
-
-data IndexMap r k = IndexMap
-                    { rowToGroupIndex :: IntIndex r,
-                      groupKeyToGroupIndex :: k -> Either Text Int,
-                      groupIndexToGroupKey :: IntMap.IntMap k,
-                      rowToGroup :: r -> k
-                    }
+-- the key is a name for the data-set.  The tag carries the toDataSet function
+type RowBuilder d = DSum.DSum RowTypeTag (RowInfo d)
+type RowInfos d = DHash.DHashMap RowTypeTag (RowInfo d)
 
 unusedIntIndex :: IntIndex r
 unusedIntIndex = IntIndex 0 (const $ Left $ "Attempt to use an unused Int Index.")
@@ -226,12 +138,6 @@ indexFold printK start =  Foldl.Fold step init done where
     keyedList = zip (Set.toList s) [start..]
     mapToInt = Map.fromList keyedList
 
--- Index makers for one row type
-newtype GroupIndexMakers r = GroupIndexMakers (DHash.DHashMap GroupTypeTag (MakeIndex r))
--- Indexes for one row type, made using the IndexMaker in GroupIndexMakerDHM and the rows of r from d
-newtype GroupIndexes r = GroupIndexes (DHash.DHashMap GroupTypeTag (IndexMap r))
-
-
 -- For post-stratification
 newtype RowMap r k = RowMap (r -> k)
 type GroupRowMap r = DHash.DHashMap GroupTypeTag (RowMap r)
@@ -251,17 +157,6 @@ emptyGroupSet = DHash.empty
 addGroupToSet :: Typeable k => GroupTypeTag k -> GroupSet -> GroupSet
 addGroupToSet gtt gs = DHash.insert gtt Phantom gs
 
-newtype DataToIntMap r k = DataToIntMap { unDataToIntMap :: Foldl.FoldM (Either Text) r (IntMap k) }
-newtype GroupIntMapBuilders r = GroupIntMapBuilders (DHash.DHashMap GroupTypeTag (DataToIntMap r))
-
--- r is a Phantom type here
-newtype GroupIntMaps r = GroupIntMaps (DHash.DHashMap GroupTypeTag IntMap.IntMap)
-type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
-
---displayDataSetGroupIntMaps :: DataSetGroupIntMaps -> Text
---displayDataSetGroupIntMaps x =
-
-data GroupIndexAndIntMapMakers d r = GroupIndexAndIntMapMakers (ToFoldable d r) (GroupIndexMakers r) (GroupIntMapBuilders r)
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> DataToIntMap r k --FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = DataToIntMap $ Foldl.FoldM step (return IntMap.empty) return where
@@ -313,7 +208,7 @@ getGroupIndex :: forall d r k. Typeable k
               -> Either Text (IntMap k)
 getGroupIndex rtt gtt groupIndexes =
   case DHash.lookup rtt groupIndexes of
-    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps: " <> show groupIndexes
+    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps: " <> displayDataSetGroupIntMaps groupIndexes
     Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
       Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
@@ -351,48 +246,9 @@ groupIntMap (IndexMap _ _ im _) = im
 
 -- data DataSetUse = ModelUse | GQOnlyUse deriving (Show, Eq, Ord, Enum, Bounded)
 
-data RowInfo d r = RowInfo
-                   {
-                     toFoldable    :: ToFoldable d r
-                   , expressionBindings :: Map SME.IndexKey SME.StanExpr
-                   , groupIndexes  :: GroupIndexes r
-                   , groupIntMapBuilders  :: GroupIntMapBuilders r
-                   , jsonSeries    :: JSONSeriesFold r
-                   }
 
 unIndexedRowInfo :: forall d r. ToFoldable d r -> Text -> RowInfo d r
 unIndexedRowInfo tf groupName  = RowInfo tf mempty (GroupIndexes DHash.empty) (GroupIntMapBuilders DHash.empty) mempty
-
-
--- key for dependepent map.
-data RowTypeTag r where
-  RowTypeTag :: Typeable r => InputDataType -> Text -> RowTypeTag r
-
-CE.deriveArgDict ''RowTypeTag
-
-dataSetName :: RowTypeTag r -> Text
-dataSetName (RowTypeTag _ n) = n
-
-inputDataType :: RowTypeTag r -> InputDataType
-inputDataType (RowTypeTag idt _) = idt
-
--- we need the empty constructors here to bring in the Typeable constraints in the GADT
-instance GADT.GEq RowTypeTag where
-  geq rta@(RowTypeTag idt1 n1) rtb@(RowTypeTag idt2 n2) =
-    case Reflection.eqTypeRep (Reflection.typeOf rta) (Reflection.typeOf rtb) of
-      Just Reflection.HRefl -> if (n1 == n2) && (idt1 == idt2) then Just Reflection.Refl else Nothing
-      _ -> Nothing
-
-instance GADT.GShow RowTypeTag where
-  gshowsPrec _ (RowTypeTag idt n) s = s ++ "RTT (name=)" ++ toString n ++ "; inputType=" ++ show idt ++ ")"
-
-instance Hashable.Hashable (Some.Some RowTypeTag) where
-  hash (Some.Some (RowTypeTag idt n)) = Hashable.hash idt `Hashable.hashWithSalt` n
-  hashWithSalt s (Some.Some (RowTypeTag idt n)) = Hashable.hashWithSalt s idt `Hashable.hashWithSalt` n
-
--- the key is a name for the data-set.  The tag carries the toDataSet function
-type RowBuilder d = DSum.DSum RowTypeTag (RowInfo d)
-type RowInfos d = DHash.DHashMap RowTypeTag (RowInfo d)
 
 
 addFoldToDBuilder :: forall d r.(Typeable d)

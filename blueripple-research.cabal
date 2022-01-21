@@ -80,6 +80,7 @@ library  haskell-stan
                , cereal  >= 0.5.7 && < 0.6
                , cereal-vector >= 0.2 && < 0.3
                , colonnade
+               , constraints >= 0.12 && < 0.14
                , constraints-extras >= 0.3.0 && < 0.4
                , containers
                , data-fix >= 0.3.0 && < 0.3.2
@@ -124,6 +125,7 @@ library  haskell-stan
                  , Stan.ModelRunner
                  , Stan.SamplerCSV
                  , Stan.ModelBuilder
+                 , Stan.ModelBuilder.BuilderTypes
                  , Stan.ModelBuilder.BuildingBlocks
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
