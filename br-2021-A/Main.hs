@@ -240,10 +240,10 @@ cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
 
-  let cpsSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
-  cpsSS1Paths <- postPaths "StateSpecific1"
-  BR.brNewPost cpsSS1Paths cpsSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
-    $ cpsStateRace False cpsSS1Paths cpsSS1PostInfo $ K.liftActionWithCacheTime data_C
+  let ccesSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
+  ccesSS1Paths <- postPaths "StateSpecific1"
+  BR.brNewPost ccesSS1Paths ccesSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
+    $ ccesStateRace False ccesSS1Paths ccesSS1PostInfo $ K.liftActionWithCacheTime data_C
 
 {-
   let cpsSS2PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
@@ -274,6 +274,7 @@ type VoterTypeC = "VoterType" F.:-> VoterType
 
 type VEP = "VEP" F.:-> Double
 type Voted = "Voted" F.:-> Double
+
 
 type RawTurnout = [BR.Year, BR.StateAbbreviation, VoterTypeC, ET.ElectoralWeight]
 type RawTurnoutR = F.Record RawTurnout
@@ -307,8 +308,8 @@ rawCPSTurnout clearCache dat_C = do
     return $ FL.fold fld joined
 
 
-rawCPSToHeidiFrame :: F.FrameRec RawTurnout -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
-rawCPSToHeidiFrame rs = Heidi.frameFromList $ fmap f $ FL.fold FL.list $ FL.fold outerFld rs where
+rawTurnoutToHeidiFrame :: F.FrameRec RawTurnout -> Heidi.Frame (Heidi.Row [Heidi.TC] Heidi.VP)
+rawTurnoutToHeidiFrame rs = Heidi.frameFromList $ fmap f $ FL.fold FL.list $ FL.fold outerFld rs where
   innerFld :: FL.Fold (F.Record [VoterTypeC, ET.ElectoralWeight]) (F.Record ['("gap", Double), '("sigma", Double)])
   innerFld =
     let p = F.rgetField @ET.ElectoralWeight
@@ -339,9 +340,9 @@ type CCESRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDi
                               V.++  [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
 rawCCESTurnout :: (K.KnitEffects r, BR.CacheEffects r)
-              => Bool
-              -> K.ActionWithCacheTime r BRE.CCESAndPUMS
-              -> K.Sem r (K.ActionWithCacheTime r (F.Frame RawTurnoutR))
+               => Bool
+               -> K.ActionWithCacheTime r BRE.CCESAndPUMS
+               -> K.Sem r (K.ActionWithCacheTime r (F.Frame RawTurnoutR))
 rawCCESTurnout clearCache dat_C = do
   let cacheKey = "model/turnout/ccesRaw.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -598,13 +599,13 @@ prepWithDensity clearCaches ccesAndPums_C = do
     K.knitEither $ BRE.addPopDensByDistrictToPUMS (BRE.districtRows d) (BRE.pumsRows d)
   return (ccesWithDensity_C, acsWithDensity_C)
 
-cpsStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+ccesStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
              -> BR.PostPaths BR.Abs
              -> BR.PostInfo
              -> K.ActionWithCacheTime r BRE.CCESAndPUMS
              -> K.Sem r ()
-cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
+ccesStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsStateRace" $ do
 
 --  res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
   let stanParallelCfg = BR.StanParallel 4 BR.MaxCores
@@ -616,6 +617,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   res2020_NI_C <- stateSpecificTurnoutModel clearCaches False SSTD_CCES [2020] dataAllYears_C
   ((rtDiffWI_2020_NI, rtDiffNI_2020_NI, rtDiffI_2020_NI, rtNWNH_2020_NI, rtWNH_2020_NI, dNWNH_2020_NI, dWNH_2020_NI), _, _, _) <- K.ignoreCacheTime res2020_NI_C
 -}
+  K.logLE K.Info $ "rtDiffWI_2020" <> show rtDiffWI_2020
   let hfToVLDataPEI = HV.rowsToVLData [] [HV.asStr "State"
                                          ,HV.asStr "Year"
                                          ,HV.asStr "Type"
@@ -632,10 +634,10 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
       rtNWNH_h_2020 = modelToHeidiFrame "2020" "VOC Turnout" rtNWNH_2020
       rtWNH_h_2020 = modelToHeidiFrame "2020" "WNHV Turnout" rtWNH_2020
   data2020 <- K.ignoreCacheTime $ fmap (BRE.ccesAndPUMSForYears [2020]) dataAllYears_C
-  rawCPST_C <- rawCPSTurnout False dataAllYears_C
-  rawCPST <- K.ignoreCacheTime rawCPST_C
-  let rawCPS2020_h = rawCPSToHeidiFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) rawCPST
-  BR.logFrame rawCPST
+  rawCCES_C <- rawCCESTurnout False dataAllYears_C
+  rawCCES <- K.ignoreCacheTime rawCCES_C
+  let rawTurnout2020_h = rawTurnoutToHeidiFrame $ F.filterFrame (\r -> F.rgetField @BR.Year r == 2020) rawCCES
+  BR.logFrame rawCCES
   let wnhFld b = fmap (Heidi.frameFromList . fmap FH.recordToHeidiRow . FL.fold FL.list)
                  $ FMR.concatFold
                  $ FMR.mapReduceFold
@@ -703,7 +705,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
   let naiveModelNoteName = BR.Used "Naive_Model"
   mNaiveModelUrl <- BR.brNewNote postPaths postInfo naiveModelNoteName "Models of VOC/WNH Turnout Gaps" $ do
     BR.brAddNoteMarkDownFromFile postPaths naiveModelNoteName "_intro"
-    _ <- K.knitEither (modelHeidiToVLData (rtDiffWIh_2020 <> rawCPS2020_h)) >>=
+    _ <- K.knitEither (modelHeidiToVLData (rtDiffWIh_2020 <> rawTurnout2020_h)) >>=
            K.addHvega
            (Just "figure_naiveCompare")
            (Just "Comparison of post-stratified simple Binomial model to MRP.")
@@ -1092,11 +1094,8 @@ groupBuilderDM states = do
   SB.addGroupIndexForData stateGroup ccesData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   acsWNH <- SB.addGQDataToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh)
   SB.addGroupIndexForData stateGroup acsWNH $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
---  SB.addGroupIndexForData psGroup acsWNH $ SB.makeIndexFromFoldable show F.rcast acsKeys
   acsNW <- SB.addGQDataToGroupBuilder "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . wnh))
   SB.addGroupIndexForData stateGroup acsNW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
---  SB.addGroupIndexForData psGroup acsNWN $ SB.makeIndexFromFoldable show F.rcast acsKeys
-
 
 ccesDesignRow :: DM.DesignMatrixRow (F.Record BRE.CCESWithDensity)
 ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
@@ -1117,7 +1116,6 @@ acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" race4Pums
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
-
 
 turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
                => Bool
@@ -1170,8 +1168,8 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
 
         let psPrecompute interacting centeredPSDM psDataSet = do
               let b = if interacting then beta else mu
-              SB.vectorizeExpr "psBeta" (dmBetaE centeredPSDM b) (SB.dataSetName psDataSet)
-            psExprF ps_v = pure $ SB.var ps_v
+              SB.vectorizeExpr "pT" (dmBetaE centeredPSDM b) (SB.dataSetName psDataSet)
+            psExprF pT_v = pure $ SB.familyExp distT (SB.var pT_v)
             postStratByState nameHead interacting psDM psDataSet =
               MRP.addPostStratification
               (psPrecompute interacting psDM psDataSet, psExprF)
@@ -1179,7 +1177,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
               ccesData
               psDataSet
               (SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet))
-               (realToFrac . F.rgetField @PUMS.Citizens)
+              (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
               (Just stateGroup)
 
@@ -1221,7 +1219,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
           K.knitEither $ do
             groupIndexes <- gqIndexesE
             psIndexIM <- SB.getGroupIndex
-                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH")
+                         (SB.RowTypeTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH")
                          stateGroup
                          groupIndexes
             let parseAndIndexPctsWith f vn = do
@@ -1231,7 +1229,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
             rtDiffWI <- parseAndIndexPctsWith id "rtDiffWI"
             rtDiffNI <- parseAndIndexPctsWith id "rtDiffNI"
             rtDiffI <- parseAndIndexPctsWith id "rtDiffI"
-            rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NWNH_State"
+            rtNWNH_WI <- parseAndIndexPctsWith id "WI_ACS_NW_State"
             rtWNH_WI <- parseAndIndexPctsWith id "WI_ACS_WNH_State"
             dNWNH <- parseAndIndexPctsWith id "dNWNH"
             dWNH <- parseAndIndexPctsWith id "dWNH"

@@ -397,8 +397,8 @@ countCESVotesF =
       votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
       houseVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MHouseVoteParty) votedF
       houseDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MHouseVoteParty) votedF
-      presVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MPresVoteParty) votedF
-      presDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MPresVoteParty) votedF
+      presVotesF = FL.prefilter (presVote . F.rgetField @CCES.MPresVoteParty) votedF
+      presDVotesF = FL.prefilter (presDVote . F.rgetField @CCES.MPresVoteParty) votedF
   in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
      <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
 

@@ -208,7 +208,9 @@ getGroupIndex :: forall d r k. Typeable k
               -> Either Text (IntMap k)
 getGroupIndex rtt gtt groupIndexes =
   case DHash.lookup rtt groupIndexes of
-    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps: " <> displayDataSetGroupIntMaps groupIndexes
+    Nothing -> Left
+               $ dataSetName rtt <> " (idt="
+               <> show (inputDataType rtt) <> ") not found in data-set group int maps: " <> displayDataSetGroupIntMaps groupIndexes
     Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
       Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
