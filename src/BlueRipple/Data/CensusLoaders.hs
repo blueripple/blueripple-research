@@ -210,108 +210,11 @@ checkAllCongressionalAndConvert rs = do
   return converted
 
 
----
-{-
-type LoadedCensusTablesBySLD
-  = CensusTables BRC.SLDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
-
-
-censusTablesBySLD  :: (K.KnitEffects r
-                      , BR.CacheEffects r)
-                   => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesBySLD)
-censusTablesBySLD = do
-  let fileByYear = [ (BRC.TY2018, censusDataDir <> "/va_2018_sldl.csv")
-                   , (BRC.TY2018, censusDataDir <> "/va_2020_sldu.csv")
-                   , (BRC.TY2018, censusDataDir <> "/tx_2020_sldl.csv")
-                   , (BRC.TY2018, censusDataDir <> "/tx_2020_sldu.csv")
-                   , (BRC.TY2018, censusDataDir <> "/ga_2020_sldl.csv")
-                   , (BRC.TY2018, censusDataDir <> "/ga_2020_sldu.csv")
-                   , (BRC.TY2018, censusDataDir <> "/nv_2020_sldl.csv")
-                   , (BRC.TY2018, censusDataDir <> "/oh_2020_sldl.csv")
-                   ]
-      tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
-                             <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
-                             <> KT.allTableDescriptions BRC.sexByEducation (BRC.sexByEducationPrefix ty)
-                             <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
-      makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
-        vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
-        return $ frameFromTableRows BRC.unSLDPrefix keyRec (BRC.tableYear ty) vTRs
---      addDT :: forall rs. (rs F.⊆ ((BR.Year ': BR.StateFips ': rs)))
---        => ET.DistrictType -> F.Record (BR.Year ': BR.StateFips ': rs) -> F.Record ([BR.Year, BR.StateFips, ET.DistrictTypeC] V.++ rs)
---      addDT dt r = F.rgetField @BR.Year r F.&: F.rgetField @BR.StateFips r F.&: dt F.&: F.rcast @rs r
-      doOneYear (ty, f) = do
-        (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.SLDPrefix (tableDescriptions ty) $ toString f)
-        K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
-        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Age Tables..."
-        fRaceBySexByAge <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByAge BRC.sexByAgePrefix raceBySexByAgeKeyRec vTableRows
-        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Citizenship Tables..."
-        fRaceBySexByCitizenship <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByCitizenship BRC.sexByCitizenshipPrefix raceBySexByCitizenshipKeyRec vTableRows
-        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Education Tables..."
-        fRaceBySexByEducation <- {- fmap (addDT dt) <$> -}makeConsolidatedFrame ty BRC.sexByEducation BRC.sexByEducationPrefix raceBySexByEducationKeyRec vTableRows
-        K.logLE K.Diagnostic $ "Building Race/Ethnicity by Sex by Employment Tables..."
-        fRaceBySexByAgeByEmployment <- {- fmap (addDT dt) <$> -} makeConsolidatedFrame ty BRC.sexByAgeByEmployment BRC.sexByAgeByEmploymentPrefix raceBySexByAgeByEmploymentKeyRec vTableRows
-        let fldSumAges = FMR.concatFold
-                       $ FMR.mapReduceFold
-                       FMR.noUnpack
-                       (FMR.assignKeysAndData @(CensusRow BRC.SLDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[Count])
-                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-            fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
-        return $ CensusTables
-          (fmap F.rcast $ fRaceBySexByAge)
-          (fmap F.rcast $ fRaceBySexByCitizenship)
-          (fmap F.rcast $ fRaceBySexByEducation)
-          (fmap F.rcast $ fRaceBySexByEmployment)
-  dataDeps <- traverse (K.fileDependency . toString . (\(_, x) -> x)) fileByYear
-  let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
-  K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text "data/Census/sld_tables.bin" dataDep $ const $ do
-    tables <- traverse doOneYear fileByYear
-    neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
-    return $ sconcat neTables
----
--}
 
 type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
 type CensusRecodedR  = BRC.LDLocationR
                        V.++ BRC.ExtensiveDataR
                        V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
-{-
-censusDemographicsRecode ::  forall locR.
-                             (Ord (F.Record ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])),
-                              ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC]) F.⊆ (BR.Year : (((locR V.++ BRC.ExtensiveDataR)
-                                                                                                V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                                                                               V.++ '[Count]))
-                             , FI.RecVec (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                          V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-                             , Ord (F.Record
-                                    ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]))
-                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                          V.++ '[Count]) Count
-                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                          V.++ '[Count]) BRC.Education4C
-                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR)
-                                           V.++ '[DT.SexC, BRC.Education4C, BRC.RaceEthnicityC])
-                                          V.++ '[Count]) BRC.RaceEthnicityC
-                             ,   ((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC]) F.⊆  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                                                                                         V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-                             , F.ElemOf   (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                           V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) Count
-                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC])
-                                          V.++ '[DT.CollegeGradC, BRC.RaceEthnicityC, Count]) BRC.RaceEthnicityC
-                             , FI.RecVec  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                           V.++ '[DT.RaceAlone4C, DT.HispC, Count])
-                             ,  ((locR V.++ BRC.ExtensiveDataR)
-                                 V.++ '[DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count,
-                                        DT.PopPerSqMile])  F.⊆   ((((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                                                   V.++ '[DT.RaceAlone4C, DT.HispC, Count])
-                                                                  V.++ '[DT.PopPerSqMile])
-                             , F.ElemOf  (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                          V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BR.Population
-                             , F.ElemOf (((locR V.++ BRC.ExtensiveDataR) V.++ '[DT.SexC, DT.CollegeGradC])
-                                         V.++ '[DT.RaceAlone4C, DT.HispC, Count]) BRC.SqMiles
-                             )
--}
 censusDemographicsRecode :: F.FrameRec CensusSERR -> F.FrameRec CensusRecodedR
 censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
@@ -326,11 +229,12 @@ censusDemographicsRecode rows =
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
 
       edFld :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-      edFld  = let ed4ToCG ed4 = if ed4 == BRC.E4_CollegeGrad then DT.Grad else DT.NonGrad
-                   edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
+      edFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
                      g DT.Grad BRC.E4_CollegeGrad = True
-                     g DT.Grad _ = False
-                     g _ _ = True
+                     g DT.NonGrad BRC.E4_SomeCollege = True
+                     g DT.NonGrad BRC.E4_NonHSGrad = True
+                     g DT.NonGrad BRC.E4_HSGrad = True
+                     g _ _ = False
                    edAggFRec = BRK.toAggFRec edAggF
                    raceAggFRec :: BRK.AggFRec Bool '[BRC.RaceEthnicityC] '[BRC.RaceEthnicityC] = BRK.toAggFRec BRK.aggFId
                    aggFRec = BRK.aggFProductRec edAggFRec raceAggFRec

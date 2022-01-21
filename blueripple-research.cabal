@@ -47,7 +47,7 @@ common deps
                , knit-haskell >= 0.8.0 && < 0.11
                , lens
                , lucid
-               , massiv >= 0.5.4 && < 0.7
+               , massiv >= 1.0.0 && < 1.1
                , microlens-platform >= 0.4.0 && < 0.5
                , map-reduce-folds >= 0.1.0.1
                , optics >= 0.3 && < 0.5
@@ -65,7 +65,7 @@ common deps
                , statistics
                , streamly >= 0.8 && < 0.9
                , streamly-bytestring
-               , text
+               , text >= 1.2 && < 2.1
                , time
                , tsne >= 1.2 && < 1.4
                , vector >= 0.11 && < 0.13
@@ -77,8 +77,10 @@ library  haskell-stan
                , array >= 0.5.4 && < 0.6
                , aeson >= 1.4 && < 1.6
                , bytestring >= 0.10 && < 0.12
+               , cereal  >= 0.5.7 && < 0.6
                , cereal-vector >= 0.2 && < 0.3
                , colonnade
+               , constraints >= 0.12 && < 0.14
                , constraints-extras >= 0.3.0 && < 0.4
                , containers
                , data-fix >= 0.3.0 && < 0.3.2
@@ -86,24 +88,28 @@ library  haskell-stan
                , dependent-sum >= 0.7.0 && < 0.8
                , directory >= 1.3.3 && < 1.4
                , extra >= 1.7.7 && < 1.8
+--               , flat  >= 0.4.4 && < 0.5
                , foldl >= 1.4 && < 1.5
                , Frames >= 0.6.1 && < 0.8
                , Frames-streamly >= 0.2.0
-               , hashable >= 1.3 && < 1.4
+               , hashable >= 1.3 && < 1.6
                , hs-cmdstan >= 0.1 && < 0.2
                , here
                , knit-haskell >= 0.9 && < 0.11
-               , massiv >= 0.6.0 && < 0.7
+               , massiv >= 1.0 && < 1.1
+               , megaparsec >= 9.0.0 && < 10.0
                , monadic-recursion-schemes >= 0.1.11 && < 0.2
+               , parser-combinators > 1.0.0 && < 2.0
                , polysemy
                , pretty >= 1.1 && < 1.2
                , process >= 1.6 && < 1.7
                , recursion-schemes >= 5.1.2 && < 5.3
                , relude  >=1.0.0 && < 1.2
                , say >= 0.1.0.1 && < 0.2
+               , scientific >= 0.3.5 && < 0.4
                , some >= 1.0.1 && < 1.1
                , streamly >= 0.7.2 && < 0.9
-               , text
+               , text >= 1.2 && < 2.1
                , time
                , transformers-compat >= 0.6 && < 0.7
                , vector
@@ -117,12 +123,15 @@ library  haskell-stan
                  , Stan.Parameters.Massiv
                  , Stan.ModelConfig
                  , Stan.ModelRunner
+                 , Stan.SamplerCSV
                  , Stan.ModelBuilder
+                 , Stan.ModelBuilder.BuilderTypes
                  , Stan.ModelBuilder.BuildingBlocks
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
+                 , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames
@@ -378,7 +387,7 @@ executable mrp-model
                , discrimination
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10
-               , hashable >= 1.2 && < 1.4
+               , hashable
                , lens >= 4.16 && < 5
                , log-domain < 0.13
                , mtl >= 2.1 && < 2.3.0
@@ -495,6 +504,7 @@ executable FEC-data
   other-modules: FromDB
   build-depends: base
                , beam-core >= 0.9.0.0
+               , beam-migrate >= 0.5.1.1
                , beam-sqlite
                , blueripple-research
                , data-default

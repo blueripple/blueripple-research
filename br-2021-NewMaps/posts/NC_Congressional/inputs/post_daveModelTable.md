@@ -51,8 +51,10 @@ not likely in 2022, but you never know!–this map might be surprisingly risky f
 And for Dem donors, it points to several giving opportunities that could help move
 the needle in 2022 or future elections.
 
-If the map changes (there is ongoing litigation) or we update the model enough
+If the map changes (there is [ongoing litigation][NCSuit]) or we update the model enough
 to significantly shift our view on any of this, we’ll update this note (and let you know).
+
+[NCSuit]: https://www.nytimes.com/2022/01/11/us/politics/north-carolina-redistricting.html
 
 ## 3.	Coming next from Blue Ripple
 

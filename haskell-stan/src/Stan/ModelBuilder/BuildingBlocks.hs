@@ -28,13 +28,13 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 
-addIntData :: (Typeable d)
+addIntData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
             -> SME.StanName
             -> Maybe Int
             -> Maybe Int
             -> (r -> Int)
-            -> SB.StanBuilderM env d SME.StanVar
+            -> SB.StanBuilderM md gq SME.StanVar
 addIntData rtt varName mLower mUpper f = do
   let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanInt
       bounds = case (mLower, mUpper) of
@@ -44,20 +44,20 @@ addIntData rtt varName mLower mUpper f = do
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
   SB.addColumnJson rtt varName stanType bounds f
 
-addCountData :: forall r d env.(Typeable d)
+addCountData :: forall r md gq.(Typeable md, Typeable gq)
              => SB.RowTypeTag r
              -> SME.StanName
              -> (r -> Int)
-             -> SB.StanBuilderM env d SME.StanVar
+             -> SB.StanBuilderM md gq SME.StanVar
 addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
 
-addRealData :: (Typeable d)
+addRealData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
             -> SME.StanName
             -> Maybe Double
             -> Maybe Double
             -> (r -> Double)
-            -> SB.StanBuilderM env d SME.StanVar
+            -> SB.StanBuilderM md gq SME.StanVar
 addRealData rtt varName mLower mUpper f = do
   let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanReal
       bounds = case (mLower, mUpper) of
@@ -68,7 +68,7 @@ addRealData rtt varName mLower mUpper f = do
   SB.addColumnJson rtt varName stanType bounds f
 
 
-add2dMatrixData :: (Typeable d)
+add2dMatrixData :: (Typeable md, Typeable gq)
                 => SB.RowTypeTag r
                 -> SB.MatrixRowFromData r
 --                -> SME.StanName
@@ -76,7 +76,7 @@ add2dMatrixData :: (Typeable d)
                 -> Maybe Double
                 -> Maybe Double
 --            -> (r -> V.Vector Double)
-            -> SB.StanBuilderM env d SME.StanVar
+            -> SB.StanBuilderM md gq SME.StanVar
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   let --stanType =  SB.StanMatrix (SB.NamedDim $ SB.dataSetName rtt) (SB.NamedDim colName)
       bounds = case (mLower, mUpper) of
@@ -87,7 +87,7 @@ add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   SB.add2dMatrixJson rtt matrixRowFromData bounds (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
 
 
-intercept :: forall env d. (Typeable d) => Text -> SME.StanExpr -> SB.StanBuilderM env d SB.StanVar
+intercept :: forall md gq. (Typeable md, Typeable gq) => Text -> SME.StanExpr -> SB.StanBuilderM md gq SB.StanVar
 intercept iName alphaPriorE = do
   iVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
   let --alphaE = SB.name iName
@@ -95,14 +95,14 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return iVar
 
-sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM env d ()
+sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
       samplingE = SMD.familySampleF sDist args yV
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
 
 
-parallelSampleDistV :: Typeable d => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM env d ()
+parallelSampleDistV :: (Typeable md, Typeable gq) => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) = do
 --  let rsExpr = SB.target `SB.plusEq` SB.function "reduce_sum"
   slicedType' <- SB.stanBuildEither $ SB.dropLastIndex slicedType
@@ -137,11 +137,11 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
         argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 
-generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM env d args -> SME.StanVar -> SB.StanBuilderM env d ()
+generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
 
-generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, SB.StanBuilderM env d args, SME.StanVar) -> SB.StanBuilderM env d ()
-generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBGeneratedQuantities $ do
+generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, SB.StanBuilderM md gq args, SME.StanVar) -> SB.StanBuilderM md gq ()
+generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
   let dsName = SB.dataSetName rtt
       dim = SME.NamedDim dsName
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
@@ -156,7 +156,7 @@ generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBGeneratedQuantities $ d
       SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
 
 
-generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM env d SME.StanVar
+generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist args
 --      ppVar = SME.StanVar ppName t
@@ -165,7 +165,7 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
   SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar
   return sv
 
-diagVectorFunction :: SB.StanBuilderM env d Text
+diagVectorFunction :: SB.StanBuilderM md gq Text
 diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
 --  SB.addStanLine "int vec_size = num_elements(ii)"
   SB.addStanLine "vector[N] out_vec"
@@ -178,17 +178,17 @@ diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N
 -- e.g., given beta_g1_g2[J_g1, J_g2]
 -- declare beta_g1_g2_vD1[J_D1]
 -- and set beta_g1_g2_vD1[n] = beta_g1_g2[g1_D1[n], g2_D1[n]]
-vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
+vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
 vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
 
-vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM env d SB.StanVar
+vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
 vectorizeExpr sn se ik = do
   let vecVname = sn <> "_v"
   fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
   SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeExpr" $ SB.var fv `SB.eq` se
   return fv
 
-weightedMeanFunction :: SB.StanBuilderM env d ()
+weightedMeanFunction :: SB.StanBuilderM md gq ()
 weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
                         $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"

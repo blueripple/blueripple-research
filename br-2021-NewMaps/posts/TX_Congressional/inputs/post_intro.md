@@ -1,43 +1,53 @@
-Blue Ripple Model and TX new Congressional Map
+# New Congressional Maps, New Dem Strategy: Our TX Analysis
 
-Our model is demographic and geographic. We use turnout and voting data
-(from the [CCES survey][CCES]) based on education, sex, race, population density and state
-to estimate expected turnout and voter preference for various types of people in
-each state.  Then we look at the demographics of a particular district (using tract-level census
-data from the [ACS][ACS]), breaking it down
-into the same categories and use our model to estimate the 2-party vote share we
-expect for a democratic candidate. We’ll call this the
-“demographic model”.
+Like all states, Texas is locking down new disrict maps, which affect
+Democrat’s odds in 2022 COngressional races. In this reshaped landscape,
+how can donors focus their attention on races with the biggest “bang for buck”
+for flipping tenuous GOP seats or protecting vulnerable Dems?
 
-[CCES]: https://cces.gov.harvard.edu
-[ACS]: https://www.census.gov/programs-surveys/acs/
+To help answer that question, we’ve continued to build and refine
+a demographic
+model that predicts Democratic lean in each district based on its
+makeup in terms of race, sex, education, and population density.
+We then compare those results to an existing model based on historical
+data to help Dem donors identify races that we think deserve support
+for “offense” or “defense”.
 
-The standard way to predict “partisan lean” for any district, old or new:
-break it into precincts with known voting history (usually a combination of
-recent presidential, house and governor races) and then aggregate those results to
-estimate expected results in the district.
-We’ll call this the “historical model.”
+This post focuses on Texas. (If you’re interested in other states,
+check out [our analysis of NC][NCPost].) Here’s what we’ll cover:
 
-The historical model is likely to be more accurate as a predictive tool since
-the same people often vote the same way in subsequent elections.
-So why build a demographic model? We’re interested in
-places where the history may be misleading, either because of the specific story
-in a district or because changing politics or demographics may have altered
-the balance of likely voters but one or both parties are not seeing the threat or new
-opportunity.[^empowerment]
+[NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
 
-[^empowerment]: We’re also interested in voter empowerment strategies.
-In particular, questions about where and among whom, extra turnout might make a difference.
-The historical model is no help here since it does not attempt to figure out who is voting
-or who they are voting for in a demographically specific way.
 
-This sort of analysis is potentially more useful when the districts are new,
-since voting history may be less “sticky” there.
+1. Dem-lean by district in TX: our demographic model vs. historical data
+2. Districts worthy of Dem donor support
+3. Coming next from Blue Ripple
+4. Coda #1: Demographics of the new TX districts
+5. Coda #2: Brief intro to our methods (for non-experts)
 
-[^popDens]: We use logarithms here because
-density varies tremendously over districts, from tens to hundreds of thousands of people per square mile.
-We use population-weighting because the resulting average more closely expresses
-the density of where people actually live.  For example, consider a district made up of a high-density
-city where 90% of the population live and then large but low-density exurbs where the other 10% live.
-Most people in that district live at high density and we want our density to reflect that even though
-the unweighted average density (people/district size) might be smaller.
+## 1. Dem-lean by district in TX: our demographic model vs. historical data
+
+*Introduction:* (Feel free to skip this part if you’ve already read our prior state analyses.)
+Our “demographic” model forecasts the potential Democratic lean of each
+new district in TX based on attributes like race, education, age, and
+population density. In the graph and table below,
+we compare our predictions to a “historical” model (from the excellent
+[Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level
+results in prior elections[^voteShare]. (See methods at the end of this post for more details.)
+The axes show the projected 2-party Dem vote share with each model.
+The diagonal line represents where districts would fall on this scatter-plot
+if the two models agreed precisely. In districts to the left of the line,
+our demographic model thinks the D vote share is higher than historical results,
+and to the right of the line, we think it’s lower than the historical model predicts.
+
+NB: For this and all scatter charts to follow, you
+can pan & zoom by dragging with the mouse or moving the scroll wheel.  To reset the chart,
+hold shift and click with the mouse.
+
+[DavesR]: https://davesredistricting.org/maps#aboutus
+
+[^voteShare]: One important note about the numbers. Dave’s Redistricting gives
+estimates of Democratic candidate votes, Republican candidate votes and votes
+for other candidates.  We’ve taken those numbers and computed 2-party vote share
+for the Democratic candidate, that is, D Votes/(D Votes + R Votes). That makes it
+comparable with the Demographic model which also produces 2-party vote share.

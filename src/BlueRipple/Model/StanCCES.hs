@@ -59,6 +59,7 @@ type CountRow ks =  ks V.++ BR.CountCols
 
 type CCESDataWrangler ks b = SC.DataWrangler
                              (F.FrameRec (CountRow ks))
+                             ()
                              b
                              (F.FrameRec ks)
 
@@ -66,7 +67,7 @@ type CCESDataWrangler ks b = SC.DataWrangler
 type StateASER5 = BR.StateAbbreviation ': DT.CatColsASER5
 
 ccesDataWrangler2 :: CCESDataWrangler StateASER5 (IM.IntMap T.Text, M.Map SJ.IntVec (F.Rec FS.SElField DT.CatColsASER5))
-ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c -> "stan/index/" <> SC.mrcOutputPrefix c <> ".bin") f g where
+ccesDataWrangler2 = SC.WrangleWithPredictions (SC.CacheableIndex $ \c _ -> "stan/index/" <> SC.outputPrefix SC.MRFull (SC.mrcInputNames c) <> ".bin") f Nothing g where
   enumStateF = FL.premap (F.rgetField @BR.StateAbbreviation) (SJ.enumerate 1)
   encodeAge = SF.toRecEncoding @DT.SimpleAgeC $ SJ.dummyEncodeEnum @DT.SimpleAge
   encodeSex = SF.toRecEncoding @DT.SexC $ SJ.dummyEncodeEnum @DT.Sex
@@ -180,30 +181,30 @@ prefASER5_MR (dataLabel, ccesDataWrangler) (modelName, model) office year = do
                  $ count (F.rcast @(BR.StateAbbreviation ': DT.CatColsASER5)) office year
   let stancConfig = (SM.makeDefaultStancConfig (toString $ "stan/voterPref/" <> modelName)) { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
-                <$> SM.makeDefaultModelRunnerConfig
-                "stan/voterPref"
-                (modelName <> "_model")
+                <$> SM.makeDefaultModelRunnerConfig  @BR.SerializerC @BR.CacheData
+                (SC.RunnerInputNames "stan/voterPref" (modelName <> "_model") Nothing ("cces_" <> officeYearT <> "_" <> dataLabel))
                 (Just (SB.NoLL, model))
-                (Just $ "cces_" <> officeYearT <> "_" <> dataLabel <> ".json")
-                (Just $ "cces_" <> officeYearT <> "_" <> modelName <> "_model")
-                4
-                (Just 4)
-                (Just 1000)
-                (Just 1000)
-                Nothing
-                Nothing
+                (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) Nothing Nothing Nothing)
                 (Just stancConfig)
   let resultCacheKey = "model/stan/cces/statePrefsASER5_" <> officeYearT <> "_" <> modelName <> ".bin"
-  modelDep <- SM.modelCacheTime stanConfig
+  modelDep <- SC.modelDependency SC.MRFull $ SC.mrcInputNames stanConfig
   let dataModelDep = const <$> modelDep <*> ccesASER5_C
-      getResults s tp inputAndIndex_C = do
+      getResults s tp inputAndIndex_C _ = do
         (input, _) <- K.ignoreCacheTime inputAndIndex_C
         predictions <- K.knitEither $ extractResults year office s tp
         comparePredictions predictions input
         return predictions
   BR.retrieveOrMakeFrame resultCacheKey dataModelDep $ \() -> do
     K.logLE K.Info "Data or model newer than last cached result. Rerunning."
-    SM.runModel @BR.SerializerC @BR.CacheData stanConfig (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"]) ccesDataWrangler SC.Cacheable (SC.UseSummary getResults) toPredict ccesASER5_C
+    SM.runModel @BR.SerializerC @BR.CacheData
+      stanConfig
+      (SM.ShinyStan [SR.UnwrapNamed "D_votes" "D_votes"])
+      ccesDataWrangler
+      SC.Cacheable
+      (SC.UseSummary getResults)
+      toPredict
+      ccesASER5_C
+      (pure ())
 
 
 prefASER5_MR_Loo :: (K.KnitEffects r,  BR.CacheEffects r, BR.SerializerC b)
@@ -222,20 +223,20 @@ prefASER5_MR_Loo (dataLabel, ccesDataWrangler) (modelName, model) office year = 
                  $ count (F.rcast  @(BR.StateAbbreviation ': DT.CatColsASER5)) office year
   let stancConfig = (SM.makeDefaultStancConfig $ toString $ "stan/voterPref/" <> modelName <> "_loo") { CS.useOpenCL = False }
   stanConfig <- SC.noLogOfSummary
-                <$> SM.makeDefaultModelRunnerConfig
-                "stan/voterPref"
-                (modelName <> "_loo")
+                <$> SM.makeDefaultModelRunnerConfig @BR.SerializerC @BR.CacheData
+                (SC.RunnerInputNames "stan/voterPref" (modelName <> "_loo") Nothing ("cces_" <> officeYearT <> "_" <> dataLabel))
                 (Just (SB.OnlyLL, model))
-                (Just $ "cces_" <> officeYearT <> "_" <> dataLabel <> ".json")
-                (Just $ "cces_" <> officeYearT <> "_" <> modelName <> "_loo")
-                4
-                (Just 4)
-                (Just 1000)
-                (Just 1000)
-                Nothing
-                Nothing
+                (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) Nothing Nothing Nothing)
                 (Just stancConfig)
-  SM.runModel @BR.SerializerC @BR.CacheData stanConfig SM.Loo (SC.noPredictions ccesDataWrangler) SC.Cacheable SC.DoNothing () ccesASER5_C
+  SM.runModel @BR.SerializerC @BR.CacheData
+    stanConfig
+    SM.Loo
+    (SC.noPredictions ccesDataWrangler)
+    SC.Cacheable
+    SC.DoNothing
+    ()
+    ccesASER5_C
+    (pure ())
 
 
 model_BinomialAllBuckets :: SB.StanModel

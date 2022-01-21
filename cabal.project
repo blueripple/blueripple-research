@@ -2,7 +2,7 @@ packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable, beam-migrate
 --ghc 9.2
 --allow-newer: base
 --           , template-haskell
@@ -48,12 +48,12 @@ allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cere
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hs-cmdstan
-  tag: 26a9dbf5d378e6db01f907ed0b727f42de86dc0d
+  tag: 0cdb6d634faeedf8728a37b5ae4aecaf05022bb2
 
 source-repository-package
   type: git
   location: https://github.com/blueripple/data-sets
-  tag: 23031a074688dcf4b2e7936838214a6c9a8345ff
+  tag: d7f3238eba6726c12ac89e0f6fd00fa2f4c1704c
 
 source-repository-package
   type: git
@@ -64,7 +64,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: c59b7cf8c21abe80c6ec7899ace29373689ff0f9
+  tag: d7eadcb1c6815593e7d81f4734074f8f9ec4cec8
 
 source-repository-package
   type: git
@@ -85,7 +85,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: d1724eae4b1838b0cad8eab8817124f4a723f3ef
+  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
 
 --source-repository-package
 --  type: git
@@ -115,7 +115,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/data-science-utils
-  tag: cedfd4041c26a85fb94199c634da4a1f179c2905
+  tag: af09df26bc9f64c5a95d9d0d4ed1830e1e8e59e2
 
 source-repository-package
   type: git
@@ -130,7 +130,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/tsne
-  tag: 0ecec75d904482e0171a618a72d6bd3a3a94440a
+  tag: 89c131b4ca5aa5250fae2cc8b11dbad6fb8079fe
 
 --source-repository-package
 --  type: git

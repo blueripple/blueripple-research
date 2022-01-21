@@ -1,37 +1,182 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeApplications #-}
 module Stan.ModelConfig where
 
 import qualified CmdStan as CS
 import qualified CmdStan.Types as CS
 import qualified Knit.Report as K
-import qualified Knit.Effect.Serialize            as K
+import qualified Data.Serialize as Cereal
+import qualified Data.Aeson as A
 import qualified Data.Aeson.Encoding as A
+import qualified Data.Map as M
 import qualified Data.Text as T
 
+data RunnerInputNames = RunnerInputNames
+  { rinModelDir :: Text
+  , rinModel :: Text
+  , rinGQ :: Maybe Text
+  , rinData :: Text
+  }  deriving (Show, Ord, Eq)
+
+data ModelRun = MRNoGQ | MROnlyLL | MRFull deriving (Show, Eq)
+
+-- for merged samples
+llSuffix :: Text
+llSuffix = "_LL"
+
+modelSuffix :: ModelRun -> Text
+modelSuffix MRNoGQ = "_noGQ"
+modelSuffix MROnlyLL = "_onlyLL"
+modelSuffix MRFull = "_GQ"
+{-# INLINEABLE modelSuffix #-}
+
+unmergedSamplesSuffix :: ModelRun -> Text
+unmergedSamplesSuffix = modelSuffix
+{-# INLINEABLE unmergedSamplesSuffix #-}
+
+mergedSamplesSuffix :: ModelRun -> Text
+mergedSamplesSuffix MRNoGQ = "_noGQ"
+mergedSamplesSuffix MROnlyLL = "_ll"
+mergedSamplesSuffix MRFull = ""
+{-# INLINEABLE mergedSamplesSuffix #-}
+
+modelName :: ModelRun -> RunnerInputNames -> Text
+modelName mr rin = rinModel rin <> modelSuffix mr
+{-# INLINEABLE modelName #-}
+
+modelDirPath :: RunnerInputNames -> Text -> FilePath
+modelDirPath rin fName = toString $ rinModelDir rin <> "/" <> fName
+
+modelPath :: ModelRun -> RunnerInputNames -> FilePath
+modelPath mr rin = modelDirPath rin $ modelName mr rin
+{-# INLINEABLE modelPath #-}
+
+dirPath :: RunnerInputNames -> Text -> Text -> FilePath
+dirPath rin subDirName fName = toString $ rinModelDir rin <> "/" <> subDirName <> "/" <> fName
+
+outputDirPath :: RunnerInputNames -> Text -> FilePath
+outputDirPath rin = dirPath rin "output"
+
+dataDirPath :: RunnerInputNames -> Text -> FilePath
+dataDirPath rin = dirPath rin "data"
+
+rDirPath :: RunnerInputNames -> Text -> FilePath
+rDirPath rin = dirPath rin "R"
+
+data StanMCParameters = StanMCParameters
+  { smcNumChains :: Int
+  , smcNumThreads :: Int
+  , smcNumWarmupM :: Maybe Int
+  , smcNumSamplesM :: Maybe Int
+  , smcAdaptDeltaM :: Maybe Double
+  , smcMaxTreeDepth :: Maybe Int
+  , smcRandomSeed :: Maybe Int
+  } deriving (Show, Eq, Ord)
+
+data StanExeConfigWrapper = MultiThreadedExeConfig CS.StanExeConfig |  SingleThreadedExeConfig (Int -> CS.StanExeConfig)
 
 data ModelRunnerConfig = ModelRunnerConfig
-  { mrcStanMakeConfig :: CS.MakeConfig
-  , mrcStanExeConfig :: CS.StanExeConfig
+  { mrcDoOnlyLL :: Bool
+  , mrcStanMakeConfig :: ModelRun -> CS.MakeConfig
   , mrcStanSummaryConfig :: CS.StansummaryConfig
-  , mrcModelDir :: T.Text
-  , mrcModel :: T.Text
-  , mrcDatFile :: T.Text
-  , mrcOutputPrefix :: T.Text
-  , mrcNumChains :: Int
-  , mrcNumThreads :: Int
-  , mrcAdaptDelta :: Maybe Double
-  , mrcMaxTreeDepth :: Maybe Int
+  , mrcInputNames :: RunnerInputNames
+  , mrcStanMCParameters :: StanMCParameters
   , mrcLogSummary :: Bool
   , mrcRunDiagnose :: Bool
   }
+
+mrcModelDir :: ModelRunnerConfig -> Text
+mrcModelDir = rinModelDir . mrcInputNames
+
+modelFileName :: ModelRun -> RunnerInputNames -> Text
+modelFileName mr rin = modelName mr rin <> ".stan"
+
+addModelDirectory :: RunnerInputNames -> Text -> Text
+addModelDirectory rin x = rinModelDir rin <> "/" <> x
+
+modelDependency :: K.KnitEffects r => ModelRun -> RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelDependency mr rin = K.fileDependency (toString modelFile)  where
+  modelFile = addModelDirectory rin (modelFileName mr rin)
+
+modelDataFileName :: RunnerInputNames -> Text
+modelDataFileName rin = rinData rin <> ".json"
+
+gqDataFileName :: RunnerInputNames -> Maybe Text
+gqDataFileName rin = fmap (<> ".json") $ rinGQ rin
+
+modelDataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+modelDataDependency rin = K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> modelDataFileName rin))
+
+gqDataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (Maybe (K.ActionWithCacheTime r ()))
+gqDataDependency rin = case gqDataFileName rin of
+  Nothing -> return Nothing
+  Just gqName -> do
+    dep <- K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> gqName))
+    return $ Just dep
+
+combinedDataFileName :: RunnerInputNames -> Text
+combinedDataFileName rin = rinData rin <> maybe "" ("_" <>) (rinGQ rin) <> ".json"
+
+combineData :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+combineData rin = do
+  modelDataDep <- modelDataDependency rin
+  gqDataDependencyM <- gqDataDependency rin
+  case gqDataFileName rin of
+    Nothing -> return modelDataDep
+    Just gqName -> do
+      let gqFP = dataDirPath rin gqName
+      gqDep <- K.fileDependency $ toString $ gqFP
+      let comboDeps = (,) <$> modelDataDep <*> gqDep
+          comboFP = dataDirPath rin $ combinedDataFileName rin
+      comboFileDep <- K.fileDependency comboFP
+      K.updateIf comboFileDep comboDeps $ const $ do
+          modelDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ dataDirPath rin $ modelDataFileName rin
+          modelData <- K.knitEither $ first toText modelDataE
+          gqDataE <- K.liftKnit $ A.eitherDecodeFileStrict $ toString gqFP
+          gqData <- K.knitEither $ first toText gqDataE
+          let combined :: A.Object = modelData <> gqData
+          K.liftKnit $ A.encodeFile comboFP combined
+          return ()
+
+dataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
+dataDependency rin = do
+  modelDataDep <- modelDataDependency rin
+  gqDataDepM <- gqDataDependency rin
+  case gqDataDepM of
+    Nothing -> return modelDataDep
+    Just gqDataDep -> return $ const <$> modelDataDep <*> gqDataDep
+
+type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r)
+
+outputPrefix :: ModelRun -> RunnerInputNames -> Text
+outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> unmergedSamplesSuffix mr where
+  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
+
+mergedPrefix :: ModelRun -> RunnerInputNames -> Text
+mergedPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> mergedSamplesSuffix mr where
+  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
+
+samplesFileNames :: ModelRun -> ModelRunnerConfig -> [FilePath]
+samplesFileNames mr config =
+  let rin = mrcInputNames config
+      numChains = smcNumChains $ mrcStanMCParameters config
+  in outputDirPath rin . (\n -> outputPrefix mr rin <> "_" <> show n <> ".csv") <$> [1..numChains]
+
+mergedSamplesFP :: ModelRun -> ModelRunnerConfig -> Int -> FilePath
+mergedSamplesFP MRNoGQ _ _ = error "mergedFP: called with MRNoGQ argument!"
+mergedSamplesFP mr config n = outputDirPath (mrcInputNames config) $ mergedPrefix mr (mrcInputNames config) <> "_" <> show n <> ".csv"
+
+finalSamplesFileNames :: ModelRun -> ModelRunnerConfig -> [FilePath]
+finalSamplesFileNames MRNoGQ config = samplesFileNames MRNoGQ config
+finalSamplesFileNames mr config = fmap (mergedSamplesFP mr config) $ [1..(smcNumChains $ mrcStanMCParameters config)]
 
 setSigFigs :: Int -> ModelRunnerConfig -> ModelRunnerConfig
 setSigFigs sf mrc = let sc = mrcStanSummaryConfig mrc in mrc { mrcStanSummaryConfig = sc { CS.sigFigs = Just sf } }
@@ -42,11 +187,14 @@ noLogOfSummary sc = sc { mrcLogSummary = False }
 noDiagnose :: ModelRunnerConfig -> ModelRunnerConfig
 noDiagnose sc = sc { mrcRunDiagnose = False }
 
+data InputDataType = ModelData | GQData deriving (Show, Eq, Ord, Enum, Bounded, Generic)
+instance Hashable InputDataType
+
 -- produce indexes and json producer from the data as well as a data-set to predict.
 data DataIndexerType (b :: Type) where
   NoIndex :: DataIndexerType ()
   TransientIndex :: DataIndexerType b
-  CacheableIndex :: (ModelRunnerConfig -> T.Text) -> DataIndexerType b
+  CacheableIndex :: (ModelRunnerConfig -> InputDataType -> Text) -> DataIndexerType b
 
 -- pattern matching on the first brings the constraint into scope
 -- This allows us to choose to not have the constraint unless we need it.
@@ -54,57 +202,64 @@ data Cacheable st b where
   Cacheable :: st (Either Text b) => Cacheable st b
   UnCacheable :: Cacheable st b
 
-data DataWrangler a b p where
+data JSONSeries = JSONSeries { modelSeries :: A.Series, gqSeries :: A.Series}
+
+type Wrangler a b = a -> (Either T.Text b, a -> Either T.Text A.Series)
+
+unitWrangle :: Wrangler () b
+unitWrangle _ = (Left "Wrangle Error. Attempt to build index using a \"Wrangle () _\""
+                , const $ Left "Wrangle Error. Attempt to build json using a \"Wrangle () _\""
+                )
+
+data DataWrangler md gq b p where
   Wrangle :: DataIndexerType b
-          -> (a -> (Either T.Text b, a -> Either T.Text A.Series))
-          -> DataWrangler a b ()
+          -> Wrangler md b
+          -> Maybe (Wrangler gq b)
+          -> DataWrangler md gq b ()
   WrangleWithPredictions :: DataIndexerType b
-                         -> (a -> (Either T.Text b, a -> Either T.Text A.Series))
+                         -> Wrangler md b
+                         -> Maybe (Wrangler gq b)
                          -> (Either T.Text b -> p -> Either T.Text A.Series)
-                         -> DataWrangler a b p
+                         -> DataWrangler md gq b p
 
-noPredictions :: DataWrangler a b p -> DataWrangler a b ()
-noPredictions w@(Wrangle _ _) = w
-noPredictions (WrangleWithPredictions x y _) = Wrangle x y
+noPredictions :: DataWrangler md gq b p -> DataWrangler md gq b ()
+noPredictions w@(Wrangle _ _ _) = w
+noPredictions (WrangleWithPredictions x y z _) = Wrangle x y z
 
+dataIndexerType :: DataWrangler md gq b p -> DataIndexerType b
+dataIndexerType (Wrangle i _ _) = i
+dataIndexerType (WrangleWithPredictions i _ _ _) = i
 
-dataIndexerType :: DataWrangler a b p -> DataIndexerType b
-dataIndexerType (Wrangle i _) = i
-dataIndexerType (WrangleWithPredictions i _ _) = i
+modelWrangler :: DataWrangler md gq b p -> Wrangler md b -- -> (Either T.Text b, a -> Either T.Text JSONSeries)
+modelWrangler (Wrangle _ x _) = x
+modelWrangler (WrangleWithPredictions _ x _ _) = x
 
-indexerAndEncoder :: DataWrangler a b p -> a -> (Either T.Text b, a -> Either T.Text A.Series)
-indexerAndEncoder (Wrangle _ x) = x
-indexerAndEncoder (WrangleWithPredictions _ x _) = x
+mGQWrangler :: DataWrangler md gq b p -> Maybe (Wrangler gq b)  -- -> (Either T.Text b, a -> Either T.Text JSONSeries)
+mGQWrangler (Wrangle _ _ x) = x
+mGQWrangler (WrangleWithPredictions _ _ x _) = x
 
 -- produce a result of type b from the data and the model summary
 -- NB: the cache time will give you newest of data, indices and stan output
---type ResultAction r a b c = CS.StanSummary -> K.ActionWithCacheTime r (a, b) -> K.Sem r c
+type ResultF r md gq b p c
+  = p
+    -> K.ActionWithCacheTime r (md, Either T.Text b)
+    -> Maybe (K.ActionWithCacheTime r (gq, Either T.Text b))
+    -> K.Sem r c
 
-data ResultAction r a b p c where
-  UseSummary :: (CS.StanSummary -> p -> K.ActionWithCacheTime r (a, Either T.Text b) -> K.Sem r c) -> ResultAction r a b p c
-  SkipSummary :: (p -> K.ActionWithCacheTime r (a, Either T.Text b) -> K.Sem r c) -> ResultAction r a b p c
-  DoNothing :: ResultAction r a b c ()
+data ResultAction r md gq b p c where
+  UseSummary :: (CS.StanSummary -> ResultF r md gq b p c) -> ResultAction r md gq b p c
+  SkipSummary :: ResultF r md gq b p c -> ResultAction r md gq b p c
+  DoNothing :: ResultAction r md gq b p ()
 
-emptyResult :: ResultAction r a b p ()
-emptyResult = SkipSummary $ \_ _ -> return ()
+emptyResult :: ResultAction r md gq b p ()
+emptyResult = SkipSummary $ \_ _ _ -> return ()
 
-addDirT :: T.Text -> T.Text -> T.Text
-addDirT dir fp = dir <> "/" <> fp
+sampleFile :: T.Text -> Maybe Int -> FilePath
+sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"
 
-addDirFP :: FilePath -> FilePath -> FilePath
-addDirFP dir fp = dir ++ "/" ++ fp
-
-defaultDatFile :: T.Text -> FilePath
-defaultDatFile modelNameT = toString modelNameT ++ ".json"
-
-outputFile :: T.Text -> Maybe Int -> FilePath
-outputFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"
-
-stanOutputFiles :: ModelRunnerConfig -> [T.Text]
-stanOutputFiles config = fmap (toText . outputFile (mrcOutputPrefix config)) $ Just <$> [1..(mrcNumChains config)]
-
-summaryFileName :: ModelRunnerConfig -> T.Text
-summaryFileName config = mrcOutputPrefix config <> ".json"
-
-summaryFilePath :: ModelRunnerConfig -> T.Text
-summaryFilePath config = mrcModelDir config <> "/output/" <> summaryFileName config
+summaryFileName :: ModelRun -> ModelRunnerConfig -> T.Text
+summaryFileName mr config = outputPrefix mr (mrcInputNames config) <> "_summary.json"
+{-
+gqSummaryFileName :: ModelRunnerConfig -> Maybe T.Text
+gqSummaryFileName config = fmap (<> "_summary.json") $ gqPrefix (mrcInputNames config)
+-}

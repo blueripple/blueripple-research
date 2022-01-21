@@ -61,53 +61,61 @@ import qualified System.Environment as Env
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import Data.String.Here (here)
+import qualified Stan.ModelConfig as SM
 
-type BuilderM d = SB.StanBuilderM () d
+type BuilderM md gq = SB.StanBuilderM md gq
 
-buildDataWranglerAndCode :: (Typeable d)
-                         => SB.StanGroupBuilderM d ()
-                         -> env
-                         -> SB.StanBuilderM env d ()
-                         -> d
-                         -> Either Text (SC.DataWrangler d SB.DataSetGroupIntMaps (), SB.StanCode)
-buildDataWranglerAndCode groupM env builderM d =
+buildDataWranglerAndCode :: forall st cd md gq r.(SC.KnitStan st cd r, Typeable md, Typeable gq)
+                         => SB.StanGroupBuilderM md gq ()
+                         -> SB.StanBuilderM md gq ()
+                         -> K.ActionWithCacheTime r md
+                         -> K.ActionWithCacheTime r gq
+                         -> K.Sem r (SC.DataWrangler md gq SB.DataSetGroupIntMaps (), SB.StanCode)
+buildDataWranglerAndCode groupM builderM modelData_C gqData_C = do
+  modelDat <- K.ignoreCacheTime modelData_C
+  gqDat <- K.ignoreCacheTime gqData_C
   let builderWithWrangler = do
         SB.buildGroupIndexes
         builderM
-        jsonF <- SB.buildJSONFromDataM
-        intMapsBuilder <- SB.intMapsBuilder
-        return
-          $ SC.Wrangle SC.TransientIndex
-          $ \d -> (intMapsBuilder d, jsonF)
-      resE = SB.runStanBuilder d env groupM builderWithWrangler
-  in fmap (\(SB.BuilderState _ _ _ _ _ c, dw) -> (dw, c)) resE
+        modelJsonF <- SB.buildModelJSONFromDataM
+        gqJsonF <- SB.buildGQJSONFromDataM
+        modelIntMapsBuilder <- SB.modelIntMapsBuilder
+        gqIntMapsBuilder <- SB.gqIntMapsBuilder
+        let modelWrangle md = (modelIntMapsBuilder md, modelJsonF)
+            gqWrangle gq = (gqIntMapsBuilder gq, gqJsonF)
+            wrangler :: SC.DataWrangler md gq SB.DataSetGroupIntMaps () =
+              SC.Wrangle
+              SC.TransientIndex
+              modelWrangle
+              (Just gqWrangle)
+        return wrangler
+      resE = SB.runStanBuilder modelDat gqDat groupM builderWithWrangler
+  K.knitEither $ fmap (\(bs, dw) -> (dw, SB.code bs)) resE
 
 runMRPModel :: (K.KnitEffects r
                , BR.CacheEffects r
                , Flat.Flat c
                )
             => Bool
-            -> Maybe Text
-            -> Text
-            -> Text
-            -> SC.DataWrangler a b ()
+            -> SC.RunnerInputNames
+            -> SC.StanMCParameters
+            -> BR.StanParallel
+            -> SC.DataWrangler md gq b ()
             -> SB.StanCode
             -> Text
-            -> SC.ResultAction r a b () c
-            -> K.ActionWithCacheTime r a
-            -> BR.StanParallel
-            -> Maybe Int
-            -> Maybe Double
-            -> Maybe Int
+            -> SC.ResultAction r md gq b () c
+            -> K.ActionWithCacheTime r md
+            -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName resultAction data_C stanParallel mNSamples mAdaptDelta mMaxTreeDepth =
-  K.wrapPrefix "StanMRP" $ do
-  K.logLE K.Info $ "Running: model=" <> modelName <> " using data=" <> dataName
-  let workDir = fromMaybe ("stan/MRP/" <> modelName) mWorkDir
-      outputLabel = modelName <> "_" <> dataName
-      nSamples = fromMaybe 1000 mNSamples
+runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode ppName resultAction modelData_C gqData_C =
+  K.wrapPrefix "StanMRP.runModel" $ do
+  K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
+    <> " using data=" <> SC.rinData runnerInputNames
+    <> maybe "" (" and GQ data=" <>) (SC.rinGQ runnerInputNames)
+  let --outputLabel = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
       stancConfig =
-        (SM.makeDefaultStancConfig (T.unpack $ workDir <> "/" <> modelName)) {CS.useOpenCL = False}
+        (SM.makeDefaultStancConfig (toString $ SC.rinModelDir runnerInputNames
+                                     <> "/" <> SC.rinModel runnerInputNames)) {CS.useOpenCL = False}
       threadsM = Just $ case BR.cores stanParallel of
         BR.MaxCores -> -1
         BR.FixedCores n -> n
@@ -115,30 +123,23 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
     SC.setSigFigs 4
     . SC.noLogOfSummary
 --    . SC.noDiagnose
-    <$> SM.makeDefaultModelRunnerConfig
-    workDir
-    (modelName <> "_model")
+    <$> SM.makeDefaultModelRunnerConfig @BR.SerializerC @BR.CacheData
+    runnerInputNames
     (Just (SB.All, SB.stanCodeToStanModel stanCode))
-    (Just $ dataName <> ".json")
-    (Just $ outputLabel)
-    (BR.parallelChains stanParallel)
-    threadsM
-    (Just nSamples)
-    (Just nSamples)
-    mAdaptDelta
-    mMaxTreeDepth
+    smcParameters
     (Just stancConfig)
-  let resultCacheKey = "stan/MRP/result/" <> outputLabel <> ".bin"
+  let resultCacheKey = "stan/MRP/result/" <> SC.mergedPrefix SC.MRFull runnerInputNames <> ".bin"
   when clearCache $ do
-    K.liftKnit $ SM.deleteStaleFiles stanConfig [SM.StaleData]
+    SM.deleteStaleFiles  @BR.SerializerC @BR.CacheData stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
-  modelDep <- SM.modelCacheTime stanConfig
+  modelDep <- SM.modelDependency SC.MRFull runnerInputNames
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
-  K.logLE (K.Debug 1) $ "houseDataDep: " <> show (K.cacheTime data_C)
-  let dataModelDep = const <$> modelDep <*> data_C
+  K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
+  K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)
+  let dataModelDep = (,,) <$> modelDep <*> modelData_C <*> gqData_C
       getResults s () inputAndIndex_C = return ()
       unwraps = [SR.UnwrapNamed ppName ppName]
-  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \() -> do
+  BR.retrieveOrMakeD resultCacheKey dataModelDep $ \_ -> do
     K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
     SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
@@ -147,22 +148,22 @@ runMRPModel clearCache mWorkDir modelName dataName dataWrangler stanCode ppName 
       SC.UnCacheable -- we cannot use a Cacheable index here
       resultAction
       ()
-      data_C
+      modelData_C
+      gqData_C
 
 -- Basic group declarations, indexes and Json are produced automatically
-addGroup :: Typeable d
-           => SB.RowTypeTag r
+addGroup :: SB.RowTypeTag r
            -> SB.StanExpr
-           -> SB.GroupModel env d
+           -> SB.GroupModel md gq
            -> SB.GroupTypeTag k
            -> Maybe Text
-           -> SB.StanBuilderM env d (SB.StanExpr, SB.StanVar)
+           -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanVar)
 addGroup rtt binaryPrior gm gtt mVarSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
   let gn = SB.taggedGroupName gtt
       gs t = t <> fromMaybe "" mVarSuffix <> "_" <> gn
-  when (indexSize < 2) $ SB.stanBuildError "Index with size <2 in MRGroup!"
+  when (indexSize < 2) $ SB.stanBuildError "StanMRP.addGroup: Index with size <2 in MRGroup!"
   let binaryGroup = do
         let en = gs "eps"
         epsVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare en SB.StanReal ""
@@ -181,13 +182,75 @@ addGroup rtt binaryPrior gm gtt mVarSuffix = do
         return (modelTerm, betaVar)
   if indexSize == 2 then binaryGroup else nonBinaryGroup
 
-addInteractions2 :: Typeable d
-                 => SB.RowTypeTag r
-                 -> SB.GroupModel env d
+addMultivariateHierarchical :: SB.RowTypeTag r
+                            -> SB.GroupModel md gq
+                            -> (Bool, SB.StanExpr, SB.StanExpr, SB.StanExpr, Double) -- priors for multinormal parameters
+                            -> SB.GroupTypeTag k1
+                            -> SB.GroupTypeTag k2
+                            -> Maybe Text
+                            -> SB.StanBuilderM md gq (SB.StanExpr, SB.StanExpr)
+addMultivariateHierarchical rtt binaryGM (mnCentered, mnMuE, mnTauE, mnSigmaE, lkjP) gttExch gttComp mSuffix = do
+  SB.setDataSetForBindings rtt
+  (SB.IntIndex compN _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gttComp
+  when (compN < 2)
+    $ SB.stanBuildError "StanMRP.addMultivariateHierarchical: there are <2 components!"
+  let nameExch = SB.taggedGroupName gttExch
+      nameComp = SB.taggedGroupName gttComp
+      suffix = fromMaybe "" mSuffix
+      binaryMVH = do
+        let ev' = SB.StanVar ("eps" <> suffix <> "_" <> nameComp) (SB.StanVector (SB.NamedDim nameExch))
+        ev <- SB.groupModel ev' binaryGM
+        let bE = SB.bracket $ SB.csExprs (SB.var ev :| [SB.negate $ SB.var ev])
+            indexedE = SB.indexBy bE nameComp
+        vectorizedV <- SB.inBlock SB.SBModel
+                       $ SB.vectorizeExpr ("eps" <> suffix <> "_" <> nameComp) indexedE (SB.dataSetName rtt)
+        return (SB.var vectorizedV, indexedE)
+      nonBinaryMVH = do
+        let muV = SB.StanVar ("mu" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
+            tauV = SB.StanVar ("tau" <> suffix <> "_" <> nameComp <> "_" <> nameExch) (SB.StanVector $ SB.NamedDim nameComp)
+            sigmaV = SB.StanVar ("sigma" <> suffix <> "_" <> nameComp) SB.StanReal
+            lkjV = SB.StanVar ("L" <> suffix <> "_" <> nameComp) (SB.StanCholeskyFactorCorr $ SB.NamedDim nameComp)
+            lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjP) :| [])
+            hierHPs = Map.fromList
+              [
+                (muV, ("", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnMuE))
+              , (tauV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` mnTauE))
+              , (lkjV, ("<lower=0>", \v -> SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` lkjPriorE))
+              ]
+            betaV' = SB.StanVar
+                     ("beta" <> suffix <> "_" <> nameComp <> "_" <> nameExch)
+                     (SB.StanArray [SB.NamedDim nameExch] $ SB.StanVector $ SB.NamedDim nameComp)
+            dpmE =  SB.function "diag_pre_multiply" (SB.var tauV :| [SB.var lkjV])
+            vSet = Set.fromList [nameExch, nameComp]
+            hm = case mnCentered of
+              True ->
+                let betaPriorE v = SB.addExprLine "StanMRP.addMultivariateHierarchical"
+                      $ SB.vectorized vSet $ SB.var v `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var muV :| [dpmE])
+                in SB.Centered betaPriorE
+              False ->
+                let nonCenteredF beta@(SB.StanVar sn st) betaRaw = SB.inBlock SB.SBTransformedParameters $ do
+                      bv' <- SB.stanDeclare sn st ""
+                      SB.stanForLoopB "k" Nothing nameExch
+                        $ SB.addExprLine ("nonCentered for multivariateHierarchical: " <> show betaV')
+                        $ SB.vectorizedOne nameComp
+                        $ SB.var bv' `SB.eq` SB.var muV `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+                    rawPriorF v = SB.stanForLoopB "k" Nothing nameExch
+                      $ SB.addExprLine "StanMRP.addMultivariateHierarchical"
+                      $ SB.vectorizedOne nameComp $ SB.var v `SB.vectorSample` SB.stdNormal
+                in SB.NonCentered rawPriorF nonCenteredF
+            gm = SB.Hierarchical SB.STZNone hierHPs hm
+        betaV <- SB.groupModel betaV' gm
+        vectorizedBetaV <- SB.inBlock SB.SBModel $ SB.vectorizeVar betaV (SB.dataSetName rtt)
+        return (SB.var vectorizedBetaV, SB.var betaV)
+  if compN == 2 then binaryMVH else nonBinaryMVH
+
+
+addInteractions2 :: SB.RowTypeTag r
+                 -> SB.GroupModel md gq
                  -> SB.GroupTypeTag k1
                  -> SB.GroupTypeTag k2
                  -> Maybe Text
-                 -> SB.StanBuilderM env d SB.StanVar
+                 -> SB.StanBuilderM md gq SB.StanVar
 addInteractions2 rtt gm gtt1 gtt2 mSuffix = do
   SB.setDataSetForBindings rtt
   (SB.IntIndex indexSize1 _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt1
@@ -227,8 +290,8 @@ addInteractions rtt gm groups nInteracting mSuffix = do
     <> show (length groupList)
     <> ")"
   let indexSize (DHash.Some gtt) = do
-        (SB.IntIndex indexSize _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
-        return indexSize
+        (SB.IntIndex is _) <- SB.rowToGroupIndex <$> SB.indexMap rtt gtt
+        return is
   iSizes <- traverse indexSize groupList
   minSize <- SB.stanBuildMaybe "addInteractions: empty groupList" $ FL.fold FL.minimum iSizes
   when (minSize < 2) $ SB.stanBuildError "addInteractions: Index with size < 2"
@@ -240,6 +303,7 @@ addInteractions rtt gm groups nInteracting mSuffix = do
       betaVars = betaVar <$> groupCombos
   SB.groupModel' betaVars gm
 
+
 -- generate all possible collections of distinct elements of a given length from a list
 choices :: [a] -> Int -> [[a]]
 choices _ 0 = [[]]
@@ -250,91 +314,6 @@ choices (x:xs) n = if (n > length (x:xs))
 
 type GroupName = Text
 
---data FixedEffects row = FixedEffects Int (row -> Vec.Vector Double)
-
---emptyFixedEffects :: DHash.DHashMap SB.RowTypeTag SB.FixedEffects
---emptyFixedEffects = DHash.empty
-
-{-
--- returns
--- 'X * beta' (or 'Q * theta') model term expression
--- VarX -> 'VarX * beta' and just 'beta' for post-stratification
--- The latter is for use in post-stratification at fixed values of the fixed effects.
-addFixedEffects :: forall r1 r2 d.(Typeable d)
-                => Bool
-                -> SB.StanExpr
-                -> SB.RowTypeTag r1
-                -> SB.RowTypeTag r2
-                -> Maybe SB.StanVar
-                -> SB.FixedEffects r1
-                -> BuilderM d ( SB.StanExpr
-                              , SB.StanVar -> BuilderM d SB.StanVar
-                              , SB.StanExpr)
-addFixedEffects thinQR fePrior rttFE rttModeled mWgtsV (SB.FixedEffects n vecF) = do
-  let feDataSetName = SB.dataSetName rttFE
-      uSuffix = SB.underscoredIf feDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetsCrosswalkName rttModeled rttFE
-      colKey = "X_" <> feDataSetName <> "_Cols"
-  xV <- SB.add2dMatrixJson rttFE "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  (qVar, thetaVar, betaVar, f) <- SB.fixedEffectsQR uSuffix xV mWgtsV
-  -- model
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffects" e
-  let eQ = SB.var qVar
-      eQTheta = SB.matMult qVar thetaVar
-      xName = if T.null feDataSetName then "centered_X" else "centered_X" <> uSuffix
-      xVar = SB.StanVar xName (SB.varType qVar)
-      eX = SB.var xVar
-      eBeta = SB.var betaVar --SB.name $ "betaX" <> uSuffix
-      eXBeta = SB.matMult xVar betaVar
-      feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, f, eBeta)
-
-
-addFixedEffectsData :: forall r d. (Typeable d)
-                    => SB.RowTypeTag r
-                    -> Maybe SME.StanVar
-                    -> FixedEffects r
-                    -> BuilderM d (SB.StanVar, SB.StanVar -> BuilderM d SB.StanVar)
-addFixedEffectsData feRTT mWgtsV (FixedEffects n vecF) = do
-  let feDataSetName = SB.dataSetName feRTT
-      uSuffix = SB.underscoredIf feDataSetName
-  xV <- SB.add2dMatrixJson feRTT "X" "" (SB.NamedDim feDataSetName) n vecF -- JSON/code declarations for matrix
-  SB.fixedEffectsQR_Data uSuffix xV mWgtsV
-
-
-addFixedEffectsParametersAndPriors :: forall r1 r2 d. (Typeable d)
-                                   => Bool
-                                   -> SB.StanExpr
-                                   -> SB.RowTypeTag r1
-                                   -> SB.RowTypeTag r2
-                                   -> Maybe Text
-                                   -> BuilderM d (SB.StanExpr, SB.StanVar)
-addFixedEffectsParametersAndPriors thinQR fePrior rttFE rttModeled mVarSuffix = do
-  let feDataSetName = SB.dataSetName rttFE
-      modeledDataSetName = fromMaybe "" mVarSuffix
-      pSuffix = SB.underscoredIf feDataSetName
-      uSuffix = pSuffix <> SB.underscoredIf modeledDataSetName
-      rowIndexKey = SB.crosswalkIndexKey rttFE --SB.dataSetCrosswalkName rttModeled rttFE
-      colIndexKey =  "X" <> pSuffix <> "_Cols"
-      xVar = SB.StanVar ("X" <> pSuffix) $ SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey)
-  (thetaVar, betaVar) <- SB.fixedEffectsQR_Parameters xVar Nothing
-  SB.inBlock SB.SBModel $ do
-    let e = SB.vectorized (one colIndexKey) (SB.var thetaVar) `SB.vectorSample` fePrior
-    SB.addExprLine "addFixedEffectsParametersAndPriors" e
-  let xType = SB.StanMatrix (SB.NamedDim rowIndexKey, SB.NamedDim colIndexKey) -- it's weird to have to create this here...
-      qName = "Q" <> pSuffix <> "_ast"
-      qVar = SB.StanVar qName xType
-      eQTheta = SB.matMult qVar thetaVar
-      xName = "centered_X" <> pSuffix
-      xVar = SB.StanVar xName xType
-      eXBeta = SB.matMult xVar betaVar
-  let feExpr = if thinQR then eQTheta else eXBeta
-  return (feExpr, betaVar)
--}
-
-
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> FL.FoldM (Either Text) r (IM.IntMap k)
 buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
   step im r = case eIntF $ keyF r of
@@ -344,8 +323,8 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
 data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, Show)
 
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
-                      => (BuilderM d a, a -> BuilderM d SB.StanExpr) -- (outside of loop, inside of loop)
+addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
+                      => (BuilderM md gq a, a -> BuilderM md gq SB.StanExpr) -- (outside of loop, inside of loop)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -353,8 +332,8 @@ addPostStratification :: (Typeable d, Ord k) -- ,Typeable r, Typeable k)
 --                      -> Set.Set Text -- subset of groups to loop over
                       -> (rPS -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
-                      -> (Maybe (SB.GroupTypeTag k)) -- group to produce one PS per
-                      -> BuilderM d SB.StanVar
+                      -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
+                      -> BuilderM md gq SB.StanVar
 addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
@@ -366,29 +345,30 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
       sizeName = "N_" <> namedPS
       indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
   SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
-  rowInfos <- SB.rowBuilders <$> get
+  modelRowInfos <- SB.modelRowBuilders <$> get
+  gqRowInfos <- SB.gqRowBuilders <$> get
   modelGroupsDHM <- do
-    case DHash.lookup rttModel rowInfos of
-      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in rowBuilders."
+    case DHash.lookup rttModel modelRowInfos of
+      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in model rowBuilders."
       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
   psGroupsDHM <- do
-     case DHash.lookup rttPS rowInfos of
-       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in rowBuilders."
+     case DHash.lookup rttPS gqRowInfos of
+       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
        Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
   checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
   checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
-  toFoldable <- case DHash.lookup rttPS rowInfos of
-    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in rowBuilders."
+  toFoldable <- case DHash.lookup rttPS gqRowInfos of
+    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
   case mPSGroup of
     Nothing -> do
       SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
-      return ()
+      pure ()
     Just gtt -> do
-      rims <- SB.rowBuilders <$> get
+      rims <- SB.gqRowBuilders <$> get
       let psDataMissingErr = "addPostStratification: Post-stratification data-set "
                              <> psDataSetName
-                             <> " is missing from rowBuilders."
+                             <> " is missing from GQ rowBuilders."
           groupIndexMissingErr =  "addPostStratification: group "
                                   <> SB.taggedGroupName gtt
                                   <> " is missing from post-stratification data-set ("

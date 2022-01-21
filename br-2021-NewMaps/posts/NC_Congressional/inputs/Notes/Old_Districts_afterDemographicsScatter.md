@@ -1,4 +1,3 @@
-
 Below we chart the 2020 *election results* and compare them to the model. This is so we have some sense
 that the model makes sense and some sense of how approximate we might expect it to be.
 
