@@ -609,7 +609,7 @@ cpsStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsSt
 --  res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
   let stanParallelCfg = BR.StanParallel 4 BR.MaxCores
   (ccesWD_C, acsWD_C) <- prepWithDensity clearCaches dataAllYears_C
-  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "stanDM" [2020] ccesWD_C acsWD_C
+  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanDM" [2020] ccesWD_C acsWD_C
   ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange, gapDiffs) <- K.ignoreCacheTime res2020_C
 
 {-
@@ -1163,13 +1163,14 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
         SB.generateLogLikelihood ccesData distT (SB.var <$> vec) votes
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         dmWNH <- DM.addDesignMatrix acsWNH acsDesignRow
+        cDMWNH <- centerF dmWNH
         acsNW <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_NW"
         dmNW <- DM.addDesignMatrix acsNW acsDesignRow
+        cDMNW <- centerF dmNW
 
-        let psPrecompute interacting psDM psDataSet = do
+        let psPrecompute interacting centeredPSDM psDataSet = do
               let b = if interacting then beta else mu
-              dmPS <- centerF psDM
-              SB.vectorizeExpr "psBeta" (dmBetaE dmPS b) (SB.dataSetName psDataSet)
+              SB.vectorizeExpr "psBeta" (dmBetaE centeredPSDM b) (SB.dataSetName psDataSet)
             psExprF ps_v = pure $ SB.var ps_v
             postStratByState nameHead interacting psDM psDataSet =
               MRP.addPostStratification
@@ -1182,10 +1183,10 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
               (MRP.PSShare Nothing)
               (Just stateGroup)
 
-        (SB.StanVar whiteWI psType) <- postStratByState "WI" True dmWNH acsWNH
-        (SB.StanVar nonWhiteWI _) <- postStratByState "WI" True dmNW acsNW
-        (SB.StanVar whiteNI _) <- postStratByState "NI" False dmWNH acsWNH
-        (SB.StanVar nonWhiteNI _) <- postStratByState "NI" False dmNW acsNW
+        (SB.StanVar whiteWI psType) <- postStratByState "WI" True cDMWNH acsWNH
+        (SB.StanVar nonWhiteWI _) <- postStratByState "WI" True cDMNW acsNW
+        (SB.StanVar whiteNI _) <- postStratByState "NI" False cDMWNH acsWNH
+        (SB.StanVar nonWhiteNI _) <- postStratByState "NI" False cDMNW acsNW
 
         _ <- SB.inBlock SB.SBGeneratedQuantities $ do
           SB.stanDeclareRHS "rtDiffWI" psType "" $ SB.name nonWhiteWI `SB.minus` SB.name whiteWI

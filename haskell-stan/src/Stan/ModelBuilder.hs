@@ -10,6 +10,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -32,6 +33,7 @@ import Prelude hiding (All)
 import qualified Control.Foldl as Foldl
 import qualified Data.Aeson as Aeson
 import qualified Data.Array as Array
+import qualified Data.Constraint.Extras.TH as CE
 import qualified Data.Dependent.HashMap as DHash
 import qualified Data.Dependent.Sum as DSum
 import qualified Data.GADT.Compare as GADT
@@ -144,6 +146,8 @@ applyToFoldableM fldM (ToFoldable f) = Foldl.foldM fldM . f
 data GroupTypeTag k where
   GroupTypeTag :: Typeable k => Text -> GroupTypeTag k
 
+CE.deriveArgDict ''GroupTypeTag
+
 taggedGroupName :: GroupTypeTag k -> Text
 taggedGroupName (GroupTypeTag n) = n
 
@@ -152,6 +156,10 @@ instance GADT.GEq GroupTypeTag where
     case Reflection.eqTypeRep (Reflection.typeOf gta) (Reflection.typeOf gtb) of
       Just Reflection.HRefl -> if n1 == n2 then Just Reflection.Refl else Nothing
       _ -> Nothing
+
+instance GADT.GShow GroupTypeTag where
+  gshowsPrec _ (GroupTypeTag n) s = s ++ "GTT (name= " ++ toString n ++ ")"
+
 
 instance Hashable.Hashable (Some.Some GroupTypeTag) where
   hash (Some.Some (GroupTypeTag n)) = Hashable.hash n
@@ -250,6 +258,9 @@ newtype GroupIntMapBuilders r = GroupIntMapBuilders (DHash.DHashMap GroupTypeTag
 newtype GroupIntMaps r = GroupIntMaps (DHash.DHashMap GroupTypeTag IntMap.IntMap)
 type DataSetGroupIntMaps = DHash.DHashMap RowTypeTag GroupIntMaps
 
+--displayDataSetGroupIntMaps :: DataSetGroupIntMaps -> Text
+--displayDataSetGroupIntMaps x =
+
 data GroupIndexAndIntMapMakers d r = GroupIndexAndIntMapMakers (ToFoldable d r) (GroupIndexMakers r) (GroupIntMapBuilders r)
 
 buildIntMapBuilderF :: (k -> Either Text Int) -> (r -> k) -> DataToIntMap r k --FL.FoldM (Either Text) r (IM.IntMap k)
@@ -302,7 +313,7 @@ getGroupIndex :: forall d r k. Typeable k
               -> Either Text (IntMap k)
 getGroupIndex rtt gtt groupIndexes =
   case DHash.lookup rtt groupIndexes of
-    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps."
+    Nothing -> Left $ "\"" <> dataSetName rtt <> "\" not found in data-set group int maps: " <> show groupIndexes
     Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
       Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
@@ -357,6 +368,8 @@ unIndexedRowInfo tf groupName  = RowInfo tf mempty (GroupIndexes DHash.empty) (G
 data RowTypeTag r where
   RowTypeTag :: Typeable r => InputDataType -> Text -> RowTypeTag r
 
+CE.deriveArgDict ''RowTypeTag
+
 dataSetName :: RowTypeTag r -> Text
 dataSetName (RowTypeTag _ n) = n
 
@@ -371,7 +384,7 @@ instance GADT.GEq RowTypeTag where
       _ -> Nothing
 
 instance GADT.GShow RowTypeTag where
-  gshowsPrec _ (RowTypeTag idt n) s = s ++ toString n ++ " (" ++ show idt ++ ")"
+  gshowsPrec _ (RowTypeTag idt n) s = s ++ "RTT (name=)" ++ toString n ++ "; inputType=" ++ show idt ++ ")"
 
 instance Hashable.Hashable (Some.Some RowTypeTag) where
   hash (Some.Some (RowTypeTag idt n)) = Hashable.hash idt `Hashable.hashWithSalt` n
