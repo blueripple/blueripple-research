@@ -212,6 +212,7 @@ type PUMSByCD = F.FrameRec PUMSByCDR
 -- unweighted, which we address via post-stratification
 type CPSPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
+type CPSVByStateR = StateKeyR V.++ CPSVDataR
 type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
@@ -483,7 +484,7 @@ cpsCountedTurnoutByCD = do
             wgt
   cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
   BR.retrieveOrMakeFrame "model/house/cpsVByCD.bin" cpsRaw_C $ return . FL.fold fld
-{-
+
 cpsCountedTurnoutByState :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByStateR))
 cpsCountedTurnoutByState = do
   let afterYear y r = F.rgetField @BR.Year r >= y
@@ -500,7 +501,7 @@ cpsCountedTurnoutByState = do
             wgt
   cpsRaw_C <- CPS.cpsVoterPUMSLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
   BR.retrieveOrMakeFrame "model/house/cpsVByState.bin" cpsRaw_C $ return . FL.fold fld
--}
+
 pumsReKey :: F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
           ->  F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 pumsReKey r =
@@ -552,11 +553,12 @@ prepCCESAndPums clearCache = do
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
-  cpsVByCD_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByCD
-  K.ignoreCacheTime cpsVByCD_C >>= cpsDiagnostics "Pre Achen/Hur"
-  -- first, do the turnout corrections
+  cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
+  K.ignoreCacheTime cpsVByState_C >>= cpsDiagnostics "Pre Achen/Hur"
+
+  -- Do the turnout corrections, CPS first
   stateTurnout_C <- BR.stateTurnoutLoader
-  let achenHurDeps = (,,) <$> cpsVByCD_C <*> pumsByCD_C <*> stateTurnout_C
+  let achenHurDeps = (,,) <$> cpsVByState_C <*> pumsByCD_C <*> stateTurnout_C
       achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD achenHurCacheKey
   cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
