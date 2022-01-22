@@ -81,6 +81,7 @@ import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
+import qualified BlueRipple.Data.CCES as CCES
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -126,6 +127,16 @@ type HouseDVotes = "HouseDVotes" F.:-> Int
 type PresVotes = "PresVotes" F.:-> Int
 type PresDVotes = "PresDVotes" F.:-> Int
 
+type DVotesW = "DVotesW" F.:-> Double
+type RVotesW = "RVotesW" F.:-> Double
+type TVotesW = "TVotesW" F.:-> Double
+type VotedW = "VotedW" F.:-> Double
+type HouseVotesW = "HouseVotesW" F.:-> Double
+type HouseDVotesW = "HouseDVotesW" F.:-> Double
+type PresVotesW = "PresVotesW" F.:-> Double
+type PresDVotesW = "PresDVotesW" F.:-> Double
+
+
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 type Incumbency = "Incumbency" F.:-> Int
 type ElectionR = [Incumbency, DVotes, RVotes, TVotes]
@@ -150,14 +161,18 @@ type SenateElectionData = F.FrameRec SenateElectionDataR
 type PresidentialElectionDataR = StateKeyR V.++ DemographicsR V.++ ElectionR
 type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 
-
 -- CCES data
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
+type SurveyedW = "SurveyedW" F.:-> Double  -- total people in each bucket (Weighted)
 type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes, PresVotes, PresDVotes]
+type CCESVotingDataWR = [SurveyedW, VotedW, HouseVotesW, HouseDVotesW, PresVotesW, PresDVotesW]
 type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataR
+type CCESWByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataWR
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
+type CCESWDataR = CCESWByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
+type CCESWData = F.FrameRec CCESWDataR
 
 data DemographicSource = DS_1YRACSPUMS | DS_5YRACSTracts deriving (Show, Eq, Ord)
 demographicSourceLabel :: DemographicSource -> Text
@@ -402,12 +417,38 @@ countCESVotesF =
   in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
      <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
 
+countCESVotesWF :: FL.Fold
+                  (F.Record [CCES.CESWeight, CCES.CatalistTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
+                  (F.Record [SurveyedW, VotedW, HouseVotesW, HouseDVotesW, PresVotesW, PresDVotesW])
+countCESVotesWF =
+  let houseVote (MT.MaybeData x) = maybe False (const True) x
+      houseDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      presVote (MT.MaybeData x) = maybe False (const True) x
+      presDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      surveyedF = FL.premap (F.rgetField @CCES.CESWeight) FL.sum
+      votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) surveyedF
+      houseVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MHouseVoteParty) votedF
+      houseDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MHouseVoteParty) votedF
+      presVotesF = FL.prefilter (presVote . F.rgetField @CCES.MPresVoteParty) votedF
+      presDVotesF = FL.prefilter (presDVote . F.rgetField @CCES.MPresVoteParty) votedF
+  in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
+     <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
+
+
 -- using each year's common content
 cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESByCDR)
 cesMR earliestYear = BRF.frameCompactMRM
                      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCESVotesF
+
+-- using each year's common content
+cesWMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESWByCDR)
+cesWMR earliestYear = BRF.frameCompactMRM
+                     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
+                     countCESVotesWF
+
 
 cesCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
 cesCountedDemVotesByCD clearCaches = do
@@ -416,6 +457,15 @@ cesCountedDemVotesByCD clearCaches = do
   when clearCaches $  BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
     cesMR 2020 ces
+
+cesWCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESWByCDR))
+cesWCountedDemVotesByCD clearCaches = do
+  ces2020_C <- CCES.ces20Loader
+  let cacheKey = "model/house/cesW20ByCD.bin"
+  when clearCaches $  BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
+    cesWMR 2020 ces
+
 
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
