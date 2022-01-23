@@ -238,7 +238,7 @@ postPaths t = do
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- BRE.prepCCESAndPums False
+  data_C <- BRE.prepCCESAndPums True
 
   let ccesSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
   ccesSS1Paths <- postPaths "StateSpecific1"
@@ -278,7 +278,16 @@ type Voted = "Voted" F.:-> Double
 
 type RawTurnout = [BR.Year, BR.StateAbbreviation, VoterTypeC, ET.ElectoralWeight]
 type RawTurnoutR = F.Record RawTurnout
-type CPSRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ BRE.CPSPredictorR
+type CPSRawTurnoutJoinCols = [BR.Year, BR.StateAbbreviation] V.++ BRE.CensusPredictorR
+
+acsByCDToByState :: F.FrameRec BRE.PUMSWithDensity
+                 -> F.FrameRec (BRE.StateKeyR V.++ BRE.CensusPredictorR V.++ '[PUMS.Citizens])
+acsByCDToByState x = FL.fold fld x where
+  fld = FMR.concatFold
+        $ FMR.mapReduceFold
+        FMR.noUnpack
+        (FMR.assignKeysAndData @(BRE.StateKeyR V.++ BRE.CensusPredictorR) @'[PUMS.Citizens])
+        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
 
 rawCPSTurnout :: (K.KnitEffects r, BR.CacheEffects r)
               => Bool
@@ -583,7 +592,7 @@ gapsOverTimeChart title mSortedStates vc dat =
 --                              , resolve []
                               , GV.columns 4
                               , dat]
-
+{-
 prepWithDensity :: (K.KnitEffects r, BR.CacheEffects r)
                 => Bool
                 -> K.ActionWithCacheTime r BRE.CCESAndPUMS
@@ -598,7 +607,7 @@ prepWithDensity clearCaches ccesAndPums_C = do
   acsWithDensity_C <- BR.retrieveOrMakeFrame awdCK ccesAndPums_C $ \d -> do
     K.knitEither $ BRE.addPopDensByDistrictToPUMS (BRE.districtRows d) (BRE.pumsRows d)
   return (ccesWithDensity_C, acsWithDensity_C)
-
+-}
 ccesStateRace :: (K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
              => Bool
              -> BR.PostPaths BR.Abs
@@ -609,7 +618,9 @@ ccesStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsS
 
 --  res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
   let stanParallelCfg = BR.StanParallel 4 BR.MaxCores
-  (ccesWD_C, acsWD_C) <- prepWithDensity clearCaches dataAllYears_C
+      ccesWD_C = fmap BRE.ccesRows dataAllYears_C
+      acsWD_C = fmap BRE.pumsRows dataAllYears_C
+--  let (ccesWD_C, acsWD_C) <- fmap (\x -> )prepWithDensity clearCaches dataAllYears_C
   res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanDM" [2020] ccesWD_C acsWD_C
   ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange, gapDiffs) <- K.ignoreCacheTime res2020_C
 
@@ -1298,7 +1309,7 @@ cpsVGroupBuilder districts states = do
   return ()
 -}
 
-ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
+ccesGroupBuilder :: [Text] -> [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
 ccesGroupBuilder districts states = do
   ccesTag <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable BRE.ccesRows)
   SB.addGroupIndexForData cdGroup ccesTag $ SB.makeIndexFromFoldable show districtKey districts
@@ -1365,7 +1376,7 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
       dataAndCodeBuilder totalF succF withSDRace = do
         -- data & model
         modelDataRT <- case dataSource of
@@ -1437,8 +1448,8 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
 
         SB.generateLogLikelihood modelDataRT dist (pure logitPE) vSucc
 
-        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH"
-        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_NWNH"
+        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
+        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_NWNH"
         let psExprF _ = pure $ SB.familyExp dist logitPE
         let postStratByState nameHead modelExp dataSet =
               MRP.addPostStratification
@@ -1480,7 +1491,7 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
           K.knitEither $ do
             groupIndexes <- gqIndexesE
             psIndexIM <- SB.getGroupIndex
-                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH")
+                         (SB.RowTypeTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH")
                          cdGroup
                          groupIndexes
             let parseAndIndexPctsWith idx f vn = do
@@ -1515,7 +1526,7 @@ districtSpecificTurnoutModel clearCaches withSDRace dataSource years dataAllYear
                 MRP.buildDataWranglerAndCode groups () (codeBuilder withSDRace) dat
 -}
           SSTD_CCES -> do
-            let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESByCDR)
+            let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESWithDensity)
                                (F.rgetField @BRE.Surveyed)
                                (F.rgetField @BRE.Voted)
                 groups = ccesGroupBuilder districts states
@@ -1563,7 +1574,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                          => (modelRow -> Int)
                          -> (modelRow -> Int)
                          -> Bool
-                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSByCDR) ()
+                         -> MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
       dataAndCodeBuilder totalF succF withStateRace = do
         -- data & model
   --      cdDataRT <- SB.addIndexedDataSet "CD" (SB.ToFoldable BRE.districtRows) districtKey
@@ -1633,11 +1644,11 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
 --        SB.generatePosteriorPrediction (SB.StanVar "SPred" $ SB.StanArray [SB.NamedDim "N"] SB.StanInt) dist logitPE
         SB.generateLogLikelihood modelDataRT dist (pure logitPE) vSucc
 --        let psGroupList = ["CD", "Sex", "Race", "WNH", "Age", "Education", "WNG", "State"]
-        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH"
+        acsData_W <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         SB.addDataSetsCrosswalk acsData_W cdDataRT cdGroup
 
 --        SB.duplicateDataSetBindings acsData_W $ zip (fmap ("ACS_WNH_" <>) psGroupList) psGroupList
-        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_NWNH"
+        acsData_NW <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_NWNH"
         SB.addDataSetsCrosswalk acsData_NW cdDataRT cdGroup
 
   --        SB.duplicateDataSetBindings acsData_NW $ zip (fmap ("ACS_NWNH_" <>) psGroupList) psGroupList
@@ -1692,7 +1703,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
           K.knitEither $ do
             groupIndexes <- gqIndexesE
             psIndexIM <- SB.getGroupIndex
-                         (SB.RowTypeTag @(F.Record BRE.PUMSByCDR) SC.GQData "ACS_WNH")
+                         (SB.RowTypeTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH")
                          stateGroup
                          groupIndexes
             let parseAndIndexPctsWith f vn = do
@@ -1731,7 +1742,7 @@ stateSpecificTurnoutModel clearCaches withStateRace dataSource years dataAllYear
                 MRP.buildDataWranglerAndCode groups () (codeBuilder withStateRace) dat
 -}
           SSTD_CCES -> do
-            let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESByCDR)
+            let codeBuilder =  dataAndCodeBuilder @(F.Record BRE.CCESWithDensity)
                                (F.rgetField @BRE.Surveyed)
                                (F.rgetField @BRE.Voted)
                 groups = ccesGroupBuilder districts states

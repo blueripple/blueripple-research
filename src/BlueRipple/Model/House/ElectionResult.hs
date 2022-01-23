@@ -170,7 +170,7 @@ type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C
 type CCESWByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataWR
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESWDataR = CCESWByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
-type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile]
+type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] --, DT.AvgIncome, DT.PopPerSqMile]
 type CCESData = F.FrameRec CCESDataR
 type CCESWData = F.FrameRec CCESWDataR
 
@@ -211,15 +211,15 @@ type PUMSByCD = F.FrameRec PUMSByCDR
 type PUMSByStateR = StateKeyR V.++ PUMSDataR
 type PUMSByState = F.FrameRec PUMSByStateR
 -- unweighted, which we address via post-stratification
-type CPSPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
+type CensusPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CPSVDataR  = CensusPredictorR V.++ BRCF.CountCols
 type CPSVByStateR = StateKeyR V.++ CPSVDataR
 type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
 type DistrictDemDataR = CDKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
 type StateDemDataR = StateKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
-type AllCatR = '[BR.Year] V.++ CPSPredictorR
+type AllCatR = '[BR.Year] V.++ CensusPredictorR
 data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESWithDensity
                                , cpsVRows :: F.FrameRec CPSVWithDensity
                                , pumsRows :: F.FrameRec PUMSWithDensity
@@ -558,11 +558,22 @@ pumsByState pums = F.rcast <$> FL.fold (PUMS.pumsStateRollupF (pumsReKey . F.rca
 
 cachedPumsByState :: forall r.(K.KnitEffects r, BR.CacheEffects r)
                => K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
-               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByStateR))
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[PUMS.Citizens])))
 cachedPumsByState pums_C = do
+  let zeroCount :: F.Record '[PUMS.Citizens]
+      zeroCount = 0 F.&: V.RNil
+      addZeroF = FMR.concatFold
+                 $ FMR.mapReduceFold
+                 FMR.noUnpack
+                 (FMR.assignKeysAndData @StateKeyR @(CensusPredictorR V.++ '[PUMS.Citizens]))
+                 (FMR.makeRecsWithKey id
+                  $ FMR.ReduceFold
+                  $ const
+                  $ BRK.addDefaultRec @CensusPredictorR zeroCount
+                 )
   fmap (fmap copy2019to2020)
     $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
-    $ pure . pumsByState
+    $ pure . FL.fold addZeroF . pumsByState
 
 
 adjUsing :: forall x n d rs a.(V.KnownField x
@@ -599,7 +610,7 @@ prepCCESAndPums clearCache = do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
         cpsWithProb = fmap (FT.mutate ew) cpsV
-        (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ CPSPredictorR) cpsWithProb $ acsByState
+        (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ CensusPredictorR) cpsWithProb $ acsByState
     when (not $ null missing) $ K.knitError $ "Missing keys in cpsV/acs join: " <> show missing
     adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
     let adjVoters = adjUsing @ET.ElectoralWeight @BRCF.WeightedSuccesses @BRCF.WeightedCount id id --F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
@@ -612,7 +623,8 @@ prepCCESAndPums clearCache = do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
         ccesWithProb = fmap (FT.mutate ew) cces
-        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb $ acsByCD
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb
+          $ fmap addRace5 acsByCD
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
     adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) ccesWithProbAndCit
     -- NB: only turnout cols adjusted. HouseVotes and HouseDVotes, PresVotes and PresDVotes not adjusted
@@ -656,8 +668,6 @@ prepCCESAndPums clearCache = do
     ccesWD <- K.knitEither $ addPopDensByDistrictToCCES diByCD ccesByCD
     cpsVWD <- K.knitEither $ addPopDensByStateToCPSV diByState cpsVByState
     acsWD <- K.knitEither $ addPopDensByDistrictToPUMS diByCD acsCDFixed
-
-
     return $ CCESAndPUMS ccesWD cpsVWD acsWD diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
 
@@ -685,11 +695,16 @@ addPopDensByStateToCPSV sdd cpsV = do
   when (not $ null missing) $ Left $ "missing keys in join of density data to cpsV: " <> show missing
   Right joined
 
-race5FromCPS :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> DT.Race5
-race5FromCPS r =
+race5FromRace4AAndHisp :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> DT.Race5
+race5FromRace4AAndHisp r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
+
+addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC)
+         => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
+addRace5 r = r V.<+> FT.recordSingleton @DT.Race5C (race5FromRace4AAndHisp r)
+
 
 cpsDiagnostics :: K.KnitEffects r => Text -> F.FrameRec CPSVByStateR -> K.Sem r ()
 cpsDiagnostics t cpsByState = K.wrapPrefix "cpsDiagnostics" $ do
@@ -709,7 +724,7 @@ cpsDiagnostics t cpsByState = K.wrapPrefix "cpsDiagnostics" $ do
            $ FMR.mapReduceFold
            (FMR.unpackFilterRow fltr)
            (FMR.assign
-             (FT.recordSingleton @DT.Race4C . DT.race4FromRace5 . race5FromCPS)
+             (FT.recordSingleton @DT.Race4C . DT.race4FromRace5 . race5FromRace4AAndHisp)
              (F.rcast @[BRCF.WeightedCount, BRCF.WeightedSuccesses]))
            (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
   let (allCounts, nvCounts) = FL.fold ((,) <$> turnoutByRaceFld 2020 Nothing <*> turnoutByRaceFld 2020 (Just "NV")) cpsByState

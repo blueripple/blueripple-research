@@ -245,7 +245,7 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
     return $ (F.rcast . addRace5 <$> cdDataSER)
 
-
+{-
 prepCCESDM :: (K.KnitMany r, BR.CacheEffects r)
            => Bool
            -> K.ActionWithCacheTime r (F.FrameRec BRE.DistrictDemDataR)
@@ -256,17 +256,17 @@ prepCCESDM clearCaches ddd_C cces_C = do
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey ((,) <$> ddd_C <*> cces_C)
     $ \(ddd, cces) -> K.knitEither $ BRE.addPopDensByDistrictToCCES ddd cces
-
+-}
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do
   ccesAndPums_C <-  BRE.prepCCESAndPums False
-  ccesWD_C <- prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
+  let ccesWD_C = fmap BRE.ccesRows ccesAndPums_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
   let addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
-      fixPums :: F.Record BRE.PUMSByCDR -> F.Record PostStratR
+      fixPums :: F.Record BRE.PUMSWithDensity -> F.Record PostStratR
       fixPums = F.rcast . addRace5 . addDistrict . addCount
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
       onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
