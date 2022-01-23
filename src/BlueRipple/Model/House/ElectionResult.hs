@@ -208,7 +208,8 @@ type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.Hi
 
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
 type PUMSByCD = F.FrameRec PUMSByCDR
-
+type PUMSByStateR = StateKeyR V.++ PUMSDataR
+type PUMSByState = F.FrameRec PumsByStateR
 -- unweighted, which we address via post-stratification
 type CPSPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
@@ -535,6 +536,16 @@ pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest earlies
     earliestYear = 2016
     earliest year = (>= year) . F.rgetField @BR.Year
 
+pumsByState :: (K.KnitEffects r, BR.CacheEffects r) => F.FrameRec PUMS.PUMS -> K.Sem r (F.FrameRec PUMSByStateR)
+pumsByState pums = fmap F.rcast <$> FL.fold PUMS.pumsStateRollupF (pumsReKey . F.rcast) filteredPums
+  where
+    earliestYear = 2016
+    earliest year = (>= year) . F.rgetField @BR.Year
+    filteredPums = F.filterFrame (earliest earliestYear) pums
+
+
+
+
 cachedPumsByCD :: forall r.(K.KnitEffects r, BR.CacheEffects r)
                => K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
                -> K.ActionWithCacheTime r (F.FrameRec BR.DatedCDFromPUMA2012)
@@ -562,7 +573,7 @@ prepCCESAndPums clearCache = do
       achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD achenHurCacheKey
   cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
-    K.logLE K.Info "Doing Ghitza/Gelman logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
+    K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
         cpsWithProb = fmap (FT.mutate ew) cpsV
         (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CPSPredictorR) cpsWithProb $ acs
