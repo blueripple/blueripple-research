@@ -209,7 +209,7 @@ type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.Hi
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
 type PUMSByCD = F.FrameRec PUMSByCDR
 type PUMSByStateR = StateKeyR V.++ PUMSDataR
-type PUMSByState = F.FrameRec PumsByStateR
+type PUMSByState = F.FrameRec PUMSByStateR
 -- unweighted, which we address via post-stratification
 type CPSPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR  = CPSPredictorR V.++ BRCF.CountCols
@@ -220,7 +220,7 @@ type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
 type DistrictDemDataR = CDKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
 type AllCatR = '[BR.Year] V.++ CPSPredictorR
 data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESByCDR
-                               , cpsVRows :: F.FrameRec CPSVByCDR
+                               , cpsVRows :: F.FrameRec CPSVByStateR
                                , pumsRows :: F.FrameRec PUMSByCDR
                                , districtRows :: F.FrameRec DistrictDemDataR
 --                               , allCategoriesRows :: F.FrameRec AllCatR
@@ -515,10 +515,11 @@ pumsReKey r =
      F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
 
-acsCopy2019to2020 :: F.FrameRec PUMSByCDR -> F.FrameRec PUMSByCDR
-acsCopy2019to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2019 rows) where
+copy2019to2020 :: (F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
+copy2019to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2019 rows) where
   year2019 r = F.rgetField @BR.Year r == 2019
   changeYear2020 r = F.rputField @BR.Year 2020 r
+
 
 type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
 
@@ -536,25 +537,32 @@ pumsByCD pums cdFromPUMA =  fmap F.rcast <$> PUMS.pumsCDRollup (earliest earlies
     earliestYear = 2016
     earliest year = (>= year) . F.rgetField @BR.Year
 
-pumsByState :: (K.KnitEffects r, BR.CacheEffects r) => F.FrameRec PUMS.PUMS -> K.Sem r (F.FrameRec PUMSByStateR)
-pumsByState pums = fmap F.rcast <$> FL.fold PUMS.pumsStateRollupF (pumsReKey . F.rcast) filteredPums
-  where
-    earliestYear = 2016
-    earliest year = (>= year) . F.rgetField @BR.Year
-    filteredPums = F.filterFrame (earliest earliestYear) pums
-
-
-
-
 cachedPumsByCD :: forall r.(K.KnitEffects r, BR.CacheEffects r)
                => K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
                -> K.ActionWithCacheTime r (F.FrameRec BR.DatedCDFromPUMA2012)
                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByCDR))
 cachedPumsByCD pums_C cdFromPUMA_C = do
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
-  fmap (fmap acsCopy2019to2020)
+  fmap (fmap copy2019to2020)
     $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
     $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
+
+
+pumsByState :: F.FrameRec PUMS.PUMS -> F.FrameRec PUMSByStateR
+pumsByState pums = F.rcast <$> FL.fold (PUMS.pumsStateRollupF (pumsReKey . F.rcast)) filteredPums
+  where
+    earliestYear = 2016
+    earliest year = (>= year) . F.rgetField @BR.Year
+    filteredPums = F.filterFrame (earliest earliestYear) pums
+
+cachedPumsByState :: forall r.(K.KnitEffects r, BR.CacheEffects r)
+               => K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByStateR))
+cachedPumsByState pums_C = do
+  fmap (fmap copy2019to2020)
+    $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
+    $ pure . pumsByState
+
 
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
@@ -563,25 +571,41 @@ prepCCESAndPums clearCache = do
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
+  pumsByState_C <- cachedPumsByState pums_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
   K.ignoreCacheTime cpsVByState_C >>= cpsDiagnostics "Pre Achen/Hur"
 
   -- Do the turnout corrections, CPS first
   stateTurnout_C <- BR.stateTurnoutLoader
-  let achenHurDeps = (,,) <$> cpsVByState_C <*> pumsByCD_C <*> stateTurnout_C
-      achenHurCacheKey = "model/house/CPSV_AchenHur.bin"
-  when clearCache $ BR.clearIfPresentD achenHurCacheKey
-  cpsV_AchenHur_C <- BR.retrieveOrMakeFrame achenHurCacheKey achenHurDeps $ \(cpsV, acs, stateTurnout) -> do
+  let cpsAchenHurDeps = (,,) <$> cpsVByState_C <*> pumsByState_C <*> stateTurnout_C
+      cpsAchenHurCacheKey = "model/house/CPSV_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD cpsAchenHurCacheKey
+  cpsV_AchenHur_C <- BR.retrieveOrMakeFrame cpsAchenHurCacheKey cpsAchenHurDeps $ \(cpsV, acs, stateTurnout) -> do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
         cpsWithProb = fmap (FT.mutate ew) cpsV
-        (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CPSPredictorR) cpsWithProb $ acs
+        (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ CPSPredictorR) cpsWithProb $ acs
     when (not $ null missing) $ K.knitError $ "Missing keys in cpsV/acs join: " <> show missing
     adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
     let adjVoters r = F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
-    return $ fmap (F.rcast @CPSVByCDR . adjVoters) adjCPSProb
+    return $ fmap (F.rcast @CPSVByStateR . adjVoters) adjCPSProb
   K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "Post Achen/Hur"
+  let cpsAchenHurDeps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> stateTurnout_C
+      ccesAchenHurCacheKey = "model/house/CCES_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD ccesAchenHurCacheKey
+  cces_AchenHur_C <- BR.retrieveOrMakeFrame ccesAchenHurCacheKey ccesAchenHurDeps $ \(cces, acs, stateTurnout) -> do
+    K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
+    let ew r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
+        ccesWithProb = fmap (FT.mutate ew) cces
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb $ acs
+    when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
+    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) ccesWithProbAndCit
+    -- HERE --
+    let adjVoters r = F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
+    return $ fmap (F.rcast @CPSVByStateR . adjVoters) adjCPSProb
+
+
   let deps = (,,) <$> countedCCES_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -635,7 +659,7 @@ race5FromCPS r =
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
 
-cpsDiagnostics :: K.KnitEffects r => Text -> F.FrameRec CPSVByCDR -> K.Sem r ()
+cpsDiagnostics :: K.KnitEffects r => Text -> F.FrameRec CPSVByStateR -> K.Sem r ()
 cpsDiagnostics t cpsByCD = K.wrapPrefix "cpsDiagnostics" $ do
   let cpsCountsByYearFld = FMR.concatFold
                            $ FMR.mapReduceFold
@@ -657,9 +681,9 @@ cpsDiagnostics t cpsByCD = K.wrapPrefix "cpsDiagnostics" $ do
              (F.rcast @[BRCF.WeightedCount, BRCF.WeightedSuccesses]))
            (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
   let (allCounts, nvCounts) = FL.fold ((,) <$> turnoutByRaceFld 2020 Nothing <*> turnoutByRaceFld 2020 (Just "NV")) cpsByCD
-  K.logLE K.Diagnostic $ "All (county-weighted) by race: "
+  K.logLE K.Diagnostic $ "All by race: "
   BR.logFrame allCounts
-  K.logLE K.Diagnostic $ "NV (county-weighted) by race: "
+  K.logLE K.Diagnostic $ "NV by race: "
   BR.logFrame nvCounts
 
 
