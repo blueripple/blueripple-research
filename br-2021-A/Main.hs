@@ -238,7 +238,7 @@ postPaths t = do
 cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
-  data_C <- BRE.prepCCESAndPums True
+  data_C <- BRE.prepCCESAndPums False
 
   let ccesSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
   ccesSS1Paths <- postPaths "StateSpecific1"
@@ -618,10 +618,10 @@ ccesStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsS
 
 --  res2020_C <- stateSpecificTurnoutModel clearCaches True SSTD_CCES [2020] dataAllYears_C
   let stanParallelCfg = BR.StanParallel 4 BR.MaxCores
-      ccesWD_C = fmap BRE.ccesRows dataAllYears_C
+--      ccesWD_C = fmap BRE.ccesRows dataAllYears_C
       acsWD_C = fmap BRE.pumsRows dataAllYears_C
 --  let (ccesWD_C, acsWD_C) <- fmap (\x -> )prepWithDensity clearCaches dataAllYears_C
-  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanDM" [2020] ccesWD_C acsWD_C
+  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanDM" [2020] dataAllYears_C acsWD_C
   ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange, gapDiffs) <- K.ignoreCacheTime res2020_C
 
 {-
@@ -1099,17 +1099,31 @@ wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
 --acsDistrictGroup :: SB.GroupTypeTag @(F.Record BRE.CDKeyR) "District"
 
-groupBuilderDM :: [Text] -> SB.StanGroupBuilderM (F.FrameRec BRE.CCESWithDensity) (F.FrameRec BRE.PUMSWithDensity) ()
+groupBuilderDM :: [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
 groupBuilderDM states = do
-  ccesData <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable id)
+  ccesData <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable $ BRE.ccesRows)
   SB.addGroupIndexForData stateGroup ccesData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+--  cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ BRE.cpsRows)
+--  SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   acsWNH <- SB.addGQDataToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh)
   SB.addGroupIndexForData stateGroup acsWNH $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   acsNW <- SB.addGQDataToGroupBuilder "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . wnh))
   SB.addGroupIndexForData stateGroup acsNW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
 
 ccesDesignRow :: DM.DesignMatrixRow (F.Record BRE.CCESWithDensity)
-ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
+ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
+  where
+    alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
+    ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
+    sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
+    raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
+
+{-
+cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSWithDensity)
+cpsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
@@ -1117,15 +1131,17 @@ ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
+-}
 
 acsDesignRow :: DM.DesignMatrixRow (F.Record BRE.PUMSWithDensity)
-acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
+acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" race4Pums
+    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
 
 turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
@@ -1134,7 +1150,7 @@ turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
                -> BR.StanParallel
                -> Text
                -> [Int]
-               -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensity)
+               -> K.ActionWithCacheTime r BRE.CCESAndPUMS
                -> K.ActionWithCacheTime r (F.FrameRec BRE.PUMSWithDensity)
                -> K.Sem r (K.ActionWithCacheTime r  ((Map Text [Double]
                                                      , Map Text [Double]
@@ -1147,10 +1163,10 @@ turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
                                                     , [Double]
                                                     , Map (Text, Text) [Double]
                                                     ))
-turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsWD_C = do
+turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C = do
   K.logLE K.Info "(Re-)running turnoutModelDM if necessary."
   let jsonDataName = "stateXrace_CCES_" <> (T.intercalate "_" $ fmap show years)
-      dataAndCodeBuilder :: MRP.BuilderM (F.FrameRec BRE.CCESWithDensity) (F.FrameRec BRE.PUMSWithDensity) ()
+      dataAndCodeBuilder :: MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
       dataAndCodeBuilder = do
         ccesData <- SB.dataSetTag @(F.Record BRE.CCESWithDensity) SC.ModelData "CCES"
         cvap <- SB.addCountData ccesData "CVAP" (F.rgetField @BRE.Surveyed)
@@ -1212,17 +1228,17 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
         return ()
 
       extractTestResults :: K.KnitEffects r
-                         => SC.ResultAction r md  gq SB.DataSetGroupIntMaps () ((Map Text [Double]
-                                                                                , Map Text [Double]
-                                                                                , Map Text [Double]
-                                                                                , Map Text [Double]
-                                                                                , Map Text [Double]
-                                                                                , Map Text [Double]
-                                                                                , Map Text [Double])
-                                                                               , [Double]
-                                                                               , [Double]
-                                                                               , Map (Text, Text) [Double]
-                                                                               )
+                         => SC.ResultAction r md gq SB.DataSetGroupIntMaps () ((Map Text [Double]
+                                                                               , Map Text [Double]
+                                                                               , Map Text [Double]
+                                                                               , Map Text [Double]
+                                                                               , Map Text [Double]
+                                                                               , Map Text [Double]
+                                                                               , Map Text [Double])
+                                                                              , [Double]
+                                                                              , [Double]
+                                                                              , Map (Text, Text) [Double]
+                                                                              )
       extractTestResults = SC.UseSummary f where
         f summary _ modelDataAndIndex_C mGQDataAndIndex_C = do
           gqIndexes_C <- K.knitMaybe "br-2021-A.districtModel.extractResults: mGQDataAndIndex_C is Nothing" $ mGQDataAndIndex_C
@@ -1250,13 +1266,14 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
             return ((rtDiffWI, rtDiffNI, rtDiffI, rtNWNH_WI, rtWNH_WI, dNWNH, dWNH), gapVariance, gapRange, gapDiffs)
 
   K.logLE K.Info "Building json data wrangler and model code..."
-  let dataWranglerAndCode years= do
-        ccesWD <- K.ignoreCacheTime ccesWD_C
-        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) $ ccesWD
+  let dataWranglerAndCode years = do
+        dat <- K.ignoreCacheTime dat_C
+        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) $ BRE.ccesRows dat
             groups = groupBuilderDM states
-            filteredCCESWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) ccesWD_C
+            filteredDat_C = BRE.ccesAndPUMSForYears years <$> dat_C
+--            filteredCCESWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) ccesWD_C
             filteredACSWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) acsWD_C
-        MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder filteredCCESWD_C filteredACSWD_C
+        MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder filteredDat_C filteredACSWD_C
 
   (dw, stanCode) <- dataWranglerAndCode years
   let stanParallelCfg = BR.StanParallel 4 BR.MaxCores
@@ -1269,7 +1286,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years ccesWD_C acsW
     stanCode
     "S"
     extractTestResults
-    ccesWD_C
+    dat_C
     acsWD_C
 
 

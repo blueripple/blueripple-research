@@ -27,7 +27,7 @@ check out [our analysis of NC][NCPost].) Here’s what we’ll cover:
 
 ## 1. Dem-lean by district in TX: our demographic model vs. historical data
 
-*Introduction:* (Feel free to skip this part if you’ve already read our prior state analyses.)
+The new Texas map has 38 Congressional districts (+2 from 2020).
 Our “demographic” model forecasts the potential Democratic lean of each
 new district in TX based on attributes like race, education, age, and
 population density. In the graph and table below,

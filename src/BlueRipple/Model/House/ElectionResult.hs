@@ -82,6 +82,10 @@ import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 import qualified BlueRipple.Data.CCES as CCES
+import BlueRipple.Data.CCESFrame (cces2018C_CSV)
+import BlueRipple.Data.ElectionTypes (CVAP)
+import qualified Control.MapReduce as FMR
+import qualified Frames.MapReduce as FMR
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -445,6 +449,13 @@ cesMR earliestYear = BRF.frameCompactMRM
                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCESVotesF
 
+cesFold :: Int -> FL.Fold (F.Record CCES.CESPR) (F.FrameRec CCESByCDR)
+cesFold earliestYear = FMR.concatFold
+          $ FMR.mapReduceFold
+          (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+          (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
+          (FMR.foldAndAddKey countCESVotesF)
+
 -- using each year's common content
 cesWMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESWByCDR)
 cesWMR earliestYear = BRF.frameCompactMRM
@@ -458,8 +469,8 @@ cesCountedDemVotesByCD clearCaches = do
   ces2020_C <- CCES.ces20Loader
   let cacheKey = "model/house/ces20ByCD.bin"
   when clearCaches $  BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
-    cesMR 2020 ces
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> cesMR 2020 ces
+--  BR.retrieveOrMakeFrame cacheKey ces2020_C $ return . FL.fold (cesFold 2020)
 
 cesWCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESWByCDR))
 cesWCountedDemVotesByCD clearCaches = do
@@ -593,6 +604,9 @@ prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Se
 prepCCESAndPums clearCache = do
   let earliestYear = 2016 -- set by ces for now
       earliest year = (>= year) . F.rgetField @BR.Year
+      fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
+                   then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+                   else r
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
@@ -615,33 +629,47 @@ prepCCESAndPums clearCache = do
     adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
     let adjVoters = adjUsing @ET.ElectoralWeight @BRCF.WeightedSuccesses @BRCF.WeightedCount id id --F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
     return $ fmap (F.rcast @CPSVByStateR . adjVoters) adjCPSProb
-  K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "Post Achen/Hur"
+  K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "CPS: Post Achen/Hur"
+  K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
+  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Pre" pumsByCD_C countedCCES_C
+  BR.logFrame ccesDiagnosticStatesPre
+
   let ccesAchenHurDeps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> stateTurnout_C
       ccesAchenHurCacheKey = "model/house/CCES_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesAchenHurCacheKey
   ccesAchenHur_C <- BR.retrieveOrMakeFrame ccesAchenHurCacheKey ccesAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
+    K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
     let ew r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
+        zeroCount :: F.Record '[PUMS.Citizens] = 0 F.&: V.RNil
+        addZeroF = FMR.concatFold
+                 $ FMR.mapReduceFold
+                 FMR.noUnpack
+                 (FMR.assignKeysAndData @CDKeyR @(CCESPredictorR V.++ '[PUMS.Citizens]))
+                 (FMR.makeRecsWithKey id
+                  $ FMR.ReduceFold
+                  $ const
+                  $ BRK.addDefaultRec @CCESPredictorR zeroCount
+                 )
+        fixedACS = FL.fold addZeroF $ fmap (fixDC_CD . addRace5) acsByCD
         ccesWithProb = fmap (FT.mutate ew) cces
-        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb
-          $ fmap addRace5 acsByCD
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb fixedACS
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
     adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) ccesWithProbAndCit
+
     -- NB: only turnout cols adjusted. HouseVotes and HouseDVotes, PresVotes and PresDVotes not adjusted
     let adjVoters = adjUsing @ET.ElectoralWeight @Voted @Surveyed realToFrac round
     return $ fmap (F.rcast @CCESByCDR . adjVoters) adjCCESProb
 
-
+  K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
+  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Post "pumsByCD_C ccesAchenHur_C
+  BR.logFrame ccesDiagnosticStatesPost
   let deps = (,,) <$> ccesAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeD cacheKey deps $ \(ccesByCD, cpsVByState, acsByCD) -> do
     -- get Density and avg income from PUMS and combine with election data for the district level data
-    let fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
-                     then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
-                     else r
-        acsCDFixed = fmap fixDC_CD acsByCD
-        --cpsVFixed = fmap fixDC_CD $ F.filterFrame (earliest earliestYear) cpsVByCD
+    let acsCDFixed = fmap fixDC_CD acsByCD
         diInnerFold :: FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let cit = F.rgetField @PUMS.Citizens
@@ -707,7 +735,7 @@ addRace5 r = r V.<+> FT.recordSingleton @DT.Race5C (race5FromRace4AAndHisp r)
 
 
 cpsDiagnostics :: K.KnitEffects r => Text -> F.FrameRec CPSVByStateR -> K.Sem r ()
-cpsDiagnostics t cpsByState = K.wrapPrefix "cpsDiagnostics" $ do
+cpsDiagnostics t cpsByState = K.wrapPrefix "ccesDiagnostics" $ do
   let cpsCountsByYearFld = FMR.concatFold
                            $ FMR.mapReduceFold
                            FMR.noUnpack
@@ -737,40 +765,55 @@ cpsDiagnostics t cpsByState = K.wrapPrefix "cpsDiagnostics" $ do
 -- CCES diagnostics
 type Voters = "Voters" F.:-> Double
 type DemVoters = "DemVoters" F.:-> Double
+--type CVAP = "CVAP" F.:-> Double
+type Turnout = "Turnout" F.:-> Double
+
 type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
-                => K.ActionWithCacheTime r CCESAndPUMS
-                -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, Voters, DemVoters, ET.DemShare]
-                                                      , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, Voters, DemVoters, ET.DemShare])))
-ccesDiagnostics ccesAndPums_C = K.wrapPrefix "ccesDiagnostics" $ do
+                => Bool
+                -> Text
+                -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
+                -> K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
+                -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, CVAP, Voters, DemVoters, Turnout, ET.DemShare]
+                                                      , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, CVAP, Voters, DemVoters, Turnout, ET.DemShare])))
+ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
-  let pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ F.rgetField @Surveyed r)
+  let surveyed r =  F.rgetField @Surveyed r
+      pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ surveyed r)
       pD r = let hv = F.rgetField @HouseVotes r in if hv == 0 then 0 else (realToFrac $ F.rgetField @HouseDVotes r)/(realToFrac hv)
       cvap = realToFrac . F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      compute rw rc = let voters = (pT rw * cvap rc) in (voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [Voters, DemVoters]
-      psFld :: FL.Fold (F.Record [Voters, DemVoters]) (F.Record [Voters, DemVoters])
+      compute rw rc = let voters = (pT rw * cvap rc) in (F.rgetField @PUMS.Citizens rc F.&: voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [CVAP, Voters, DemVoters]
+      psFld :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
       psFld = FF.foldAllConstrained @Num FL.sum
       addShare r = let v = F.rgetField @Voters r in r F.<+> (FT.recordSingleton @ET.DemShare $ if v < 1 then 0 else F.rgetField @DemVoters r / v)
-  states_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsStates.bin" ccesAndPums_C $ \ccesAndPums -> do
-    let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
+      addTurnout r = let v = realToFrac (F.rgetField @CVAP r) in r F.<+> (FT.recordSingleton @Turnout $ if v < 1 then 0 else F.rgetField @Voters r / v)
+      deps = (,) <$> acs_C <*> cces_C
+      onlyAlaska_C = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") <$> cces_C
+  K.ignoreCacheTime onlyAlaska_C >>= BR.logFrame
+  let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
+  when clearCaches $ BR.clearIfPresentD statesCK
+  states_C <- BR.retrieveOrMakeFrame statesCK deps $ \(acs, cces) -> do
+    let acsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acs)
         (psByState, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
                                compute
                                psFld
-                               (F.rcast <$> ccesRows ccesAndPums)
-                               (F.rcast <$> pumsFixed)
+                               (F.rcast <$> cces)
+                               (F.rcast <$> acsFixed)
 --    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
-    return $ addShare <$> psByState
-  districts_C <- BR.retrieveOrMakeFrame "diagnostics/ccesPSByPumsCDs.bin" ccesAndPums_C $ \ccesAndPums -> do
-    let pumsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) $ pumsRows ccesAndPums)
+    return $ (addShare . addTurnout) <$> psByState
+  let districtsCK = "diagnostics/ccesPSByPumsCDs" <> cacheSuffix <> ".bin"
+  when clearCaches $ BR.clearIfPresentD districtsCK
+  districts_C <- BR.retrieveOrMakeFrame districtsCK deps $ \(acs, cces) -> do
+    let acsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acs)
         (psByCD, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation,ET.CongressionalDistrict] @CCESBucketR @CCESVotingDataR @'[PUMS.Citizens]
                                compute
                                psFld
-                               (F.rcast <$> ccesRows ccesAndPums)
-                               (F.rcast <$> pumsFixed)
+                               (F.rcast <$> cces)
+                               (F.rcast <$> acsFixed)
 --    when (not $ null missing) $ K.knitError $ "ccesDiagnostics: Missing keys in cces/pums join: " <> show missing
-    return $ addShare <$> psByCD
+    return $ addShare. addTurnout <$> psByCD
 --  K.ignoreCacheTime states_C >>= BR.logFrame
   return $ (,) <$> states_C <*> districts_C
 

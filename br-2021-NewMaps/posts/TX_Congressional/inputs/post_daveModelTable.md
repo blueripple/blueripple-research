@@ -1,16 +1,35 @@
 ## 2. Districts worthy of Dem donor support
 Based on the results above, we think there are five good options
 for Dem donors in TX:
-- TX-15 is competitive in both models and we think a slight lean R but winnable for the Dems.
-- TX-28 and TX-34 might look safe, but we are concerned that these could be hard to win,
-especially in a bad year for team Blue.
-- TX-38 and TX-24 are, perhaps, “plausible long-shots”, districts that look out-of-reach
-historically but winnable demographically.  These are places where resources now,
-especially spent on organizing, could make a large difference.
+- TX-15 (R+2 in Blue Ripple Model): We think this current Dem seat needs resources
+for Team Blue to hold it, particularly since it became tighter after redistricting.
+The incumbent, Vincente Gonzalez, opted to run in TX-34, which looks nominally safer
+for Dems (see below). Six Dems and nine Republicans have filed to compete in the primary.
+
+- TX-28 (D+3) was won by 18 points by incumbent Dem Henry Cuellar in 2020,
+but is now significantly more competitive and needs defensive support.
+Cuellar is being primaried from the left by Jessica Cisneros,
+who almost unseated him in 2020; seven Republicans have also thrown their hats in the ring.
+
+- TX-34 (D+2) is being viewed as relatively safe by Dems (see above),
+but we believe it may be tighter than pundits appreciate, and in need of support.
+Retiring Dem incumbent Filemon Vela has thrown his support behind Vincente Gonzalez
+in a race with multiple GOP hopefuls.
+
+TX-24 (D+7) and TX-38 (D+8) appear to be “plausible long-shots” in our demographic model.
+Both are relatively dense, majority-white districts near cities.
+In TX-24, which contains parts of Dallas, GOP incumbent Beth Van Duyne eked out a
+1.5-point victory in 2020 under the old map, although the new lines should tilt
+things more in the Republican’s favor. The newly-created Houston-area TX-38 was
+designed to be Republican leaning, and the GOP’s Wesley Hunt, who lost a tight
+contest in nearby TX-7 to Lizzie Pannill Fletcher in 2020, is well-funded
+and may be hard to beat. Although historical data and pundits would call
+both of these out of reach for Team Blue,
+we believe organizing resources could mobilize latent Dem-leaning voters.
 
 A few points on “plausible long-shots”:
 (Feel free to skip if you’ve read our discussion of these sorts of districts in other analyses.)
-Our findings in TX-38 and TX-24 deserve particular discussion. These look to be "safe R"
+Our findings in TX-24 and TX-38 deserve particular discussion. These look to be "safe R"
 given the voting patterns in the precincts within them,
 but our demographic model suggests they should be much more Dem-leaning, and maybe even Dem-winnable.
 What might this mean? One way to answer this question is to consider the difference between the two models.
@@ -34,7 +53,7 @@ or organizing could, in fact, yield a win for Dems in TX-38 or TX-24.
 We don't know which (if any) of these explanations is correct.
 But our model suggests that if you want to support Team Blue in TX,
 and are open to the idea of supporting some long-shot candidates,
-then donating to a Dem in TX-38 or TX-24 might fit the bill.
+then donating to a Dem in TX-24 or TX-38 might fit the bill.
 
 A few overarching observations:
 (Again, these similar to points we’ve made in prior analyses.)
