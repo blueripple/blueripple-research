@@ -799,6 +799,8 @@ addModelDataSet name toFoldable = do
         return rtt
   withRowInfo add alreadyPresent rtt
 
+
+
 addGQDataSet :: Typeable r
                 => Text
                 -> ToFoldable gq r
@@ -812,6 +814,8 @@ addGQDataSet name toFoldable = do
         modify $ runIdentity . modifyGQRowInfosA (Identity . newRowInfoF)
         return rtt
   withRowInfo add alreadyPresent rtt
+
+
 
 {-
       put (BuilderState vars ibs newRowBuilders modelExprs code ims)

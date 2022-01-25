@@ -194,7 +194,34 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
+
+stackDataSets :: forall md gq r1 r2. ()
+                       => Text
+                       -> SB.RowTypeTag r1
+                       -> SB.RowTypeTag r2
+                       -> SB.GroupSet -- groups to stack
+                       -> SB.StanBuilderM md gq (SB.RowTypeTag () -- tag for combined loops
+                                             , SB.StanName -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- stack variables
+                                             )
+stackDataSets name rtt1 rtt2 groups = do
+  let n1 = SB.dataSetName rtt1
+      n2 = SB.dataSetName rtt2
+      sizeName x = "N_" <> x
+  rtt <- SB.addModelDataSet name (SB.ToFoldable $ const [()])
+  SB.inBlock SB.SBTransformedData $ do
+    sizeV <- SB.stanDeclareRHS (sizeName name) SME.StanInt "<lower=0>" $ SME.name (sizeName n1) `SME.plus` SME.name (sizeName n2)
+    SB.addDeclBinding name sizeV
+    SB.addUseBindingToDataSet rtt name sizeV
+  let stackVars vName v1@(SB.StanVar _ t1) v2@(SB.StanVar _ t2) = do
+        case (t1, t2) of
+          (SB.StanVector (SB.NamedDim n1), SB.StanVector (SB.NamedDim n2)) ->
+            SB.stanDeclareRHS vName (SB.StanVector $ SB.NamedDim name) "" $ SB.function "append_row" (SB.var v1 :| [SB.var v2])
+          _ -> SB.stanBuildError $ "BuildingBlocks.stackDataSets.stackVars: Bad variables for stacking: v1=" <> show v1 <> "; v2=" <> show v2
+  return (rtt, undefined)
+
 {-
+
+
 groupDataSetMembershipMatrix :: SB.IndexKey -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
 groupDataSetMembershipMatrix groupIndexKey rttD = SB.inBlock SB.SBTransformedData $ SB.useDataSetForBindings rttD $ do
   let dsIndexKey = SB.dataSetName rttD

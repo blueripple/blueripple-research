@@ -1103,8 +1103,8 @@ groupBuilderDM :: [Text] -> SB.StanGroupBuilderM BRE.CCESAndPUMS (F.FrameRec BRE
 groupBuilderDM states = do
   ccesData <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable $ BRE.ccesRows)
   SB.addGroupIndexForData stateGroup ccesData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
---  cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ BRE.cpsRows)
---  SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ BRE.cpsVRows)
+  SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   acsWNH <- SB.addGQDataToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh)
   SB.addGroupIndexForData stateGroup acsWNH $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   acsNW <- SB.addGQDataToGroupBuilder "ACS_NW" (SB.ToFoldable $ F.filterFrame (not . wnh))
@@ -1121,17 +1121,18 @@ ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP,
     densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
 
-{-
-cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSWithDensity)
+
+cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSVWithDensity)
 cpsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+    raceRP = DM.boundedEnumRowPart "Race" (\r -> DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
--}
+
 
 acsDesignRow :: DM.DesignMatrixRow (F.Record BRE.PUMSWithDensity)
 acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
@@ -1169,23 +1170,31 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
       dataAndCodeBuilder :: MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
       dataAndCodeBuilder = do
         ccesData <- SB.dataSetTag @(F.Record BRE.CCESWithDensity) SC.ModelData "CCES"
-        cvap <- SB.addCountData ccesData "CVAP" (F.rgetField @BRE.Surveyed)
-        votes <- SB.addCountData ccesData "VOTED" (F.rgetField @BRE.Voted)
-        let distT = SB.binomialLogitDist cvap
+        cvapCCES <- SB.addCountData ccesData "CCES_CVAP" (F.rgetField @BRE.Surveyed)
+        votedCCES <- SB.addCountData ccesData "CCES_VOTED" (F.rgetField @BRE.Voted)
+        let distT = SB.binomialLogitDist cvapCCES
         DM.addDesignMatrixIndexes ccesData ccesDesignRow
-        (dm, centerF) <- do
-          dmBase <- DM.addDesignMatrix ccesData ccesDesignRow
-          DM.centerDataMatrix True dmBase Nothing
+        dmCCES <- DM.addDesignMatrix ccesData ccesDesignRow
+        cpsData <- SB.dataSetTag @(F.Record BRE.CCESWithDensity) SC.ModelData "CCES"
+        cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
+        votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Succesed)
+        dmCPS <- DM.addDesignMatrix cpsData cpsDesignRow
+        (cvap, voted, dm, centerF) <- SB.inBlock SB.TransformedData $ do
+          datSize <- SB.stanDeclareRHS "N_rows" SB.StanReal "<lower=1>" $ SB.name "N_CCES" `SB.plus` SB.name "N_CPS"
+--          cvap <- SB.stanDeclareRHS ()
+          dmCCESBase <- DM.addDesignMatrix ccesData ccesDesignRow
+          DM.centerDataMatrix True dmCCESBase Nothing
         (beta, mu, tau, l) <- DM.addDMParametersAndPriors ccesData ccesDesignRow stateGroup (1, 1, 4) Nothing
         let dmBetaE dm beta = SB.vectorizedOne "DM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vec = SB.vectorizeExpr "ccesDataBeta" (dmBetaE dm beta) (SB.dataSetName ccesData)
+            vec dm = SB.vectorizeExpr "ccesDataBeta" (dmBetaE dm beta) (SB.dataSetName ccesData)
         SB.inBlock SB.SBModel $ SB.useDataSetForBindings ccesData $ do
-          voteDataBeta_v <- vec
+          voteDataBeta_v <- vec dmCCES
           SB.sampleDistV ccesData distT (SB.var voteDataBeta_v) votes
         SB.useDataSetForBindings ccesData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
             DM.splitToGroupVars ccesDesignRow mu
         SB.generateLogLikelihood ccesData distT (SB.var <$> vec) votes
+
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         dmWNH <- DM.addDesignMatrix acsWNH acsDesignRow
         cDMWNH <- centerF dmWNH
