@@ -480,7 +480,7 @@ cesWCountedDemVotesByCD clearCaches = do
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
     cesWMR 2020 ces
 
-
+-- NB: CDKey includes year
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
   let afterYear y r = F.rgetField @BR.Year r >= y
@@ -498,6 +498,7 @@ cpsCountedTurnoutByCD = do
   cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
   BR.retrieveOrMakeFrame "model/house/cpsVByCD.bin" cpsRaw_C $ return . FL.fold fld
 
+-- NB: StateKey includes year
 cpsCountedTurnoutByState :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByStateR))
 cpsCountedTurnoutByState = do
   let afterYear y r = F.rgetField @BR.Year r >= y
@@ -607,6 +608,8 @@ prepCCESAndPums clearCache = do
       fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
                    then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
                    else r
+      fLength = FL.fold FL.length
+      lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
   pums_C <- PUMS.pumsLoaderAdults
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
@@ -621,14 +624,23 @@ prepCCESAndPums clearCache = do
       cpsAchenHurCacheKey = "model/house/CPSV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD cpsAchenHurCacheKey
   cpsV_AchenHur_C <- BR.retrieveOrMakeFrame cpsAchenHurCacheKey cpsAchenHurDeps $ \(cpsV, acsByState, stateTurnout) -> do
+    K.logLE K.Diagnostic $ "Pre Achen-Hur: CPS (by state) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cpsV) [2012, 2014, 2016, 2018, 2020]
+    K.logLE K.Diagnostic $ "ACS (by state) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByState) [2012, 2014, 2016, 2018, 2020]
+
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
     let ew r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
         cpsWithProb = fmap (FT.mutate ew) cpsV
         (cpsWithProbAndCit, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ CensusPredictorR) cpsWithProb $ acsByState
-    when (not $ null missing) $ K.knitError $ "Missing keys in cpsV/acs join: " <> show missing
+    when (not $ null missing) $ K.knitError $ "prepCCESAndPums: Missing keys in cpsV/acs join: " <> show missing
+    when (fLength cpsWithProb /= fLength cpsWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cps,acs)"
     adjCPSProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCit
     let adjVoters = adjUsing @ET.ElectoralWeight @BRCF.WeightedSuccesses @BRCF.WeightedCount id id --F.rputField @BRCF.WeightedSuccesses (F.rgetField @BRCF.WeightedCount r * F.rgetField @ET.ElectoralWeight r) r
-    return $ fmap (F.rcast @CPSVByStateR . adjVoters) adjCPSProb
+        res = fmap (F.rcast @CPSVByStateR . adjVoters) adjCPSProb
+    K.logLE K.Diagnostic $ "Post Achen-Hur: CPS (by state) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
+    return res
   K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "CPS: Post Achen/Hur"
   K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
   ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Pre" pumsByCD_C countedCCES_C
@@ -638,6 +650,11 @@ prepCCESAndPums clearCache = do
       ccesAchenHurCacheKey = "model/house/CCES_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesAchenHurCacheKey
   ccesAchenHur_C <- BR.retrieveOrMakeFrame ccesAchenHurCacheKey ccesAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
+    K.logLE K.Diagnostic $ "Pre Achen-Hur: CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
+    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
+
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
     K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
     let ew r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
@@ -655,11 +672,15 @@ prepCCESAndPums clearCache = do
         ccesWithProb = fmap (FT.mutate ew) cces
         (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb fixedACS
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
+    when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
     adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) ccesWithProbAndCit
 
     -- NB: only turnout cols adjusted. HouseVotes and HouseDVotes, PresVotes and PresDVotes not adjusted
     let adjVoters = adjUsing @ET.ElectoralWeight @Voted @Surveyed realToFrac round
-    return $ fmap (F.rcast @CCESByCDR . adjVoters) adjCCESProb
+        res = fmap (F.rcast @CCESByCDR . adjVoters) adjCCESProb
+    K.logLE K.Diagnostic $ "Post Achen-Hur: CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
+    return res
 
   K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
   ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Post "pumsByCD_C ccesAchenHur_C

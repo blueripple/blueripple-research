@@ -23,6 +23,7 @@ import qualified Stan.ModelBuilder.GroupModel as SGM
 
 import Prelude hiding (All)
 import Data.List.NonEmpty as NE
+import qualified Data.Dependent.HashMap as DHash
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -208,16 +209,52 @@ stackDataSets name rtt1 rtt2 groups = do
       n2 = SB.dataSetName rtt2
       sizeName x = "N_" <> x
   rtt <- SB.addModelDataSet name (SB.ToFoldable $ const [()])
+  SB.addUseBindingToDataSet rtt n1 $ SB.StanVar ("N_" <> n1) SB.StanInt
+  SB.addUseBindingToDataSet rtt n2 $ SB.StanVar ("N_" <> n2) SB.StanInt
   SB.inBlock SB.SBTransformedData $ do
     sizeV <- SB.stanDeclareRHS (sizeName name) SME.StanInt "<lower=0>" $ SME.name (sizeName n1) `SME.plus` SME.name (sizeName n2)
     SB.addDeclBinding name sizeV
     SB.addUseBindingToDataSet rtt name sizeV
-  let stackVars vName v1@(SB.StanVar _ t1) v2@(SB.StanVar _ t2) = do
+
+  let copyUseBinding rttFrom rttTo dimName = do
+        m <- SB.getDataSetBindings rttFrom
+        case Map.lookup dimName m of
+          Just e -> SB.addUseBindingToDataSet' rttTo dimName e
+          Nothing -> SB.stanBuildError
+                     $ "stackDataSets.copyUseBinding: " <> dimName <> " not found in data-set="
+                     <> SB.dataSetName rtt <> " (inputeType=" <> show (SB.inputDataType rtt) <>")."
+      copyIfNamed rttFrom rttTo d = case d of
+        SB.NamedDim ik -> copyUseBinding rttFrom rttTo ik
+        _ -> pure ()
+      stackVars vName v1@(SB.StanVar _ t1) v2@(SB.StanVar _ t2) = do
+        let stackTypesErr :: SB.StanBuilderM md gq a
+            stackTypesErr = SB.stanBuildError $ "BuildingBlocks.stackDataSets.stackVars: Bad variables for stacking: v1=" <> show v1 <> "; v2=" <> show v2
         case (t1, t2) of
           (SB.StanVector (SB.NamedDim n1), SB.StanVector (SB.NamedDim n2)) ->
-            SB.stanDeclareRHS vName (SB.StanVector $ SB.NamedDim name) "" $ SB.function "append_row" (SB.var v1 :| [SB.var v2])
-          _ -> SB.stanBuildError $ "BuildingBlocks.stackDataSets.stackVars: Bad variables for stacking: v1=" <> show v1 <> "; v2=" <> show v2
-  return (rtt, undefined)
+            SB.stanDeclareRHS vName (SB.StanVector $ SB.NamedDim name) "" $ SB.function "append_row" (SB.varNameE v1 :| [SB.varNameE v2])
+          (SB.StanMatrix (SB.NamedDim n1, cd1), SB.StanMatrix (SB.NamedDim n2, cd2)) -> do
+            when (cd1 /= cd2) stackTypesErr
+            copyIfNamed rtt1 rtt cd1
+            SB.useDataSetForBindings rtt
+              $ SB.stanDeclareRHS vName (SB.StanMatrix (SB.NamedDim name, cd1)) "" $ SB.function "append_row" (SB.varNameE v1 :| [SB.varNameE v2])
+          (SB.StanArray (SB.NamedDim n1 : ads1) at1, SB.StanArray (SB.NamedDim n2 : ads2) at2) -> do
+            when ((ads1 /= ads2) || (at1 /= at2)) stackTypesErr
+            mapM_ (copyIfNamed rtt1 rtt) (ads1 ++ SB.getDims at1)
+            SB.useDataSetForBindings rtt
+              $ SB.stanDeclareRHS vName (SB.StanArray (SB.NamedDim name : ads1) at1) "" $ SB.function "append_array" (SB.varNameE v1 :| [SB.varNameE v2])
+          _ -> stackTypesErr
+      stackGroupIndexes :: forall k. SB.GroupTypeTag k -> SB.Phantom k -> SB.StanBuilderM md gq (SB.Phantom k)
+      stackGroupIndexes gtt _ = do
+        let gName = SB.taggedGroupName gtt
+        iv1 <- SB.getGroupIndexVar rtt1 gtt
+        iv2 <- SB.getGroupIndexVar rtt2 gtt
+        iv <- SB.inBlock SB.SBTransformedData $ do
+          SB.setDataSetForBindings rtt
+          stackVars (name <> "_" <> gName) iv1 iv2
+        SB.addUseBindingToDataSet rtt gName iv
+        return SB.Phantom
+  _ <- DHash.traverseWithKey stackGroupIndexes groups
+  return (rtt, stackVars)
 
 {-
 

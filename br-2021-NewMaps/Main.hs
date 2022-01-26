@@ -286,7 +286,7 @@ newMapAnalysis stanParallelCfg parallel = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished Nothing)
+  let postInfoTX = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths

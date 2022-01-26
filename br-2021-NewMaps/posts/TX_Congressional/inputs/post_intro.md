@@ -1,7 +1,7 @@
 # New Congressional Maps, New Dem Strategy: Our TX Analysis
 
-Like all states, Texas is locking down new disrict maps, which affect
-Democrat’s odds in 2022 COngressional races. In this reshaped landscape,
+Like all states, Texas is locking down new district maps, which affect
+Democrat’s odds in 2022 Congressional races. In this reshaped landscape,
 how can donors focus their attention on races with the biggest “bang for buck”
 for flipping tenuous GOP seats or protecting vulnerable Dems?
 

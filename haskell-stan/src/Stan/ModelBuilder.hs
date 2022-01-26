@@ -60,7 +60,7 @@ import qualified Data.GADT.Show as GADT
 import Frames.Streamly.TH (declareColumnType)
 import Text.Printf (errorMissingArgument)
 import Stan.ModelConfig (InputDataType(..))
-import Knit.Report (crimson)
+import Knit.Report (crimson, getting)
 import qualified Data.Hashable.Lifted as Hashable
 
 
@@ -217,6 +217,29 @@ getGroupIndex rtt gtt groupIndexes =
       Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
 
+groupIndexVarName :: RowTypeTag r -> GroupTypeTag k -> StanName
+groupIndexVarName rtt gtt = dataSetName rtt <> "_" <> taggedGroupName gtt
+{-# INLINEABLE groupIndexVarName #-}
+
+getGroupIndexVar :: forall md gq r k.
+                    RowTypeTag r
+                 -> GroupTypeTag k
+                 -> StanBuilderM md gq StanVar
+getGroupIndexVar rtt gtt = do
+  let varName = groupIndexVarName rtt gtt
+      dsNotFoundErr = stanBuildError
+                      $ "getGroupIndexVar: data-set=" <> dataSetName rtt <> " (input type=" <> show (inputDataType rtt) <> ") not found."
+      varIfGroup :: forall x d.RowInfo d x -> StanBuilderM md gq SME.StanVar
+      varIfGroup ri =
+        let (GroupIndexes gis) = groupIndexes ri
+        in case DHash.lookup gtt gis of
+          Just _ -> return $ SME.StanVar varName (SME.StanArray [SME.NamedDim $ dataSetName rtt] SME.StanInt)
+          Nothing -> stanBuildError
+            $ "getGroupIndexVar: group=" <> taggedGroupName gtt
+            <> " not found in data-set=" <> dataSetName rtt <> " (input type=" <> show (inputDataType rtt) <> ") not found."
+  withRowInfo dsNotFoundErr varIfGroup rtt
+
+
 intMapsForDataSetFoldM :: GroupIntMapBuilders r -> Foldl.FoldM (Either Text) r (GroupIntMaps r)
 intMapsForDataSetFoldM (GroupIntMapBuilders imbs) = GroupIntMaps <$> DHash.traverse unDataToIntMap imbs
 
@@ -283,9 +306,9 @@ buildJSONFromRows rowFoldMap d = do
 buildGroupIndexes :: (Typeable md, Typeable gq) => StanBuilderM md gq ()
 buildGroupIndexes = do
   let buildIndexJSONFold :: (Typeable md, Typeable gq) => RowTypeTag r -> GroupTypeTag k -> IndexMap r k -> StanBuilderM md gq (Maybe k)
-      buildIndexJSONFold rtt (GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
+      buildIndexJSONFold rtt gtt@(GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
-            indexName = dsName <> "_" <> gName
+            indexName = groupIndexVarName rtt gtt --dsName <> "_" <> gName
         addFixedIntJson' ("J_" <> gName) (Just 1) gSize
         _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
 --        addDeclBinding gName $ SME.name $ "J_" <> gName -- ??

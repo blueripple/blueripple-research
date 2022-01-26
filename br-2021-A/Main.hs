@@ -239,7 +239,11 @@ cpsVAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => K.Sem r ()
 cpsVAnalysis = do
   K.logLE K.Info "Data prep..."
   data_C <- BRE.prepCCESAndPums False
-
+  dat <- K.ignoreCacheTime data_C
+  let fLength = FL.fold FL.length
+      lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
+  K.logLE K.Diagnostic $ "br-2021-A: CPS (by state) rows per year:"
+  K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y $ BRE.cpsVRows dat) [2012, 2014, 2016, 2018, 2020]
   let ccesSS1PostInfo = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 6 3) Nothing)
   ccesSS1Paths <- postPaths "StateSpecific1"
   BR.brNewPost ccesSS1Paths ccesSS1PostInfo "State-Specific VOC/WHNV Turnout Gaps"
@@ -621,7 +625,7 @@ ccesStateRace clearCaches postPaths postInfo dataAllYears_C = K.wrapPrefix "cpsS
 --      ccesWD_C = fmap BRE.ccesRows dataAllYears_C
       acsWD_C = fmap BRE.pumsRows dataAllYears_C
 --  let (ccesWD_C, acsWD_C) <- fmap (\x -> )prepWithDensity clearCaches dataAllYears_C
-  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanDM" [2020] dataAllYears_C acsWD_C
+  res2020_C <- turnoutModelDM clearCaches False stanParallelCfg "br-2021-A/stanStack" [2020] dataAllYears_C acsWD_C
   ((rtDiffWI_2020, rtDiffNI_2020, rtDiffI_2020, rtNWNH_2020, rtWNH_2020, dNWNH_2020, dWNH_2020), gapVar, gapRange, gapDiffs) <- K.ignoreCacheTime res2020_C
 
 {-
@@ -1093,7 +1097,7 @@ wngGroup = SB.GroupTypeTag "WNG"
 hispanicGroup :: SB.GroupTypeTag DT.Hisp
 hispanicGroup = SB.GroupTypeTag "Hispanic"
 
-race4Pums r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+race4Census r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 wnhPums r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
@@ -1123,13 +1127,13 @@ ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP,
 
 
 cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSVWithDensity)
-cpsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP]
+cpsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" (\r -> DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+    raceRP = DM.boundedEnumRowPart "Race" race4Census
     densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
 
@@ -1141,7 +1145,7 @@ acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, 
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" race4Pums
+    raceRP = DM.boundedEnumRowPart "Race" race4Census
     densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
 
@@ -1166,34 +1170,45 @@ turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
                                                     ))
 turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C = do
   K.logLE K.Info "(Re-)running turnoutModelDM if necessary."
+  let fLength = FL.fold FL.length
+      lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
+      filteredDat_C = BRE.ccesAndPUMSForYears years <$> dat_C
+      filteredACSWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) acsWD_C
+  filteredDat <- K.ignoreCacheTime filteredDat_C
+  K.logLE K.Diagnostic $ "turnoutModelDM: CPS (by state) rows per year:"
+  K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y $ BRE.cpsVRows filteredDat) [2012, 2014, 2016, 2018, 2020]
   let jsonDataName = "stateXrace_CCES_" <> (T.intercalate "_" $ fmap show years)
       dataAndCodeBuilder :: MRP.BuilderM BRE.CCESAndPUMS (F.FrameRec BRE.PUMSWithDensity) ()
       dataAndCodeBuilder = do
         ccesData <- SB.dataSetTag @(F.Record BRE.CCESWithDensity) SC.ModelData "CCES"
         cvapCCES <- SB.addCountData ccesData "CCES_CVAP" (F.rgetField @BRE.Surveyed)
         votedCCES <- SB.addCountData ccesData "CCES_VOTED" (F.rgetField @BRE.Voted)
-        let distT = SB.binomialLogitDist cvapCCES
         DM.addDesignMatrixIndexes ccesData ccesDesignRow
         dmCCES <- DM.addDesignMatrix ccesData ccesDesignRow
-        cpsData <- SB.dataSetTag @(F.Record BRE.CCESWithDensity) SC.ModelData "CCES"
+        cpsData <- SB.dataSetTag @(F.Record BRE.CPSVWithDensity) SC.ModelData "CPS"
         cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
-        votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Succesed)
+        votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
         dmCPS <- DM.addDesignMatrix cpsData cpsDesignRow
-        (cvap, voted, dm, centerF) <- SB.inBlock SB.TransformedData $ do
-          datSize <- SB.stanDeclareRHS "N_rows" SB.StanReal "<lower=1>" $ SB.name "N_CCES" `SB.plus` SB.name "N_CPS"
---          cvap <- SB.stanDeclareRHS ()
-          dmCCESBase <- DM.addDesignMatrix ccesData ccesDesignRow
-          DM.centerDataMatrix True dmCCESBase Nothing
+        let groupSet = SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
+        (comboData, stackVars) <- SB.stackDataSets "combo" ccesData cpsData groupSet
+        (cvapCombo, votedCombo, dmCombo) <- SB.inBlock SB.SBTransformedData $ do
+          cvapCombo' <- stackVars "CVAP" cvapCCES cvapCPS
+          votedCombo' <- stackVars "Voted" votedCCES votedCPS
+          dmCombo' <- stackVars "DM" dmCCES dmCPS
+          return (cvapCombo', votedCombo', dmCombo')
+        (dm, centerF) <- SB.inBlock SB.SBTransformedData $ DM.centerDataMatrix True dmCombo Nothing --(Just cvapCombo)
+
         (beta, mu, tau, l) <- DM.addDMParametersAndPriors ccesData ccesDesignRow stateGroup (1, 1, 4) Nothing
         let dmBetaE dm beta = SB.vectorizedOne "DM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vec dm = SB.vectorizeExpr "ccesDataBeta" (dmBetaE dm beta) (SB.dataSetName ccesData)
-        SB.inBlock SB.SBModel $ SB.useDataSetForBindings ccesData $ do
-          voteDataBeta_v <- vec dmCCES
-          SB.sampleDistV ccesData distT (SB.var voteDataBeta_v) votes
+            vec = SB.vectorizeExpr "comboDataBeta" (dmBetaE dmCombo beta) (SB.dataSetName comboData)
+        let distT = SB.binomialLogitDist cvapCombo
+        SB.inBlock SB.SBModel $ SB.useDataSetForBindings comboData $ do
+          voteDataBeta_v <- vec
+          SB.sampleDistV comboData distT (SB.var voteDataBeta_v) votedCombo
         SB.useDataSetForBindings ccesData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
             DM.splitToGroupVars ccesDesignRow mu
-        SB.generateLogLikelihood ccesData distT (SB.var <$> vec) votes
+        SB.generateLogLikelihood comboData distT (SB.var <$> vec) votedCombo
 
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         dmWNH <- DM.addDesignMatrix acsWNH acsDesignRow
@@ -1212,7 +1227,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
               (Just nameHead)
               ccesData
               psDataSet
-              (SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet))
+              groupSet
               (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
               (Just stateGroup)
@@ -1276,12 +1291,8 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
 
   K.logLE K.Info "Building json data wrangler and model code..."
   let dataWranglerAndCode years = do
-        dat <- K.ignoreCacheTime dat_C
-        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) $ BRE.ccesRows dat
+        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) $ BRE.ccesRows filteredDat
             groups = groupBuilderDM states
-            filteredDat_C = BRE.ccesAndPUMSForYears years <$> dat_C
---            filteredCCESWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) ccesWD_C
-            filteredACSWD_C = fmap (F.filterFrame ((`elem` years) . F.rgetField @BR.Year)) acsWD_C
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder filteredDat_C filteredACSWD_C
 
   (dw, stanCode) <- dataWranglerAndCode years
@@ -1289,13 +1300,13 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
   MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir "stateXrace" (Just "PUMS") jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.99) (Just 15) Nothing)
+    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 20) Nothing)
     stanParallelCfg
     dw
     stanCode
     "S"
     extractTestResults
-    dat_C
+    filteredDat_C
     acsWD_C
 
 
@@ -1317,7 +1328,7 @@ cpsVGroupBuilder districts states = do
   acsData_W <- SB.addDataSetToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh . BRE.pumsRows)
   SB.addGroupIndexForDataSet cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet raceGroup acsData_W $ SB.makeIndexFromEnum race4Census
   SB.addGroupIndexForDataSet wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
   SB.addGroupIndexForDataSet sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
@@ -1326,7 +1337,7 @@ cpsVGroupBuilder districts states = do
   acsData_NW <- SB.addDataSetToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh) . BRE.pumsRows)
   SB.addGroupIndexForDataSet cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForDataSet stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForDataSet raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForDataSet raceGroup acsData_NW $ SB.makeIndexFromEnum race4Census
   SB.addGroupIndexForDataSet wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
   SB.addGroupIndexForDataSet sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForDataSet educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
@@ -1351,7 +1362,7 @@ ccesGroupBuilder districts states = do
   acsData_W <- SB.addGQDataToGroupBuilder "ACS_WNH" (SB.ToFoldable $ F.filterFrame wnh)
   SB.addGroupIndexForData cdGroup acsData_W $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForData stateGroup acsData_W $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForData raceGroup acsData_W $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForData raceGroup acsData_W $ SB.makeIndexFromEnum race4Census
   SB.addGroupIndexForData wnhGroup acsData_W $ SB.makeIndexFromEnum wnhPums
   SB.addGroupIndexForData sexGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForData educationGroup acsData_W $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
@@ -1360,7 +1371,7 @@ ccesGroupBuilder districts states = do
   acsData_NW <- SB.addGQDataToGroupBuilder "ACS_NWNH" (SB.ToFoldable $ F.filterFrame (not . wnh))
   SB.addGroupIndexForData cdGroup acsData_NW $ SB.makeIndexFromFoldable show districtKey districts
   SB.addGroupIndexForData stateGroup acsData_NW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForData raceGroup acsData_NW $ SB.makeIndexFromEnum race4Pums
+  SB.addGroupIndexForData raceGroup acsData_NW $ SB.makeIndexFromEnum race4Census
   SB.addGroupIndexForData wnhGroup acsData_NW $ SB.makeIndexFromEnum wnhPums
   SB.addGroupIndexForData sexGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
   SB.addGroupIndexForData educationGroup acsData_NW $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
