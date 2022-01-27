@@ -86,6 +86,8 @@ import BlueRipple.Data.CCESFrame (cces2018C_CSV)
 import BlueRipple.Data.ElectionTypes (CVAP)
 import qualified Control.MapReduce as FMR
 import qualified Frames.MapReduce as FMR
+import qualified Stan.ModelBuilder.DesignMatrix as DM
+import qualified Stan.ModelBuilder.DesignMatrix as DM
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -868,11 +870,8 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.HispC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
-                => Bool -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRow addAlpha = DM.DesignMatrixRow "EMDM" $
-  if addAlpha
-  then [alphaP, sexP, eduP, raceP, densP]
-  else [sexP, eduP, raceP, densP]
+                => DM.DesignMatrixRow (F.Record rs)
+designMatrixRow = DM.DesignMatrixRow "EMDM" $ [sexP, eduP, raceP, densP, wngRP]
   where
     alphaP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     (sexN, sexF) = DM.boundedEnumRowFunc @(F.Record rs) (F.rgetField @DT.SexC)
@@ -882,6 +881,7 @@ designMatrixRow addAlpha = DM.DesignMatrixRow "EMDM" $
     (raceN, raceF) = DM.boundedEnumRowFunc @(F.Record rs) mergeRace5AndHispanic
     raceP = DM.DesignMatrixRowPart "Race" raceN raceF
     densP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
 
 electionModelDM :: forall rs ks r.
                    (K.KnitEffects r
@@ -950,31 +950,33 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let distP = SB.binomialLogitDist hVotes
 
         -- design matrix
-        let useAlpha = True
+        let --useAlpha = True
             center = True
             qr = False
-        let datDMRow = designMatrixRow @CCESWithDensity useAlpha
-        DM.addDesignMatrixIndexes voteData (designMatrixRow useAlpha) -- for splits in GQ
+        let datDMRow = designMatrixRow @CCESWithDensity
+        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
         (dmVD, mCenterF, mRInvV) <- do
           dmVDBase <- DM.addDesignMatrix voteData datDMRow
           (dmVDC, mCF) <- case center of
             True -> do
-              (dmVDC', cF) <- DM.centerDataMatrix useAlpha dmVDBase Nothing
+              (dmVDC', cF) <- DM.centerDataMatrix dmVDBase Nothing
               return (dmVDC', Just cF)
             False -> return (dmVDBase, Nothing)
           (dmV, mRInvV) <- case qr of
             True -> do
-              (qV, rV, rInvV) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedData $ DM.thinQR dmVDC
+              (qV, rV, rInvV, _) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedData $ DM.thinQR dmVDC Nothing
               return (qV, Just rInvV)
             False -> return (dmVDC, Nothing)
           return (dmV, mCF, mRInvV)
 
-        (betaT, muT, tauT, lT) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "T")
-        (betaP, muP, tauP, lP) <- DM.addDMParametersAndPriors voteData datDMRow stateGroup (1, 1, 4) (Just "P")
+        (alphaT, thetaT, muT, tauT, lT) <-
+          DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "T")
+        (alphaP, thetaP, muP, tauP, lP) <-
+          DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVD betaT) (SB.dataSetName voteData)
-            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVD betaP) (SB.dataSetName voteData)
+            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVD thetaT) (SB.dataSetName voteData)
+            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVD thetaP) (SB.dataSetName voteData)
         SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
           voteDataBetaT_v <- vecT
           voteDataBetaP_v <- vecP
@@ -988,7 +990,10 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               Nothing -> do
                 DM.splitToGroupVars datDMRow muT
                 DM.splitToGroupVars datDMRow muP
+
               Just rInvV -> do
+--                bT <- SB.stanDeclareRHS "betaT" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaT `SB.matMult` rInvV
+--                bP <- SB.stanDeclareRHS "betaP" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaP `SB.matMult` rInvV
                 let SB.StanVar _ muType = muT
                     SB.StanVar _ tauType = tauT
                     vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
@@ -998,13 +1003,12 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                 sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauP)
                 DM.splitToGroupVars datDMRow mT
                 DM.splitToGroupVars datDMRow mP
-
         SB.generateLogLikelihood' voteData ((distT, SB.var <$> vecT, votes)
                                              :| [(distP, SB.var <$> vecP, dVotes)])
 
 
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
-        dmPS' <- DM.addDesignMatrix psData (designMatrixRow useAlpha)
+        dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
         let psPreCompute = do
               dmPS <- case mCenterF of
@@ -1012,22 +1016,21 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                 Just cF -> cF dmPS'
               case mRInvV of
                 Nothing -> do
-                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS betaT) (SB.dataSetName psData)
-                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS betaP) (SB.dataSetName psData)
-                  pure (psT_v, psP_v)
-                Just rInvV -> do
-                  let SB.StanVar _ betaType = betaT
-                      vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
-                      applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
-                                           $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
-                      thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b
-                  thetaT <- SB.stanDeclare "thetaT" betaType ""
-                  thetaFromBeta thetaT betaT
-                  thetaP <- SB.stanDeclare "thetaP" betaType ""
-                  thetaFromBeta thetaP betaP
-
                   psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS thetaT) (SB.dataSetName psData)
                   psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS thetaP) (SB.dataSetName psData)
+                  pure (psT_v, psP_v)
+                Just rInvV -> do
+                  let SB.StanVar _ betaType = thetaT
+{-                      vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
+                      applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
+                                           $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
+                      thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b -}
+                      betaFromTheta t = rInvV `SB.matMult` t
+                  betaT <- SB.stanDeclareRHS "betaT" betaType "" $ betaFromTheta thetaT
+                  betaP <- SB.stanDeclareRHS "betaP" betaType "" $ betaFromTheta thetaP
+
+                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS betaT) (SB.dataSetName psData)
+                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS betaP) (SB.dataSetName psData)
                   pure (psT_v, psP_v)
             psExprF (psT_v, psP_v) = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psT_v)

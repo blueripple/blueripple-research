@@ -275,7 +275,7 @@ newMapAnalysis stanParallelCfg parallel = do
   debugPUMS pumsTX
   K.knitError "STOP"
 -}
-  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
+  let postInfoNC = BR.PostInfo BR.OnlineDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
@@ -286,7 +286,7 @@ newMapAnalysis stanParallelCfg parallel = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo BR.OnlinePublished (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
+  let postInfoTX = BR.PostInfo BR.OnlineDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
@@ -509,21 +509,23 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
-      longShot ci = MT.ciUpper ci < 0.48
-      leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
-      leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
-      safeD ci = MT.ciLower ci > 0.52
+      safeDLower = 0.53
+      safeRUpper = 0.47
+      safeR ci = MT.ciMid ci <= safeRUpper
+      leanR ci = MT.ciMid ci < 0.5 && MT.ciMid ci >= safeRUpper
+      leanD ci = MT.ciMid ci >= 0.5 && MT.ciMid ci <= safeDLower
+      safeD ci = MT.ciMid ci > safeDLower
       mi = F.rgetField @BRE.ModeledShare
       bordered c = "border: 3px solid " <> c
-      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "Demographic"
+      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR (mi r) && h == "Demographic"
       leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["Demographic"]
       leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Demographic"]
       safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Demographic"
       dra = F.rgetField @TwoPartyDShare
-      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < 0.45) && h == "Historical"
-      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= 0.45 && dra r < 0.50) && h == "Historical"
-      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < 0.55) && h == "Historical"
-      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > 0.55) && h == "Historical"
+      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < safeRUpper) && h == "Historical"
+      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= safeRUpper && dra r < 0.50) && h == "Historical"
+      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < safeDLower) && h == "Historical"
+      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > safeDLower) && h == "Historical"
       tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
     ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
@@ -567,6 +569,37 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
 
   return ()
 
+data DistType = SafeR | LeanR | LeanD | SafeD deriving (Eq, Ord, Show)
+distType :: Double -> Double -> Double -> DistType
+distType safeRUpper safeDLower x
+  | x < safeRUpper = SafeR
+  | x >= safeRUpper && x < 0.5 = LeanR
+  | x >= 0.5 && x < safeDLower = LeanD
+  | otherwise = SafeD
+
+brDistrictFramework :: Double -> Double -> Text
+brDistrictFramework brModel dra =
+  let safeRUpper = 0.47
+      safeDLower = 0.53
+  in case (distType safeRUpper safeDLower brModel, distType safeRUpper safeDLower dra) of
+    (SafeD, SafeR) -> "Latent Flip Opportunity"
+    (SafeD, LeanD) -> "Winnable"
+    (SafeD, LeanR) -> "Flippable"
+    (SafeD, SafeD) -> "Safe D"
+    (LeanD, SafeR) -> "Possible Long-Term Flip"
+    (LeanR, SafeR) -> "Possible Long-Term Flip"
+    (LeanD, LeanR) -> "Toss-Up"
+    (LeanR, LeanR) -> "Toss-Up"
+    (LeanD, LeanD) -> "Toss-Up"
+    (LeanR, LeanD) -> "Toss-Up"
+    (LeanD, SafeD) -> "Possibly Long-Term Vulnerable"
+    (LeanR, SafeD) -> "Possibly Long-Term Vulnerable"
+    (SafeR, SafeR) -> "Safe R"
+    (SafeR, LeanR) -> "Highly Vulnerable"
+    (SafeR, LeanD) -> "Highly Vulnerable"
+    (SafeR, SafeD) -> "Latent Vulnerable"
+
+
 daveModelColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       dNum = F.rgetField @ET.DistrictNumber
@@ -579,6 +612,7 @@ daveModelColonnade cas =
 --     <> C.headed "Model Variation" (BR.toCell cas "ModelId" "ModelId" (BR.textToStyledHtml . BRE.modelLabel . F.rgetField @(MT.ModelId BRE.Model)))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%2.1f" . (100*) . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.1f" . (100*) . F.rgetField @TwoPartyDShare))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework (share50 r) (dave r))))
 --     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
 --     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
 --     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))

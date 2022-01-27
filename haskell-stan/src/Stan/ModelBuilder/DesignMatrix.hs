@@ -21,6 +21,7 @@ import qualified Data.Array as Array
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Vector.Unboxed as V
+import qualified CmdStan as SB
 
 data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: Text
                                                  , dmrpLength :: Int
@@ -141,14 +142,24 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
       $ SB.stanBuildError $ "DesignMatrix.splitTogroupVars: matrix to split has wrong row-dimension: " <> show d
   traverse (\(g, _, _) -> splitToGroupVar n g v) $ designMatrixIndexes dmr
 
+
+data Parameterization = Centered | NonCentered deriving (Eq, Show)
+
 addDMParametersAndPriors :: (Typeable md, Typeable gq)
                          => SB.RowTypeTag r -- for bindings
                          -> DesignMatrixRow r
                          -> SB.GroupTypeTag k -- exchangeable contexts
-                         -> (Double, Double, Double) -- prior widths and lkj parameter
+                         -> SB.StanName -- name for beta parameter (so we can use theta if QR)
+                         -> Parameterization
+                         -> (SB.StanExpr, SB.StanExpr, SB.StanExpr, Double) -- prior widths and lkj parameter
                          -> Maybe Text -- suffix for varnames
-                         -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-addDMParametersAndPriors rtt (DesignMatrixRow n _) g (muSigma, tauSigma, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
+                         -> SB.StanBuilderM md gq (SB.StanVar
+                                                  , SB.StanVar
+                                                  , SB.StanVar
+                                                  , SB.StanVar
+                                                  , SB.StanVar
+                                                  )
+addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (alphaPrior, muPrior, tauPrior, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
   let dmDimName = n <> "_Cols"
       dmDim = SB.NamedDim dmDimName
       dmVec = SB.StanVector dmDim
@@ -161,45 +172,61 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g (muSigma, tauSigma, lkjPara
       normal x = SB.normal Nothing (SB.scalar $ show x)
       dmBetaE dm beta = vecDM $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
       lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
-  (mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
+
+  (alpha, mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
+    alpha' <- SB.stanDeclare ("alpha" <> s) gVec ""
     mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
     tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
     lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactorCorr dmDim) ""
-    betaRaw' <- SB.stanDeclare ("beta" <> s <> "_raw") (SB.StanArray [gDim] $ SB.StanVector dmDim) ""
-    return (mu', tau', lCorr', betaRaw')
-  beta <- SB.inBlock SB.SBTransformedParameters $ do
-    beta' <- SB.stanDeclare ("beta" <> s) (SB.StanArray [gDim] dmVec) ""
-    let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
-    SB.stanForLoopB "s" Nothing gName
-      $ SB.addExprLine "electionModelDM"
-      $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
-    return beta'
+    betaRaw' <- case parameterization of
+      Centered -> SB.stanDeclare (betaName <> s) (SB.StanMatrix (dmDim, gDim)) ""
+      NonCentered -> SB.stanDeclare (betaName <> s <> "_raw") (SB.StanMatrix (dmDim, gDim)) ""
+    return (alpha', mu', tau', lCorr', betaRaw')
+  let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
+      repMu = SB.function "rep_matrix" (SB.var mu :| [SB.indexSize gName])
+  beta <- case parameterization of
+    Centered -> return betaRaw
+    NonCentered -> SB.inBlock SB.SBTransformedParameters $ do
+      beta' <- SB.stanDeclareRHS (betaName <> s) (SB.StanMatrix (dmDim,gDim)) ""
+          $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+{-
+      SB.stanForLoopB "s" Nothing gName
+        $ SB.addExprLine "electionModelDM"
+        $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
+-}
+      return beta'
   SB.inBlock SB.SBModel $ do
-      SB.stanForLoopB "g" Nothing gName
+    case parameterization of
+      Centered -> do
+        SB.addExprLine "addDMParametersAnsPriors"
+          $ vecDM
+          $ SB.var betaRaw `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
+      NonCentered ->
+        SB.stanForLoopB "g" Nothing gName
         $ SB.addExprLine "addDMParametersAndPriors"
-        $ vecDM $ SB.var betaRaw `SB.vectorSample` SB.stdNormal
-      SB.addExprLines "addParametersAndPriors" $
-        [vecDM $ SB.var mu `SB.vectorSample` normal muSigma
-        , vecDM $ SB.var tau `SB.vectorSample` normal tauSigma
-        , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
-        ]
-  pure (beta, mu, tau, lCorr)
+        $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal
+
+    SB.addExprLines "addParametersAndPriors" $
+      [ vecDM $ SB.var alpha `SB.vectorSample` alphaPrior
+      , vecDM $ SB.var mu `SB.vectorSample` muPrior
+      , vecDM $ SB.var tau `SB.vectorSample` tauPrior
+      , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
+      ]
+  pure (alpha, beta, mu, tau, lCorr)
 
 
 centerDataMatrix :: (Typeable md, Typeable gq)
-             => Bool
-             -> SB.StanVar -- matrix
-             -> Maybe SB.StanVar -- row weights
-             -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
-                                      , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
-                                      )
-centerDataMatrix skipAlphaCol mV@(SB.StanVar mn mt) mwgtsV = do
+                 => SB.StanVar -- matrix
+                 -> Maybe SB.StanVar -- row weights
+                 -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
+                                          , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                                          )
+centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
   colIndexKey <- case mt of
     SB.StanMatrix (rowDim, colDim) -> case colDim of
       SB.NamedDim indexKey -> pure indexKey
       _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: column dimension of given matrix must be a named dimension"
     _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: Given argument must be a marix."
-  let mStart = if skipAlphaCol then Just (SB.scalar "2") else Nothing
   centeredXV <- SB.inBlock SB.SBTransformedData $ do
     meanFunction <- case mwgtsV of
       Nothing -> return $ "mean(" <> mn <> "[,k])"
@@ -209,7 +236,7 @@ centerDataMatrix skipAlphaCol mV@(SB.StanVar mn mt) mwgtsV = do
     meanXV <- SB.stanDeclareRHS ("mean_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
       $ SB.function "rep_vector"  (SB.scalar "0" :| [SB.indexSize colIndexKey])
     centeredXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
-    SB.stanForLoopB "k" mStart colIndexKey $ do
+    SB.stanForLoopB "k" Nothing colIndexKey $ do
       SB.addStanLine $ "mean_" <> mn <> "[k] = " <> meanFunction
     SB.stanForLoopB "k" Nothing colIndexKey $ do
       SB.addStanLine $ "centered_" <>  mn <> "[,k] = " <> mn <> "[,k] - mean_" <> mn <> "[k]"
@@ -232,15 +259,26 @@ centerDataMatrix skipAlphaCol mV@(SB.StanVar mn mt) mwgtsV = do
 -- take a matrix x and return (thin) Q, R and inv(R)
 -- as Q_x, R_x, invR_x
 -- see https://mc-stan.org/docs/2_28/stan-users-guide/QR-reparameterization.html
-thinQR :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar)
-thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) = do
+thinQR :: SB.StanVar -- matrix ofd predictors
+       -> Maybe (SB.StanVar, SB.StanName) -- theta and name for beta
+       -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar, Maybe SB.StanVar)
+thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) mThetaBeta = do
    let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
        qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE xVar) `SB.times` srE
-   qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
-   let rType = SB.StanMatrix (colDim, colDim)
-       rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
-   rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
-   let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
-   rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
-   return (qV, rV, rInvV)
-thinQR x = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x
+   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
+     qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
+     let rType = SB.StanMatrix (colDim, colDim)
+         rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
+     rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
+     let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
+     rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
+     return (qV, rV, rInvV)
+   mBeta <- case mThetaBeta of
+     Nothing -> return Nothing
+     Just (theta@(SB.StanVar _ betaType), betaName) ->
+       fmap Just
+       $ SB.inBlock SB.SBGeneratedQuantities
+       $ SB.stanDeclareRHS betaName betaType "" $ rI `SB.matMult` theta
+   return (q, r, rI, mBeta)
+
+thinQR x _ = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x

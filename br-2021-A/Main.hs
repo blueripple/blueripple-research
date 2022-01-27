@@ -1098,6 +1098,7 @@ hispanicGroup :: SB.GroupTypeTag DT.Hisp
 hispanicGroup = SB.GroupTypeTag "Hispanic"
 
 race4Census r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 wnhPums r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
@@ -1115,38 +1116,41 @@ groupBuilderDM states = do
   SB.addGroupIndexForData stateGroup acsNW $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
 
 ccesDesignRow :: DM.DesignMatrixRow (F.Record BRE.CCESWithDensity)
-ccesDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
+ccesDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, wngRP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
-    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
+--    raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
+    raceRP = DM.boundedEnumRowPart "Race" (F.rgetField @DT.Race5C)
+    densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
 
 
 cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSVWithDensity)
-cpsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
+cpsDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, wngRP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" race4Census
-    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
-    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
+--    raceRP = DM.boundedEnumRowPart "Race" race4Census
+    raceRP = DM.boundedEnumRowPart "Race" race5Census
+    densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
 
 
 acsDesignRow :: DM.DesignMatrixRow (F.Record BRE.PUMSWithDensity)
-acsDesignRow = DM.DesignMatrixRow "DM" $ [alphaRP, ageRP, sexRP, eduRP, raceRP, densP]
+acsDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, wngRP]
   where
     alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart "Race" race4Census
-    densP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
+--    raceRP = DM.boundedEnumRowPart "Race" race4Census
+    raceRP = DM.boundedEnumRowPart "Race" race5Census
+    densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
 
 turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
@@ -1196,18 +1200,36 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
           votedCombo' <- stackVars "Voted" votedCCES votedCPS
           dmCombo' <- stackVars "DM" dmCCES dmCPS
           return (cvapCombo', votedCombo', dmCombo')
-        (dm, centerF) <- SB.inBlock SB.SBTransformedData $ DM.centerDataMatrix True dmCombo Nothing --(Just cvapCombo)
+        (alpha, theta, mu, tau, l) <-
+          DM.addDMParametersAndPriors ccesData ccesDesignRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) Nothing
+        (dmQ, centerF, rInv, beta) <- SB.inBlock SB.SBTransformedData $ do
+          (dmCentered, centerF') <- DM.centerDataMatrix dmCombo Nothing  --(Just cvapCombo)
 
-        (beta, mu, tau, l) <- DM.addDMParametersAndPriors ccesData ccesDesignRow stateGroup (1, 1, 4) Nothing
-        let dmBetaE dm beta = SB.vectorizedOne "DM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vec = SB.vectorizeExpr "comboDataBeta" (dmBetaE dmCombo beta) (SB.dataSetName comboData)
+          (qV, _, rInv', mBeta) <- DM.thinQR dmCentered (Just (theta, "beta"))
+          beta <- SB.stanBuildMaybe "turnoutModelDM: Nothing returned for beta from DesignMatrix.thinQR" mBeta
+          return (qV, centerF', rInv', beta)
+
+  {-
+        alpha <- SB.useDataSetForBindings comboData $ do
+          a <- SB.inBlock SB.SBParameters $ SB.stanDeclare "alpha" (SB.StanVector $ SB.NamedDim $ SB.taggedGroupName stateGroup) ""
+          SB.inBlock SB.SBModel $ SB.addExprLine "alpha prior" $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var a `SB.vectorSample` SB.stdNormal
+          return a
+-}
+        let pred a m b = SB.vectorizedOne "DM_Cols" $ SB.var a `SB.plus` SB.function "dot_product" (SB.var m :| [SB.var b])
+            vec = SB.vectorizeExpr "comboDataBeta" (pred alpha dmQ theta) (SB.dataSetName comboData)
         let distT = SB.binomialLogitDist cvapCombo
         SB.inBlock SB.SBModel $ SB.useDataSetForBindings comboData $ do
           voteDataBeta_v <- vec
           SB.sampleDistV comboData distT (SB.var voteDataBeta_v) votedCombo
-        SB.useDataSetForBindings ccesData $ do
+        (beta, mean) <- SB.useDataSetForBindings ccesData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
-            DM.splitToGroupVars ccesDesignRow mu
+            beta <- SB.stanDeclare "beta" (SB.StanArray [SB.NamedDim $ SB.taggedGroupName stateGroup] $ SB.StanVector (SB.NamedDim $ "DM_Cols") ) ""
+            SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup)
+              $ SB.addExprLine "beta from theta" $ SB.var beta `SB.eq` rInv `SB.matMult` theta
+            mean <- SB.stanDeclareRHS "mean" (SB.StanVector $ SB.NamedDim "DM_Cols") ""
+              $ rInv `SB.matMult` mu
+            DM.splitToGroupVars ccesDesignRow mean
+            return (beta, mean)
         SB.generateLogLikelihood comboData distT (SB.var <$> vec) votedCombo
 
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
@@ -1218,8 +1240,8 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
         cDMNW <- centerF dmNW
 
         let psPrecompute interacting centeredPSDM psDataSet = do
-              let b = if interacting then beta else mu
-              SB.vectorizeExpr "pT" (dmBetaE centeredPSDM b) (SB.dataSetName psDataSet)
+              let b = if interacting then beta else mean
+              SB.vectorizeExpr "pT" (pred alpha centeredPSDM b) (SB.dataSetName psDataSet)
             psExprF pT_v = pure $ SB.familyExp distT (SB.var pT_v)
             postStratByState nameHead interacting psDM psDataSet =
               MRP.addPostStratification
@@ -1300,7 +1322,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
   MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir "stateXrace" (Just "PUMS") jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 20) Nothing)
+    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
     stanParallelCfg
     dw
     stanCode

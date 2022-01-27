@@ -422,6 +422,19 @@ keepIndex :: Set IndexKey -> StanExpr -> Bool
 keepIndex vks (Fix.Fix (IndexF k)) = not $ Set.member k vks
 keepIndex _ _ = True
 
+nonVecIndex :: Set IndexKey -> StanExpr -> Maybe StanExpr
+nonVecIndex vks e@(Fix.Fix (IndexF k)) = if Set.member k vks then Just e else Nothing
+nonVecIndex _ e = Just e
+
+mIndexesExpr :: Set IndexKey -> [StanExpr] -> Maybe StanExpr
+mIndexesExpr vks exprs =
+  let x = fmap (nonVecIndex vks) exprs
+      dropLeadingNothings [] = []
+      dropLeadingNothings (x : xs) = if x == Nothing then dropLeadingNothings xs else (x : xs)
+      y = reverse $ dropLeadingNothings $ reverse x
+      z = fmap (fromMaybe nullE) y
+  in viaNonEmpty (group "[" "]" . csExprs) z
+
 data LookupContext = Use | Declare deriving (Show, Eq, Ord)
 
 data AnaS = AnaS { lContext :: LookupContext, vectorizedIndexes :: Set IndexKey}
@@ -470,10 +483,14 @@ toCodeCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = do
 toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = do
   return $ AsIsCF $ (as, if Set.null vks then e else function f (e :| es))
 toCodeCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
-  let ies = filter (keepIndex vks) $ indexesToExprs xs
+  case mIndexesExpr vks (indexesToExprs xs) of
+    Nothing -> return NullCF
+    Just e -> return $ AsIsCF (as, e)
+{-  let ies = filter (keepIndex vks) $ indexesToExprs xs
   case nonEmpty ies of
     Nothing -> return NullCF
     Just x -> return $ AsIsCF (as, group "[" "]" $ csExprs x)
+-}
 toCodeCoAlg _ (_, Fix.Fix NullF) = return $ NullCF
 toCodeCoAlg _ (_, Fix.Fix (BareF t)) = return $ BareCF t
 toCodeCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ AsIsCF (as, x)
@@ -508,10 +525,14 @@ varsCoAlg _ (as, Fix.Fix (MatMultF sv1 sv2)) = do
 varsCoAlg _ (AnaS lc vks, Fix.Fix (VectorizedF vks' e)) = return $ ExprVF (AnaS lc (vks <> vks'), e)
 varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (VectorFunctionF f e es)) = return $ ExprVF $ (as, if Set.null vks then e else function f (e :| es))
 varsCoAlg _ (as@(AnaS _ vks), Fix.Fix (IndexesF xs)) = do
-  let ies = filter (keepIndex vks) $ indexesToExprs xs
+  case mIndexesExpr vks (indexesToExprs xs) of
+    Nothing -> return NullVF
+    Just e -> return $ ExprVF (as, e)
+{-  let ies = filter (keepIndex vks) $ indexesToExprs xs
   case nonEmpty ies of
     Nothing -> return NullVF
     Just x -> return $ ExprVF (as, group "[" "]" $ csExprs x)
+-}
 varsCoAlg _ (_, Fix.Fix NullF) = return NullVF
 varsCoAlg _ (_, Fix.Fix (BareF t)) = return NullVF
 varsCoAlg _ (as, Fix.Fix (AsIsF x)) = return $ ExprVF (as, x)
