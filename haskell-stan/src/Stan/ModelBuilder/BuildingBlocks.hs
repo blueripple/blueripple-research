@@ -196,6 +196,10 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
 
+matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
+matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
+  SB.stanDeclareRHS (n <> "_Transpose") (SB.StanMatrix (cd, rd)) "" $ SB.matTranspose m
+
 stackDataSets :: forall md gq r1 r2. ()
                        => Text
                        -> SB.RowTypeTag r1

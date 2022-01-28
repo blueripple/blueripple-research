@@ -1194,6 +1194,7 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
         votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
         dmCPS <- DM.addDesignMatrix cpsData cpsDesignRow
         let groupSet = SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
+            thinQR = False
         (comboData, stackVars) <- SB.stackDataSets "combo" ccesData cpsData groupSet
         (cvapCombo, votedCombo, dmCombo) <- SB.inBlock SB.SBTransformedData $ do
           cvapCombo' <- stackVars "CVAP" cvapCCES cvapCPS
@@ -1202,34 +1203,34 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
           return (cvapCombo', votedCombo', dmCombo')
         (alpha, theta, mu, tau, l) <-
           DM.addDMParametersAndPriors ccesData ccesDesignRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) Nothing
-        (dmQ, centerF, rInv, beta) <- SB.inBlock SB.SBTransformedData $ do
+        (dm, centerF, mRInv, beta) <- SB.inBlock SB.SBTransformedData $ do
           (dmCentered, centerF') <- DM.centerDataMatrix dmCombo Nothing  --(Just cvapCombo)
-
-          (qV, _, rInv', mBeta) <- DM.thinQR dmCentered (Just (theta, "beta"))
-          beta <- SB.stanBuildMaybe "turnoutModelDM: Nothing returned for beta from DesignMatrix.thinQR" mBeta
-          return (qV, centerF', rInv', beta)
-
-  {-
-        alpha <- SB.useDataSetForBindings comboData $ do
-          a <- SB.inBlock SB.SBParameters $ SB.stanDeclare "alpha" (SB.StanVector $ SB.NamedDim $ SB.taggedGroupName stateGroup) ""
-          SB.inBlock SB.SBModel $ SB.addExprLine "alpha prior" $ SB.vectorizedOne (SB.taggedGroupName stateGroup) $ SB.var a `SB.vectorSample` SB.stdNormal
-          return a
--}
-        let pred a m b = SB.vectorizedOne "DM_Cols" $ SB.var a `SB.plus` SB.function "dot_product" (SB.var m :| [SB.var b])
-            vec = SB.vectorizeExpr "comboDataBeta" (pred alpha dmQ theta) (SB.dataSetName comboData)
+          case thinQR of
+            True -> do
+              (qV, _, rInv', mBeta) <- SB.useDataSetForBindings comboData $ DM.thinQR dmCentered (Just (theta, "beta"))
+              beta <- SB.stanBuildMaybe "turnoutModelDM: Nothing returned for beta from DesignMatrix.thinQR" mBeta
+              return (qV, centerF', Just rInv', beta)
+            False -> return (dmCentered, centerF', Nothing, theta)
+        dmColsIndex <- case dmCombo of
+          (SB.StanVar n (SB.StanMatrix (_, SB.NamedDim c))) ->  return c
+          (SB.StanVar _ t) -> SB.stanBuildError $ "dmCombo is not a matrix with named col index: type=" <> show t
+        dmQT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
+        let dmColsDim = SB.NamedDim dmColsIndex
+            vecDM = SB.vectorizedOne dmColsIndex
+        let pred a m b =  vecDM $ SB.var a `SB.plus` SB.function "dot_product" (SB.var m :| [SB.var b])
+            vec = SB.vectorizeExpr "comboDataBeta" (pred alpha dmQT theta) (SB.dataSetName comboData)
         let distT = SB.binomialLogitDist cvapCombo
         SB.inBlock SB.SBModel $ SB.useDataSetForBindings comboData $ do
           voteDataBeta_v <- vec
           SB.sampleDistV comboData distT (SB.var voteDataBeta_v) votedCombo
-        (beta, mean) <- SB.useDataSetForBindings ccesData $ do
+        mean <- SB.useDataSetForBindings ccesData $ do
           SB.inBlock SB.SBGeneratedQuantities $ do
-            beta <- SB.stanDeclare "beta" (SB.StanArray [SB.NamedDim $ SB.taggedGroupName stateGroup] $ SB.StanVector (SB.NamedDim $ "DM_Cols") ) ""
-            SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup)
-              $ SB.addExprLine "beta from theta" $ SB.var beta `SB.eq` rInv `SB.matMult` theta
-            mean <- SB.stanDeclareRHS "mean" (SB.StanVector $ SB.NamedDim "DM_Cols") ""
-              $ rInv `SB.matMult` mu
-            DM.splitToGroupVars ccesDesignRow mean
-            return (beta, mean)
+            m <- case mRInv of
+              Just rInv -> SB.stanDeclareRHS "mean" (SB.StanVector dmColsDim) ""
+                $ vecDM $ rInv `SB.matMult` mu
+              Nothing -> return mu
+            DM.splitToGroupVars ccesDesignRow m
+            return m
         SB.generateLogLikelihood comboData distT (SB.var <$> vec) votedCombo
 
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"

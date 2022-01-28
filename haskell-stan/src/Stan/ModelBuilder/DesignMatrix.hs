@@ -188,7 +188,7 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (
     Centered -> return betaRaw
     NonCentered -> SB.inBlock SB.SBTransformedParameters $ do
       beta' <- SB.stanDeclareRHS (betaName <> s) (SB.StanMatrix (dmDim,gDim)) ""
-          $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+          $ vecG $ vecDM $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
 {-
       SB.stanForLoopB "s" Nothing gName
         $ SB.addExprLine "electionModelDM"
@@ -202,12 +202,12 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (
           $ vecDM
           $ SB.var betaRaw `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
       NonCentered ->
-        SB.stanForLoopB "g" Nothing gName
-        $ SB.addExprLine "addDMParametersAndPriors"
-        $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal
+--        SB.stanForLoopB "g" Nothing gName
+        SB.addExprLine "addDMParametersAndPriors"
+        $ vecG $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal
 
     SB.addExprLines "addParametersAndPriors" $
-      [ vecDM $ SB.var alpha `SB.vectorSample` alphaPrior
+      [ vecG $ SB.var alpha `SB.vectorSample` alphaPrior
       , vecDM $ SB.var mu `SB.vectorSample` muPrior
       , vecDM $ SB.var tau `SB.vectorSample` tauPrior
       , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
@@ -259,26 +259,37 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
 -- take a matrix x and return (thin) Q, R and inv(R)
 -- as Q_x, R_x, invR_x
 -- see https://mc-stan.org/docs/2_28/stan-users-guide/QR-reparameterization.html
-thinQR :: SB.StanVar -- matrix ofd predictors
+thinQR :: SB.StanVar -- matrix of predictors
        -> Maybe (SB.StanVar, SB.StanName) -- theta and name for beta
        -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar, Maybe SB.StanVar)
-thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, colDim))) mThetaBeta = do
-   let srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
-       qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE xVar) `SB.times` srE
-   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
-     qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
-     let rType = SB.StanMatrix (colDim, colDim)
-         rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
-     rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
-     let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
-     rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
-     return (qV, rV, rInvV)
-   mBeta <- case mThetaBeta of
-     Nothing -> return Nothing
-     Just (theta@(SB.StanVar _ betaType), betaName) ->
-       fmap Just
-       $ SB.inBlock SB.SBGeneratedQuantities
-       $ SB.stanDeclareRHS betaName betaType "" $ rI `SB.matMult` theta
-   return (q, r, rI, mBeta)
+thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, SB.NamedDim colDimName))) mThetaBeta = do
+  let colDim = SB.NamedDim colDimName
+      vecDM = SB.vectorizedOne colDimName
+      srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
+      qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE xVar) `SB.times` srE
+  (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
+    qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
+    let rType = SB.StanMatrix (colDim, colDim)
+        rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
+    rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
+    let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
+    rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
+    return (qV, rV, rInvV)
+  mBeta <- case mThetaBeta of
+    Nothing -> return Nothing
+    Just (theta@(SB.StanVar _ betaType), betaName) -> case betaType of
+      SB.StanMatrix (_, SB.NamedDim gDimName) ->
+        fmap Just
+           $ SB.inBlock SB.SBGeneratedQuantities
+           $ SB.stanDeclareRHS betaName betaType ""
+           $ SB.vectorizedOne gDimName
+           $ vecDM $ rI `SB.matMult` theta
+      SB.StanVector (SB.NamedDim gDimName) ->
+        fmap Just
+           $ SB.inBlock SB.SBGeneratedQuantities
+           $ SB.stanDeclareRHS betaName betaType ""
+           $ vecDM $ rI `SB.matMult` theta
+      _ -> SB.stanBuildError $ "DesignMatrix.thinQR: bad type given for theta: type=" <> show betaType
+  return (q, r, rI, mBeta)
 
 thinQR x _ = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x

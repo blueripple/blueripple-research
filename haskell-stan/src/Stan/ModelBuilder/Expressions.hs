@@ -339,6 +339,9 @@ times = binOp "*"
 matMult :: StanVar -> StanVar -> StanExpr
 matMult v1 v2 = Fix.Fix $ MatMultF v1 v2
 
+matTranspose :: StanVar -> StanExpr
+matTranspose m = varNameE m `nextTo` bare "'"
+
 {-
 sv1 sv2 = do
   t1 <- dropLastIndex $ varType sv1
@@ -423,7 +426,7 @@ keepIndex vks (Fix.Fix (IndexF k)) = not $ Set.member k vks
 keepIndex _ _ = True
 
 nonVecIndex :: Set IndexKey -> StanExpr -> Maybe StanExpr
-nonVecIndex vks e@(Fix.Fix (IndexF k)) = if Set.member k vks then Just e else Nothing
+nonVecIndex vks e@(Fix.Fix (IndexF k)) = if Set.member k vks then Nothing else Just e
 nonVecIndex _ e = Just e
 
 mIndexesExpr :: Set IndexKey -> [StanExpr] -> Maybe StanExpr
