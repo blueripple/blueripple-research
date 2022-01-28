@@ -219,7 +219,7 @@ centerDataMatrix :: (Typeable md, Typeable gq)
                  => SB.StanVar -- matrix
                  -> Maybe SB.StanVar -- row weights
                  -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
-                                          , SB.StanVar -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                                          , SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
                                           )
 centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
   (rowIndexKey, colIndexKey) <- case mt of
@@ -247,10 +247,10 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
       SB.addExprLine "centerDataMatrix"
         $ SB.vectorizedOne rowIndexKey $ SB.var centeredXV' `SB.eq` (SB.var mV `SB.minus` SB.var meanXV')
     pure (centeredXV', meanXV')
-  let centeredX mv@(SB.StanVar mn mt) =
+  let centeredX mv@(SB.StanVar mn mt) mSuffix =
         case mt of
           cmt@(SB.StanMatrix (SB.NamedDim rKey, SB.NamedDim cKey)) -> SB.inBlock SB.SBTransformedData $ do
-            cv <- SB.stanDeclare ("centered_" <> mn) cmt ""
+            cv <- SB.stanDeclare ("centered_" <> mn <> fromMaybe "" mSuffix) cmt ""
             SB.stanForLoopB "k" Nothing cKey $ do
               SB.addExprLine "centerData.Matrix.centeredX"$ SB.vectorizedOne rKey $ SB.var cv `SB.eq` (SB.var mv `SB.minus` SB.var meanXV)
             return cv

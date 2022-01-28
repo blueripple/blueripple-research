@@ -861,13 +861,13 @@ groupBuilderDM :: forall rs ks.
                -> [F.Record ks]
                -> SB.StanGroupBuilderM CCESAndPUMS (F.FrameRec rs) ()
 groupBuilderDM psGroup states psKeys = do
-  voterData <- SB.addModelDataToGroupBuilder "VoteData" (SB.ToFoldable ccesRows)
-  SB.addGroupIndexForData stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
---  cpsData <- SB.addModelDataToGroup
+  ccesData <- SB.addModelDataToGroupBuilder "CCES" (SB.ToFoldable ccesRows)
+  SB.addGroupIndexForData stateGroup ccesData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable cpsVRows)
+  SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   psData <- SB.addGQDataToGroupBuilder "DistrictPS" (SB.ToFoldable id)
   SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
-
 
 designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.SexC
@@ -950,73 +950,59 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
       dataAndCodeBuilder :: MRP.BuilderM CCESAndPUMS (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
-        voteData <- SB.dataSetTag @(F.Record CCESWithDensity) SC.ModelData "VoteData"
-        pplWgts <- SB.addCountData voteData "Surveyed" (F.rgetField @Surveyed) -- for weighted centering
+        ccesData <- SB.dataSetTag @(F.Record CCESWithDensity) SC.ModelData "CCES"
+        cpsData <- SB.dataSetTag @(F.Record CPSVWithDensity) SC.ModelData "CPS"
+        DM.addDesignMatrixIndexes ccesData designMatrixRow -- just need it for one
+--        pplWgts <- SB.addCountData voteData "Surveyed" (F.rgetField @Surveyed) -- for weighted centering
 
         -- Turnout
-        cvap <- SB.addCountData voteData "CVAP" (F.rgetField @Surveyed)
-        votes <- SB.addCountData voteData "VOTED" (F.rgetField @Voted)
+        cvapCCES <- SB.addCountData ccesData "CVAP_CCES" (F.rgetField @Surveyed)
+        votedCCES <- SB.addCountData ccesData "VOTED_CCES" (F.rgetField @Voted)
+        dmCCES <- DM.addDesignMatrix ccesData designMatrixRow
+        cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
+        votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
+        dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
+        let groupSet =  SB.addGroupToSet stateGroup (SB.emptyGroupSet)
+        (comboData, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
+        (cvap, voted, dmTurnout) <-  SB.inBlock SB.SBTransformedData $ do
+          cvapCombo' <- stackVarsF "CVAP" cvapCCES cvapCPS
+          votedCombo' <- stackVarsF "Voted" votedCCES votedCPS
+          dmCombo' <- stackVarsF "DM" dmCCES dmCPS
+          return (cvapCombo', votedCombo', dmCombo')
         let distT = SB.binomialLogitDist cvap
 
         -- Preference
         let (votesF, dVotesF) = getVotes $ voteSource model
-        hVotes <- SB.addCountData voteData "VOTES_C" votesF --(F.rgetField @HouseVotes)
-        dVotes <- SB.addCountData voteData "DVOTES_C" dVotesF --(F.rgetField @HouseDVotes)
-        let distP = SB.binomialLogitDist hVotes
+        hVotes <- SB.addCountData ccesData "VOTES_C" votesF --(F.rgetField @HouseVotes)
+        dVotes <- SB.addCountData ccesData "DVOTES_C" dVotesF --(F.rgetField @HouseDVotes)
+        let dmPref = dmCCES
+            distP = SB.binomialLogitDist hVotes
 
-        -- design matrix
-        let center = True
-            qr = False
-        let datDMRow = designMatrixRow @CCESWithDensity
-        DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
-        (dm, mCenterF, mRInvV) <- do
-          dmVDBase <- DM.addDesignMatrix voteData datDMRow
-          (dmVDC, mCF) <- case center of
-            True -> do
-              (dmVDC', cF) <- DM.centerDataMatrix dmVDBase Nothing
-              return (dmVDC', Just cF)
-            False -> return (dmVDBase, Nothing)
-          (dmV, mRInvV) <- case qr of
-            True -> do
-              (qV, rV, rInvV, _) <- SB.useDataSetForBindings voteData $ SB.inBlock SB.SBTransformedData $ DM.thinQR dmVDC Nothing
-              return (qV, Just rInvV)
-            False -> return (dmVDC, Nothing)
-          return (dmV, mCF, mRInvV)
-        dmT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
+        (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
+        (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
+--        dmT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
         (alphaT, thetaT, muT, tauT, lT) <-
-          DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "T")
+          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "T")
         (alphaP, thetaP, muP, tauP, lP) <-
-          DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
+          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmT thetaT) (SB.dataSetName voteData)
-            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmT thetaP) (SB.dataSetName voteData)
-        SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
-          voteDataBetaT_v <- vecT
-          voteDataBetaP_v <- vecP
-          SB.sampleDistV voteData distT (SB.var voteDataBetaT_v) votes
-          SB.sampleDistV voteData distP (SB.var voteDataBetaP_v) dVotes
+            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmT thetaT) (SB.dataSetName comboData)
+            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmP thetaP) (SB.dataSetName ccesData)
+        SB.inBlock SB.SBModel $ do
+          SB.useDataSetForBindings comboData $ do
+            voteDataBetaT_v <- vecT
+            SB.sampleDistV comboData distT (SB.var voteDataBetaT_v) voted
+          SB.useDataSetForBindings ccesData $ do
+            voteDataBetaP_v <- vecP
+            SB.sampleDistV ccesData distP (SB.var voteDataBetaP_v) dVotes
 
         -- split parameters back to input categories after undoing QR, if necessary
-        SB.useDataSetForBindings voteData $ do
-          SB.inBlock SB.SBGeneratedQuantities $ do
-            case mRInvV of
-              Nothing -> do
-                DM.splitToGroupVars datDMRow muT
-                DM.splitToGroupVars datDMRow muP
-              Just rInvV -> do
---                bT <- SB.stanDeclareRHS "betaT" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaT `SB.matMult` rInvV
---                bP <- SB.stanDeclareRHS "betaP" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaP `SB.matMult` rInvV
-                let SB.StanVar _ muType = muT
-                    SB.StanVar _ tauType = tauT
-                    vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
-                mT <- SB.stanDeclareRHS "meansT" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muT)
-                mP <- SB.stanDeclareRHS "meansP" muType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var muP)
-                sT <- SB.stanDeclareRHS "sigmasT" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauT)
-                sP <- SB.stanDeclareRHS "sigmasP" tauType "" $ vecDM $ (SB.var rInvV `SB.times` SB.var tauP)
-                DM.splitToGroupVars datDMRow mT
-                DM.splitToGroupVars datDMRow mP
-        SB.generateLogLikelihood' voteData ((distT, SB.var <$> vecT, votes)
+
+        SB.inBlock SB.SBGeneratedQuantities $ do
+            SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
+            SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
+        SB.generateLogLikelihood' comboData ((distT, SB.var <$> vecT, voted)
                                              :| [(distP, SB.var <$> vecP, dVotes)])
 
 
@@ -1024,26 +1010,12 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
         let psPreCompute = do
-              dmPS <- case mCenterF of
-                Nothing -> return dmPS'
-                Just cF -> cF dmPS'
-              case mRInvV of
-                Nothing -> do
-                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS thetaT) (SB.dataSetName psData)
-                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS thetaP) (SB.dataSetName psData)
-                  pure (psT_v, psP_v)
-                Just rInvV -> do
-                  let SB.StanVar _ betaType = thetaT
-                  vectorize <- case betaType of
-                    SB.StanMatrix (SB.NamedDim rowDimIndex, SB.NamedDim colDimIndex) -> return $ SB.vectorizedOne rowDimIndex . SB.vectorizedOne colDimIndex
-                    _ -> SB.stanBuildError $ "Bad type for beta from theta. type=" <> show betaType
-                  let betaFromTheta t = vectorize $ rInvV `SB.matMult` t
-                  betaT <- SB.stanDeclareRHS "betaT" betaType "" $ betaFromTheta thetaT
-                  betaP <- SB.stanDeclareRHS "betaP" betaType "" $ betaFromTheta thetaP
+              dmPS_T <- centerTF dmPS' (Just "T")
+              dmPS_P <- centerPF dmPS' (Just "P")
+              psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS_T thetaT) (SB.dataSetName psData)
+              psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS_P thetaP) (SB.dataSetName psData)
+              pure (psT_v, psP_v)
 
-                  psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS betaT) (SB.dataSetName psData)
-                  psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS betaP) (SB.dataSetName psData)
-                  pure (psT_v, psP_v)
             psExprF (psT_v, psP_v) = do
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distT (SB.var psT_v)
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distP (SB.var psP_v)
@@ -1053,7 +1025,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               MRP.addPostStratification -- @(CCESAndPUMS, F.FrameRec rs)
               (psPreCompute, psExprF)
               Nothing
-              voteData
+              ccesData
               psData
               psGroupSet
               (realToFrac . F.rgetField @Census.Count)

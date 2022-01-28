@@ -1231,10 +1231,10 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
 
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         dmWNH <- DM.addDesignMatrix acsWNH acsDesignRow
-        cDMWNH <- SB.useDataSetForBindings acsWNH $ centerF dmWNH
+        cDMWNH <- SB.useDataSetForBindings acsWNH $ centerF dmWNH Nothing
         acsNW <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_NW"
         dmNW <- DM.addDesignMatrix acsNW acsDesignRow
-        cDMNW <-  SB.useDataSetForBindings acsNW $centerF dmNW
+        cDMNW <-  SB.useDataSetForBindings acsNW $ centerF dmNW Nothing
 
         let psPrecompute interacting centeredPSDM psDataSet = do
               let b = if interacting then beta else mean
