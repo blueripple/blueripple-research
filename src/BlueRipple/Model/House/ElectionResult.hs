@@ -88,6 +88,7 @@ import qualified Control.MapReduce as FMR
 import qualified Frames.MapReduce as FMR
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.DesignMatrix as DM
+import qualified BlueRipple.Data.DemographicTypes as DT
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -840,6 +841,9 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
 --  K.ignoreCacheTime states_C >>= BR.logFrame
   return $ (,) <$> states_C <*> districts_C
 
+data DMModel = BaseDM
+             | WithCPSTurnoutDM
+             deriving (Show, Eq, Ord, Generic)
 
 
 groupBuilderDM :: forall rs ks.
@@ -855,10 +859,11 @@ groupBuilderDM :: forall rs ks.
                => SB.GroupTypeTag (F.Record ks)
                -> [Text]
                -> [F.Record ks]
-               -> SB.StanGroupBuilderM (F.FrameRec CCESWithDensity) (F.FrameRec rs) ()
+               -> SB.StanGroupBuilderM CCESAndPUMS (F.FrameRec rs) ()
 groupBuilderDM psGroup states psKeys = do
-  voterData <- SB.addModelDataToGroupBuilder "VoteData" (SB.ToFoldable id)
+  voterData <- SB.addModelDataToGroupBuilder "VoteData" (SB.ToFoldable ccesRows)
   SB.addGroupIndexForData stateGroup voterData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+--  cpsData <- SB.addModelDataToGroup
   psData <- SB.addGQDataToGroupBuilder "DistrictPS" (SB.ToFoldable id)
   SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
@@ -871,17 +876,27 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
                 => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "EMDM" $ [sexP, eduP, raceP, densP, wngRP]
+designMatrixRow = DM.DesignMatrixRow "EMDM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
   where
-    alphaP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
-    (sexN, sexF) = DM.boundedEnumRowFunc @(F.Record rs) (F.rgetField @DT.SexC)
-    sexP = DM.DesignMatrixRowPart "Sex" sexN sexF
-    (eduN, eduF) = DM.boundedEnumRowFunc @(F.Record rs) (F.rgetField @DT.CollegeGradC)
-    eduP = DM.DesignMatrixRowPart "Edu" eduN eduF
-    (raceN, raceF) = DM.boundedEnumRowFunc @(F.Record rs) mergeRace5AndHispanic
-    raceP = DM.DesignMatrixRowPart "Race" raceN raceF
-    densP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
-    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
+    sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
+    raceRP = DM.boundedEnumRowPart "Race" mergeRace5AndHispanic
+    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCCES
+
+designMatrixRowCPS :: DM.DesignMatrixRow (F.Record CPSVWithDensity)
+designMatrixRowCPS = DM.DesignMatrixRow "EMDM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+ where
+    sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
+    raceRP = DM.boundedEnumRowPart "Race" race5Census
+    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
+
+
+race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
+wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
 electionModelDM :: forall rs ks r.
                    (K.KnitEffects r
@@ -925,14 +940,14 @@ electionModelDM :: forall rs ks r.
                 -> Model
                 -> Int
                 -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
-                -> K.ActionWithCacheTime r (F.FrameRec CCESWithDensity)
+                -> K.ActionWithCacheTime r CCESAndPUMS
                 -> K.ActionWithCacheTime r (F.FrameRec rs)
                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
 electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   when (groupModel model /= DMG || densityModel model /= DMD) $ K.knitError $ "electionModelDM called with wrong model type: " <> show model
   let jsonDataName = "DM_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
-      dataAndCodeBuilder :: MRP.BuilderM (F.FrameRec CCESWithDensity) (F.FrameRec rs) ()
+      dataAndCodeBuilder :: MRP.BuilderM CCESAndPUMS (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
         voteData <- SB.dataSetTag @(F.Record CCESWithDensity) SC.ModelData "VoteData"
@@ -950,12 +965,11 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let distP = SB.binomialLogitDist hVotes
 
         -- design matrix
-        let --useAlpha = True
-            center = True
+        let center = True
             qr = False
         let datDMRow = designMatrixRow @CCESWithDensity
         DM.addDesignMatrixIndexes voteData designMatrixRow -- for splits in GQ
-        (dmVD, mCenterF, mRInvV) <- do
+        (dm, mCenterF, mRInvV) <- do
           dmVDBase <- DM.addDesignMatrix voteData datDMRow
           (dmVDC, mCF) <- case center of
             True -> do
@@ -968,15 +982,15 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               return (qV, Just rInvV)
             False -> return (dmVDC, Nothing)
           return (dmV, mCF, mRInvV)
-
+        dmT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
         (alphaT, thetaT, muT, tauT, lT) <-
           DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "T")
         (alphaP, thetaP, muP, tauP, lP) <-
           DM.addDMParametersAndPriors voteData datDMRow stateGroup "theta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmVD thetaT) (SB.dataSetName voteData)
-            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmVD thetaP) (SB.dataSetName voteData)
+            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmT thetaT) (SB.dataSetName voteData)
+            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmT thetaP) (SB.dataSetName voteData)
         SB.inBlock SB.SBModel $ SB.useDataSetForBindings voteData $ do
           voteDataBetaT_v <- vecT
           voteDataBetaP_v <- vecP
@@ -990,7 +1004,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               Nothing -> do
                 DM.splitToGroupVars datDMRow muT
                 DM.splitToGroupVars datDMRow muP
-
               Just rInvV -> do
 --                bT <- SB.stanDeclareRHS "betaT" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaT `SB.matMult` rInvV
 --                bP <- SB.stanDeclareRHS "betaP" (SB.StanMatrix (SB.NamedDim "DM_Cols", SB.NamedDim $ SB.taggedGroupName stateGroup)) "" $ thetaP `SB.matMult` rInvV
@@ -1021,11 +1034,10 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                   pure (psT_v, psP_v)
                 Just rInvV -> do
                   let SB.StanVar _ betaType = thetaT
-{-                      vecDM = SB.vectorizedOne (DM.dmColIndexName datDMRow)
-                      applyRInverse x y =  SB.addExprLine "electionModelDM.applyRInverse"
-                                           $ vecDM $ SB.var x `SB.eq` (SB.var rInvV `SB.times` SB.var y)
-                      thetaFromBeta t b = SB.stanForLoopB "s" Nothing (SB.taggedGroupName stateGroup) $ applyRInverse t b -}
-                      betaFromTheta t = rInvV `SB.matMult` t
+                  vectorize <- case betaType of
+                    SB.StanMatrix (SB.NamedDim rowDimIndex, SB.NamedDim colDimIndex) -> return $ SB.vectorizedOne rowDimIndex . SB.vectorizedOne colDimIndex
+                    _ -> SB.stanBuildError $ "Bad type for beta from theta. type=" <> show betaType
+                  let betaFromTheta t = vectorize $ rInvV `SB.matMult` t
                   betaT <- SB.stanDeclareRHS "betaT" betaType "" $ betaFromTheta thetaT
                   betaP <- SB.stanDeclareRHS "betaP" betaType "" $ betaFromTheta thetaP
 
@@ -1076,17 +1088,17 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                                                          $ MT.keyedCIsToFrame @ModeledShare id
                                                          $ M.toList resultsMap
           return $ FS.SFrame $ fmap addModelIdAndYear res
-      dataWranglerAndCode :: K.ActionWithCacheTime r (F.FrameRec CCESWithDensity)
+      dataWranglerAndCode :: K.ActionWithCacheTime r CCESAndPUMS
                           -> K.ActionWithCacheTime r (F.FrameRec rs)
-                          -> K.Sem r (SC.DataWrangler (F.FrameRec CCESWithDensity) (F.FrameRec rs) SB.DataSetGroupIntMaps (), SB.StanCode)
+                          -> K.Sem r (SC.DataWrangler CCESAndPUMS (F.FrameRec rs) SB.DataSetGroupIntMaps (), SB.StanCode)
       dataWranglerAndCode modelData_C gqData_C = do
         modelData <-  K.ignoreCacheTime modelData_C
         gqData <-  K.ignoreCacheTime gqData_C
         K.logLE K.Info
           $ "Voter data (CCES) has "
-          <> show (FL.fold FL.length modelData)
+          <> show (FL.fold FL.length $ ccesRows modelData)
           <> " rows."
-        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) modelData
+        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) (ccesRows modelData)
             psKeys = FL.fold (FL.premap F.rcast FL.list) gqData
             groups = groupBuilderDM psGroup states psKeys
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states

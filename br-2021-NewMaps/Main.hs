@@ -275,7 +275,7 @@ newMapAnalysis stanParallelCfg parallel = do
   debugPUMS pumsTX
   K.knitError "STOP"
 -}
-  let postInfoNC = BR.PostInfo BR.OnlineDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
+  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
@@ -286,7 +286,7 @@ newMapAnalysis stanParallelCfg parallel = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo BR.OnlineDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
+  let postInfoTX = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
@@ -349,7 +349,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
   K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
   let ccesAndPums2018_C = fmap (filterCcesAndPumsByYear (==2018)) ccesAndPums_C
       ccesAndPums2020_C = fmap (filterCcesAndPumsByYear (==2020)) ccesAndPums_C
-      ccesWD_2020 = fmap (F.filterFrame ((==2020) . F.rgetField @BR.Year)) ccesWD_C
+--      ccesWD_2020 = fmap (F.filterFrame ((==2020) . F.rgetField @BR.Year)) ccesWD_C
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => F.FrameRec xs -> F.FrameRec xs
       onlyState = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
@@ -379,7 +379,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
       modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM m name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 (psInfoDM name m) ccesWD_2020
+      modelDM m name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 (psInfoDM name m) ccesAndPums2020_C
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
       baseQuantile n = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity n) BRE.BaseD
       stateRaceQuantile n = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity n) BRE.BaseD

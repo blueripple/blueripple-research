@@ -1101,6 +1101,7 @@ race4Census r = DT.race4FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C 
 race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 wnhPums r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradPums r = wnhPums r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
+--wnhNonGradCCES r = F.rgetField @DT.Race5C == DT.R5_WhiteNonHispanic r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
 --acsDistrictGroup :: SB.GroupTypeTag @(F.Record BRE.CDKeyR) "District"
 
@@ -1118,27 +1119,23 @@ groupBuilderDM states = do
 ccesDesignRow :: DM.DesignMatrixRow (F.Record BRE.CCESWithDensity)
 ccesDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, wngRP]
   where
-    alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
---    raceRP = DM.boundedEnumRowPart "Race" (DT.race4FromRace5 . F.rgetField @DT.Race5C)
     raceRP = DM.boundedEnumRowPart "Race" (F.rgetField @DT.Race5C)
     densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
-    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhCCES
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCCES
 
 
 cpsDesignRow :: DM.DesignMatrixRow (F.Record BRE.CPSVWithDensity)
 cpsDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, wngRP]
   where
-    alphaRP = DM.DesignMatrixRowPart "alpha" 1 (\_ -> VU.singleton 1)
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
---    raceRP = DM.boundedEnumRowPart "Race" race4Census
     raceRP = DM.boundedEnumRowPart "Race" race5Census
     densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
-    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGrad
 
 
 acsDesignRow :: DM.DesignMatrixRow (F.Record BRE.PUMSWithDensity)
@@ -1148,10 +1145,9 @@ acsDesignRow = DM.DesignMatrixRow "DM" $ [ageRP, sexRP, eduRP, raceRP, densRP, w
     ageRP = DM.boundedEnumRowPart "Age" (F.rgetField @DT.SimpleAgeC)
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
---    raceRP = DM.boundedEnumRowPart "Race" race4Census
     raceRP = DM.boundedEnumRowPart "Race" race5Census
     densRP = DM.DesignMatrixRowPart "Density" 1 BRE.logDensityPredictor
-    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhPums
+    wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGrad
 
 turnoutModelDM ::  (K.KnitEffects r, BR.CacheEffects r)
                => Bool
@@ -1235,10 +1231,10 @@ turnoutModelDM clearCaches parallel stanParallelCfg modelDir years dat_C acsWD_C
 
         acsWNH <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_WNH"
         dmWNH <- DM.addDesignMatrix acsWNH acsDesignRow
-        cDMWNH <- centerF dmWNH
+        cDMWNH <- SB.useDataSetForBindings acsWNH $ centerF dmWNH
         acsNW <- SB.dataSetTag @(F.Record BRE.PUMSWithDensity) SC.GQData "ACS_NW"
         dmNW <- DM.addDesignMatrix acsNW acsDesignRow
-        cDMNW <- centerF dmNW
+        cDMNW <-  SB.useDataSetForBindings acsNW $centerF dmNW
 
         let psPrecompute interacting centeredPSDM psDataSet = do
               let b = if interacting then beta else mean
