@@ -987,8 +987,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
           DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
-            vecT = SB.vectorizeExpr "voteDataBetaT" (dmBetaE dmT thetaT) (SB.dataSetName comboData)
-            vecP = SB.vectorizeExpr "voteDataBetaP" (dmBetaE dmP thetaP) (SB.dataSetName ccesData)
+            predE a dm beta = SB.var a `SB.plus` dmBetaE dm beta
+            vecT = SB.vectorizeExpr "voteDataBetaT" (predE alphaT dmT thetaT) (SB.dataSetName comboData)
+            vecP = SB.vectorizeExpr "voteDataBetaP" (predE alphaP dmP thetaP) (SB.dataSetName ccesData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings comboData $ do
             voteDataBetaT_v <- vecT
@@ -1015,8 +1016,8 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let psPreCompute = do
               dmPS_T <- centerTF dmPS' (Just "T")
               dmPS_P <- centerPF dmPS' (Just "P")
-              psT_v <- SB.vectorizeExpr "psBetaT" (dmBetaE dmPS_T thetaT) (SB.dataSetName psData)
-              psP_v <- SB.vectorizeExpr "psBetaP" (dmBetaE dmPS_P thetaP) (SB.dataSetName psData)
+              psT_v <- SB.vectorizeExpr "psBetaT" (predE alphaT dmPS_T thetaT) (SB.dataSetName psData)
+              psP_v <- SB.vectorizeExpr "psBetaP" (predE alphaP dmPS_P thetaP) (SB.dataSetName psData)
               pure (psT_v, psP_v)
 
             psExprF (psT_v, psP_v) = do
