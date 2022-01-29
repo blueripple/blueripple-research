@@ -158,22 +158,22 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
     Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
     Just x -> return x
   let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
-  SB.indexBindingScope $ do
-    SB.addDeclBinding' "LLIndex" llSizeE
-    SB.addUseBinding' "LLIndex" $ SB.name "n"
-    logLikV <- SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "LLIndex") ""
-    let doOne :: SB.RowTypeTag a -> LLDetails md gq args a -> SB.StanBuilderM md gq (SB.RowTypeTag a)
-        doOne rtt (LLDetails dist argsM yV) = do
+  SB.addDeclBinding' "LLIndex" llSizeE
+  logLikV <- SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "LLIndex") ""
+  let doOne :: SB.RowTypeTag a -> LLDetails md gq args a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+      doOne rtt (LLDetails dist argsM yV) = do
+        prevSizes <- get
+        lift $ SB.bracketed 2 $ SB.useDataSetForBindings rtt $ SB.indexBindingScope $ do
+          SB.addUseBinding' "LLIndex" $ SB.multiOp "+" (SB.name "n" :| prevSizes)
           let dsName = SB.dataSetName rtt
           args <- argsM
           SB.stanForLoopB "n" Nothing dsName
             $ SB.addExprLine "generateLogLikelihood'"
             $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
-          ie <- SB.getUseBinding "LLIndex"
-          SB.addUseBinding' "LLIndex" $ ie `SB.plus` SB.name (SB.dataSetSizeName rtt)
-          pure rtt
-    _ <- DHash.traverseWithKey doOne llSet
-    pure ()
+        put $ SB.name (SB.dataSetSizeName rtt) : prevSizes
+        pure rtt
+  _ <- evalStateT (DHash.traverseWithKey doOne llSet) []
+  pure ()
 
 {-
 
