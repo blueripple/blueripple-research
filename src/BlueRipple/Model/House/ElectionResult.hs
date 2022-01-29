@@ -1002,8 +1002,11 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         SB.inBlock SB.SBGeneratedQuantities $ do
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
-        SB.generateLogLikelihood' comboData ((distT, SB.var <$> vecT, voted)
-                                             :| [(distP, SB.var <$> vecP, dVotes)])
+        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (SB.var <$> vecT) voted)
+                    $ SB.addToLLSet ccesData (SB.LLDetails distP (SB.var <$> vecP) dVotes)
+                    $ SB.emptyLLSet
+        SB.generateLogLikelihood' llSet {-comboData ((distT, SB.var <$> vecT, voted)
+                                             :| [(distP, SB.var <$> vecP, dVotes)]) -}
 
 
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"

@@ -997,6 +997,13 @@ addUseBinding' k e = modify $ modifyIndexBindings f where
 addUseBinding :: IndexKey -> SME.StanVar -> StanBuilderM md gq ()
 addUseBinding k sv = addUseBinding' k (SME.var sv)
 
+getUseBinding :: IndexKey -> StanBuilderM md gq SME.StanExpr
+getUseBinding k = do
+  SME.VarBindingStore ubm _ <- indexBindings <$> get
+  case Map.lookup k ubm of
+    Just e -> return e
+    Nothing -> stanBuildError $ "getUseBinding: k=" <> show k <> " not found in use-binding map"
+
 addUseBindingToDataSet' :: forall r md gq.RowTypeTag r -> IndexKey -> SME.StanExpr -> StanBuilderM md gq ()
 addUseBindingToDataSet' rtt key e = do
   let dataNotFoundErr = "addUseBindingToDataSet: Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"

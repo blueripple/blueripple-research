@@ -129,6 +129,9 @@ dataSetName (RowTypeTag _ n) = n
 inputDataType :: RowTypeTag r -> InputDataType
 inputDataType (RowTypeTag idt _) = idt
 
+dataSetSizeName :: RowTypeTag r -> Text
+dataSetSizeName rtt = "N_" <> dataSetName rtt
+
 -- we need the empty constructors here to bring in the Typeable constraints in the GADT
 instance GADT.GEq RowTypeTag where
   geq rta@(RowTypeTag idt1 n1) rtb@(RowTypeTag idt2 n2) =

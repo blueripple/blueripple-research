@@ -139,19 +139,61 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
-generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
+generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) emptyLLSet
 
-type LLDetails md gq args r =  LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args, SME.StanVar)
+data LLDetails md gq args r = LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args) SME.StanVar
+--type LLBuilder md gq args r =  LLBuilder (LLDetails md gq args) [SME.StanExpr]
 type LLSet md gq args = DHash.DHashMap (SB.RowTypeTag) (LLDetails md gq args)
+emptyLLSet :: LLSet md gq args
+emptyLLSet = DHash.empty
 
-generateLogLikelihood' :: SB.RowTypeTag r -> LLSet md gq args -> SB.StanBuilderM md gq ()
-generateLogLikelihood' distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
-  -- get total size
-  let llSizeName rtt _ = "N_" <> SB.dataSetName rtt
-      llSizeList = DHash.foldlWithKey llSizeName
+addToLLSet :: SB.RowTypeTag r -> LLDetails md gq args r -> LLSet md gq args -> LLSet md gq args
+addToLLSet rtt d llSet = DHash.insert rtt d llSet
+--data Res r = Res
+
+generateLogLikelihood' :: LLSet md gq args -> SB.StanBuilderM md gq ()
+generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
+  let prependLLSizeName sl rtt _ = SB.dataSetSizeName rtt : sl
+  llSizeListNE <- case nonEmpty (DHash.foldlWithKey prependLLSizeName [] llSet) of
+    Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
+    Just x -> return x
+  let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
+  SB.indexBindingScope $ do
+    SB.addDeclBinding' "LLIndex" llSizeE
+    SB.addUseBinding' "LLIndex" $ SB.name "n"
+    logLikV <- SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "LLIndex") ""
+    let doOne :: SB.RowTypeTag a -> LLDetails md gq args a -> SB.StanBuilderM md gq (SB.RowTypeTag a)
+        doOne rtt (LLDetails dist argsM yV) = do
+          let dsName = SB.dataSetName rtt
+          args <- argsM
+          SB.stanForLoopB "n" Nothing dsName
+            $ SB.addExprLine "generateLogLikelihood'"
+            $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
+          ie <- SB.getUseBinding "LLIndex"
+          SB.addUseBinding' "LLIndex" $ ie `SB.plus` SB.name (SB.dataSetSizeName rtt)
+          pure rtt
+    _ <- DHash.traverseWithKey doOne llSet
+    pure ()
+
+{-
+
+  doOne rtt (LLDetails dist bldr v) = do
+    SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+      args <- bldr
+      SB.stanForLoop "n" Nothing (SB.dataSetName rtt) $ do
+        SB.addExprLine "generateLogLikelihood'" $ SB.var logLik
+
+      let argsM (_, a, _) = a
+      args <- sequence $ argsM <$> distsArgsM
+      let distsAndArgs = NE.zipWith (\(d, _, y) a -> (d, a, y)) distsArgsM args
+    SB.stanForLoopB "n" Nothing dsName $ do
+      let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
+          oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
+          rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
+      SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
   let dsName = SB.dataSetName  rtt
-      dim = SME.NamedDim dsName
-  logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
+      dim = SME.NamedDim dsName llSet
+
   SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
     let argsM (_, a, _) = a
     args <- sequence $ argsM <$> distsArgsM
@@ -161,7 +203,7 @@ generateLogLikelihood' distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
           oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
           rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
       SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
-
+-}
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
