@@ -259,7 +259,7 @@ prepCCESDM clearCaches ddd_C cces_C = do
 -}
 newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newMapAnalysis stanParallelCfg parallel = do
-  ccesAndPums_C <-  BRE.prepCCESAndPums True
+  ccesAndPums_C <-  BRE.prepCCESAndPums False
   let ccesWD_C = fmap BRE.ccesRows ccesAndPums_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
