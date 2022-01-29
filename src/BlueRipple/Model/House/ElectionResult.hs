@@ -89,6 +89,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified Stan.ModelBuilder as SB
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -1003,13 +1004,14 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         SB.inBlock SB.SBGeneratedQuantities $ do
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
-        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (SB.var <$> vecT) voted)
-                    $ SB.addToLLSet ccesData (SB.LLDetails distP (SB.var <$> vecP) dVotes)
+        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)
+                    $ SB.addToLLSet ccesData (SB.LLDetails distP (pure $ predE alphaP dmP thetaP) dVotes)
                     $ SB.emptyLLSet
         SB.generateLogLikelihood' llSet {-comboData ((distT, SB.var <$> vecT, voted)
                                              :| [(distP, SB.var <$> vecP, dVotes)]) -}
 
-
+        let ppVar = SB.StanVar "DVOTES_C" (SB.StanVector $ SB.NamedDim $ SB.dataSetName comboData)
+        SB.useDataSetForBindings comboData $ SB.generatePosteriorPrediction comboData ppVar distT $ predE alphaT dmT thetaT
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
@@ -1036,10 +1038,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just psGroup)
         postStrat
-
-
-
-        return ()
+        pure ()
 
       addModelIdAndYear :: F.Record (ks V.++ '[ModeledShare])
                         -> F.Record (ModelResultsR ks)

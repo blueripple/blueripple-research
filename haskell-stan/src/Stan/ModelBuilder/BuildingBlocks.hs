@@ -211,7 +211,7 @@ generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBloc
 --      ppVar = SME.StanVar ppName t
 --      ppE = SME.var ppVar --SME.indexBy (SME.name ppName) k `SME.eq` rngE
   ppVar <- SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar
+  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` rngE
   return sv
 
 diagVectorFunction :: SB.StanBuilderM md gq Text
