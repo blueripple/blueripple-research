@@ -141,9 +141,15 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' rtt (one (sDist, args, yV))
 
-generateLogLikelihood' :: SB.RowTypeTag r -> NonEmpty (SMD.StanDist args, SB.StanBuilderM md gq args, SME.StanVar) -> SB.StanBuilderM md gq ()
-generateLogLikelihood' rtt distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
-  let dsName = SB.dataSetName rtt
+type LLDetails md gq args r =  LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args, SME.StanVar)
+type LLSet md gq args = DHash.DHashMap (SB.RowTypeTag) (LLDetails md gq args)
+
+generateLogLikelihood' :: SB.RowTypeTag r -> LLSet md gq args -> SB.StanBuilderM md gq ()
+generateLogLikelihood' distsArgsM =  SB.inBlock SB.SBLogLikelihood $ do
+  -- get total size
+  let llSizeName rtt _ = "N_" <> SB.dataSetName rtt
+      llSizeList = DHash.foldlWithKey llSizeName
+  let dsName = SB.dataSetName  rtt
       dim = SME.NamedDim dsName
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector dim) ""
   SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
