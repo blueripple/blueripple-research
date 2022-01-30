@@ -964,7 +964,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
         dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
         let groupSet =  SB.addGroupToSet stateGroup (SB.emptyGroupSet)
-        (comboData, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
+        (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
         (cvap, voted, dmTurnout) <-  SB.inBlock SB.SBTransformedData $ do
           cvapCombo' <- stackVarsF "CVAP" cvapCCES cvapCPS
           votedCombo' <- stackVarsF "Voted" votedCCES votedCPS
@@ -981,15 +981,19 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
         (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
         (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
---        dmT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
         (alphaT, thetaT, muT, tauT, lT) <-
           DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "T")
         (alphaP, thetaP, muP, tauP, lP) <-
           DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "P")
+        dsPhi <- do
+          dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "phi" SB.StanReal ""
+          SB.inBlock SB.SBModel $ SB.addExprLine "electionModelDM" $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
+          return dsPhi'
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
             predE a dm beta = SB.var a `SB.plus` dmBetaE dm beta
-            vecT = SB.vectorizeExpr "voteDataBetaT" (predE alphaT dmT thetaT) (SB.dataSetName comboData)
+            iPredE a dm beta = SB.var a `SB.plus` dmBetaE dm beta `SB.plus` (SB.var dsPhi `SB.times` SB.var dsIndexV)
+            vecT = SB.vectorizeExpr "voteDataBetaT" (iPredE alphaT dmT thetaT) (SB.dataSetName comboData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (predE alphaP dmP thetaP) (SB.dataSetName ccesData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings comboData $ do
@@ -999,20 +1003,18 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
             voteDataBetaP_v <- vecP
             SB.sampleDistV ccesData distP (SB.var voteDataBetaP_v) dVotes
 
-        -- split parameters back to input categories after undoing QR, if necessary
-
+        -- split parameters back to input categories
         SB.inBlock SB.SBGeneratedQuantities $ do
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
-        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)
+        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (pure $ iPredE alphaT dmT thetaT) voted)
                     $ SB.addToLLSet ccesData (SB.LLDetails distP (pure $ predE alphaP dmP thetaP) dVotes)
                     $ SB.emptyLLSet
-        SB.generateLogLikelihood' llSet {-comboData ((distT, SB.var <$> vecT, voted)
-                                             :| [(distP, SB.var <$> vecP, dVotes)]) -}
+        SB.generateLogLikelihood' llSet
 
         let ppVar = SB.StanVar "PVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName comboData)
         SB.useDataSetForBindings comboData
-          $ SB.generatePosteriorPrediction comboData ppVar distT $ predE alphaT dmT thetaT
+          $ SB.generatePosteriorPrediction comboData ppVar distT $ iPredE alphaT dmT thetaT
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 

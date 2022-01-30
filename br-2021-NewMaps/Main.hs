@@ -362,7 +362,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
                    $ SB.addGroupToSet BRE.raceGroup
                    $ SB.addGroupToSet BRE.stateGroup
                    $ SB.emptyGroupSet
-      modelDir =  "br-2021-NewMaps/stanGQ"
+      modelDir =  "br-2021-NewMaps/stanDMPhi"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfo name model = (mapGroup
                           , name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)

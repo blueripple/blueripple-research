@@ -254,7 +254,8 @@ stackDataSets :: forall md gq r1 r2. ()
                        -> SB.RowTypeTag r2
                        -> SB.GroupSet -- groups to stack
                        -> SB.StanBuilderM md gq (SB.RowTypeTag () -- tag for combined loops
-                                             , SB.StanName -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- stack variables
+                                                , SB.StanVar -- vector with data-set index
+                                                , SB.StanName -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- stack variables
                                              )
 stackDataSets name rtt1 rtt2 groups = do
   let n1 = SB.dataSetName rtt1
@@ -263,11 +264,14 @@ stackDataSets name rtt1 rtt2 groups = do
   rtt <- SB.addModelDataSet name (SB.ToFoldable $ const [()])
   SB.addUseBindingToDataSet rtt n1 $ SB.StanVar ("N_" <> n1) SB.StanInt
   SB.addUseBindingToDataSet rtt n2 $ SB.StanVar ("N_" <> n2) SB.StanInt
-  SB.inBlock SB.SBTransformedData $ do
-    sizeV <- SB.stanDeclareRHS (sizeName name) SME.StanInt "<lower=0>" $ SME.name (sizeName n1) `SME.plus` SME.name (sizeName n2)
+  indexV <- SB.inBlock SB.SBTransformedData $ do
+    sizeV <- SB.stanDeclareRHS (sizeName name) SME.StanInt "<lower=0>"
+             $ SME.name (sizeName n1) `SME.plus` SME.name (sizeName n2)
     SB.addDeclBinding name sizeV
     SB.addUseBindingToDataSet rtt name sizeV
-
+    let iArray n s = SB.function "rep_array" (SB.scalar (show n) :| [SB.name $ sizeName s])
+    SB.stanDeclareRHS "dataSetIndex" (SB.StanArray [SB.NamedDim name] SB.StanInt) "<lower=0>"
+      $ SB.function "append_array" (iArray 0 n1 :| [iArray 1 n2])
   let copyUseBinding rttFrom rttTo dimName = do
         m <- SB.getDataSetBindings rttFrom
         case Map.lookup dimName m of
@@ -306,7 +310,7 @@ stackDataSets name rtt1 rtt2 groups = do
         SB.addUseBindingToDataSet rtt gName iv
         return SB.Phantom
   _ <- DHash.traverseWithKey stackGroupIndexes groups
-  return (rtt, stackVars)
+  return (rtt, indexV, stackVars)
 
 {-
 
