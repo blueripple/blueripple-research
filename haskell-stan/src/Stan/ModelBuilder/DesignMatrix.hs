@@ -151,7 +151,7 @@ addDMParametersAndPriors :: (Typeable md, Typeable gq)
                          -> SB.GroupTypeTag k -- exchangeable contexts
                          -> SB.StanName -- name for beta parameter (so we can use theta if QR)
                          -> Parameterization
-                         -> (SB.StanExpr, SB.StanExpr, SB.StanExpr, Double) -- prior widths and lkj parameter
+                         -> (SB.StanExpr, SB.StanExpr, Double) -- prior widths and lkj parameter
                          -> Maybe Text -- suffix for varnames
                          -> SB.StanBuilderM md gq (SB.StanVar
                                                   , SB.StanVar
@@ -159,7 +159,7 @@ addDMParametersAndPriors :: (Typeable md, Typeable gq)
                                                   , SB.StanVar
                                                   , SB.StanVar
                                                   )
-addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (alphaPrior, muPrior, tauPrior, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
+addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (muPrior, tauPrior, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
   let dmDimName = n <> "_Cols"
       dmDim = SB.NamedDim dmDimName
       dmVec = SB.StanVector dmDim
@@ -173,41 +173,51 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (
       dmBetaE dm beta = vecDM $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
       lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
 
-  (alpha, mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
-    alpha' <- SB.stanDeclare ("alpha" <> s) gVec ""
+  (alphaRaw, muAlpha, sigmaAlpha, mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
+    alphaRaw' <- case parameterization of
+      Centered -> SB.stanDeclare ("alpha" <> s) gVec ""
+      NonCentered -> SB.stanDeclare ("alpha_raw" <> s) gVec ""
+    muAlpha' <- SB.stanDeclare ("mu_alpha" <> s) SB.StanReal ""
+    sigmaAlpha' <- SB.stanDeclare ("sigma_alpha" <> s) SB.StanReal "<lower=0>"
     mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
     tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
     lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactorCorr dmDim) ""
     betaRaw' <- case parameterization of
       Centered -> SB.stanDeclare (betaName <> s) (SB.StanMatrix (dmDim, gDim)) ""
       NonCentered -> SB.stanDeclare (betaName <> s <> "_raw") (SB.StanMatrix (dmDim, gDim)) ""
-    return (alpha', mu', tau', lCorr', betaRaw')
+    return (alphaRaw', muAlpha', sigmaAlpha', mu', tau', lCorr', betaRaw')
   let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
       repMu = SB.function "rep_matrix" (SB.var mu :| [SB.indexSize gName])
   beta <- case parameterization of
     Centered -> return betaRaw
-    NonCentered -> SB.inBlock SB.SBTransformedParameters $ do
-      beta' <- SB.stanDeclareRHS (betaName <> s) (SB.StanMatrix (dmDim,gDim)) ""
-          $ vecG $ vecDM $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+    NonCentered -> SB.inBlock SB.SBTransformedParameters $
+      SB.stanDeclareRHS (betaName <> s) (SB.StanMatrix (dmDim,gDim)) ""
+        $ vecG $ vecDM $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
+  alpha <- case parameterization of
+    Centered -> return alphaRaw
+    NonCentered -> SB.inBlock SB.SBTransformedParameters $
+      SB.stanDeclareRHS ("alpha" <> s) gVec ""
+      $ vecG $ SB.var muAlpha `SB.plus` (SB.var sigmaAlpha `SB.times` SB.var alphaRaw)
 {-
       SB.stanForLoopB "s" Nothing gName
         $ SB.addExprLine "electionModelDM"
         $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
 -}
-      return beta'
   SB.inBlock SB.SBModel $ do
     case parameterization of
       Centered -> do
-        SB.addExprLine "addDMParametersAnsPriors"
-          $ vecDM
-          $ SB.var betaRaw `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
+        SB.addExprLines "addDMParametersAnsPriors"
+          [vecDM $ SB.var betaRaw `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
+          , vecG $ SB.var alphaRaw `SB.vectorSample` SB.function "normal" (SB.var muAlpha :| [SB.var sigmaAlpha])]
       NonCentered ->
 --        SB.stanForLoopB "g" Nothing gName
-        SB.addExprLine "addDMParametersAndPriors"
-        $ vecG $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal
+        SB.addExprLines "addDMParametersAndPriors"
+        [vecG $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal
+        , vecG $ SB.var alphaRaw `SB.vectorSample` SB.stdNormal]
 
     SB.addExprLines "addParametersAndPriors" $
-      [ vecG $ SB.var alpha `SB.vectorSample` alphaPrior
+      [ SB.var muAlpha `SB.vectorSample` muPrior
+      , SB.var sigmaAlpha `SB.vectorSample` tauPrior
       , vecDM $ SB.var mu `SB.vectorSample` muPrior
       , vecDM $ SB.var tau `SB.vectorSample` tauPrior
       , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE

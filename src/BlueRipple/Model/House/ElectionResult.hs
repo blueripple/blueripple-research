@@ -983,9 +983,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
 --        dmT <- SB.inBlock SB.SBTransformedData $ SB.matrixTranspose dm
         (alphaT, thetaT, muT, tauT, lT) <-
-          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "T")
+          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "T")
         (alphaP, thetaP, muP, tauP, lP) <-
-          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, SB.stdNormal, 4) (Just "P")
+          DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "P")
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
             predE a dm beta = SB.var a `SB.plus` dmBetaE dm beta
@@ -1010,8 +1010,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         SB.generateLogLikelihood' llSet {-comboData ((distT, SB.var <$> vecT, voted)
                                              :| [(distP, SB.var <$> vecP, dVotes)]) -}
 
-        let ppVar = SB.StanVar "DVOTES_C" (SB.StanVector $ SB.NamedDim $ SB.dataSetName comboData)
-        SB.useDataSetForBindings comboData $ SB.generatePosteriorPrediction comboData ppVar distT $ predE alphaT dmT thetaT
+        let ppVar = SB.StanVar "PVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName comboData)
+        SB.useDataSetForBindings comboData
+          $ SB.generatePosteriorPrediction comboData ppVar distT $ predE alphaT dmT thetaT
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
