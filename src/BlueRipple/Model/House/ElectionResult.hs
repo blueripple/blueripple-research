@@ -1088,7 +1088,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
     stanParallelCfg
     dw
     stanCode
-    "DVOTES_C"
+    "Votes"
     extractResults
     dat_C
     psDat_C
