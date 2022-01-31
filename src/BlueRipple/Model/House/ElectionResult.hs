@@ -899,6 +899,8 @@ race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C 
 wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
+data TurnoutDataSet = JustCCES | JustCPS | CCESAndCPS deriving (Show, Eq)
+
 electionModelDM :: forall rs ks r.
                    (K.KnitEffects r
                    , BR.CacheEffects r
@@ -938,42 +940,60 @@ electionModelDM :: forall rs ks r.
                 -> Bool
                 -> BR.StanParallel
                 -> Text
+                -> TurnoutDataSet
                 -> Model
                 -> Int
                 -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
                 -> K.ActionWithCacheTime r CCESAndPUMS
                 -> K.ActionWithCacheTime r (F.FrameRec rs)
                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ModelResultsR ks)))
-electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   when (groupModel model /= DMG || densityModel model /= DMD) $ K.knitError $ "electionModelDM called with wrong model type: " <> show model
-  let jsonDataName = "DM_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+  let modelName = "LegDistricts_" <> show turnoutDataSet <> "_" <> modelLabel model <> if parallel then "_P" else ""
+      jsonDataName = "DM_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM CCESAndPUMS (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
         ccesData <- SB.dataSetTag @(F.Record CCESWithDensity) SC.ModelData "CCES"
-        cpsData <- SB.dataSetTag @(F.Record CPSVWithDensity) SC.ModelData "CPS"
-        DM.addDesignMatrixIndexes ccesData designMatrixRow -- just need it for one
---        pplWgts <- SB.addCountData voteData "Surveyed" (F.rgetField @Surveyed) -- for weighted centering
-
-        -- Turnout
-        cvapCCES <- SB.addCountData ccesData "CVAP_CCES" (F.rgetField @Surveyed)
-        votedCCES <- SB.addCountData ccesData "VOTED_CCES" (F.rgetField @Voted)
         dmCCES <- DM.addDesignMatrix ccesData designMatrixRow
-        cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
-        votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
-        dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
-        let groupSet =  SB.addGroupToSet stateGroup (SB.emptyGroupSet)
-        (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
-        (cvap, voted, dmTurnout) <-  SB.inBlock SB.SBTransformedData $ do
-          cvapCombo' <- stackVarsF "CVAP" cvapCCES cvapCPS
-          votedCombo' <- stackVarsF "Voted" votedCCES votedCPS
-          dmCombo' <- stackVarsF "DM" dmCCES dmCPS
-          return (cvapCombo', votedCombo', dmCombo')
-        let distT = SB.binomialLogitDist cvap
+        DM.addDesignMatrixIndexes ccesData designMatrixRow -- just need it for one
+        let makeIndexArray rtt n =
+              let dsName = SB.dataSetName rtt
+                  sizeName = "N_" <> dsName
+              in SB.inBlock SB.SBTransformedData
+                 $ SB.stanDeclareRHS ("dsIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) "<lower=0>"
+                 $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
-        -- Preference
-        let (votesF, dVotesF) = getVotes $ voteSource model
+            setupCCESData n = do
+              cvapCCES <- SB.addCountData ccesData "CVAP_CCES" (F.rgetField @Surveyed)
+              votedCCES <- SB.addCountData ccesData "VOTED_CCES" (F.rgetField @Voted)
+              indexCCES <- makeIndexArray ccesData n
+              return (ccesData, cvapCCES, votedCCES, dmCCES, indexCCES)
+            setupCPSData n = do
+              cpsData <- SB.dataSetTag @(F.Record CPSVWithDensity) SC.ModelData "CPS"
+              cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
+              votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
+              dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
+              indexCPS <- makeIndexArray cpsData n
+              return (cpsData, cvapCPS, votedCPS, dmCPS, indexCPS)
+            groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
+        (turnoutData, cvap, voted, dmTurnout, dsIndex) <- case turnoutDataSet of
+          JustCCES -> setupCCESData 0
+          JustCPS -> setupCPSData 0
+          CCESAndCPS -> do
+            (ccesData, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESData 0
+            (cpsData, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
+            (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
+            (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
+              cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
+              votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
+              dmCombo' <- stackVarsF "DM" ccesDM cpsDM
+              indexCombo' <- stackVarsF "DataSetIndex" ccesIndex cpsIndex
+              return (cvapCombo', votedCombo', dmCombo', indexCombo')
+            return (comboData, cvap, voted, dmCombo, indexCombo)
+        let distT = SB.binomialLogitDist cvap
+            (votesF, dVotesF) = getVotes $ voteSource model
         hVotes <- SB.addCountData ccesData "VOTES_C" votesF --(F.rgetField @HouseVotes)
         dVotes <- SB.addCountData ccesData "DVOTES_C" dVotesF --(F.rgetField @HouseDVotes)
         let dmPref = dmCCES
@@ -986,19 +1006,26 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         (alphaP, thetaP, muP, tauP, lP) <-
           DM.addDMParametersAndPriors ccesData (designMatrixRow @CCESWithDensity) stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "P")
         dsPhi <- do
-          dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "phi" SB.StanReal ""
-          SB.inBlock SB.SBModel $ SB.addExprLine "electionModelDM" $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
-          return dsPhi'
+          case turnoutDataSet of
+            JustCCES -> SB.StanVar "phi_unusued" SB.StanReal ""
+            JustCPS -> SB.StanVar "phi_unusued" SB.StanReal ""
+            CCESAndCPS -> do
+              dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "phi" SB.StanReal ""
+              SB.inBlock SB.SBModel $ SB.addExprLine "electionModelDM" $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
+              return dsPhi'
 
         let dmBetaE dm beta = SB.vectorizedOne "EMDM_Cols" $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
             predE a dm beta = SB.var a `SB.plus` dmBetaE dm beta
-            iPredE a dm beta = SB.var a `SB.plus` dmBetaE dm beta `SB.plus` (SB.var dsPhi `SB.times` SB.var dsIndexV)
-            vecT = SB.vectorizeExpr "voteDataBetaT" (iPredE alphaT dmT thetaT) (SB.dataSetName comboData)
+            iPredE a dm beta = case turnoutDataSet of
+              JustCCES -> predE a dm beta
+              JustCPS -> predE a dm beta
+              CCESAndCPS -> predE a dm beta `SB.plus` (SB.var dsPhi `SB.times` SB.var dsIndex)
+            vecT = SB.vectorizeExpr "voteDataBetaT" (iPredE alphaT dmT thetaT) (SB.dataSetName turnoutData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (predE alphaP dmP thetaP) (SB.dataSetName ccesData)
         SB.inBlock SB.SBModel $ do
-          SB.useDataSetForBindings comboData $ do
+          SB.useDataSetForBindings turnoutData $ do
             voteDataBetaT_v <- vecT
-            SB.sampleDistV comboData distT (SB.var voteDataBetaT_v) voted
+            SB.sampleDistV turnoutData distT (SB.var voteDataBetaT_v) voted
           SB.useDataSetForBindings ccesData $ do
             voteDataBetaP_v <- vecP
             SB.sampleDistV ccesData distP (SB.var voteDataBetaP_v) dVotes
@@ -1007,14 +1034,14 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         SB.inBlock SB.SBGeneratedQuantities $ do
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
-        let llSet = SB.addToLLSet comboData (SB.LLDetails distT (pure $ iPredE alphaT dmT thetaT) voted)
+        let llSet = SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPredE alphaT dmT thetaT) voted)
                     $ SB.addToLLSet ccesData (SB.LLDetails distP (pure $ predE alphaP dmP thetaP) dVotes)
                     $ SB.emptyLLSet
         SB.generateLogLikelihood' llSet
 
-        let ppVar = SB.StanVar "PVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName comboData)
-        SB.useDataSetForBindings comboData
-          $ SB.generatePosteriorPrediction comboData ppVar distT $ iPredE alphaT dmT thetaT
+        let ppVar = SB.StanVar "PVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName turnoutData)
+        SB.useDataSetForBindings turnoutData
+          $ SB.generatePosteriorPrediction turnoutData ppVar distT $ iPredE alphaT dmT thetaT
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
@@ -1085,7 +1112,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
   fmap (fmap FS.unSFrame)
     $ MRP.runMRPModel
     clearCaches
-    (SC.RunnerInputNames modelDir  ("LegDistricts_" <> modelLabel model <> if parallel then "_P" else "") (Just psDataSetName) jsonDataName)
+    (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
     (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
     stanParallelCfg
     dw
