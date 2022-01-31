@@ -378,8 +378,8 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
                 -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       model2020 m name
         =  K.ignoreCacheTimeM . BRE.electionModel False parallel stanParallelCfg modelDir m 2020 (psInfo name m) ccesAndPums2020_C
-      modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM m name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 (psInfoDM name m) ccesAndPums2020_C
+      modelDM :: BRE.Model -> BRE.TurnoutDataSet x -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      modelDM m tds name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir tds m 2020 (psInfoDM name m) ccesAndPums2020_C
   let baseLog = BRE.Model BRE.HouseVS BRE.BaseG BRE.LogDensity BRE.BaseD
       baseQuantile n = BRE.Model BRE.HouseVS BRE.BaseG (BRE.QuantileDensity n) BRE.BaseD
       stateRaceQuantile n = BRE.Model BRE.HouseVS BRE.PlusStateRaceG (BRE.QuantileDensity n) BRE.BaseD
@@ -389,8 +389,10 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
       dmModel = BRE.Model BRE.HouseVS BRE.DMG BRE.LogDensity BRE.DMD
 --  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
-  extantBaseHV <- modelDM dmModel (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  proposedBaseHV <- modelDM dmModel (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
+  modelDM dmModel BRE.JustCCES (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  modelDM dmModel BRE.JustCPS  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  extantBaseHV <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
 {-
   extantPlusStateHV
     <- model2020 (BRE.Model BRE.HouseVS BRE.PlusStateG BRE.BaseD) (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)

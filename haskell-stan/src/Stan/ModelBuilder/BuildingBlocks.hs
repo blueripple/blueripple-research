@@ -24,6 +24,7 @@ import qualified Stan.ModelBuilder.GroupModel as SGM
 import Prelude hiding (All)
 import Data.List.NonEmpty as NE
 import qualified Data.Dependent.HashMap as DHash
+import qualified Data.Dependent.Sum as DSum
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -139,22 +140,27 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
-generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) emptyLLSet
+generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
 
 data LLDetails md gq args r = LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args) SME.StanVar
---type LLBuilder md gq args r =  LLBuilder (LLDetails md gq args) [SME.StanExpr]
-type LLSet md gq args = DHash.DHashMap (SB.RowTypeTag) (LLDetails md gq args)
+data LLDetailsList md gq args r = LLDetailsList [LLDetails md gq args r]
+
+addDetailsLists :: LLDetailsList md gq args r -> LLDetailsList md gq args r -> LLDetailsList md gq args r
+addDetailsLists (LLDetailsList x) (LLDetailsList y) = LLDetailsList (x <> y)
+
+type LLSet md gq args = DHash.DHashMap SB.RowTypeTag (LLDetailsList md gq args)
+
 emptyLLSet :: LLSet md gq args
 emptyLLSet = DHash.empty
 
 addToLLSet :: SB.RowTypeTag r -> LLDetails md gq args r -> LLSet md gq args -> LLSet md gq args
-addToLLSet rtt d llSet = DHash.insert rtt d llSet
+addToLLSet rtt d llSet = DHash.insertWith addDetailsLists rtt (LLDetailsList [d]) llSet
 --data Res r = Res
 
 generateLogLikelihood' :: LLSet md gq args -> SB.StanBuilderM md gq ()
-generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
-  let prependLLSizeName sl rtt _ = SB.dataSetSizeName rtt : sl
-  llSizeListNE <- case nonEmpty (DHash.foldlWithKey prependLLSizeName [] llSet) of
+generateLogLikelihood' llList =  SB.inBlock SB.SBLogLikelihood $ do
+  let prependSizeName rtt (LLDetailsList ds) ls = Prelude.replicate (Prelude.length ds) (SB.dataSetSizeName rtt) ++ ls
+  llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llList) of
     Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
     Just x -> return x
   let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
@@ -172,7 +178,8 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
             $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
         put $ SB.name (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
-  _ <- evalStateT (DHash.traverseWithKey doOne llSet) []
+
+  _ <- evalStateT (traverse doOne llList) []
   pure ()
 
 {-
@@ -247,6 +254,14 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
 matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
 matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
   SB.stanDeclareRHS (n <> "_Transpose") (SB.StanMatrix (cd, rd)) "" $ SB.matTranspose m
+
+indexedConstIntArray :: SB.RowTypeTag r -> Int -> SB.StanBuilderM md gq SB.StanVar
+indexedConstIntArray rtt n =
+  let dsName = SB.dataSetName rtt
+      sizeName = "N_" <> dsName
+  in SB.inBlock SB.SBTransformedData
+     $ SB.stanDeclareRHS ("constIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) "<lower=0>"
+     $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
 stackDataSets :: forall md gq r1 r2. ()
                        => Text
