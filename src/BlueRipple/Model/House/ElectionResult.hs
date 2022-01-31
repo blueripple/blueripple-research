@@ -899,9 +899,17 @@ race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C 
 wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
-data TurnoutDataSet = JustCCES | JustCPS | CCESAndCPS deriving (Show, Eq)
+data TurnoutDataSet r where
+   JustCCES :: TurnoutDataSet (F.Record CCESWithDensity)
+   JustCPS :: TurnoutDataSet (F.Record CPSVWithDensity)
+   CCESAndCPS :: TurnoutDataSet ()
 
-electionModelDM :: forall rs ks r.
+printTurnoutDataSet :: TurnoutDataSet tr -> Text
+printTurnoutDataSet JustCCES = "CCES"
+printTurnoutDataSet JustCPS = "CPS"
+printTurnoutDataSet CCESAndCPS = "CCESAndCPS"
+
+electionModelDM :: forall rs ks r tr.
                    (K.KnitEffects r
                    , BR.CacheEffects r
                    , V.RecordToList ks
@@ -940,7 +948,7 @@ electionModelDM :: forall rs ks r.
                 -> Bool
                 -> BR.StanParallel
                 -> Text
-                -> TurnoutDataSet
+                -> TurnoutDataSet tr
                 -> Model
                 -> Int
                 -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
@@ -964,12 +972,13 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
               in SB.inBlock SB.SBTransformedData
                  $ SB.stanDeclareRHS ("dsIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) "<lower=0>"
                  $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
-
+            setupCCESData :: Int -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensity), SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
             setupCCESData n = do
               cvapCCES <- SB.addCountData ccesData "CVAP_CCES" (F.rgetField @Surveyed)
               votedCCES <- SB.addCountData ccesData "VOTED_CCES" (F.rgetField @Voted)
               indexCCES <- makeIndexArray ccesData n
               return (ccesData, cvapCCES, votedCCES, dmCCES, indexCCES)
+            setupCPSData :: Int -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensity), SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
             setupCPSData n = do
               cpsData <- SB.dataSetTag @(F.Record CPSVWithDensity) SC.ModelData "CPS"
               cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
@@ -978,20 +987,22 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
               indexCPS <- makeIndexArray cpsData n
               return (cpsData, cvapCPS, votedCPS, dmCPS, indexCPS)
             groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
-        (turnoutData, cvap, voted, dmTurnout, dsIndex) <- case turnoutDataSet of
-          JustCCES -> setupCCESData 0
-          JustCPS -> setupCPSData 0
-          CCESAndCPS -> do
-            (ccesData, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESData 0
-            (cpsData, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
-            (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
-            (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-              cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
-              votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
-              dmCombo' <- stackVarsF "DM" ccesDM cpsDM
-              indexCombo' <- stackVarsF "DataSetIndex" ccesIndex cpsIndex
-              return (cvapCombo', votedCombo', dmCombo', indexCombo')
-            return (comboData, cvap, voted, dmCombo, indexCombo)
+            setupTurnoutData :: forall x md gq.TurnoutDataSet x -> SB.StanBuilderM md gq (SB.RowTypeTag tr, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+            setupTurnoutData td = case turnoutDataSet of
+              JustCCES -> setupCCESData 0
+              JustCPS -> setupCPSData 0
+              CCESAndCPS -> do
+                (ccesData, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESData 0
+                (cpsData, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
+                (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
+                (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
+                  cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
+                  votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
+                  dmCombo' <- stackVarsF "DM" ccesDM cpsDM
+                  indexCombo' <- stackVarsF "DataSetIndex" ccesIndex cpsIndex
+                  return (cvapCombo', votedCombo', dmCombo', indexCombo')
+                return (comboData, cvap, voted, dmCombo, indexCombo)
+        (turnoutData, cvap, voted, dmTurnout, dsIndex) <- setupTurnoutData
         let distT = SB.binomialLogitDist cvap
             (votesF, dVotesF) = getVotes $ voteSource model
         hVotes <- SB.addCountData ccesData "VOTES_C" votesF --(F.rgetField @HouseVotes)
