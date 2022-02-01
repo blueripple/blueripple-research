@@ -90,6 +90,11 @@ import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified Stan.ModelBuilder as SB
+import qualified Control.MapReduce as FMR
+import qualified Control.MapReduce as FMR
+import qualified Control.MapReduce as FMR
+import qualified Frames.Folds as FF
+import qualified BlueRipple.Data.DemographicTypes as DT
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -179,6 +184,8 @@ type CCESWByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESWDataR = CCESWByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] --, DT.AvgIncome, DT.PopPerSqMile]
+type CCESPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] --, DT.AvgIncome, DT.PopPerSqMile]
+type CCESByCDEMR = CDKeyR V.++ [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC] V.++ CCESVotingDataR
 type CCESData = F.FrameRec CCESDataR
 type CCESWData = F.FrameRec CCESWDataR
 
@@ -213,16 +220,21 @@ instance Flat.Flat HouseModelData where
   decode = (\(h, s, p, c) -> HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
 
 type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens]
+type PUMSDataEMR = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, PUMS.Citizens, PUMS.NonCitizens]
 
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
+type PUMSByCDEMR = CDKeyR V.++ PUMSDataEMR
 type PUMSByCD = F.FrameRec PUMSByCDR
 type PUMSByStateR = StateKeyR V.++ PUMSDataR
 type PUMSByState = F.FrameRec PUMSByStateR
 -- unweighted, which we address via post-stratification
 type CensusPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CensusPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR  = CensusPredictorR V.++ BRCF.CountCols
+type CPSVDataEMR  = CensusPredictorEMR V.++ BRCF.CountCols
 type CPSVByStateR = StateKeyR V.++ CPSVDataR
-type CPSVByCDR = CDKeyR V.++ CPSVDataR
+type CPSVByStateEMR = StateKeyR V.++ CPSVDataEMR
+--type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
 type DistrictDemDataR = CDKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
@@ -483,7 +495,7 @@ cesWCountedDemVotesByCD clearCaches = do
   when clearCaches $  BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
     cesWMR 2020 ces
-
+{-
 -- NB: CDKey includes year
 cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
 cpsCountedTurnoutByCD = do
@@ -501,7 +513,7 @@ cpsCountedTurnoutByCD = do
             wgt
   cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
   BR.retrieveOrMakeFrame "model/house/cpsVByCD.bin" cpsRaw_C $ return . FL.fold fld
-
+-}
 -- NB: StateKey includes year
 cpsCountedTurnoutByState :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByStateR))
 cpsCountedTurnoutByState = do
@@ -718,35 +730,91 @@ prepCCESAndPums clearCache = do
                         (FMR.foldAndAddKey diInnerFold)
         diByCD = FL.fold diByCDFold acsCDFixed
         diByState = FL.fold diByStateFold acsCDFixed
-    ccesWD <- K.knitEither $ addPopDensByDistrictToCCES diByCD ccesByCD
-    cpsVWD <- K.knitEither $ addPopDensByStateToCPSV diByState cpsVByState
-    acsWD <- K.knitEither $ addPopDensByDistrictToPUMS diByCD acsCDFixed
+    ccesWD <- K.knitEither $ addPopDensByDistrict diByCD ccesByCD
+    cpsVWD <- K.knitEither $ addPopDensByState diByState cpsVByState
+    acsWD <- K.knitEither $ addPopDensByDistrict diByCD acsCDFixed
     return $ CCESAndPUMS ccesWD cpsVWD acsWD diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
 
 type CCESWithDensity = CCESByCDR V.++ '[DT.PopPerSqMile]
-addPopDensByDistrictToCCES :: F.FrameRec DistrictDemDataR -> F.FrameRec CCESByCDR -> Either Text (F.FrameRec CCESWithDensity)
-addPopDensByDistrictToCCES ddd cces = do
+type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PopPerSqMile]
+addPopDensByDistrict :: forall rs.(FJ.CanLeftJoinM
+                                    [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                                    rs
+                                    [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile]
+                                  , [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile]
+                                  , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.CongressionalDistrict
+                                  , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.StateAbbreviation
+                                  , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
+                                  )
+                     => F.FrameRec DistrictDemDataR -> F.FrameRec rs -> Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
+addPopDensByDistrict ddd rs = do
   let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
-      (joined, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] cces ddd'
-  when (not $ null missing) $ Left $ "missing keys in join of density data to cces: " <> show missing
+      (joined, missing) = FJ.leftJoinWithMissing
+                          @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                          @rs
+                          @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] rs ddd'
+  when (not $ null missing) $ Left $ "missing keys in join of density data by dsitrict: " <> show missing
   Right joined
+
+addPopDensByState :: forall rs.(FJ.CanLeftJoinM
+                                    [BR.Year, BR.StateAbbreviation]
+                                    rs
+                                    [BR.Year, BR.StateAbbreviation, DT.PopPerSqMile]
+                                  , [BR.Year, BR.StateAbbreviation] F.⊆ [BR.Year, BR.StateAbbreviation, DT.PopPerSqMile]
+                                  , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.StateAbbreviation
+                                  , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
+                                  )
+                     => F.FrameRec StateDemDataR -> F.FrameRec rs -> Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
+addPopDensByState ddd rs = do
+  let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, DT.PopPerSqMile] <$> ddd
+      (joined, missing) = FJ.leftJoinWithMissing
+                          @[BR.Year, BR.StateAbbreviation]
+                          @rs
+                          @[BR.Year, BR.StateAbbreviation, DT.PopPerSqMile] rs ddd'
+  when (not $ null missing) $ Left $ "missing keys in join of density data by state: " <> show missing
+  Right joined
+
+
+sumButLeaveDensity :: forall as.(as F.⊆ (as V.++ '[DT.PopPerSqMile])
+                                , F.ElemOf (as V.++ '[DT.PopPerSqMile]) DT.PopPerSqMile
+                                , FF.ConstrainedFoldable Num as
+                                )
+                   => FL.Fold (F.Record (as V.++ '[DT.PopPerSqMile])) (F.Record (as V.++ '[DT.PopPerSqMile]))
+sumButLeaveDensity =
+  let sumF = FL.premap (F.rcast @as) $ FF.foldAllConstrained @Num FL.sum
+      densF =  fmap (FT.recordSingleton @DT.PopPerSqMile . fromMaybe 0)
+               $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.last
+  in (F.<+>) <$> sumF <*> densF
+
+
+fldAgeInCPS :: FL.Fold (F.Record CPSVWithDensity) (F.FrameRec CPSVWithDensityEM)
+fldAgeInCPS = FMR.concatFold
+              $ FMR.mapReduceFold
+              FMR.noUnpack
+              (FMR.assignKeysAndData @(StateKeyR V.++ CensusPredictorEMR))
+              (FMR.foldAndAddKey $ sumButLeaveDensity @BRCF.CountCols)
+
+fldAgeInACS :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec PUMSWithDensityEM)
+fldAgeInACS = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @(CDKeyR V.++ CensusPredictorEMR))
+               (FMR.foldAndAddKey $ sumButLeaveDensity @'[PUMS.Citizens, PUMS.NonCitizens])
+
+
+fldAgeInCCES :: FL.Fold (F.Record CCESWithDensity) (F.FrameRec CCESWithDensityEM)
+fldAgeInCCES = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @(CDKeyR V.++ CCESPredictorEMR))
+               (FMR.foldAndAddKey $ sumButLeaveDensity @CCESVotingDataR)
 
 type PUMSWithDensity = PUMSByCDR V.++ '[DT.PopPerSqMile]
-addPopDensByDistrictToPUMS :: F.FrameRec DistrictDemDataR -> F.FrameRec PUMSByCDR -> Either Text (F.FrameRec PUMSWithDensity)
-addPopDensByDistrictToPUMS ddd cces = do
-  let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
-      (joined, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] cces ddd'
-  when (not $ null missing) $ Left $ "missing keys in join of density data to pums: " <> show missing
-  Right joined
+type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
 
 type CPSVWithDensity = CPSVByStateR V.++ '[DT.PopPerSqMile]
-addPopDensByStateToCPSV :: F.FrameRec StateDemDataR -> F.FrameRec CPSVByStateR -> Either Text (F.FrameRec CPSVWithDensity)
-addPopDensByStateToCPSV sdd cpsV = do
-  let sdd' = F.rcast @[BR.Year, BR.StateAbbreviation, DT.PopPerSqMile] <$> sdd
-      (joined, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] cpsV sdd'
-  when (not $ null missing) $ Left $ "missing keys in join of density data to cpsV: " <> show missing
-  Right joined
+type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
 
 race5FromRace4AAndHisp :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> DT.Race5
 race5FromRace4AAndHisp r =
@@ -1900,12 +1968,13 @@ race5FromCPS r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
--}
+
 race5FromCensus :: F.Record CPSVByCDR -> DT.Race5
 race5FromCensus r =
   let race4A = F.rgetField @DT.RaceAlone4C r
       hisp = F.rgetField @DT.HispC r
   in DT.race5FromRaceAlone4AndHisp True race4A hisp
+-}
 
 -- many many people who identify as hispanic also identify as white. So we need to choose.
 -- Better to model using both
