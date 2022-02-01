@@ -1048,11 +1048,11 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
         SB.inBlock SB.SBGeneratedQuantities $ do
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muT
             SB.useDataSetForBindings ccesData $ DM.splitToGroupVars (designMatrixRow @CCESWithDensity) muP
-        let llSet = case turnoutDataSet of
+        let llSet :: SB.LLSet CCESAndPUMS (F.FrameRec rs) SB.StanExpr = case turnoutDataSet of
               JustCCES -> SB.addToLLSet ccesData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)
                           $ SB.addToLLSet ccesData (SB.LLDetails distP (pure $ predE alphaP dmP thetaP) dVotes)
                           $ SB.emptyLLSet
-              JustCPS -> SB.addToLLSet cpsData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)
+              JustCPS -> SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)
                          $ SB.addToLLSet ccesData (SB.LLDetails distP (pure $ predE alphaP dmP thetaP) dVotes)
                          $ SB.emptyLLSet
               CCESAndCPS -> SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ predE alphaT dmT thetaT) voted)

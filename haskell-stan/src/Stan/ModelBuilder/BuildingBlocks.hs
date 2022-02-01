@@ -158,9 +158,9 @@ addToLLSet rtt d llSet = DHash.insertWith addDetailsLists rtt (LLDetailsList [d]
 --data Res r = Res
 
 generateLogLikelihood' :: LLSet md gq args -> SB.StanBuilderM md gq ()
-generateLogLikelihood' llList =  SB.inBlock SB.SBLogLikelihood $ do
+generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   let prependSizeName rtt (LLDetailsList ds) ls = Prelude.replicate (Prelude.length ds) (SB.dataSetSizeName rtt) ++ ls
-  llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llList) of
+  llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llSet) of
     Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
     Just x -> return x
   let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
@@ -178,8 +178,9 @@ generateLogLikelihood' llList =  SB.inBlock SB.SBLogLikelihood $ do
             $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
         put $ SB.name (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
-
-  _ <- evalStateT (traverse doOne llList) []
+      doList ::  SB.RowTypeTag a -> LLDetailsList md gq args a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+      doList rtt (LLDetailsList lls) = traverse_ (doOne rtt) lls >> pure rtt
+  _ <- evalStateT (DHash.traverseWithKey doList llSet) []
   pure ()
 
 {-
