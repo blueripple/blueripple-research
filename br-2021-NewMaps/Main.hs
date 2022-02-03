@@ -358,7 +358,7 @@ newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C cces
                             )
       modelDM :: BRE.Model -> BRE.TurnoutDataSet x -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM m tds name = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir tds m 2020 (psInfoDM name m) ccesAndCPS2020_C
-      dmModel = BRE.Model BRE.HouseVS BRE.DMG BRE.LogDensity BRE.DMD
+      dmModel = BRE.Model BRE.CompositeVS BRE.DMG BRE.LogDensity BRE.DMD
 --  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
   modelDM dmModel BRE.JustCCES (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)

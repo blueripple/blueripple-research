@@ -1074,7 +1074,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
             setupCCESData n = do
               dmCCES <- DM.addDesignMatrix ccesTData designMatrixRow
               cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
-              votedCCES <- SB.addCountData ccesTData "VOTED_CCES" (F.rgetField @Voted)
+              votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted)
               indexCCES <- SB.indexedConstIntArray ccesTData n
               return (ccesTData, cvapCCES, votedCCES, dmCCES, indexCCES)
             setupCPSData ::  (Typeable md, Typeable gq)
@@ -1082,8 +1082,8 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
                          -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM), SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
             setupCPSData n = do
               cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
-              cvapCPS <- SB.addCountData cpsData "CPS_CVAP" (F.rgetField @BRCF.Count)
-              votedCPS <- SB.addCountData cpsData "CPS_VOTED" (F.rgetField @BRCF.Successes)
+              cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
+              votedCPS <- SB.addCountData cpsData "Voted_CPS" (F.rgetField @BRCF.Successes)
               dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
               indexCPS <- SB.indexedConstIntArray cpsData n
               return (cpsData, cvapCPS, votedCPS, dmCPS, indexCPS)
@@ -1110,9 +1110,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
         ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCESP"
         dmPref <- DM.addDesignMatrix ccesPData designMatrixRow
         let (votesF, dVotesF) = getVotes $ voteSource model
-        hVotes <- SB.addCountData ccesPData "VOTES_C" votesF --(F.rgetField @HouseVotes)
-        dVotes <- SB.addCountData ccesPData "DVOTES_C" dVotesF --(F.rgetField @HouseDVotes)
-        let distP = SB.binomialLogitDist hVotes
+        rVotes <- SB.addCountData ccesPData "VotesInRace" votesF --(F.rgetField @HouseVotes)
+        dVotes <- SB.addCountData ccesPData "DVotesInRace" dVotesF --(F.rgetField @HouseDVotes)
+        let distP = SB.binomialLogitDist rVotes
 
         (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
         (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
@@ -1172,9 +1172,16 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
                           $ SB.emptyLLSet
         SB.generateLogLikelihood' llSet
 
-        let ppVar = SB.StanVar "PVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName turnoutData)
+        -- for posterior predictive checks
+        let ppVoted = SB.StanVar "PVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName turnoutData)
         SB.useDataSetForBindings turnoutData
-          $ SB.generatePosteriorPrediction turnoutData ppVar distT $ iPred alphaT dmT thetaT
+          $ SB.generatePosteriorPrediction turnoutData ppVoted distT $ iPred alphaT dmT thetaT
+
+        let ppDVotes = SB.StanVar "PDVotesInRace" (SB.StanVector $ SB.NamedDim $ SB.dataSetName ccesPData)
+        SB.useDataSetForBindings ccesPData
+          $ SB.generatePosteriorPrediction ccesPData ppDVotes distP $ pred alphaP dmP thetaP
+
+        -- post-stratification
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
@@ -1245,6 +1252,10 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
             groups = groupBuilderDM (voteSource model) psGroup states psKeys
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
+  let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
+        JustCCES -> SR.UnwrapNamed "CVAP_CCES" "ObsVoted"
+        JustCPS -> SR.UnwrapNamed "CPS_CVAP" "ObsVoted"
+        CCESAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_CCES, jsonData$Voted_CPS)" "ObsVoted"
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (fmap FS.unSFrame)
     $ MRP.runMRPModel
@@ -1254,11 +1265,12 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
     stanParallelCfg
     dw
     stanCode
-    "Votes"
+    (MRP.Both [unwrapVoted, SR.UnwrapNamed "DVotesInRace" "ObsDVotes"])
     extractResults
     dat_C
     psDat_C
 
+{-
 groupBuilder :: forall rs ks.
                 ( F.ElemOf rs BR.StateAbbreviation
                 , F.ElemOf rs DT.CollegeGradC
@@ -1292,7 +1304,7 @@ groupBuilder psGroup districts states psKeys = do
   SB.addGroupIndexForData raceGroup psData $ SB.makeIndexFromEnum (F.rgetField @DT.Race5C)
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
   return ()
-
+-}
 
 data GroupModel = BaseG
                 | DMG
@@ -1393,7 +1405,7 @@ modelLabel m = printVoteSource (voteSource m)
                <> "_" <> show (groupModel m)
                <> "_" <> printDensityTransform (densityTransform m)
                <> "_" <> show (densityModel m)
-
+{-
 densityModelBuilder :: forall md gq. (Typeable md, Typeable gq)
                     => DensityModel
                     -> SFE.FEMatrixes
@@ -1992,7 +2004,7 @@ electionModel clearCaches parallel stanParallelCfg modelDir model datYear (psGro
     extractResults
     dat_C
     psDat_C
-
+-}
 type SLDLocation = (Text, ET.DistrictType, Int)
 
 sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]

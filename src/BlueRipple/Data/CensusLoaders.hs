@@ -192,6 +192,13 @@ censusTablesForSLDs = censusTablesByDistrict fileByYear "existingSLDs" where
                , (BRC.TY2018, censusDataDir <> "/oh_2020_sldl.csv")
                ]
 
+censusTablesFor2022SLDs ::  (K.KnitEffects r
+                        , BR.CacheEffects r)
+                    => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesFor2022SLDs = censusTablesByDistrict fileByYear "SLDs_2022" where
+  fileByYear = []
+
+
 checkAllCongressionalAndConvert :: forall r a b.
                                    (K.KnitEffects r
                                    , F.ElemOf ((a V.++ b V.++ '[Count]) V.++ '[BR.CongressionalDistrict]) BR.CongressionalDistrict

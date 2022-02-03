@@ -10,6 +10,7 @@
 module Stan.ModelRunner
   ( module Stan.ModelRunner,
     module CmdStan,
+    UnwrapJSON
   )
 where
 
@@ -34,6 +35,7 @@ import qualified Say
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
+import Stan.RScriptBuilder (UnwrapJSON)
 import qualified Stan.SamplerCSV as SCSV
 import qualified System.Directory as Dir
 import qualified System.Environment as Env

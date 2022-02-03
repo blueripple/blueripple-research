@@ -13,7 +13,13 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC  -O0 #-}
 
-module BlueRipple.Model.StanMRP where
+module BlueRipple.Model.StanMRP
+  (
+    module BlueRipple.Model.StanMRP
+  , RScripts(..)
+  , UnwrapJSON(..)
+  )
+where
 
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
@@ -48,6 +54,7 @@ import qualified Stan.JSON as SJ
 import qualified Stan.Frames as SF
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
+import Stan.ModelRunner (RScripts)
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.GroupModel as SB
@@ -56,6 +63,7 @@ import qualified Stan.ModelBuilder.FixedEffects as SB
 import qualified Stan.ModelBuilder.Distributions as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
+import Stan.RScriptBuilder (UnwrapJSON)
 import qualified System.Environment as Env
 
 import qualified Knit.Report as K
@@ -102,12 +110,12 @@ runMRPModel :: (K.KnitEffects r
             -> BR.StanParallel
             -> SC.DataWrangler md gq b ()
             -> SB.StanCode
-            -> Text
+            -> SM.RScripts
             -> SC.ResultAction r md gq b () c
             -> K.ActionWithCacheTime r md
             -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode ppName resultAction modelData_C gqData_C =
+runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode rScripts resultAction modelData_C gqData_C =
   K.wrapPrefix "StanMRP.runModel" $ do
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
@@ -138,12 +146,12 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
   K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)
   let dataModelDep = (,,) <$> modelDep <*> modelData_C <*> gqData_C
       getResults s () inputAndIndex_C = return ()
-      unwraps = [SR.UnwrapNamed ppName ppName]
+--      unwraps = [SR.UnwrapNamed ppName ppName]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \_ -> do
     K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
     SM.runModel @BR.SerializerC @BR.CacheData
       stanConfig
-      (SM.Both unwraps)
+      rScripts --(SM.Both unwraps)
       dataWrangler
       SC.UnCacheable -- we cannot use a Cacheable index here
       resultAction
