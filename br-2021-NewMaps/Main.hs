@@ -132,7 +132,7 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    newMapAnalysis stanParallelCfg parallel
+    newCongressionalMapPosts stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -245,20 +245,26 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
     return $ (F.rcast . addRace5 <$> cdDataSER)
 
-{-
-prepCCESDM :: (K.KnitMany r, BR.CacheEffects r)
-           => Bool
-           -> K.ActionWithCacheTime r (F.FrameRec BRE.DistrictDemDataR)
-           -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESByCDR)
-           -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensity))
-prepCCESDM clearCaches ddd_C cces_C = do
-  let cacheKey = "data/newMaps/ccesWithDensity.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ((,) <$> ddd_C <*> cces_C)
-    $ \(ddd, cces) -> K.knitEither $ BRE.addPopDensByDistrictToCCES ddd cces
--}
-newMapAnalysis :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
-newMapAnalysis stanParallelCfg parallel = do
+
+newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
+newStateLegMapPosts stanParallelCfg parallel = do
+  ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
+  let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
+      onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
+      onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
+  proposedDistricts_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
+  let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  ncPaths <- postPaths "NC_StateLeg"
+  BR.brNewPost ncPaths postInfoNC "NC_SLD" $ do
+    ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower)
+    ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper)
+    newStateLegMapAnalysis False stanParallelCfg parallel ncLowerDRA ncUpperDRA postInfoNC
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedDistricts_C)
+
+newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
+newCongressionalMapPosts stanParallelCfg parallel = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
@@ -275,7 +281,7 @@ newMapAnalysis stanParallelCfg parallel = do
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewMapPostSpec "NC" ncPaths
               <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
-    newMapsTest False stanParallelCfg parallel ncNMPS postInfoNC
+    newCongressionalMapAnalysis False stanParallelCfg parallel ncNMPS postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
@@ -286,7 +292,7 @@ newMapAnalysis stanParallelCfg parallel = do
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewMapPostSpec "TX" txPaths
             <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
-    newMapsTest False stanParallelCfg parallel txNMPS postInfoTX
+    newCongressionalMapAnalysis False stanParallelCfg parallel txNMPS postInfoTX
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX" . BRE.pumsEMRows) ccesAndCPSEM_C)
@@ -328,18 +334,31 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 data NewMapPostSpec = NewMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
-newMapsTest :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
-            => Bool
-            -> BR.StanParallel
-            -> Bool
-            -> NewMapPostSpec
-            -> BR.PostInfo
-            -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
-            -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
-            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
-            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
-            -> K.Sem r ()
-newMapsTest clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndCPSEM_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
+newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+                       => Bool
+                       -> BR.StanParallel
+                       -> Bool
+                       -> F.Frame Redistrict.DRAnalysis -- lower
+                       -> F.Frame Redistrict.DRAnalysis -- upper
+                       -> BR.PostInfo
+                       -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
+                       -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
+                       -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
+                       -> K.Sem r ()
+newStateLegMapAnalysis clearCaches stanParallelCfg parallel lowerDRA upperDRA postInfo ccesWD_C ccesAndCPSEM_C proposedDemo_C = undefined
+
+newCongressionalMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
+                            => Bool
+                            -> BR.StanParallel
+                            -> Bool
+                            -> NewMapPostSpec
+                            -> BR.PostInfo
+                            -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
+                            -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
+                            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
+                            -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
+                            -> K.Sem r ()
+newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndCPSEM_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
   let (NewMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
   K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
   let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
