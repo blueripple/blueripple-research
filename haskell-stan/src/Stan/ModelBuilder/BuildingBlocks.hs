@@ -261,7 +261,7 @@ indexedConstIntArray rtt n =
   let dsName = SB.dataSetName rtt
       sizeName = "N_" <> dsName
   in SB.inBlock SB.SBTransformedData
-     $ SB.stanDeclareRHS ("constIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) "<lower=0>"
+     $ SB.stanDeclareRHS ("constIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
      $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
 stackDataSets :: forall md gq r1 r2. ()
