@@ -1,4 +1,4 @@
-packages: ./ ~/DataScience/heidi ~/DataScience/Frames-streamly
+packages: ./ ../data-sets ~/DataScience/heidi ~/DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -50,10 +50,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/hs-cmdstan
   tag: 0cdb6d634faeedf8728a37b5ae4aecaf05022bb2
 
-source-repository-package
-  type: git
-  location: https://github.com/blueripple/data-sets
-  tag: d7f3238eba6726c12ac89e0f6fd00fa2f4c1704c
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: d7f3238eba6726c12ac89e0f6fd00fa2f4c1704c
 
 source-repository-package
   type: git

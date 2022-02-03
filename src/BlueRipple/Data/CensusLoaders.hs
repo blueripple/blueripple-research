@@ -196,8 +196,8 @@ censusTablesFor2022SLDs ::  (K.KnitEffects r
                         , BR.CacheEffects r)
                     => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesFor2022SLDs = censusTablesByDistrict fileByYear "SLDs_2022" where
-  fileByYear = [(BRC.TY2018, censusDataDir <> "nc_2022_sldl.csv")
-               ,(BRC.TY2018, censusDataDir <> "nc_2022_sldu.csv")
+  fileByYear = [(BRC.TY2018, censusDataDir <> "/nc_2022_sldl.csv")
+               ,(BRC.TY2018, censusDataDir <> "/nc_2022_sldu.csv")
                ]
 
 

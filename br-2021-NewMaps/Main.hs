@@ -90,6 +90,7 @@ import qualified Stan.Parameters.Massiv as SPM
 import qualified CmdStan as CS
 import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
+import BlueRipple.Data.Loaders (stateAbbrCrosswalkLoader)
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -132,7 +133,8 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    newCongressionalMapPosts stanParallelCfg parallel
+--    newCongressionalMapPosts stanParallelCfg parallel
+    newStateLegMapPosts stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -225,7 +227,8 @@ showVACPS cps = do
       aggregatedRaw = FL.fold (aggregatePredictorsCountyFld aFld) cpsRaw
   BR.logFrame aggregatedRaw
 -}
-
+onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
+onlyState stateAbbr = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
 
 prepCensusDistrictData :: (K.KnitEffects r, BR.CacheEffects r)
                    => Bool
@@ -250,15 +253,14 @@ newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanPar
 newStateLegMapPosts stanParallelCfg parallel = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
-      onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
-      onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
   proposedDistricts_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
   let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   ncPaths <- postPaths "NC_StateLeg"
   BR.brNewPost ncPaths postInfoNC "NC_SLD" $ do
     ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower)
     ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper)
-    newStateLegMapAnalysis False stanParallelCfg parallel ncLowerDRA ncUpperDRA postInfoNC
+    let postSpec = NewSLDMapsPostSpec "NC" ncPaths ncLowerDRA ncUpperDRA
+    newStateLegMapAnalysis False stanParallelCfg parallel postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedDistricts_C)
@@ -274,12 +276,10 @@ newCongressionalMapPosts stanParallelCfg parallel = do
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       fixPums :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
       fixPums = F.rcast . addRace5 . addDistrict . addCount
-      onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
-      onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
   let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfoNC "NC" $ do
-    ncNMPS <- NewMapPostSpec "NC" ncPaths
+    ncNMPS <- NewCDMapPostSpec "NC" ncPaths
               <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
     newCongressionalMapAnalysis False stanParallelCfg parallel ncNMPS postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
@@ -290,7 +290,7 @@ newCongressionalMapPosts stanParallelCfg parallel = do
   let postInfoTX = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 1 25) Nothing)
   txPaths <- postPaths "TX_Congressional"
   BR.brNewPost txPaths postInfoTX "TX" $ do
-    txNMPS <- NewMapPostSpec "TX" txPaths
+    txNMPS <- NewCDMapPostSpec "TX" txPaths
             <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
     newCongressionalMapAnalysis False stanParallelCfg parallel txNMPS postInfoTX
       (K.liftActionWithCacheTime ccesWD_C)
@@ -332,40 +332,57 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
-data NewMapPostSpec = NewMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
+data NewSLDMapsPostSpec = NewSLDMapsPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis) (F.Frame Redistrict.DRAnalysis)
 
 newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                        => Bool
                        -> BR.StanParallel
                        -> Bool
-                       -> F.Frame Redistrict.DRAnalysis -- lower
-                       -> F.Frame Redistrict.DRAnalysis -- upper
+                       -> NewSLDMapsPostSpec
                        -> BR.PostInfo
                        -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
                        -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
                        -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
                        -> K.Sem r ()
-newStateLegMapAnalysis clearCaches stanParallelCfg parallel lowerDRA upperDRA postInfo ccesWD_C ccesAndCPSEM_C proposedDemo_C = undefined
+newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndCPSEM_C proposedDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
+  let (NewSLDMapsPostSpec stateAbbr postPaths draLower draUpper) = postSpec
+  K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      modelDir =  "br-2021-NewMaps/stanDMPhi"
+      dmModel = BRE.Model BRE.CompositeVS BRE.DMG BRE.LogDensity BRE.DMD
+      mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      postStratInfo = (mapGroup
+                      , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform $ BRE.densityTransform dmModel)
+                      , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
+                      )
+      modelDM :: BRE.TurnoutDataSet x -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      modelDM tds = K.ignoreCacheTimeM . BRE.electionModelDM False parallel stanParallelCfg modelDir tds dmModel 2020 postStratInfo ccesAndCPS2020_C
+  modeled <- modelDM BRE.CCESAndCPS $ (fmap F.rcast <$> proposedDemo_C)
+  BR.logFrame modeled
+  proposedDemo <- K.ignoreCacheTime proposedDemo_C
+  BR.logFrame proposedDemo
+  pure ()
+
+
+data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
 newCongressionalMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                             => Bool
                             -> BR.StanParallel
                             -> Bool
-                            -> NewMapPostSpec
+                            -> NewCDMapPostSpec
                             -> BR.PostInfo
                             -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
                             -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
                             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
                             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
                             -> K.Sem r ()
-newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndCPSEM_C extantDemo_C proposedDemo_C = K.wrapPrefix "newMapsTest" $ do
-  let (NewMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
+newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo ccesWD_C ccesAndCPSEM_C extantDemo_C proposedDemo_C = K.wrapPrefix "newCongressionalMapsAnalysis" $ do
+  let (NewCDMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
   K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
   let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
       ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
-      onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => F.FrameRec xs -> F.FrameRec xs
-      onlyState = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
@@ -388,7 +405,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
   let extantForPost = extantBaseHV
       proposedForPost = proposedBaseHV
   elections_C <- BR.houseElectionsWithIncumbency
-  elections <- fmap onlyState $ K.ignoreCacheTime elections_C
+  elections <- fmap (onlyState stateAbbr) $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
   let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
@@ -429,7 +446,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsBar"
     let (demoElexModelExtant, missing1E, missing2E)
           = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-            (onlyState extantDemo)
+            (onlyState stateAbbr extantDemo)
             flattenedElections
             extantBaseHV
 --            extantPlusStateAndStateRace_RaceDensityNC
@@ -516,7 +533,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
        proposedDemo
   let (demoModelAndDR, missing1P, missing2P)
         = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-          (onlyState proposedDemo)
+          (onlyState stateAbbr proposedDemo)
           proposedForPost
 --          proposedPlusStateAndStateRace_RaceDensityNC
           (fmap addTwoPartyDShare drAnalysis)
