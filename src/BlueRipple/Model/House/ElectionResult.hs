@@ -1253,8 +1253,8 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
   let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
-        JustCCES -> SR.UnwrapNamed "CVAP_CCES" "ObsVoted"
-        JustCPS -> SR.UnwrapNamed "CPS_CVAP" "ObsVoted"
+        JustCCES -> SR.UnwrapNamed "Voted_CCES" "ObsVoted"
+        JustCPS -> SR.UnwrapNamed "Voted_CPS" "ObsVoted"
         CCESAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_CCES, jsonData$Voted_CPS)" "ObsVoted"
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (fmap FS.unSFrame)
