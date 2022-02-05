@@ -342,7 +342,7 @@ addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typea
                       -> PostStratificationType -- raw or share
                       -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
                       -> BuilderM md gq SB.StanVar
-addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups {-sumOverGroups-} weightF psType mPSGroup = do
+addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
       modelDataSetName = SB.dataSetName rttModel

@@ -212,7 +212,10 @@ getGroupIndex rtt gtt groupIndexes =
   case DHash.lookup rtt groupIndexes of
     Nothing -> Left
                $ dataSetName rtt <> " (idt="
-               <> show (inputDataType rtt) <> ") not found in data-set group int maps: " <> displayDataSetGroupIntMaps groupIndexes
+               <> show (inputDataType rtt) <> ") not found in data-set group int maps: "
+               <> displayDataSetGroupIntMaps groupIndexes <> "."
+               <> " If this error is complaining about a data-set key that appears to be present, double check the *types* used when constructing the row-type-tags"
+
     Just (GroupIntMaps gim) -> case DHash.lookup gtt gim of
       Nothing -> Left $ "\"" <> taggedGroupName gtt <> "\" not found in Group int maps for data-set \"" <> dataSetName rtt <> "\""
       Just im -> Right im
@@ -302,6 +305,7 @@ buildJSONFromRows rowFoldMap d = do
   let toSeriesOne (rtt DSum.:=> JSONRowFold (ToFoldable tf) fld) = Foldl.foldM fld (tf d)
   fmap mconcat $ traverse toSeriesOne $ DHash.toList rowFoldMap
 
+
 -- The Maybe return values are there just to satisfy the (returned) type of DHash.traverseWithKey
 buildGroupIndexes :: (Typeable md, Typeable gq) => StanBuilderM md gq ()
 buildGroupIndexes = do
@@ -311,9 +315,7 @@ buildGroupIndexes = do
             indexName = groupIndexVarName rtt gtt --dsName <> "_" <> gName
         addFixedIntJson' ("J_" <> gName) (Just 1) gSize
         _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
---        addDeclBinding gName $ SME.name $ "J_" <> gName -- ??
         addDeclBinding gName $ SME.StanVar ("J_" <> gName) SME.StanInt
---        addUseBinding dsName gName $ SME.indexBy (SME.name gName) dsName
         return Nothing
       buildRowFolds :: (Typeable md, Typeable gq) => RowTypeTag r -> RowInfo d r -> StanBuilderM md gq (Maybe r)
       buildRowFolds rtt (RowInfo _ _ (GroupIndexes gis) _ _) = do
