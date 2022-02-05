@@ -708,7 +708,7 @@ prepCCESAndPums clearCache = do
     return res
   K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "CPS: Post Achen/Hur"
   K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
-  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Pre" pumsByCD_C countedCCES_C
+  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePre" CompositeVS pumsByCD_C countedCCES_C
   BR.logFrame ccesDiagnosticStatesPre
 
   let ccesAchenHurDeps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> stateTurnout_C
@@ -748,7 +748,7 @@ prepCCESAndPums clearCache = do
     return res
 
   K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
-  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "Post "pumsByCD_C ccesAchenHur_C
+  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePost" CompositeVS pumsByCD_C ccesAchenHur_C
   BR.logFrame ccesDiagnosticStatesPost
   let deps = (,,) <$> ccesAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
@@ -915,15 +915,16 @@ type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 => Bool
                 -> Text
+                -> VoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
                 -> K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
                 -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, CVAP, Voters, DemVoters, Turnout, ET.DemShare]
                                                       , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, CVAP, Voters, DemVoters, Turnout, ET.DemShare])))
-ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
+ccesDiagnostics clearCaches cacheSuffix vs acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyed r =  F.rgetField @Surveyed r
       pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ surveyed r)
-      pD r = let hv = F.rgetField @HouseVotes r in if hv == 0 then 0 else (realToFrac $ F.rgetField @HouseDVotes r)/(realToFrac hv)
+      pD r = let (v, dv) = getVotes vs in if v r == 0 then 0 else (realToFrac $ dv r)/(realToFrac $ v r)
       cvap = realToFrac . F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc = let voters = (pT rw * cvap rc) in (F.rgetField @PUMS.Citizens rc F.&: voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [CVAP, Voters, DemVoters]
