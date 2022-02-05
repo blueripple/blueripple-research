@@ -133,7 +133,8 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    newCongressionalMapPosts stanParallelCfg parallel
+    modelDiagnostics stanParallelCfg parallel
+--    newCongressionalMapPosts stanParallelCfg parallel
 --    newStateLegMapPosts stanParallelCfg parallel
 
   case resE of
@@ -249,6 +250,67 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
     return $ (F.rcast . addRace5 <$> cdDataSER)
 
 
+modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
+modelDiagnostics stanParallelCfg parallel = do
+  ccesAndPums_C <- BRE.prepCCESAndPums False
+  ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
+  acs_C <- BRE.prepACS False
+
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+      ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
+      modelDir =  "br-2021-NewMaps/stanDMPhi"
+      vs = BRE.CompositeVS
+      dmModel = BRE.Model vs BRE.DMG BRE.LogDensity BRE.DMD
+      mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      name = "Diagnostic"
+      postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
+      modelDM :: BRE.TurnoutDataSet x -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      modelDM tds x = do
+        let gqDeps = (,) <$> acs2020_C <*> x
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir tds dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
+      postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  (crossTabsCPS, _) <- modelDM BRE.JustCPS (fmap fixACS <$> acs2020_C)
+  diag_C <- BRE.ccesDiagnostics False "DiagPost" vs
+            (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
+            (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
+  (ccesDiagByState, _) <- K.ignoreCacheTime diag_C
+  let (diagTable, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] (BRE.byState crossTabsCPS) ccesDiagByState
+  when (not $ null missing) $ K.logLE K.Diagnostic $ "Missing keys in state crossTabs/ccesDiag join: " <> show missing
+  diagnosticsPaths <- postPaths "Diagnostics"
+--  BR.logFrame ccesDiagByState
+--  BR.logFrame $ BRE.byState crossTabsCPS
+--  BR.logFrame diagTable
+  BR.brNewPost diagnosticsPaths postInfoDiagnostics "Diagnostics" $ do
+    BR.brAddRawHtmlTable
+      "Diagnostics"
+      (BHA.class_ "brTable")
+      (diagTableColonnade mempty)
+      diagTable
+    pure ()
+
+diagTableColonnade cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      cvap = F.rgetField @ET.CVAP
+      voters = F.rgetField @BRE.Voters
+      demVoters = F.rgetField @BRE.DemVoters
+      rawTurnout = F.rgetField @BRE.Turnout
+      rawDShare = F.rgetField @ET.DemShare
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
+      <> C.headed "Votes" (BR.toCell cas "Votes" "Votes" (BR.numberToStyledHtml "%2.0f" . voters))
+      <> C.headed "Dem Votes" (BR.toCell cas "D Votes" "D Votes" (BR.numberToStyledHtml "%2.0f" . demVoters))
+      <> C.headed "Raw Turnout" (BR.toCell cas "Raw Turnout" "Raw Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . rawTurnout))
+      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
+      <> C.headed "Raw D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
+      <> C.headed "Modeled D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+
+
+
+
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newStateLegMapPosts stanParallelCfg parallel = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
@@ -267,6 +329,18 @@ newStateLegMapPosts stanParallelCfg parallel = do
       (K.liftActionWithCacheTime acs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedDistricts_C)
 
+addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
+addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
+
+addCount :: (F.ElemOf rs PUMS.Citizens) => F.Record rs -> F.Record (rs V.++ '[BRC.Count])
+addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
+
+addDistrict :: (F.ElemOf rs ET.CongressionalDistrict) => F.Record rs -> F.Record (rs V.++ '[ET.DistrictTypeC, ET.DistrictNumber])
+addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+
+fixACS :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
+fixACS = F.rcast . addRace5 . addDistrict . addCount
+
 newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newCongressionalMapPosts stanParallelCfg parallel = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
@@ -274,11 +348,7 @@ newCongressionalMapPosts stanParallelCfg parallel = do
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
-  let addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
-      addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
-      fixPums :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
-      fixPums = F.rcast . addRace5 . addDistrict . addCount
+
   let postInfoNC = BR.PostInfo BR.LocalDraft (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
   ncPaths <-  postPaths "NC_Congressional"
   BR.brNewPost ncPaths postInfoNC "NC" $ do
@@ -300,7 +370,7 @@ newCongressionalMapPosts stanParallelCfg parallel = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap fixPums . onlyState "TX") acs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap fixACS . onlyState "TX") acs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
 
 districtColonnade cas =
