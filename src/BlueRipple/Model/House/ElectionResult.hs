@@ -272,29 +272,32 @@ instance Flat.Flat CCESAndPUMS where
 
 data CCESAndCPSEM = CCESAndCPSEM { ccesEMRows :: F.FrameRec CCESWithDensityEM
                                  , cpsVEMRows :: F.FrameRec CPSVWithDensityEM
+                                 , electionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])
                                  } deriving (Generic)
 
 instance Flat.Flat CCESAndCPSEM where
-  size (CCESAndCPSEM cces cpsV) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV) n
-  encode (CCESAndCPSEM cces cpsV) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV)
-  decode = (\(cces, cpsV) -> CCESAndCPSEM (FS.unSFrame cces) (FS.unSFrame cpsV)) <$> Flat.decode
+  size (CCESAndCPSEM cces cpsV elex) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame elex) n
+  encode (CCESAndCPSEM cces cpsV elex) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame elex)
+  decode = (\(cces, cpsV, elex) -> CCESAndCPSEM (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame elex)) <$> Flat.decode
 
 ccesAndCPSForYears :: [Int] -> CCESAndCPSEM -> CCESAndCPSEM
-ccesAndCPSForYears ys (CCESAndCPSEM cces cpsV) =
+ccesAndCPSForYears ys (CCESAndCPSEM cces cpsV elex) =
   let f :: (FI.RecVec rs, F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
       f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-  in CCESAndCPSEM (f cces) (f cpsV)
+  in CCESAndCPSEM (f cces) (f cpsV) (f elex)
 
 prepCCESAndCPSEM :: (K.KnitEffects r, BR.CacheEffects r)
                  => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndCPSEM)
 prepCCESAndCPSEM clearCache = do
   ccesAndPUMS_C <- prepCCESAndPums clearCache
+  elex_C <- prepPresidentialElectionData clearCache
   let cacheKey = "model/house/CCESAndCPSEM.bin"
+      deps = (,) <$> ccesAndPUMS_C <*> elex_C
   when clearCache $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeD cacheKey ccesAndPUMS_C $ \ccesAndPums -> do
+  BR.retrieveOrMakeD cacheKey deps $ \(ccesAndPums, elex) -> do
     let ccesEM = FL.fold fldAgeInCCES $ ccesRows ccesAndPums
         cpsVEM = FL.fold fldAgeInCPS $ cpsVRows ccesAndPums
-    return $ CCESAndCPSEM ccesEM cpsVEM
+    return $ CCESAndCPSEM ccesEM cpsVEM elex
 
 prepACS :: (K.KnitEffects r, BR.CacheEffects r)
         => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSWithDensityEM))
@@ -440,7 +443,7 @@ aggregatePartiesF =
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
-type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ BR.ElectionDataCols V.++ DemographicsR
+type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
@@ -454,13 +457,14 @@ prepPresidentialElectionData clearCache = do
   let deps = (,) <$> presElex_C <*> acs_C
       makeFrame :: (K.KnitEffects r)
                 => F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
-                -> F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ PUMSDataR)
+                -> F.FrameRec PUMS.PUMS
                 -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation]))
       makeFrame pElex acs = do
+        let addOffice rs = FT.recordSingleton @ET.Office ET.President F.<+> rs
         flattenedElex <- K.knitEither $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation]) (fmap F.rcast pElex)
-        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] (fmap F.rcast acs)
+        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] $ pumsByState acs
             (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
-        return $ fmap F.rcast elexWithDemo
+        return $ fmap (F.rcast . addOffice) elexWithDemo
   BR.retrieveOrMakeFrame cacheKey deps
     $ \(pElex, acs) -> makeFrame (fmap F.rcast pElex) (fmap F.rcast acs)
 
@@ -890,7 +894,7 @@ type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 => Bool
                 -> Text
-                -> VoteSource
+                -> CCESVoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
                 -> K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
                 -> K.Sem r (K.ActionWithCacheTime r ((F.FrameRec [BR.Year,BR.StateAbbreviation, CVAP, Voters, DemVoters, Turnout, ET.DemShare]
@@ -935,13 +939,14 @@ ccesDiagnostics clearCaches cacheSuffix vs acs_C cces_C = K.wrapPrefix "ccesDiag
 --  K.ignoreCacheTime states_C >>= BR.logFrame
   return $ (,) <$> states_C <*> districts_C
 
-data DMModel = BaseDM
-             | WithCPSTurnoutDM
-             deriving (Show, Eq, Ord, Generic)
+--data DMModel = BaseDM
+--             | WithCPSTurnoutDM
+--             deriving (Show, Eq, Ord, Generic)
+
+type ElectionWithDemographicsR = ElectionResultWithDemographicsR '[BR.StateAbbreviation]
 
 
-
-groupBuilderDM :: forall rs ks.
+groupBuilderDM :: forall rs ks tr pr.
                   (F.ElemOf rs BR.StateAbbreviation
                   , F.ElemOf rs Census.Count
                   , Typeable rs
@@ -953,18 +958,55 @@ groupBuilderDM :: forall rs ks.
                   , ks F.⊆ rs
                   , Ord (F.Record ks)
                   )
-               => VoteSource
+               => Model tr pr
                -> SB.GroupTypeTag (F.Record ks)
                -> [Text]
                -> [F.Record ks]
                -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
-groupBuilderDM vs psGroup states psKeys = do
-  ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable ccesEMRows)
-  SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  ccesPrefData <- SB.addModelDataToGroupBuilder "CCESP" (SB.ToFoldable $ F.filterFrame (not . zeroVotes vs) . ccesEMRows)
-  SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
-  SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+groupBuilderDM model psGroup states psKeys = do
+  addedElex <- case turnoutData model of
+    T_CCES -> do
+      ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable ccesEMRows)
+      SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      pure False
+    T_CPS -> do
+      cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
+      SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      pure False
+    T_Elex -> do
+      elexData <- SB.addModelDataToGroupBuilder "Elex" (SB.ToFoldable elexRows)
+      SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      pure True
+    T_CCESAndCPS -> do
+      ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable ccesEMRows)
+      SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
+      SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      pure False
+    T_ElexAndCPS -> do
+      elexData <- SB.addModelDataToGroupBuilder "Elex" (SB.ToFoldable elexRows)
+      SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
+      SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      pure True
+  case prefData model of
+    P_CCES -> do
+      ccesPrefData <- SB.addModelDataToGroupBuilder "CCESP" (SB.ToFoldable $ F.filterFrame (not . zeroVotes vs) . ccesEMRows)
+      SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+    P_Elex -> case addElex of
+                True -> pure ()
+                False -> do
+                  elexData <- SB.addModelDataToGroupBuilder "Elex" (SB.ToFoldable elexRows)
+                  SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+    P_ElexAndCCES -> do
+      ccesPrefData <- SB.addModelDataToGroupBuilder "CCESP" (SB.ToFoldable $ F.filterFrame (not . zeroVotes vs) . ccesEMRows)
+      SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      case addElex of
+        True -> pure ()
+        False -> do
+          elexData <- SB.addModelDataToGroupBuilder "Elex" (SB.ToFoldable elexRows)
+          SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  -- GQ
   acsData <- SB.addGQDataToGroupBuilder "ACS" (SB.ToFoldable fst)
   SB.addGroupIndexForData stateGroup acsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData raceGroup acsData $ SB.makeIndexFromEnum race5Census
@@ -1013,16 +1055,31 @@ wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.H
 wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
 data TurnoutDataSet r where
-   JustCCES :: TurnoutDataSet (F.Record CCESWithDensityEM)
-   JustCPS :: TurnoutDataSet (F.Record CPSVWithDensityEM)
-   CCESAndCPS :: TurnoutDataSet ()
+   T_CCES :: TurnoutDataSet (F.Record CCESWithDensityEM)
+   T_CPS :: TurnoutDataSet (F.Record CPSVWithDensityEM)
+   T_Elex :: TurnoutDataSet (F.Record ElectionWithDemographicsR)
+   T_CCESAndCPS :: TurnoutDataSet ()
+   T_ElexAndCPS :: TurnoutDataSet ()
 
 printTurnoutDataSet :: TurnoutDataSet tr -> Text
-printTurnoutDataSet JustCCES = "CCES"
-printTurnoutDataSet JustCPS = "CPS"
-printTurnoutDataSet CCESAndCPS = "CCESAndCPS"
+printTurnoutDataSet T_CCES = "CCES"
+printTurnoutDataSet T_CPS = "CPS"
+printTurnoutDataSet T_Elex = "Elex"
+printTurnoutDataSet T_CCESAndCPS = "CCESAndCPS"
+printTurnoutDataSet T_ElexAndCPS = "ElexAndCPS"
 
-electionModelDM :: forall rs ks r tr.
+data PrefDataSet r where
+  P_CCES :: CCESVoteSource -> PrefDataSet (F.Record CCESWithDensityEM)
+  P_Elex :: PrefDataSet (F.Record ElectionWithDemographicsR)
+  P_ElexAndCCES :: PrefDataSet ()
+
+printPrefDataSet :: PrefDataSet r -> Text
+printPrefDataSet (P_CCES v) = "CCES_" <> printVoteSource vs
+printPrefDataSet P_Elex = "Elex"
+printPrefDataSet P_ElexAndCCES = "ElexAndCCES_" <> printVoteSource vs
+
+
+electionModelDM :: forall rs ks r tr pr.
                    (K.KnitEffects r
                    , BR.CacheEffects r
                    , V.RecordToList ks
@@ -1062,21 +1119,22 @@ electionModelDM :: forall rs ks r tr.
                 -> Bool
                 -> BR.StanParallel
                 -> Text
-                -> TurnoutDataSet tr
-                -> Model
+                -> Model tr pr
                 -> Int
                 -> (SB.GroupTypeTag (F.Record ks), Text, SB.GroupSet)
                 -> K.ActionWithCacheTime r CCESAndCPSEM
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSWithDensityEM, F.FrameRec rs)
                 -> K.Sem r (K.ActionWithCacheTime r (ModelCrossTabs, F.FrameRec (ModelResultsR ks)))
-electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
-  when (groupModel model /= DMG || densityModel model /= DMD) $ K.knitError $ "electionModelDM called with wrong model type: " <> show model
   x <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
   let numZeroVoteRows = countZeroVoteRows (voteSource model) x
+      turnoutDataSet = turnoutData model
+      prefDataSet = prefData model
   K.logLE K.Diagnostic $ "CCES data has " <> show numZeroVoteRows <> " rows with no votes (for preference purposes)."
-  let modelName = "LegDistricts_" <> printTurnoutDataSet turnoutDataSet <> "_" <> modelLabel model <> if parallel then "_P" else ""
-      jsonDataName = "DM_" <> printTurnoutDataSet turnoutDataSet <> "_" <> printVoteSource (voteSource model) <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+  let modelName = "LegDistricts_" <> modelLabel model <> if parallel then "_P" else ""
+      jsonDataName = "DM_" <> modelLabel model
+                     <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         -- data
@@ -1106,9 +1164,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir turnoutDataSet mod
                              => TurnoutDataSet x
                              -> SB.StanBuilderM md gq (SB.RowTypeTag x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
             setupTurnoutData td = case td of
-              JustCCES -> setupCCESData 0
-              JustCPS -> setupCPSData 0
-              CCESAndCPS -> do
+              T_CCES -> setupCCESData 0
+              T_CPS -> setupCPSData 0
+              T_CCESAndCPS -> do
                 (ccesData, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESData (-1)
                 (cpsData, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
                 (comboData, dsIndexV, stackVarsF) <- SB.stackDataSets "combo" ccesData cpsData groupSet
@@ -1378,24 +1436,24 @@ data DensityModel = BaseD
 instance Flat.Flat DensityModel
 type instance FI.VectorFor DensityModel = Vector.Vector
 
-data VoteSource = HouseVS | PresVS | CompositeVS deriving (Show, Eq, Ord, Generic)
-instance Flat.Flat VoteSource
-type instance FI.VectorFor VoteSource = Vector.Vector
+data CCESVoteSource = CCESHouse | CCESPres | CCESComposite deriving (Show, Eq, Ord, Generic)
+instance Flat.Flat CCESVoteSource
+type instance FI.VectorFor CCESVoteSource = Vector.Vector
 
-printVoteSource :: VoteSource -> Text
-printVoteSource HouseVS = "HouseVotes"
-printVoteSource PresVS = "PresVotes"
-printVoteSource CompositeVS = "CompositeVotes"
+printVoteSource :: CCESVoteSource -> Text
+printVoteSource CCESHouse = "HouseVotes"
+printVoteSource CCESPres = "PresVotes"
+printVoteSource CCESComposite = "CompositeVotes"
 
 getVotes :: (F.ElemOf rs HouseVotes
             , F.ElemOf rs HouseDVotes
             , F.ElemOf rs PresVotes
             , F.ElemOf rs PresDVotes
             )
-         => VoteSource -> (F.Record rs -> Int, F.Record rs -> Int)
-getVotes HouseVS = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
-getVotes PresVS = (F.rgetField @PresVotes, F.rgetField @PresDVotes)
-getVotes CompositeVS =
+         => CCESVoteSource -> (F.Record rs -> Int, F.Record rs -> Int)
+getVotes CCESHouse = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
+getVotes CCESPres = (F.rgetField @PresVotes, F.rgetField @PresDVotes)
+getVotes CCESComposite =
   let hv = F.rgetField @HouseVotes
       hdv = F.rgetField @HouseDVotes
       pv = F.rgetField @PresVotes
@@ -1408,10 +1466,10 @@ zeroVotes ::  (F.ElemOf rs HouseVotes
               , F.ElemOf rs PresVotes
               , F.ElemOf rs PresDVotes
               )
-          => VoteSource -> F.Record rs -> Bool
-zeroVotes HouseVS r = F.rgetField @HouseVotes r == 0
-zeroVotes PresVS r = F.rgetField @PresVotes r == 0
-zeroVotes CompositeVS r = F.rgetField @HouseVotes r == 0 && F.rgetField @PresVotes r == 0
+          => CCESVoteSource -> F.Record rs -> Bool
+zeroVotes CCESHouse r = F.rgetField @HouseVotes r == 0
+zeroVotes CCESPres r = F.rgetField @PresVotes r == 0
+zeroVotes CCESComposite r = F.rgetField @HouseVotes r == 0 && F.rgetField @PresVotes r == 0
 
 countZeroVoteRows :: (F.ElemOf rs HouseVotes
                      , F.ElemOf rs HouseDVotes
@@ -1419,23 +1477,21 @@ countZeroVoteRows :: (F.ElemOf rs HouseVotes
                      , F.ElemOf rs PresDVotes
                      , Foldable f
                      )
-                  => VoteSource -> f (F.Record rs) -> Int
+                  => CCESVoteSource -> f (F.Record rs) -> Int
 countZeroVoteRows vs = FL.fold (FL.prefilter (zeroVotes vs) FL.length)
 
-data Model = Model { voteSource :: VoteSource
-                   , groupModel :: GroupModel
-                   , densityTransform :: DensityTransform
-                   , densityModel :: DensityModel
-                   }  deriving (Show, Eq, Ord, Generic)
+data Model tr pr = Model { turnoutData :: TurnouData tr
+                         , prefData :: PrefData pr
+                         , densityTransform :: DensityTransform
+                         }  deriving (Show, Eq, Ord, Generic)
 
 instance Flat.Flat Model
 type instance FI.VectorFor Model = Vector.Vector
 
 modelLabel :: Model -> Text
-modelLabel m = printVoteSource (voteSource m)
-               <> "_" <> show (groupModel m)
-               <> "_" <> printDensityTransform (densityTransform m)
-               <> "_" <> show (densityModel m)
+modelLabel m = printTurnoutDataSet (turnoutData m) <> "_"
+               <> printPrefDataSet (prefData m) <> "_"
+               <> show (densityModel m)
 
 type SLDLocation = (Text, ET.DistrictType, Int)
 
