@@ -98,6 +98,7 @@ import qualified Control.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified BlueRipple.Data.DemographicTypes as DT
 import Data.Vector.Internal.Check (checkSlice)
+import BlueRipple.Data.DemographicTypes (demographicsFold)
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -439,6 +440,25 @@ aggregatePartiesF =
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
+type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ BR.ElectionDataCols V.++ DemographicsR
+
+prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
+                             => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+prepPresidentialElectionData clearCache = do
+  let cacheKey = "model/house/presElexWithDemographics.bin"
+  when clearCache $ BR.clearIfPresentD cacheKey
+  presElex_C <- BR.presidentialElectionsWithIncumbency
+  acs_C <- PUMS.pumsLoaderAdults
+  acsByState_C <- cachedPumsByState acs_C
+  let deps = (,) <$> presElex_C <*> acsByState_C
+  BR.retrieveOrMakeFrame cacheKey deps $ \(pElex, acs) -> do
+    flattenedElex <- K.knitEither $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation]) (fmap F.rcast pElex)
+    let demographics = pumsMR  @[BR.Year, BR.StateAbbreviation] (fmap F.rcast acs)
+        (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
+    return $ fmap F.rcast elexWithDemo
+
+
+
 -- TODO:  Use weights?  Design effect?
 {-
 countCCESVotesF :: FL.Fold (F.Record [CCES.Turnout, CCES.HouseVoteParty]) (F.Record [Surveyed, TVotes, DVotes])
@@ -483,24 +503,6 @@ countCESVotesF =
   in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
      <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
 
-countCESVotesWF :: FL.Fold
-                  (F.Record [CCES.CESWeight, CCES.CatalistTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
-                  (F.Record [SurveyedW, VotedW, HouseVotesW, HouseDVotesW, PresVotesW, PresDVotesW])
-countCESVotesWF =
-  let houseVote (MT.MaybeData x) = maybe False (const True) x
-      houseDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
-      presVote (MT.MaybeData x) = maybe False (const True) x
-      presDVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
-      surveyedF = FL.premap (F.rgetField @CCES.CESWeight) FL.sum
-      votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) surveyedF
-      houseVotesF = FL.prefilter (houseVote . F.rgetField @CCES.MHouseVoteParty) votedF
-      houseDVotesF = FL.prefilter (houseDVote . F.rgetField @CCES.MHouseVoteParty) votedF
-      presVotesF = FL.prefilter (presVote . F.rgetField @CCES.MPresVoteParty) votedF
-      presDVotesF = FL.prefilter (presDVote . F.rgetField @CCES.MPresVoteParty) votedF
-  in (\s v hv hdv pv pdv -> s F.&: v F.&: hv F.&: hdv F.&: pv F.&: pdv F.&: V.RNil)
-     <$> surveyedF <*> votedF <*> houseVotesF <*> houseDVotesF <*> presVotesF <*> presDVotesF
-
-
 -- using each year's common content
 cesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESByCDR)
 cesMR earliestYear = BRF.frameCompactMRM
@@ -515,14 +517,6 @@ cesFold earliestYear = FMR.concatFold
           (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
           (FMR.foldAndAddKey countCESVotesF)
 
--- using each year's common content
-cesWMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CESPR) -> m (F.FrameRec CCESWByCDR)
-cesWMR earliestYear = BRF.frameCompactMRM
-                     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
-                     countCESVotesWF
-
-
 cesCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
 cesCountedDemVotesByCD clearCaches = do
   ces2020_C <- CCES.ces20Loader
@@ -531,32 +525,6 @@ cesCountedDemVotesByCD clearCaches = do
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> cesMR 2020 ces
 --  BR.retrieveOrMakeFrame cacheKey ces2020_C $ return . FL.fold (cesFold 2020)
 
-cesWCountedDemVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESWByCDR))
-cesWCountedDemVotesByCD clearCaches = do
-  ces2020_C <- CCES.ces20Loader
-  let cacheKey = "model/house/cesW20ByCD.bin"
-  when clearCaches $  BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces -> do
-    cesWMR 2020 ces
-{-
--- NB: CDKey includes year
-cpsCountedTurnoutByCD :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByCDR))
-cpsCountedTurnoutByCD = do
-  let afterYear y r = F.rgetField @BR.Year r >= y
-      possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
-      citizen r = F.rgetField @DT.IsCitizen r
-      includeRow r = afterYear 2012 r &&  possible r && citizen r
-      voted r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
-      wgt r = {- F.rgetField @CPSVoterPUMSWeight r * -} F.rgetField @BR.CountyWeight r
-      fld = BRCF.weightedCountFold @_ @(CPS.CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight])
-            (\r -> F.rcast @CDKeyR r `V.rappend` CPS.cpsKeysToASER4H True (F.rcast r))
-            (F.rcast  @[ET.VotedYNC, CPS.CPSVoterPUMSWeight, BR.CountyWeight])
-            includeRow
-            voted
-            wgt
-  cpsRaw_C <- CPS.cpsVoterPUMSWithCDLoader -- NB: this is only useful for CD rollup since counties may appear in multiple CDs.
-  BR.retrieveOrMakeFrame "model/house/cpsVByCD.bin" cpsRaw_C $ return . FL.fold fld
--}
 -- NB: StateKey includes year
 cpsCountedTurnoutByState :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVByStateR))
 cpsCountedTurnoutByState = do
