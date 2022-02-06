@@ -443,19 +443,26 @@ aggregatePartiesF =
 type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ BR.ElectionDataCols V.++ DemographicsR
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
-                             => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+                             => Bool
+                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
 prepPresidentialElectionData clearCache = do
   let cacheKey = "model/house/presElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   presElex_C <- BR.presidentialElectionsWithIncumbency
   acs_C <- PUMS.pumsLoaderAdults
-  acsByState_C <- cachedPumsByState acs_C
-  let deps = (,) <$> presElex_C <*> acsByState_C
-  BR.retrieveOrMakeFrame cacheKey deps $ \(pElex, acs) -> do
-    flattenedElex <- K.knitEither $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation]) (fmap F.rcast pElex)
-    let demographics = pumsMR  @[BR.Year, BR.StateAbbreviation] (fmap F.rcast acs)
-        (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
-    return $ fmap F.rcast elexWithDemo
+--  acsByState_C <- cachedPumsByState acs_C
+  let deps = (,) <$> presElex_C <*> acs_C
+      makeFrame :: (K.KnitEffects r)
+                => F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
+                -> F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ PUMSDataR)
+                -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation]))
+      makeFrame pElex acs = do
+        flattenedElex <- K.knitEither $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation]) (fmap F.rcast pElex)
+        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] (fmap F.rcast acs)
+            (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
+        return $ fmap F.rcast elexWithDemo
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(pElex, acs) -> makeFrame (fmap F.rcast pElex) (fmap F.rcast acs)
 
 
 
