@@ -1402,7 +1402,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               (Just name)
               turnoutData
               acsData
-              (SB.addGroupToSet stateGroup SB.emptyGroupSet)
+--              (SB.addGroupToSet stateGroup SB.emptyGroupSet)
               (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
               (Just grp)
@@ -1437,7 +1437,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               Nothing
               turnoutData
               psData
-              psGroupSet
+--              psGroupSet
               (realToFrac . F.rgetField @Census.Count)
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just psGroup)

@@ -336,13 +336,11 @@ addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typea
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
-                      -> SB.GroupSet -- groups to sum over
---                      -> Set.Set Text -- subset of groups to loop over
                       -> (rPS -> Double) -- PS weight
                       -> PostStratificationType -- raw or share
                       -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
                       -> BuilderM md gq SB.StanVar
-addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGroups weightF psType mPSGroup = do
+addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
       modelDataSetName = SB.dataSetName rttModel
@@ -363,8 +361,6 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
      case DHash.lookup rttPS gqRowInfos of
        Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
        Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
---  checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
---  checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
   toFoldable <- case DHash.lookup rttPS gqRowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
