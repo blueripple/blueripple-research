@@ -1277,12 +1277,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                 return (comboData, comboDMR, votesInRace, dVotesInRace, dmComboP, indexCombo)
 
         (prefData, prefDesignMatrixRow, votesInRace, dVotesInRace, dmPref, dsIndexP) <- setupPrefData prefDataSet
-{-
-        ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCESP"
-        dmPref <- DM.addDesignMatrix ccesPData designMatrixRow
-        rVotes <- SB.addCountData ccesPData "VotesInRace_CCES" votesF --(F.rgetField @HouseVotes)
-        dVotes <- SB.addCountData ccesPData "DVotesInRace_CCES" dVotesF --(F.rgetField @HouseDVotes)
--}
         let distP = SB.binomialLogitDist votesInRace
 
         (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
@@ -1374,20 +1368,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPredT alphaT dmT thetaT) voted)
               $ SB.addToLLSet prefData (SB.LLDetails distP (pure $ iPredP alphaP dmP thetaP) dVotesInRace)
               $ SB.emptyLLSet
-
-
-{-
-              case turnoutDataSet of
-              T_CCES -> SB.addToLLSet ccesTData (SB.LLDetails distT (pure $ iPred alphaT dmT thetaT) voted)
-                          $ SB.addToLLSet ccesPData (SB.LLDetails distP (pure $ pred alphaP dmP thetaP) dVotes)
-                          $ SB.emptyLLSet
-              T_CPS -> SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPred alphaT dmT thetaT) voted)
-                         $ SB.addToLLSet ccesPData (SB.LLDetails distP (pure $ pred alphaP dmP thetaP) dVotes)
-                         $ SB.emptyLLSet
-              T_CCESAndCPS -> SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPred alphaT dmT thetaT) voted)
-                          $ SB.addToLLSet ccesPData (SB.LLDetails distP (pure $ pred alphaP dmP thetaP) dVotes)
-                          $ SB.emptyLLSet
--}
         SB.generateLogLikelihood' llSet
 
         -- for posterior predictive checks
@@ -1434,7 +1414,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         psACS "Pref" prefPS educationGroup
         psACS "Pref" prefPS sexGroup
         psACS "Pref" prefPS stateGroup
-
 
         -- post-stratification for results
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"

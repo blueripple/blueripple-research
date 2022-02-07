@@ -363,8 +363,8 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS sumOverGro
      case DHash.lookup rttPS gqRowInfos of
        Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
        Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
-  checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
-  checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
+--  checkGroupSubset "Sum Over" "Poststratification data-set" sumOverGroups psGroupsDHM
+--  checkGroupSubset "Sum Over" "Modeled data-set" sumOverGroups modelGroupsDHM
   toFoldable <- case DHash.lookup rttPS gqRowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
     Just (SB.RowInfo tf _ _ _ _) -> return tf
