@@ -256,20 +256,20 @@ matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
 matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
   SB.stanDeclareRHS (n <> "_Transpose") (SB.StanMatrix (cd, rd)) "" $ SB.matTranspose m
 
-indexedConstIntArray :: SB.RowTypeTag r -> Int -> SB.StanBuilderM md gq SB.StanVar
-indexedConstIntArray rtt n =
+indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> Int -> SB.StanBuilderM md gq SB.StanVar
+indexedConstIntArray rtt mSuffix n =
   let dsName = SB.dataSetName rtt
       sizeName = "N_" <> dsName
   in SB.inBlock SB.SBTransformedData
-     $ SB.stanDeclareRHS ("constIndex_" <> dsName) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
+     $ SB.stanDeclareRHS ("constIndex_" <> dsName <> maybe "" ("_" <>) mSuffix) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
      $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
-stackDataSets :: forall md gq r1 r2. ()
+stackDataSets :: forall md gq r1 r2. (Typeable r1, Typeable r2)
                        => Text
                        -> SB.RowTypeTag r1
                        -> SB.RowTypeTag r2
                        -> SB.GroupSet -- groups to stack
-                       -> SB.StanBuilderM md gq (SB.RowTypeTag () -- tag for combined loops
+                       -> SB.StanBuilderM md gq (SB.RowTypeTag (Either r1 r2) -- tag for combined loops
                                                 , SB.StanVar -- vector with data-set index
                                                 , SB.StanName -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- stack variables
                                              )
@@ -277,7 +277,9 @@ stackDataSets name rtt1 rtt2 groups = do
   let n1 = SB.dataSetName rtt1
       n2 = SB.dataSetName rtt2
       sizeName x = "N_" <> x
-  rtt <- SB.addModelDataSet name (SB.ToFoldable $ const [()])
+  listF1 <- SB.getModelDataFoldableAsListF rtt1
+  listF2 <- SB.getModelDataFoldableAsListF rtt2
+  rtt <- SB.addModelDataSet name (SB.ToFoldable $ \md -> (Left <$> listF1 md) ++ (Right <$> listF2 md))
   SB.addUseBindingToDataSet rtt n1 $ SB.StanVar ("N_" <> n1) SB.StanInt
   SB.addUseBindingToDataSet rtt n2 $ SB.StanVar ("N_" <> n2) SB.StanInt
   indexV <- SB.inBlock SB.SBTransformedData $ do

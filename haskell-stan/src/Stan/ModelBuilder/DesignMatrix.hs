@@ -32,9 +32,24 @@ data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: Text
 instance Contravariant DesignMatrixRowPart where
   contramap g (DesignMatrixRowPart n l f) = DesignMatrixRowPart n l (f . g)
 
+
+stackDesignMatrixRowParts :: DesignMatrixRowPart r1 -> DesignMatrixRowPart r2 -> Either Text (DesignMatrixRowPart (Either r1 r2))
+stackDesignMatrixRowParts d1 d2 = do
+  when (dmrpName d1 /= dmrpName d2) $ Left $ "stackDesignMatrixRowPart: Name mismatch! d1=" <> dmrpName d1 <> "; d2=" <> dmrpName d2
+  when (dmrpLength d1 /= dmrpLength d2) $ Left $ "stackDesignMatrixRowPart: Length mismatch! l(d1)=" <> show (dmrpLength d1) <> "; l(d2)=" <> show (dmrpLength d2)
+  pure $ DesignMatrixRowPart (dmrpName d1) (dmrpLength d1) (either (dmrpVecF d1) (dmrpVecF d2))
+
+
+
 data DesignMatrixRow r = DesignMatrixRow { dmName :: Text
                                          , dmParts :: [DesignMatrixRowPart r]
                                          }
+
+stackDesignMatrixRows :: DesignMatrixRow r1 -> DesignMatrixRow r2 -> Either Text (DesignMatrixRow (Either r1 r2))
+stackDesignMatrixRows dm1 dm2 = do
+  when (dmName dm1 /= dmName dm2) $ Left $ "stackDesignMatrixRows: Name mismatch! dm1=" <> dmName dm1 <> "; dm2=" <> dmName dm2
+  newParts <- traverse (uncurry stackDesignMatrixRowParts) $ zip (dmParts dm1) (dmParts dm2)
+  return $ DesignMatrixRow (dmName dm1) newParts
 
 dmColIndexName :: DesignMatrixRow r -> Text
 dmColIndexName dmr = dmName dmr <> "_Cols"
@@ -78,6 +93,11 @@ boundedEnumRowPart :: (Enum k, Bounded k, Eq k) => Text -> (r -> k) -> DesignMat
 boundedEnumRowPart name f = DesignMatrixRowPart name n vf
   where (n, vf) = boundedEnumRowFunc f
 
+rowPartFromFunctions :: Text -> [r -> Double] -> DesignMatrixRowPart r
+rowPartFromFunctions name fs = DesignMatrixRowPart name (length fs) toVec
+  where
+    toVec r = V.fromList $ fmap ($r) fs
+
 -- adds matrix (name_dataSetName)
 -- adds K_name for col dimension (also <NamedDim name_Cols>)
 -- row dimension should be N_dataSetNamer  (which is <NamedDim dataSetName)
@@ -102,9 +122,10 @@ designMatrixIndexes (DesignMatrixRow _ dmps)= SL.scan rowPartScan dmps where
 addDesignMatrixIndexes :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq ()
 addDesignMatrixIndexes rtt dmr = do
   let addEach (gName, gSize, gStart) = do
-        sv <- SB.addFixedIntJson ("J_" <> gName) Nothing gSize
-        SB.addDeclBinding gName sv
-        SB.addUseBindingToDataSet rtt gName sv
+        let sizeName = dmName dmr <> "_" <> gName
+        sv <- SB.addFixedIntJson sizeName Nothing gSize
+        SB.addDeclBinding sizeName sv
+        SB.addUseBindingToDataSet rtt sizeName sv
         SB.addFixedIntJson (gName <> "_" <> dmName dmr <> "_Index") Nothing gStart
         pure ()
   traverse_ addEach $ designMatrixIndexes dmr
@@ -114,17 +135,18 @@ splitToGroupVar :: Text -> Text -> SB.StanVar -> SB.StanBuilderM md gq SB.StanVa
 splitToGroupVar dName gName v@(SB.StanVar n st) = do
   let newVarName = n <> "_" <> gName
       index = gName <> "_" <> dName <> "_Index"
+      sizeName = dName <> "_" <> gName
       namedDimE x = SB.stanDimToExpr $ SB.NamedDim x
       vecDM = SB.vectorizedOne (dName <> "_Cols")
-      segment x = vecDM $ SB.function "segment" $ SB.var x :| [SB.name index, namedDimE gName]
-      block d x = vecDM $ SB.function "block" $ SB.var x :| [SB.scalar "1", SB.name index, namedDimE d, namedDimE gName]
+      segment x = vecDM $ SB.function "segment" $ SB.var x :| [SB.name index, namedDimE sizeName]
+      block d x = vecDM $ SB.function "block" $ SB.var x :| [SB.scalar "1", SB.name index, namedDimE d, namedDimE sizeName]
   case st of
-    SB.StanVector _ -> SB.stanDeclareRHS newVarName (SB.StanVector $ SB.NamedDim gName) "" $ segment v
+    SB.StanVector _ -> SB.stanDeclareRHS newVarName (SB.StanVector $ SB.NamedDim sizeName) "" $ segment v
     SB.StanArray [SB.NamedDim d] (SB.StanVector _) -> do
-      nv <- SB.stanDeclare newVarName (SB.StanArray [SB.NamedDim d] $ SB.StanVector $ SB.NamedDim gName) ""
+      nv <- SB.stanDeclare newVarName (SB.StanArray [SB.NamedDim d] $ SB.StanVector $ SB.NamedDim sizeName) ""
       SB.stanForLoopB "k" Nothing d $ SB.addExprLine "splitToGroupVec" $ SB.var nv `SB.eq` segment v
       return nv
-    SB.StanMatrix (SB.NamedDim d, _) -> SB.stanDeclareRHS newVarName (SB.StanMatrix (SB.NamedDim d, SB.NamedDim gName)) "" $ block d v
+    SB.StanMatrix (SB.NamedDim d, _) -> SB.stanDeclareRHS newVarName (SB.StanMatrix (SB.NamedDim d, SB.NamedDim sizeName)) "" $ block d v
     _ -> SB.stanBuildError "DesignMatrix.splitToGroupVar: Can only split vectors, arrays of vectors or matrices. And the latter, only with named row dimension."
 
 -- take a stan vector, array, or matrix indexed by this design row

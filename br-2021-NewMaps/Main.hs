@@ -259,19 +259,19 @@ modelDiagnostics stanParallelCfg parallel = do
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
-      modelDir =  "br-2021-NewMaps/stanDMPhi"
-      vs = BRE.CompositeVS
-      dmModel = BRE.Model vs BRE.DMG BRE.LogDensity BRE.DMD
+      modelDir =  "br-2021-NewMaps/stanDMElex"
+      vs = BRE.CCESComposite
+      dmModel = BRE.Model BRE.T_CCESAndCPS (BRE.P_CCES vs) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
-      modelDM :: BRE.TurnoutDataSet x -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM tds x = do
+      modelDM x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir tds dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
-  (crossTabsCPS, _) <- modelDM BRE.JustCPS (fmap fixACS <$> acs2020_C)
+  (crossTabsCPS, _) <- modelDM (fmap fixACS <$> acs2020_C)
   diag_C <- BRE.ccesDiagnostics False "DiagPost" vs
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
@@ -425,18 +425,20 @@ newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo cc
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       modelDir =  "br-2021-NewMaps/stanDMPhi"
-      dmModel = BRE.Model BRE.CompositeVS BRE.DMG BRE.LogDensity BRE.DMD
+      ccesVoteSource = BRE.CCESComposite
+      dmModel td pd = BRE.Model td pd BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo = (mapGroup
-                      , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform $ BRE.densityTransform dmModel)
+                      , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform BRE.LogDensity)
                       , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                       )
-      modelDM :: BRE.TurnoutDataSet x -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      modelDM :: BRE.TurnoutDataSet x -> BRE.PrefDataSet y -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM tds x = do
+      modelDM td pd x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir tds dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
-  (_, modeled) <- modelDM BRE.CCESAndCPS $ (fmap F.rcast <$> proposedDemo_C)
+            m = dmModel td pd
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 postStratInfo ccesAndCPS2020_C gqDeps
+  (_, modeled) <- modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (fmap F.rcast <$> proposedDemo_C)
   BR.logFrame modeled
 --  proposedDemo <- K.ignoreCacheTime proposedDemo_C
 --  BR.logFrame proposedDemo
@@ -463,36 +465,36 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
   let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
       ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+      ccesVoteSource = BRE.CCESComposite
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
-      modelDir =  "br-2021-NewMaps/stanDMPhi"
+      modelDir =  "br-2021-NewMaps/stanDMElex"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      psInfoDM name model = (mapGroup
-                            , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform model)
-                            , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
-                            )
-      modelDM :: BRE.Model -> BRE.TurnoutDataSet x -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      psInfoDM name = (mapGroup
+                      , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.LogDensity)
+                      , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
+                      )
+      modelDM :: BRE.TurnoutDataSet x -> BRE.PrefDataSet y -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM m tds name x = do
+      modelDM tds pds name x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir tds m 2020 (psInfoDM name m) ccesAndCPS2020_C gqDeps
-      dmModel = BRE.Model BRE.CompositeVS BRE.DMG BRE.LogDensity BRE.DMD
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir (BRE.Model tds pds BRE.LogDensity) 2020 (psInfoDM name) ccesAndCPS2020_C gqDeps
 --  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   --  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
-  modelDM dmModel BRE.JustCCES (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  modelDM dmModel BRE.JustCPS (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (cCESAndCPS_CrossTabs, proposedBaseHV) <- modelDM dmModel BRE.JustCCES  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (_, extantBaseHV) <- modelDM dmModel BRE.JustCCES  (stateAbbr <> "_Proposed") (fmap F.rcast <$> extantDemo_C)
+  modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  modelDM BRE.T_CPS (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  (crossTabs, proposedBaseHV) <- modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource)  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  (_, extantBaseHV) <- modelDM BRE.T_CCES  (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> extantDemo_C)
   K.logLE K.Info $ "CCESAndCPS By State"
-  BR.logFrame $ BRE.byState cCESAndCPS_CrossTabs
+  BR.logFrame $ BRE.byState crossTabs
   K.logLE K.Info $ "CCESAndCPS By Race"
-  BR.logFrame $ BRE.byRace cCESAndCPS_CrossTabs
+  BR.logFrame $ BRE.byRace crossTabs
   K.logLE K.Info $ "CCESAndCPS By Sex"
-  BR.logFrame $ BRE.bySex cCESAndCPS_CrossTabs
+  BR.logFrame $ BRE.bySex crossTabs
   K.logLE K.Info $ "CCESAndCPS By Education"
-  BR.logFrame $ BRE.byEducation cCESAndCPS_CrossTabs
+  BR.logFrame $ BRE.byEducation crossTabs
 
 --  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  (_, proposedBaseHV) <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
@@ -722,7 +724,7 @@ densityHistogram title vc g stepSize rows =
 modelAndElectionScatter :: Bool
                          -> Text
                          -> FV.ViewConfig
-                         -> F.FrameRec [DT.StateAbbreviation, ET.DistrictNumber, ElexDShare, (MT.ModelId BRE.Model), BRE.ModeledShare]
+                         -> F.FrameRec [DT.StateAbbreviation, ET.DistrictNumber, ElexDShare, BRE.ModelDesc, BRE.ModeledShare]
                          -> GV.VegaLite
 modelAndElectionScatter single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
@@ -801,12 +803,12 @@ modelAndElectionScatter single title vc rows =
 modelAndDaveScatterChart :: Bool
                          -> Text
                          -> FV.ViewConfig
-                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, MT.ModelId BRE.Model, BRE.ModeledShare, TwoPartyDShare])
+                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, BRE.ModelDesc, BRE.ModeledShare, TwoPartyDShare])
                          -> GV.VegaLite
 modelAndDaveScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Number . realToFrac) "District"
-                    V.:& FVD.asVLData (GV.Str . show) "Demographic Model Type"
+                    V.:& FVD.asVLData GV.Str "Demographic Model Type"
                     V.:& FVD.asVLData' [("Demographic Model", GV.Number . (*100) . MT.ciMid)
                                        ,("Demographic Model (95% CI)", GV.Number . (*100) . MT.ciUpper)
                                        ,("Demographic Model (5% CI)", GV.Number . (*100) . MT.ciLower)

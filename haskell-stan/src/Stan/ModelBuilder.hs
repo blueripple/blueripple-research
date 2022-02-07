@@ -510,9 +510,36 @@ withRowInfo missing presentF rtt =
       maybe missing presentF $ DHash.lookup rtt rowInfos
 
 getDataSetBindings :: RowTypeTag r -> StanBuilderM md gq (Map SME.IndexKey SME.StanExpr)
-getDataSetBindings rtt = withRowInfo err (return . expressionBindings) rtt where
+getDataSetBindings rtt = withRowInfo err (return .  expressionBindings) rtt where
   idt = inputDataType rtt
   err = stanBuildError $ "getDataSetbindings: row-info=" <> dataSetName rtt <> " not found in " <> show idt
+
+getModelDataFoldableAsListF :: RowTypeTag r -> StanBuilderM md gq (md -> [r])
+getModelDataFoldableAsListF rtt = do
+  let idt = inputDataType rtt
+      errNF = stanBuildError $ "getModelDataFoldableAsList: row-info=" <> dataSetName rtt <> " not found in " <> show idt
+      errGQ = stanBuildError $ "getModelDataFoldableAsList: row-info=" <> dataSetName rtt <> " is GQ data"
+  case idt of
+    ModelData -> do
+      rowInfos <- modelRowBuilders <$> get
+      case DHash.lookup rtt rowInfos of
+        Nothing -> errNF
+        Just ri -> return (applyToFoldable Foldl.list $ toFoldable ri)
+    GQData -> errGQ
+
+getGQDataFoldableAsListF :: RowTypeTag r -> StanBuilderM md gq (gq -> [r])
+getGQDataFoldableAsListF rtt = do
+  let idt = inputDataType rtt
+      errNF = stanBuildError $ "getGQDataFoldableAsList: row-info=" <> dataSetName rtt <> " not found in " <> show idt
+      errModelData = stanBuildError $ "getGQDataFoldableAsList: row-info=" <> dataSetName rtt <> " is Model data"
+  case idt of
+    GQData -> do
+      rowInfos <- gqRowBuilders <$> get
+      case DHash.lookup rtt rowInfos of
+        Nothing -> errNF
+        Just ri -> return (applyToFoldable Foldl.list $ toFoldable ri)
+    ModelData -> errModelData
+
 
 {-
 getModelDataSetBindings :: RowTypeTag r -> StanBuilderM md gq (Map SME.IndexKey SME.StanExpr)

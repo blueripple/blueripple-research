@@ -58,7 +58,7 @@ parsePEParty t
   | T.isInfixOf "REPUBLICAN" t = ET.Republican
   | otherwise = ET.Other
 
-type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.StateIc, BR.Office, BR.Candidate, BR.Party, BR.Writein, BR.Candidatevotes, BR.Totalvotes]
+type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidate, BR.Party, BR.Candidatevotes, BR.Totalvotes]
 
 type ElectionDataCols = [ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
 
