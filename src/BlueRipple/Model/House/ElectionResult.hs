@@ -291,7 +291,7 @@ prepCCESAndCPSEM :: (K.KnitEffects r, BR.CacheEffects r)
 prepCCESAndCPSEM clearCache = do
   ccesAndPUMS_C <- prepCCESAndPums clearCache
   elex_C <- prepPresidentialElectionData clearCache 2016
-  K.logLE K.Diagnostic "Presidential Electon Rows"
+  K.logLE K.Diagnostic "Presidential Election Rows"
   K.ignoreCacheTime elex_C >>= BR.logFrame
   let cacheKey = "model/house/CCESAndCPSEM.bin"
       deps = (,) <$> ccesAndPUMS_C <*> elex_C
@@ -472,7 +472,7 @@ prepPresidentialElectionData clearCache earliestYear = do
         when (not $ null missing) $ K.knitError $ "prepPresidentialElectionData: missing keys in flattenedElex/acs join=" <> show missing
         return $ fmap (F.rcast . addOffice) elexWithDemo
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(pElex, acs) -> makeFrame (fmap F.rcast pElex) (fmap F.rcast acs)
+    $ \(pElex, acs) -> makeFrame (fmap F.rcast pElex) (fmap F.rcast $ copy2019to2020 acs)
 
 
 
@@ -660,7 +660,7 @@ prepCCESAndPums clearCache = do
   pumsByState_C <- cachedPumsByState pums_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
-  K.ignoreCacheTime cpsVByState_C >>= cpsDiagnostics "Pre Achen/Hur"
+--  K.ignoreCacheTime cpsVByState_C >>= cpsDiagnostics "Pre Achen/Hur"
 
   -- Do the turnout corrections, CPS first
   stateTurnout_C <- BR.stateTurnoutLoader
@@ -691,10 +691,10 @@ prepCCESAndPums clearCache = do
     K.logLE K.Diagnostic $ "Post Achen-Hur: CPS (by state) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
-  K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "CPS: Post Achen/Hur"
-  K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
-  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePre" CCESComposite pumsByCD_C countedCCES_C
-  BR.logFrame ccesDiagnosticStatesPre
+--  K.ignoreCacheTime cpsV_AchenHur_C >>= cpsDiagnostics "CPS: Post Achen/Hur"
+--  K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
+--  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePre" CCESComposite pumsByCD_C countedCCES_C
+--  BR.logFrame ccesDiagnosticStatesPre
 
   let ccesAchenHurDeps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> stateTurnout_C
       ccesAchenHurCacheKey = "model/house/CCES_AchenHur.bin"
@@ -732,9 +732,9 @@ prepCCESAndPums clearCache = do
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
 
-  K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
-  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePost" CCESComposite pumsByCD_C ccesAchenHur_C
-  BR.logFrame ccesDiagnosticStatesPost
+--  K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
+--  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePost" CCESComposite pumsByCD_C ccesAchenHur_C
+--  BR.logFrame ccesDiagnosticStatesPost
   let deps = (,,) <$> ccesAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey

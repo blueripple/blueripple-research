@@ -82,7 +82,7 @@ presidentialByStateFrame ::
 presidentialByStateFrame =
   cachedMaybeFrameLoader @(F.RecordColumns BR.PresidentialByState) @PEFromCols @PEFromCols @PresidentialElectionCols
     (DataSets $ toText BR.presidentialByStateCSV)
-    Nothing
+    (Just BR.presidentialByStateParser)
     Nothing
     id
     fixPresidentialElectionRow
