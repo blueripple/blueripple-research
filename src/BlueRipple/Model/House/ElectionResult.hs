@@ -1091,6 +1091,131 @@ printPrefDataSet (P_CCES vs) = "CCES_" <> printVoteSource vs
 printPrefDataSet P_Elex = "Elex"
 printPrefDataSet (P_ElexAndCCES vs) = "ElexAndCCES_" <> printVoteSource vs
 
+
+
+setupCCESTData :: (Typeable md, Typeable gq)
+                   => Int
+                   -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
+                                            , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
+                                            , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupCCESTData n = do
+  ccesTData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCEST"
+  ccesTIndex <- SB.indexedConstIntArray ccesTData Nothing n
+  dmCCES <- DM.addDesignMatrix ccesTData designMatrixRowCCES
+  cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
+  votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted)
+  return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES, ccesTIndex)
+
+setupCPSData ::  (Typeable md, Typeable gq)
+             => Int
+             -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
+                                      , DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
+                                      , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupCPSData n = do
+  cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
+  cpsIndex <- SB.indexedConstIntArray cpsData Nothing n
+  cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
+  votedCPS <- SB.addCountData cpsData "Voted_CPS" (F.rgetField @BRCF.Successes)
+  dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
+  return (cpsData, designMatrixRowCPS, cvapCPS, votedCPS, dmCPS, cpsIndex)
+
+setupElexTData :: (Typeable md, Typeable gq)
+               => Int
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+                                        , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
+                                        , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupElexTData n = do
+  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
+  elexTIndex <- SB.indexedConstIntArray elexTData Nothing n
+  cvapElex <- SB.addCountData elexTData "CVAP_Elex" (F.rgetField @PUMS.Citizens)
+  votedElex <- SB.addCountData elexTData "Voted_Elex" (F.rgetField @TVotes)
+  dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
+  return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT, elexTIndex)
+
+
+setupTurnoutData :: forall x md gq. (Typeable md, Typeable gq)
+                 => TurnoutDataSet x
+                 -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupTurnoutData td = do
+  let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
+  case td of
+    T_CCES -> setupCCESTData 0
+    T_CPS -> setupCPSData 0
+    T_Elex -> setupElexTData 0
+    T_CCESAndCPS -> do
+      (ccesData, ccesDMR, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESTData (-1)
+      (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
+      (comboData, stackVarsF) <- SB.stackDataSets "comboT" ccesData cpsData groupSet
+      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows ccesDMR cpsDMR
+      (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
+        cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
+        votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
+        dmCombo' <- stackVarsF "DMTurnout" ccesDM cpsDM
+        indexCombo' <- stackVarsF "DataSetIndexT" ccesIndex cpsIndex
+        return (cvapCombo', votedCombo', dmCombo', indexCombo')
+      return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
+    T_ElexAndCPS -> do
+      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData 0
+      (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
+      (comboData, stackVarsF) <- SB.stackDataSets "comboT" elexData cpsData groupSet
+      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR cpsDMR
+      (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
+        cvapCombo' <- stackVarsF "CVAP" elexCVAP cpsCVAP
+        votedCombo' <- stackVarsF "Voted" elexVoted cpsVoted
+        dmCombo' <- stackVarsF "DMTurnout" elexDM cpsDM
+        indexCombo' <- stackVarsF "DataSetIndexT" elexIndex cpsIndex
+        return (cvapCombo', votedCombo', dmCombo', indexCombo')
+      return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
+
+setupCCESPData :: (Typeable md, Typeable gq)
+               => Int
+               -> CCESVoteSource
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
+                                        , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
+                                        , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupCCESPData n vs = do
+  let (votesF, dVotesF) = getVotes vs
+  ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCESP"
+  ccesPIndex <- SB.indexedConstIntArray ccesPData (Just "P") n
+  dmCCESP <- DM.addDesignMatrix ccesPData designMatrixRowCCES
+  raceVotesCCES <- SB.addCountData ccesPData "VotesInRace_CCES" votesF
+  dVotesInRaceCCES <- SB.addCountData ccesPData "DVotesInRace_CCES" dVotesF
+  return (ccesPData, designMatrixRowCCES, raceVotesCCES, dVotesInRaceCCES, dmCCESP, ccesPIndex)
+
+setupElexPData :: (Typeable md, Typeable gq)
+               => Int
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+                                        , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
+                                        , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupElexPData n = do
+  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
+  elexPIndex <- SB.indexedConstIntArray elexPData Nothing n
+  dmElexP <- DM.addDesignMatrix elexPData designMatrixRowElex
+  raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections" (F.rgetField @TVotes)
+  dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
+  return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP, elexPIndex)
+
+setupPrefData :: forall x md gq. (Typeable md, Typeable gq)
+              => PrefDataSet x
+              -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+setupPrefData pd = do
+  let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
+  case pd of
+    P_CCES vs -> setupCCESPData 0 vs
+    P_Elex -> setupElexPData 0
+    P_ElexAndCCES vs -> do
+      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData 0
+      (ccesData, ccesDMR, ccesVIR, ccesDVIR, ccesDM, ccesIndex) <- setupCCESPData 1 vs
+      (comboData, stackVarsF) <- SB.stackDataSets "comboP" elexData ccesData groupSet
+      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR ccesDMR
+      (votesInRace, dVotesInRace, dmComboP, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
+        virCombo <- stackVarsF "VotesInRace" elexVIR ccesVIR
+        dvirCombo <- stackVarsF "DVotesInRace" elexDVIR ccesDVIR
+        dmCombo <- stackVarsF "DMPref" elexDM ccesDM
+        indexCombo' <- stackVarsF "DataSetIndexP" elexIndex ccesIndex
+        return (virCombo, dvirCombo, dmCombo, indexCombo')
+      return (comboData, comboDMR, votesInRace, dVotesInRace, dmComboP, indexCombo)
+
 electionModelDM :: forall rs ks r tr pr.
                    (K.KnitEffects r
                    , BR.CacheEffects r
@@ -1158,212 +1283,85 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                      <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
-        -- data
 
-        let setupCCESTData :: (Typeable md, Typeable gq)
-                           => Int
-                           -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
-                                                    , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-                                                    , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupCCESTData n = do
-              ccesTData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCEST"
-              ccesTIndex <- SB.indexedConstIntArray ccesTData Nothing n
-              dmCCES <- DM.addDesignMatrix ccesTData designMatrixRowCCES
-              cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
-              votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted)
-              return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES, ccesTIndex)
-            setupCPSData ::  (Typeable md, Typeable gq)
-                         => Int
-                         -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
-                                                  , DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-                                                  , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupCPSData n = do
-              cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
-              cpsIndex <- SB.indexedConstIntArray cpsData Nothing n
-              cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
-              votedCPS <- SB.addCountData cpsData "Voted_CPS" (F.rgetField @BRCF.Successes)
-              dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
-              return (cpsData, designMatrixRowCPS, cvapCPS, votedCPS, dmCPS, cpsIndex)
-            setupElexTData :: (Typeable md, Typeable gq)
-                           => Int
-                           -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
-                                                    , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-                                                    , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupElexTData n = do
-              elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
-              elexTIndex <- SB.indexedConstIntArray elexTData Nothing n
-              cvapElex <- SB.addCountData elexTData "CVAP_Elex" (F.rgetField @PUMS.Citizens)
-              votedElex <- SB.addCountData elexTData "Voted_Elex" (F.rgetField @TVotes)
-              dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
-              return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT, elexTIndex)
-            groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
-            setupTurnoutData :: forall x md gq. (Typeable md, Typeable gq)
-                             => TurnoutDataSet x
-                             -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupTurnoutData td = case td of
-              T_CCES -> setupCCESTData 0
-              T_CPS -> setupCPSData 0
-              T_Elex -> setupElexTData 0
-              T_CCESAndCPS -> do
-                (ccesData, ccesDMR, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESTData (-1)
-                (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
-                (comboData, _, stackVarsF) <- SB.stackDataSets "comboT" ccesData cpsData groupSet
-                comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows ccesDMR cpsDMR
-                (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-                  cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
-                  votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
-                  dmCombo' <- stackVarsF "DMTurnout" ccesDM cpsDM
-                  indexCombo' <- stackVarsF "DataSetIndex" ccesIndex cpsIndex
-                  return (cvapCombo', votedCombo', dmCombo', indexCombo')
-                return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
-              T_ElexAndCPS -> do
-                (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData 0
-                (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
-                (comboData, _, stackVarsF) <- SB.stackDataSets "comboT" elexData cpsData groupSet
-                comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR cpsDMR
-                (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-                  cvapCombo' <- stackVarsF "CVAP" elexCVAP cpsCVAP
-                  votedCombo' <- stackVarsF "Voted" elexVoted cpsVoted
-                  dmCombo' <- stackVarsF "DMTurnout" elexDM cpsDM
-                  indexCombo' <- stackVarsF "DataSetIndex" elexIndex cpsIndex
-                  return (cvapCombo', votedCombo', dmCombo', indexCombo')
-                return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
         (turnoutData, turnoutDesignMatrixRow, cvap, voted, dmTurnout, dsIndexT) <- setupTurnoutData turnoutDataSet
         DM.addDesignMatrixIndexes turnoutData turnoutDesignMatrixRow
         let distT = SB.binomialLogitDist cvap
-            setupCCESPData :: (Typeable md, Typeable gq)
-                              => Int
-                              -> CCESVoteSource
-                              -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
-                                                       , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-                                                       , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupCCESPData n vs = do
-              let (votesF, dVotesF) = getVotes vs
-              ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCESP"
-              ccesPIndex <- SB.indexedConstIntArray ccesPData (Just "P") n
-              dmCCESP <- DM.addDesignMatrix ccesPData designMatrixRowCCES
-              raceVotesCCES <- SB.addCountData ccesPData "VotesInRace_CCES" votesF
-              dVotesInRaceCCES <- SB.addCountData ccesPData "DVotesInRace_CCES" dVotesF
-              return (ccesPData, designMatrixRowCCES, raceVotesCCES, dVotesInRaceCCES, dmCCESP, ccesPIndex)
-            setupElexPData :: (Typeable md, Typeable gq)
-                           => Int
-                           -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
-                                                    , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-                                                    , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupElexPData n = do
-              elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
-              elexPIndex <- SB.indexedConstIntArray elexPData Nothing n
-              dmElexP <- DM.addDesignMatrix elexPData designMatrixRowElex
-              raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections" (F.rgetField @TVotes)
-              dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
-              return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP, elexPIndex)
-            setupPrefData :: forall x md gq. (Typeable md, Typeable gq)
-                          => PrefDataSet x
-                          -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-            setupPrefData pd = case pd of
-              P_CCES vs -> setupCCESPData 0 vs
-              P_Elex -> setupElexPData 0
-              P_ElexAndCCES vs -> do
-                (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData 0
-                (ccesData, ccesDMR, ccesVIR, ccesDVIR, ccesDM, ccesIndex) <- setupCCESPData 1 vs
-                (comboData, _, stackVarsF) <- SB.stackDataSets "comboP" elexData ccesData groupSet
-                comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR ccesDMR
-                (votesInRace, dVotesInRace, dmComboP, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-                  virCombo <- stackVarsF "VotesInRace" elexVIR ccesVIR
-                  dvirCombo <- stackVarsF "DVotesInRace" elexDVIR ccesDVIR
-                  dmCombo <- stackVarsF "DMPref" elexDM ccesDM
-                  indexCombo' <- stackVarsF "DataSetIndex" elexIndex ccesIndex
-                  return (virCombo, dvirCombo, dmCombo, indexCombo')
-                return (comboData, comboDMR, votesInRace, dVotesInRace, dmComboP, indexCombo)
 
         (prefData, prefDesignMatrixRow, votesInRace, dVotesInRace, dmPref, dsIndexP) <- setupPrefData prefDataSet
         let distP = SB.binomialLogitDist votesInRace
+        SB.inBlock SB.SBTransformedData $ do
+          SB.printVar "" cvap
+          SB.printVar "" voted
+          SB.printVar "" votesInRace
+          SB.printVar "" dVotesInRace
 
         (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
         (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
+
         (alphaT, thetaT, muT, tauT, lT) <-
-          DM.addDMParametersAndPriors turnoutData turnoutDesignMatrixRow stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "T")
+          DM.addDMParametersAndPriors "DM" stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "T")
         (alphaP, thetaP, muP, tauP, lP) <-
-          DM.addDMParametersAndPriors prefData prefDesignMatrixRow stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "P")
-        (dsAlphaT, dsPhiT) :: (SB.StanVar, SB.StanVar) <- do
-          case turnoutDataSet of
-            T_CCES -> return $ (SB.StanVar "dsAlpha_ERROR" SB.StanReal, SB.StanVar "dsPhi_ERROR" SB.StanReal)
-            T_CPS -> return $ (SB.StanVar "dsAlpha_ERROR" SB.StanReal, SB.StanVar "dsPhi_ERROR" SB.StanReal)
-            T_Elex -> return $ (SB.StanVar "dsAlpha_ERROR" SB.StanReal, SB.StanVar "dsPhi_ERROR" SB.StanReal)
-            T_CCESAndCPS -> do
-              let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndex))) = dmT
-              dsAlpha' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsAlphaT" SB.StanReal ""
-              dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsPhiT" (SB.StanVector $ SB.NamedDim colIndex) ""
-              SB.inBlock SB.SBModel $ SB.useDataSetForBindings turnoutData $ do
-                SB.addExprLine "electionModelDM" $ SB.var dsAlpha' `SB.vectorSample` SB.stdNormal
-                SB.addExprLine "electionModelDM" $ SB.vectorizedOne colIndex $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
-              return (dsAlpha', dsPhi')
-            T_ElexAndCPS -> do
-              let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndex))) = dmT
-              dsAlpha' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsAlphaT" SB.StanReal ""
-              dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsPhiT" (SB.StanVector $ SB.NamedDim colIndex) ""
-              SB.inBlock SB.SBModel $ SB.useDataSetForBindings turnoutData $ do
-                SB.addExprLine "electionModelDM" $ SB.var dsAlpha' `SB.vectorSample` SB.stdNormal
-                SB.addExprLine "electionModelDM" $ SB.vectorizedOne colIndex $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
-              return (dsAlpha', dsPhi')
-        (dsAlphaP, dsPhiP) :: (SB.StanVar, SB.StanVar) <- do
-          case prefDataSet of
-            P_CCES _ -> return $ (SB.StanVar "dsAlpha_ERROR" SB.StanReal, SB.StanVar "dsPhi_ERROR" SB.StanReal)
-            P_Elex -> return $ (SB.StanVar "dsAlpha_ERROR" SB.StanReal, SB.StanVar "dsPhi_ERROR" SB.StanReal)
-            P_ElexAndCCES _ -> do
-              let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndex))) = dmT
-              dsAlpha' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsAlphaP" SB.StanReal ""
-              dsPhi' <- SB.inBlock SB.SBParameters $ SB.stanDeclare "dsPhiP" (SB.StanVector $ SB.NamedDim colIndex) ""
-              SB.inBlock SB.SBModel $ SB.useDataSetForBindings turnoutData $ do
-                SB.addExprLine "electionModelDM" $ SB.var dsAlpha' `SB.vectorSample` SB.stdNormal
-                SB.addExprLine "electionModelDM" $ SB.vectorizedOne colIndex $ SB.var dsPhi' `SB.vectorSample` SB.stdNormal
-              return (dsAlpha', dsPhi')
+          DM.addDMParametersAndPriors "DM" stateGroup "beta" DM.NonCentered (SB.stdNormal, SB.stdNormal, 4) (Just "P")
+
+        DM.addDesignMatrixIndexes turnoutData turnoutDesignMatrixRow
+        DM.addDesignMatrixIndexes prefData prefDesignMatrixRow
+        SB.inBlock SB.SBGeneratedQuantities $ do
+          SB.useDataSetForBindings turnoutData $ DM.splitToGroupVars turnoutDesignMatrixRow muT
+          SB.useDataSetForBindings prefData $ DM.splitToGroupVars prefDesignMatrixRow muP
+
+        let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndexT))) = dmT
+        let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndexP))) = dmP
 
         let dmBetaE dmE betaE = SB.vectorizedOne "DM_Cols" $ SB.function "dot_product" (dmE :| [betaE])
             predE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
             pred a dm beta = predE (SB.var a) (SB.var dm) (SB.var beta)
-            iPredTE aE dmE betaE = case turnoutDataSet of
-              T_CCES -> predE aE dmE betaE
-              T_CPS -> predE aE dmE betaE
-              T_Elex -> predE aE dmE betaE
-              T_CCESAndCPS -> predE (aE `SB.plus` SB.paren (SB.var dsAlphaT `SB.times` SB.var dsIndexT))
-                                  dmE
-                                  (betaE `SB.plus` SB.paren (SB.var dsPhiT `SB.times` SB.var dsIndexT))
-              T_ElexAndCPS -> predE (aE `SB.plus` SB.paren (SB.var dsAlphaT `SB.times` SB.var dsIndexT))
-                                  dmE
-                                  (betaE `SB.plus` SB.paren (SB.var dsPhiT `SB.times` SB.var dsIndexT))
-            iPredT a dm beta = iPredTE (SB.var a) (SB.var dm) (SB.var beta)
-            iPredPE aE dmE betaE = case prefDataSet of
-              P_CCES _ -> predE aE dmE betaE
-              P_Elex -> predE aE dmE betaE
-              P_ElexAndCCES _ -> predE (aE `SB.plus` SB.paren (SB.var dsAlphaP `SB.times` SB.var dsIndexP))
-                                   dmE
-                                   (betaE `SB.plus` SB.paren (SB.var dsPhiP `SB.times` SB.var dsIndexP))
-            iPredP a dm beta = iPredPE (SB.var a) (SB.var dm) (SB.var beta)
+
+            iPred :: SB.RowTypeTag x -> DM.DesignMatrixRow x -> Text -> SB.IndexKey -> SB.StanVar
+                  -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
+            iPred rtt dmr suffix colIndex dsIndexV = do
+              dsAlpha <- SB.addSimpleParameter ("dsAplha" <> suffix) SB.StanReal SB.stdNormal
+              dsPhi <- SB.addParameterWithVectorizedPrior ("dsPhi" <> suffix) (SB.StanVector $ SB.NamedDim colIndex) SB.stdNormal colIndex
+              SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings rtt $ DM.splitToGroupVars dmr dsPhi
+              return $ \aE dmE betaE -> predE (aE `SB.plus` SB.paren (SB.var dsAlpha `SB.times` SB.var dsIndexV))
+                                        dmE
+                                        (betaE `SB.plus` SB.paren (SB.var dsPhi `SB.times` SB.var dsIndexV))
+
+        iPredTE <- case turnoutDataSet of
+          T_CCES -> return predE
+          T_CPS -> return predE
+          T_Elex -> return predE
+          T_CCESAndCPS -> iPred turnoutData turnoutDesignMatrixRow "T" colIndexT dsIndexT
+          T_ElexAndCPS -> iPred turnoutData turnoutDesignMatrixRow "T" colIndexT dsIndexT
+
+        let iPredT a dm beta = iPredTE (SB.var a) (SB.var dm) (SB.var beta)
+
+        iPredPE <- case prefDataSet of
+          P_CCES _ -> return predE
+          P_Elex -> return predE
+          P_ElexAndCCES _ -> iPred prefData prefDesignMatrixRow "P" colIndexP dsIndexP
+
+        let iPredP a dm beta = iPredPE (SB.var a) (SB.var dm) (SB.var beta)
 
             vecT = SB.vectorizeExpr "voteDataBetaT" (iPredT alphaT dmT thetaT) (SB.dataSetName turnoutData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (iPredP alphaP dmP thetaP) (SB.dataSetName prefData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings turnoutData $ do
             voteDataBetaT_v <- vecT
+            SB.printVar "" alphaT
+            SB.printVar "" thetaT
+            SB.printVar "" muT
+            SB.printVar "" voteDataBetaT_v
+            SB.printTarget "before T "
             SB.sampleDistV turnoutData distT (SB.var voteDataBetaT_v) voted
           SB.useDataSetForBindings prefData $ do
             voteDataBetaP_v <- vecP
+            SB.printVar "" voteDataBetaP_v
+            SB.printTarget "before P "
             SB.sampleDistV prefData distP (SB.var voteDataBetaP_v) dVotesInRace
+            SB.printTarget "after P "
 
-        -- split parameters back to input categories
-        SB.inBlock SB.SBGeneratedQuantities $ do
-          DM.addDesignMatrixIndexes turnoutData turnoutDesignMatrixRow
-          SB.useDataSetForBindings turnoutData $ DM.splitToGroupVars turnoutDesignMatrixRow muT
-          DM.addDesignMatrixIndexes prefData prefDesignMatrixRow
-          SB.useDataSetForBindings prefData $ DM.splitToGroupVars prefDesignMatrixRow muP
-          case turnoutDataSet of
-            T_CCESAndCPS -> SB.useDataSetForBindings turnoutData $ DM.splitToGroupVars turnoutDesignMatrixRow dsPhiT >> pure ()
-            T_ElexAndCPS -> SB.useDataSetForBindings turnoutData $ DM.splitToGroupVars turnoutDesignMatrixRow dsPhiT >> pure ()
-            _ -> pure ()
-          case prefDataSet of
-            P_ElexAndCCES _ -> SB.useDataSetForBindings prefData $ DM.splitToGroupVars prefDesignMatrixRow dsPhiP >> pure ()
-            _ -> pure ()
+
         let llSet :: SB.LLSet CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) SB.StanExpr =
               SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPredT alphaT dmT thetaT) voted)
               $ SB.addToLLSet prefData (SB.LLDetails distP (pure $ iPredP alphaP dmP thetaP) dVotesInRace)
@@ -1517,7 +1515,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
     $ MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
+    (SC.StanMCParameters 4 4 (Just 20) (Just 20) (Just 0.8) (Just 10) Nothing)
     stanParallelCfg
     dw
     stanCode

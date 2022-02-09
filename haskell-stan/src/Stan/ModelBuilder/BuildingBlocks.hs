@@ -97,12 +97,35 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return iVar
 
+addParameter :: Text -> SB.StanType -> Text -> (SB.StanVar -> SB.StanBuilderM md gq ()) -> SB.StanBuilderM md gq SB.StanVar
+addParameter pName pType pConstraint pPriorF = do
+  pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare pName pType pConstraint
+  SB.inBlock SB.SBModel $ pPriorF pv
+  return pv
+
+addSimpleParameter :: Text -> SB.StanType -> SB.StanExpr -> SB.StanBuilderM md gq SB.StanVar
+addSimpleParameter pName pType priorE = addParameter pName pType "" priorF
+  where
+    priorF v = SB.addExprLine "addSimpleParameter" $ SB.var v `SB.vectorSample` priorE
+
+addParameterWithVectorizedPrior :: Text -> SB.StanType -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
+addParameterWithVectorizedPrior pName pType priorE index = addParameter pName pType "" priorF
+  where
+    priorF v = SB.addExprLine "addSimpleParameter" $ SB.vectorizedOne index $ SB.var v `SB.vectorSample` priorE
+
+
 sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
       samplingE = SMD.familySampleF sDist args yV
   SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
 
+
+printVar :: Text -> SB.StanVar -> SB.StanBuilderM md gq ()
+printVar t v@(SB.StanVar n _) = SB.addExprLine "printVar" $ SB.function "print" $ SB.bare ("\"" <> t <> n <> "=\"") :| [SB.varNameE v]
+
+printTarget :: Text -> SB.StanBuilderM md gq ()
+printTarget t = SB.addExprLine "printVar" $ SB.function "print" $ SB.bare ("\"" <> t <> "target=\"") :| [SB.bare "target()"]
 
 parallelSampleDistV :: (Typeable md, Typeable gq) => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) = do
@@ -183,36 +206,6 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   _ <- evalStateT (DHash.traverseWithKey doList llSet) []
   pure ()
 
-{-
-
-  doOne rtt (LLDetails dist bldr v) = do
-    SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
-      args <- bldr
-      SB.stanForLoop "n" Nothing (SB.dataSetName rtt) $ do
-        SB.addExprLine "generateLogLikelihood'" $ SB.var logLik
-
-      let argsM (_, a, _) = a
-      args <- sequence $ argsM <$> distsArgsM
-      let distsAndArgs = NE.zipWith (\(d, _, y) a -> (d, a, y)) distsArgsM args
-    SB.stanForLoopB "n" Nothing dsName $ do
-      let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
-          oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
-          rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
-      SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
-  let dsName = SB.dataSetName  rtt
-      dim = SME.NamedDim dsName llSet
-
-  SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
-    let argsM (_, a, _) = a
-    args <- sequence $ argsM <$> distsArgsM
-    let distsAndArgs = NE.zipWith (\(d, _, y) a -> (d, a, y)) distsArgsM args
-    SB.stanForLoopB "n" Nothing dsName $ do
-      let lhsE = SME.var logLikV --SME.withIndexes (SME.name "log_lik") [dim]
-          oneRhsE (sDist, args, yV) = SMD.familyLDF sDist args yV
-          rhsE = SB.multiOp "+" $ fmap oneRhsE distsAndArgs
-      SB.addExprLine "generateLogLikelihood" $ lhsE `SME.eq` rhsE
--}
-
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist args
@@ -228,7 +221,7 @@ diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N
   SB.addStanLine "vector[N] out_vec"
   SB.stanForLoop "i" Nothing "N" $ const $ SB.addStanLine $ "out_vec[i] = vs[i, i]"
   SB.addStanLine "return out_vec"
-  return "indexBoth"
+  pure "indexBoth"
 
 -- given something indexed by things which can be indexed from a data-set,
 -- create a vector which is a 1d alias
@@ -243,7 +236,7 @@ vectorizeExpr sn se ik = do
   let vecVname = sn <> "_v"
   fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
   SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeExpr" $ SB.var fv `SB.eq` se
-  return fv
+  pure fv
 
 weightedMeanFunction :: SB.StanBuilderM md gq ()
 weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
@@ -270,7 +263,6 @@ stackDataSets :: forall md gq r1 r2. (Typeable r1, Typeable r2)
                        -> SB.RowTypeTag r2
                        -> SB.GroupSet -- groups to stack
                        -> SB.StanBuilderM md gq (SB.RowTypeTag (Either r1 r2) -- tag for combined loops
-                                                , SB.StanVar -- vector with data-set index
                                                 , SB.StanName -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanVar -- stack variables
                                              )
 stackDataSets name rtt1 rtt2 groups = do
@@ -282,14 +274,11 @@ stackDataSets name rtt1 rtt2 groups = do
   rtt <- SB.addModelDataSet name (SB.ToFoldable $ \md -> (Left <$> listF1 md) ++ (Right <$> listF2 md))
   SB.addUseBindingToDataSet rtt n1 $ SB.StanVar ("N_" <> n1) SB.StanInt
   SB.addUseBindingToDataSet rtt n2 $ SB.StanVar ("N_" <> n2) SB.StanInt
-  indexV <- SB.inBlock SB.SBTransformedData $ do
+  SB.inBlock SB.SBTransformedData $ do
     sizeV <- SB.stanDeclareRHS (sizeName name) SME.StanInt "<lower=0>"
              $ SME.name (sizeName n1) `SME.plus` SME.name (sizeName n2)
     SB.addDeclBinding name sizeV
     SB.addUseBindingToDataSet rtt name sizeV
-    let iArray n s = SB.function "rep_array" (SB.scalar (show n) :| [SB.name $ sizeName s])
-    SB.stanDeclareRHS "dataSetIndex" (SB.StanArray [SB.NamedDim name] SB.StanInt) "<lower=0>"
-      $ SB.function "append_array" (iArray 0 n1 :| [iArray 1 n2])
   let copyUseBinding rttFrom rttTo dimName = do
         m <- SB.getDataSetBindings rttFrom
         case Map.lookup dimName m of
@@ -328,7 +317,7 @@ stackDataSets name rtt1 rtt2 groups = do
         SB.addUseBindingToDataSet rtt gName iv
         return SB.Phantom
   _ <- DHash.traverseWithKey stackGroupIndexes groups
-  return (rtt, indexV, stackVars)
+  return (rtt, stackVars)
 
 {-
 

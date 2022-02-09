@@ -168,8 +168,7 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
 data Parameterization = Centered | NonCentered deriving (Eq, Show)
 
 addDMParametersAndPriors :: (Typeable md, Typeable gq)
-                         => SB.RowTypeTag r -- for bindings
-                         -> DesignMatrixRow r
+                         => Text
                          -> SB.GroupTypeTag k -- exchangeable contexts
                          -> SB.StanName -- name for beta parameter (so we can use theta if QR)
                          -> Parameterization
@@ -181,8 +180,8 @@ addDMParametersAndPriors :: (Typeable md, Typeable gq)
                                                   , SB.StanVar
                                                   , SB.StanVar
                                                   )
-addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (muPrior, tauPrior, lkjParameter) mS = SB.useDataSetForBindings rtt $ do
-  let dmDimName = n <> "_Cols"
+addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, tauPrior, lkjParameter) mS =do
+  let dmDimName = designMatrixName <> "_Cols"
       dmDim = SB.NamedDim dmDimName
       dmVec = SB.StanVector dmDim
       vecDM = SB.vectorizedOne dmDimName
@@ -220,11 +219,6 @@ addDMParametersAndPriors rtt (DesignMatrixRow n _) g betaName parameterization (
     NonCentered -> SB.inBlock SB.SBTransformedParameters $
       SB.stanDeclareRHS ("alpha" <> s) gVec ""
       $ vecG $ SB.var muAlpha `SB.plus` (SB.var sigmaAlpha `SB.times` SB.var alphaRaw)
-{-
-      SB.stanForLoopB "s" Nothing gName
-        $ SB.addExprLine "electionModelDM"
-        $ vecDM $ SB.var beta' `SB.eq` (SB.var mu `SB.plus` (dpmE `SB.times` SB.var betaRaw))
--}
   SB.inBlock SB.SBModel $ do
     case parameterization of
       Centered -> do
