@@ -22,6 +22,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Vector.Unboxed as V
 import qualified CmdStan as SB
+import qualified Stan.ModelConfig as SB
 
 data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: Text
                                                  , dmrpLength :: Int
@@ -123,10 +124,10 @@ addDesignMatrixIndexes :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> Desig
 addDesignMatrixIndexes rtt dmr = do
   let addEach (gName, gSize, gStart) = do
         let sizeName = dmName dmr <> "_" <> gName
-        sv <- SB.addFixedIntJson sizeName Nothing gSize
+        sv <- SB.addFixedIntJson (SB.inputDataType rtt) sizeName Nothing gSize
         SB.addDeclBinding sizeName sv
         SB.addUseBindingToDataSet rtt sizeName sv
-        SB.addFixedIntJson (gName <> "_" <> dmName dmr <> "_Index") Nothing gStart
+        SB.addFixedIntJson (SB.inputDataType rtt) (gName <> "_" <> dmName dmr <> "_Index") Nothing gStart
         pure ()
   traverse_ addEach $ designMatrixIndexes dmr
 
@@ -245,7 +246,7 @@ centerDataMatrix :: (Typeable md, Typeable gq)
                  => SB.StanVar -- matrix
                  -> Maybe SB.StanVar -- row weights
                  -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
-                                          , SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                                          , SB.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
                                           )
 centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
   (rowIndexKey, colIndexKey) <- case mt of
@@ -273,9 +274,10 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
       SB.addExprLine "centerDataMatrix"
         $ SB.vectorizedOne rowIndexKey $ SB.var centeredXV' `SB.eq` (SB.var mV `SB.minus` SB.var meanXV')
     pure (centeredXV', meanXV')
-  let centeredX mv@(SB.StanVar mn mt) mSuffix =
+  let centeredX idt mv@(SB.StanVar mn mt) mSuffix = do
+        let codeBlock = if idt == SB.ModelData then SB.SBTransformedData else SB.SBTransformedDataGQ
         case mt of
-          cmt@(SB.StanMatrix (SB.NamedDim rKey, SB.NamedDim cKey)) -> SB.inBlock SB.SBTransformedData $ do
+          cmt@(SB.StanMatrix (SB.NamedDim rKey, SB.NamedDim cKey)) -> SB.inBlock codeBlock $ do
             cv <- SB.stanDeclare ("centered_" <> mn <> fromMaybe "" mSuffix) cmt ""
             SB.stanForLoopB "k" Nothing cKey $ do
               SB.addExprLine "centerData.Matrix.centeredX"$ SB.vectorizedOne rKey $ SB.var cv `SB.eq` (SB.var mv `SB.minus` SB.var meanXV)

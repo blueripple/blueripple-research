@@ -69,7 +69,9 @@ stanCodeToStanModel (StanCode _ a) =
   StanModel
   (f . g $ a Array.! SBFunctions)
   (g $ a Array.! SBData)
-  (f . g  $ a Array.! SBTransformedData)
+  (g $ a Array.! SBDataGQ)
+  (f . g $ a Array.! SBTransformedData)
+  (f . g $ a Array.! SBTransformedDataGQ)
   (g $ a Array.! SBParameters)
   (f . g $ a Array.! SBTransformedParameters)
   (g $ a Array.! SBModel)
@@ -260,14 +262,13 @@ useBindingsFromGroupIndexMakers rtt (GroupIndexMakers gims) = Map.fromList l whe
         dsn = dataSetName rtt
         indexName = dsn <> "_" <> gn
         indexVar = SME.StanVar indexName $ indexType $ dsn
-    in (gn, SME.var indexVar) --SME.indexBy (SME.name indexName) $ dataSetName rtt)
+    in (gn, SME.var indexVar)
 
 
 -- build a new RowInfo from the row index and IntMap builders
 buildRowInfo :: d -> RowTypeTag r -> GroupIndexAndIntMapMakers d r -> RowInfo d r
 buildRowInfo d rtt (GroupIndexAndIntMapMakers tf@(ToFoldable f) ims imbs) = Foldl.fold fld $ f d  where
   gisFld = indexBuildersForDataSetFold $ ims
---  imsFldM = intMapsForDataSetFoldM imbs
   useBindings = Map.insert (dataSetName rtt) (SME.name $ "N_" <> dataSetName rtt) $ useBindingsFromGroupIndexMakers rtt ims
   fld = RowInfo tf useBindings <$> gisFld <*> pure imbs <*> pure mempty
 
@@ -313,7 +314,7 @@ buildGroupIndexes = do
       buildIndexJSONFold rtt gtt@(GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
             indexName = groupIndexVarName rtt gtt --dsName <> "_" <> gName
-        addFixedIntJson' ("J_" <> gName) (Just 1) gSize
+        addFixedIntJson' (inputDataType rtt) ("J_" <> gName) (Just 1) gSize
         _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ SME.StanVar ("J_" <> gName) SME.StanInt
         return Nothing
@@ -766,7 +767,6 @@ runStanGroupBuilder sgb md gq =
       gqRowInfos = DHash.mapWithKey (buildRowInfo gq) $ gbGQS gbs
   in initialBuilderState modelRowInfos gqRowInfos
 
-
 newtype StanBuilderM md gq a = StanBuilderM { unStanBuilderM :: ExceptT Text (State (BuilderState md gq)) a }
                              deriving (Functor, Applicative, Monad, MonadState (BuilderState md gq))
 
@@ -1132,7 +1132,8 @@ addJson :: forall r md gq. (Typeable md, Typeable gq)
         -> Stan.StanJSONF r Aeson.Series
         -> StanBuilderM md gq SME.StanVar
 addJson rtt name st sc fld = do
-  v <- inBlock SBData $ stanDeclare name st sc
+  let codeBlock = if inputDataType rtt == ModelData then SBData else SBDataGQ
+  v <- inBlock codeBlock $ stanDeclare name st sc
   let addFold :: Typeable x => RowInfos x -> StanBuilderM md gq (RowInfos x)
       addFold rowInfos = case addFoldToDBuilder rtt fld rowInfos of
         Nothing -> stanBuildError $ "Attempt to add Json to an uninitialized dataset (" <> dataSetName rtt <> ")"
@@ -1167,18 +1168,19 @@ addJsonOnce rtt name st sc fld = do
     then addJson rtt name st sc fld
     else return $ SME.StanVar name st
 
-addFixedIntJson :: (Typeable md, Typeable gq) => Text -> Maybe Int -> Int -> StanBuilderM md gq SME.StanVar
-addFixedIntJson name mLower n = do
+addFixedIntJson :: (Typeable md, Typeable gq) => InputDataType -> Text -> Maybe Int -> Int -> StanBuilderM md gq SME.StanVar
+addFixedIntJson idt name mLower n = do
   let sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
-  inBlock SBData $ stanDeclare name SME.StanInt sc -- this will error if we already declared
+      codeBlock = if idt == ModelData then SBData else SBDataGQ
+  inBlock codeBlock $ stanDeclare name SME.StanInt sc -- this will error if we already declared
   modify $ addConstJson (JSONSeriesFold $ Stan.constDataF name n)
   return $ SME.StanVar name SME.StanInt
 
-addFixedIntJson' :: (Typeable md, Typeable gq) => Text -> Maybe Int -> Int -> StanBuilderM md gq SME.StanVar
-addFixedIntJson' name mLower n = do
+addFixedIntJson' :: (Typeable md, Typeable gq) => InputDataType -> Text -> Maybe Int -> Int -> StanBuilderM md gq SME.StanVar
+addFixedIntJson' idt name mLower n = do
   alreadyDeclared <- isDeclaredAllScopes name
   if not alreadyDeclared
-    then addFixedIntJson name mLower n
+    then addFixedIntJson idt name mLower n
     else return $ SME.StanVar name SME.StanInt
 
 -- These get re-added each time something adds a column built from the data-set.
@@ -1269,7 +1271,7 @@ add2dMatrixJson rtt (MatrixRowFromData name cols vecF) sc rowDim = do
       colName = "K" <> "_" <> name
       colDimName = name <> "_Cols"
       colDimVar = SME.StanVar colDimName SME.StanInt
-  addFixedIntJson' colName Nothing cols
+  addFixedIntJson' (inputDataType rtt) colName Nothing cols
 --  addDeclBinding' colDimName (SME.name colName)
   addDeclBinding colDimName $ SME.StanVar colName SME.StanInt
 --  addUseBindingToDataSet rtt colDimName (SME.name colName)
@@ -1430,9 +1432,13 @@ stanModelAsText :: GeneratedQuantities -> StanModel -> T.Text
 stanModelAsText gq sm =
   let section h b = h <> " {\n" <> b <> "}\n"
       maybeSection h = maybe "" (section h)
+      needGQ = gq `elem` [All, NoLL]
+      dataBlockWithGQ = dataBlock sm <> if needGQ then ("\n// For Generated Quantities\n" <> dataBlockGQ sm) else ""
+      transformedDataBlockMWithGQ = transformedDataBlockM sm
+                                   <> if needGQ then fmap ("\n// For Generated Quantities\n" <>) (transformedDataBlockMGQ sm) else Nothing
    in maybeSection "functions" (functionsBlock sm)
-      <> section "data" (dataBlock sm)
-      <> maybeSection "transformed data" (transformedDataBlockM sm)
+      <> section "data" dataBlockWithGQ
+      <> maybeSection "transformed data" transformedDataBlockMWithGQ
       <> section "parameters" (parametersBlock sm)
       <> maybeSection "transformed parameters" (transformedParametersBlockM sm)
       <> section "model" (modelBlock sm)

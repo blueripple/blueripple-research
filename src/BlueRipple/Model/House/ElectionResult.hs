@@ -1051,16 +1051,18 @@ designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
 designMatrixRowElex :: DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
 designMatrixRowElex = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
   where
+    fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
+    fracHispanic r =  F.rgetField @FracWhiteHispanic r + F.rgetField @FracNonWhiteHispanic r
+    fracWhiteNonGrad r = fracWhite r - F.rgetField @FracWhiteGrad r
     sexRP = DM.rowPartFromFunctions "Sex" [\r ->  1 - (2 * F.rgetField @FracFemale r)] -- Female is -1 since 1st in enum
     eduRP = DM.rowPartFromFunctions "Education" [\r ->  (2 * F.rgetField @FracGrad r) - 1] -- Grad is +1 since 2nd in enum
     raceRP = DM.rowPartFromFunctions "Race" [F.rgetField @FracOther
                                             , F.rgetField @FracBlack
-                                            , \r -> F.rgetField @FracWhiteHispanic r + F.rgetField @FracNonWhiteHispanic r
+                                            , fracHispanic
                                             , F.rgetField @FracAsian
                                             , F.rgetField @FracWhiteNonHispanic
                                             ]
     densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
-    fracWhiteNonGrad r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r - F.rgetField @FracWhiteGrad r
     wngRP = DM.rowPartFromFunctions "WhiteNonGrad" [\r ->  (2 * fracWhiteNonGrad r) - 1] -- white non-grad is 1 since True in Bool, thus 2nd in enum
 
 race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
@@ -1091,7 +1093,30 @@ printPrefDataSet (P_CCES vs) = "CCES_" <> printVoteSource vs
 printPrefDataSet P_Elex = "Elex"
 printPrefDataSet (P_ElexAndCCES vs) = "ElexAndCCES_" <> printVoteSource vs
 
-
+predictorFunctions :: SB.RowTypeTag r
+                   -> DM.DesignMatrixRow r
+                   -> Maybe Text
+                   -> SB.IndexKey
+                   -> SB.StanVar
+                   -> SB.StanBuilderM md gq (SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr
+                                            , SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr
+                                            )
+predictorFunctions rtt dmr suffixM dmColIndex dsIndexV = do
+  let dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
+      predE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
+      pred a dm beta = predE (SB.var a) (SB.var dm) (SB.var beta)
+      suffix = fromMaybe "" suffixM
+      iPredF :: SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
+      iPredF = SB.useDataSetForBindings rtt $ do
+        dsAlpha <- SB.addSimpleParameter ("dsAplha" <> suffix) SB.StanReal SB.stdNormal
+        dsPhi <- SB.addParameterWithVectorizedPrior ("dsPhi" <> suffix) (SB.StanVector $ SB.NamedDim dmColIndex) SB.stdNormal dmColIndex
+        SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings rtt $ DM.splitToGroupVars dmr dsPhi
+        return $ \aE dmE betaE -> predE (aE `SB.plus` SB.paren (SB.var dsAlpha `SB.times` SB.var dsIndexV))
+                                         dmE
+                                         (betaE `SB.plus` SB.paren (SB.var dsPhi `SB.times` SB.var dsIndexV))
+  iPredE <- iPredF
+  let iPred a dm beta = iPredE (SB.var a) (SB.var dm) (SB.var beta)
+  return (pred, iPred)
 
 setupCCESTData :: (Typeable md, Typeable gq)
                    => Int
@@ -1105,6 +1130,8 @@ setupCCESTData n = do
   cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
   votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted)
   return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES, ccesTIndex)
+
+
 
 setupCPSData ::  (Typeable md, Typeable gq)
              => Int
@@ -1313,44 +1340,31 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndexT))) = dmT
         let (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim colIndexP))) = dmP
 
-        let dmBetaE dmE betaE = SB.vectorizedOne "DM_Cols" $ SB.function "dot_product" (dmE :| [betaE])
-            predE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
-            pred a dm beta = predE (SB.var a) (SB.var dm) (SB.var beta)
+        (predT, iPredT') <- predictorFunctions turnoutData turnoutDesignMatrixRow (Just "T") "DM_Cols" dsIndexT
+        (predP, iPredP') <- predictorFunctions prefData prefDesignMatrixRow (Just "P") "DM_Cols" dsIndexP
 
-            iPred :: SB.RowTypeTag x -> DM.DesignMatrixRow x -> Text -> SB.IndexKey -> SB.StanVar
-                  -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
-            iPred rtt dmr suffix colIndex dsIndexV = do
-              dsAlpha <- SB.addSimpleParameter ("dsAplha" <> suffix) SB.StanReal SB.stdNormal
-              dsPhi <- SB.addParameterWithVectorizedPrior ("dsPhi" <> suffix) (SB.StanVector $ SB.NamedDim colIndex) SB.stdNormal colIndex
-              SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings rtt $ DM.splitToGroupVars dmr dsPhi
-              return $ \aE dmE betaE -> predE (aE `SB.plus` SB.paren (SB.var dsAlpha `SB.times` SB.var dsIndexV))
-                                        dmE
-                                        (betaE `SB.plus` SB.paren (SB.var dsPhi `SB.times` SB.var dsIndexV))
+        let iPredT :: SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr
+            iPredT = case turnoutDataSet of
+                       T_CCES -> predT
+                       T_CPS -> predT
+                       T_Elex -> predT
+                       T_CCESAndCPS -> iPredT'
+                       T_ElexAndCPS -> iPredT'
 
-        iPredTE <- case turnoutDataSet of
-          T_CCES -> return predE
-          T_CPS -> return predE
-          T_Elex -> return predE
-          T_CCESAndCPS -> iPred turnoutData turnoutDesignMatrixRow "T" colIndexT dsIndexT
-          T_ElexAndCPS -> iPred turnoutData turnoutDesignMatrixRow "T" colIndexT dsIndexT
-
-        let iPredT a dm beta = iPredTE (SB.var a) (SB.var dm) (SB.var beta)
-
-        iPredPE <- case prefDataSet of
-          P_CCES _ -> return predE
-          P_Elex -> return predE
-          P_ElexAndCCES _ -> iPred prefData prefDesignMatrixRow "P" colIndexP dsIndexP
-
-        let iPredP a dm beta = iPredPE (SB.var a) (SB.var dm) (SB.var beta)
+            iPredP :: SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr
+            iPredP = case prefDataSet of
+                        P_CCES _ -> predP
+                        P_Elex -> predP
+                        P_ElexAndCCES _ -> iPredP'
 
             vecT = SB.vectorizeExpr "voteDataBetaT" (iPredT alphaT dmT thetaT) (SB.dataSetName turnoutData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (iPredP alphaP dmP thetaP) (SB.dataSetName prefData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings turnoutData $ do
             voteDataBetaT_v <- vecT
-            SB.printVar "" alphaT
-            SB.printVar "" thetaT
-            SB.printVar "" muT
+--            SB.printVar "" alphaT
+--            SB.printVar "" thetaT
+--            SB.printVar "" muT
             SB.printVar "" voteDataBetaT_v
             SB.printTarget "before T "
             SB.sampleDistV turnoutData distT (SB.var voteDataBetaT_v) voted
@@ -1381,13 +1395,13 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         acsData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.GQData "ACS"
         dmACS' <- DM.addDesignMatrix acsData designMatrixRowACS
         (dmACS_T, dmACS_P) <- SB.useDataSetForBindings acsData $ do
-          dmACS_T' <- centerTF dmACS' (Just "T")
-          dmACS_P' <- centerPF dmACS' (Just "P")
+          dmACS_T' <- centerTF SC.GQData dmACS' (Just "T")
+          dmACS_P' <- centerPF SC.GQData dmACS' (Just "P")
           return (dmACS_T', dmACS_P')
-        let psTPrecompute = SB.vectorizeExpr "acsBetaT" (pred alphaT dmACS_T thetaT) (SB.dataSetName acsData)
+        let psTPrecompute = SB.vectorizeExpr "acsBetaT" (predT alphaT dmACS_T thetaT) (SB.dataSetName acsData)
             psTExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
             psTExpr =  pure . SB.familyExp distT . SB.var
-            psPPrecompute = SB.vectorizeExpr "acsBetaP" (pred alphaP dmACS_P thetaP) (SB.dataSetName acsData)
+            psPPrecompute = SB.vectorizeExpr "acsBetaP" (predP alphaP dmACS_P thetaP) (SB.dataSetName acsData)
             psPExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
             psPExpr =  pure . SB.familyExp distP . SB.var
             turnoutPS = (psTPrecompute, psTExpr)
@@ -1400,7 +1414,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               (Just name)
               turnoutData
               acsData
---              (SB.addGroupToSet stateGroup SB.emptyGroupSet)
               (realToFrac . F.rgetField @PUMS.Citizens)
               (MRP.PSShare Nothing)
               (Just grp)
@@ -1418,10 +1431,10 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         dmPS' <- DM.addDesignMatrix psData designMatrixRow
 
         let psPreCompute = do
-              dmPS_T <- centerTF dmPS' (Just "T")
-              dmPS_P <- centerPF dmPS' (Just "P")
-              psT_v <- SB.vectorizeExpr "psBetaT" (pred alphaT dmPS_T thetaT) (SB.dataSetName psData)
-              psP_v <- SB.vectorizeExpr "psBetaP" (pred alphaP dmPS_P thetaP) (SB.dataSetName psData)
+              dmPS_T <- centerTF SC.GQData dmPS' (Just "T")
+              dmPS_P <- centerPF SC.GQData dmPS' (Just "P")
+              psT_v <- SB.vectorizeExpr "psBetaT" (predT alphaT dmPS_T thetaT) (SB.dataSetName psData)
+              psP_v <- SB.vectorizeExpr "psBetaP" (predP alphaP dmPS_P thetaP) (SB.dataSetName psData)
               pure (psT_v, psP_v)
 
             psExprF (psT_v, psP_v) = do
@@ -1435,7 +1448,6 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
               Nothing
               turnoutData
               psData
---              psGroupSet
               (realToFrac . F.rgetField @Census.Count)
               (MRP.PSShare $ Just $ SB.name "pT")
               (Just psGroup)
@@ -1515,7 +1527,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
     $ MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 20) (Just 20) (Just 0.8) (Just 10) Nothing)
+    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
     stanParallelCfg
     dw
     stanCode

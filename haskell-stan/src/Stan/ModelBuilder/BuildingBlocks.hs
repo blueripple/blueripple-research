@@ -29,6 +29,7 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
+import qualified Stan.ModelConfig as SB
 
 addIntData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
@@ -144,7 +145,7 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
   fnArgs' <- SB.exprVarsM $ SME.vectorizedOne dsName $ samplingE
   let fnArgs = Set.toList $ Set.delete sVarDist fnArgs' -- slicedVar is handled separately
 --  SB.stanBuildError $ "HERE: \n" <> show fnArgs <> "\n" <> SB.prettyPrintSTree samplingE
-  SB.addFixedIntJson' "grainsize" Nothing 1
+  SB.addFixedIntJson' SB.ModelData "grainsize" Nothing 1
 --  slicedType' <- SB.stanBuildEither $ SB.dropOuterIndex slicedType
   SB.addFunctionsOnce fNameDecl $ do
     let argList = sVarArg :|
@@ -209,8 +210,6 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist args
---      ppVar = SME.StanVar ppName t
---      ppE = SME.var ppVar --SME.indexBy (SME.name ppName) k `SME.eq` rngE
   ppVar <- SB.stanDeclare ppName t ""
   SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` rngE
   return sv

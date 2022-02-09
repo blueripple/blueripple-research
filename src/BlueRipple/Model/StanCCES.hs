@@ -243,7 +243,9 @@ model_BinomialAllBuckets :: SB.StanModel
 model_BinomialAllBuckets = SB.StanModel
                            Nothing
                            binomialASER5_StateDataBlock
+                           ""
                            (Just binomialASER5_StateTransformedDataBlock)
+                           Nothing
                            binomialASER5_StateParametersBlock
                            Nothing
                            binomialASER5_StateModelBlock
@@ -254,7 +256,9 @@ model_v2 :: SB.StanModel
 model_v2 = SB.StanModel
            Nothing
            binomialASER5_StateDataBlock
+           ""
            (Just binomialASER5_StateTransformedDataBlock)
+           Nothing
            binomialASER5_v2_StateParametersBlock
            Nothing
            binomialASER5_v2_StateModelBlock
@@ -265,7 +269,9 @@ model_v3 :: SB.StanModel
 model_v3 = SB.StanModel
            Nothing
            binomialASER5_StateDataBlock
+           ""
            (Just binomialASER5_StateTransformedDataBlock)
+           Nothing
            binomialASER5_v3_ParametersBlock
            Nothing
            binomialASER5_v3_ModelBlock
@@ -276,6 +282,8 @@ model_v4 :: SB.StanModel
 model_v4 = SB.StanModel
            Nothing
            binomialASER5_v4_DataBlock
+           ""
+           Nothing
            Nothing
            binomialASER5_v4_ParametersBlock
            Nothing
@@ -288,6 +296,8 @@ model_v5 :: SB.StanModel
 model_v5 = SB.StanModel
            Nothing
            binomialASER5_v4_DataBlock
+           ""
+           Nothing
            Nothing
            binomialASER5_v5_ParametersBlock
            Nothing
@@ -299,7 +309,9 @@ model_v6 :: SB.StanModel
 model_v6 = SB.StanModel
            Nothing
            binomialASER5_v4_DataBlock
+           ""
            (Just binomialASER5_v6_TransformedDataBlock)
+           Nothing
            binomialASER5_v6_ParametersBlock
            Nothing
            binomialASER5_v6_ModelBlock
@@ -311,7 +323,9 @@ model_v7 :: SB.StanModel
 model_v7 = SB.StanModel
            Nothing
            binomialASER5_v4_DataBlock
+           ""
            (Just binomialASER5_v6_TransformedDataBlock)
+           Nothing
            binomialASER5_v7_ParametersBlock
            (Just binomialASER5_v7_TransformedParametersBlock)
            binomialASER5_v7_ModelBlock

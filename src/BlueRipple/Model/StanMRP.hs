@@ -366,7 +366,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
     Just (SB.RowInfo tf _ _ _ _) -> return tf
   case mPSGroup of
     Nothing -> do
-      SB.inBlock SB.SBData $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+      SB.inBlock SB.SBDataGQ $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
       pure ()
     Just gtt -> do
       rims <- SB.gqRowBuilders <$> get

@@ -1,21 +1,12 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
---{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.BuilderTypes
 
@@ -62,25 +53,23 @@ import Knit.Report (crimson)
 import qualified Data.Hashable.Lifted as Hashable
 
 type FunctionsBlock = T.Text
-
 type DataBlock = T.Text
-
+--type DataBlockGQ = T.Text
 type TransformedDataBlock = T.Text
-
+--type TransformedDataBlockGQ = T.Text
 type ParametersBlock = T.Text
-
 type TransformedParametersBlock = T.Text
-
 type ModelBlock = T.Text
-
 type GeneratedQuantitiesBlock = T.Text
 
-data GeneratedQuantities = NoGQ | NoLL | OnlyLL | All
+data GeneratedQuantities = NoGQ | NoLL | OnlyLL | All deriving (Show, Eq)
 
 data StanModel = StanModel
   { functionsBlock :: Maybe FunctionsBlock,
     dataBlock :: DataBlock,
+    dataBlockGQ :: DataBlock,
     transformedDataBlockM :: Maybe TransformedDataBlock,
+    transformedDataBlockMGQ :: Maybe TransformedDataBlock,
     parametersBlock :: ParametersBlock,
     transformedParametersBlockM :: Maybe TransformedParametersBlock,
     modelBlock :: ModelBlock,
@@ -91,7 +80,9 @@ data StanModel = StanModel
 
 data StanBlock = SBFunctions
                | SBData
+               | SBDataGQ
                | SBTransformedData
+               | SBTransformedDataGQ
                | SBParameters
                | SBTransformedParameters
                | SBModel
