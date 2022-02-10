@@ -1313,10 +1313,14 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
         (turnoutData, turnoutDesignMatrixRow, cvap, voted, dmTurnout, dsIndexT) <- setupTurnoutData turnoutDataSet
         DM.addDesignMatrixIndexes turnoutData turnoutDesignMatrixRow
-        let distT = SB.binomialLogitDist cvap
+
+        let distT = SB.binomialLogitDistWithConstants cvap
+--        let distNormalT = SB.normalDist
 
         (prefData, prefDesignMatrixRow, votesInRace, dVotesInRace, dmPref, dsIndexP) <- setupPrefData prefDataSet
-        let distP = SB.binomialLogitDist votesInRace
+        let distP = SB.binomialLogitDistWithConstants votesInRace
+--        let distNormalP = SB.normalDist
+
         SB.inBlock SB.SBTransformedData $ do
           SB.printVar "" cvap
           SB.printVar "" voted
@@ -1359,22 +1363,16 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
 
             vecT = SB.vectorizeExpr "voteDataBetaT" (iPredT alphaT dmT thetaT) (SB.dataSetName turnoutData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (iPredP alphaP dmP thetaP) (SB.dataSetName prefData)
+            timesElt = SB.binOp ".*"
+            toVec intV = SB.function "to_vector" $ SB.var intV :| []
+
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings turnoutData $ do
             voteDataBetaT_v <- vecT
---            SB.printVar "" alphaT
---            SB.printVar "" thetaT
---            SB.printVar "" muT
-            SB.printVar "" voteDataBetaT_v
-            SB.printTarget "before T "
             SB.sampleDistV turnoutData distT (SB.var voteDataBetaT_v) voted
           SB.useDataSetForBindings prefData $ do
             voteDataBetaP_v <- vecP
-            SB.printVar "" voteDataBetaP_v
-            SB.printTarget "before P "
             SB.sampleDistV prefData distP (SB.var voteDataBetaP_v) dVotesInRace
-            SB.printTarget "after P "
-
 
         let llSet :: SB.LLSet CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) SB.StanExpr =
               SB.addToLLSet turnoutData (SB.LLDetails distT (pure $ iPredT alphaT dmT thetaT) voted)

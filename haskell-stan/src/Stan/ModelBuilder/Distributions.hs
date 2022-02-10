@@ -52,13 +52,22 @@ familyExp (StanDist _ _ _ _ _ e) = e
 --vec :: SME.IndexKey -> SME.StanVar -> SME.StanExpr
 --vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
 
-binomialLogitDist :: SME.StanVar -> StanDist SME.StanExpr
-binomialLogitDist tV = StanDist Discrete sample lpdf lupdf rng expectation where
-  sample lpE sV = SME.var sV `SME.vectorSample` SME.function "binomial_logit" (SME.var tV :| [lpE])
+binomialLogitDist' :: Bool -> SME.StanVar -> StanDist SME.StanExpr
+binomialLogitDist' sampleWithConstants tV = StanDist Discrete sample lpdf lupdf rng expectation where
+  plusEq = SME.binOp "+="
+  sample lpE sV = if sampleWithConstants
+                  then SME.target `plusEq` SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
+                  else SME.var sV `SME.vectorSample` SME.function "binomial_logit" (SME.var tV :| [lpE])
   lpdf lpE sV = SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
   lupdf lpE sV = SME.functionWithGivens "binomial_logit_lupmf" (one $ SME.var sV) (SME.var tV :| [lpE])
   rng lpE = SME.function "binomial_rng" (SME.var tV :| [SME.function "inv_logit" (one lpE)])
   expectation lpE = SME.function "inv_logit" (one lpE)
+
+binomialLogitDist :: SME.StanVar -> StanDist SME.StanExpr
+binomialLogitDist = binomialLogitDist' False
+
+binomialLogitDistWithConstants :: SME.StanVar -> StanDist SME.StanExpr
+binomialLogitDistWithConstants = binomialLogitDist' True
 
 -- for priors
 normal :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr
@@ -72,7 +81,7 @@ normalDist :: StanDist (SME.StanExpr, SME.StanExpr)
 normalDist = StanDist Continuous sample lpdf lupdf rng expectation where
   sample (mean, sigma) yV = SME.var yV `SME.vectorSample` normal (Just mean) sigma
   lpdf (mean, sigma) yV = SME.functionWithGivens "normal_lpdf" (one $ SME.var yV) (mean :| [sigma])
-  lupdf (mean, sigma) yV = SME.functionWithGivens "normal_lUpdf" (one $ SME.var yV) (mean :| [sigma])
+  lupdf (mean, sigma) yV = SME.functionWithGivens "normal_lupdf" (one $ SME.var yV) (mean :| [sigma])
   rng (mean, sigma) = SME.function "normal_rng" (mean :| [sigma])
   expectation (mean, _) = mean
 

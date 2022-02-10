@@ -243,6 +243,16 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
+{-
+normalApproxBinomial :: SB.StanBuilderM md gq ()
+normalApproxBinomial = SB.addFunctionsOnce "normallyApproximatedBinomial"
+                       $ SB.declareStanFunction "real normalApproxBinomialLogit_lpdf(int[] succ, int[] trials, vector lp)" $ do
+  SB.addStanLine "int N = size s"
+  SB.addStanLine "vector[N] p = inv_logit(lp)"
+  SB.addStanLine "vector[N] m = p .* trials"
+  SB.addStanLine "vector[N] var = (p .* (1 - p)) .* trials"
+  SB.addStanLine "return normal_lpdf(succ, m, sqrt(var))"
+-}
 
 matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
 matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
