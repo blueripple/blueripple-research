@@ -259,6 +259,8 @@ modelDiagnostics stanParallelCfg parallel = do
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
+      elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
+      presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
       modelDir =  "br-2021-NewMaps/stanDMElex"
       vs = BRE.CCESComposite
       dmModel = BRE.Model BRE.T_ElexAndCPS (BRE.P_ElexAndCCES vs) BRE.LogDensity
@@ -272,12 +274,15 @@ modelDiagnostics stanParallelCfg parallel = do
         K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   (crossTabsCPS, _) <- modelDM (fmap fixACS <$> acs2020_C)
+{-
   diag_C <- BRE.ccesDiagnostics False "DiagPost" vs
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   (ccesDiagByState, _) <- K.ignoreCacheTime diag_C
-  let (diagTable, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] (BRE.byState crossTabsCPS) ccesDiagByState
-  when (not $ null missing) $ K.logLE K.Diagnostic $ "Missing keys in state crossTabs/ccesDiag join: " <> show missing
+-}
+  presElexByState <- K.ignoreCacheTime presElex2020_C
+  let (diagTable, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] (BRE.byState crossTabsCPS) presElexByState
+  when (not $ null missing) $ K.logLE K.Diagnostic $ "Missing keys in state crossTabs/presElex join: " <> show missing
   diagnosticsPaths <- postPaths "Diagnostics"
 --  BR.logFrame ccesDiagByState
 --  BR.logFrame $ BRE.byState crossTabsCPS
@@ -297,12 +302,12 @@ diagTableColonnade cas =
       cvap = F.rgetField @PUMS.Citizens
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
-      rawTurnout = F.rgetField @BRE.Turnout
-      rawDShare = F.rgetField @ET.DemShare
+      rawTurnout r = (realToFrac @_ @Double  $ voters r) / (realToFrac  $ cvap r)
+      rawDShare r = realToFrac @_ @Double (demVoters r) / realToFrac (voters r)
   in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
       <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
-      <> C.headed "Votes" (BR.toCell cas "Votes" "Votes" (BR.numberToStyledHtml "%2.0f" . voters))
-      <> C.headed "Dem Votes" (BR.toCell cas "D Votes" "D Votes" (BR.numberToStyledHtml "%2.0f" . demVoters))
+      <> C.headed "Votes" (BR.toCell cas "Votes" "Votes" (BR.numberToStyledHtml "%d" . voters))
+      <> C.headed "Dem Votes" (BR.toCell cas "D Votes" "D Votes" (BR.numberToStyledHtml "%d" . demVoters))
       <> C.headed "Raw Turnout" (BR.toCell cas "Raw Turnout" "Raw Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . rawTurnout))
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))

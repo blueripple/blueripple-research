@@ -914,12 +914,15 @@ ccesDiagnostics clearCaches cacheSuffix vs acs_C cces_C = K.wrapPrefix "ccesDiag
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc = let voters = (pT rw * cvap rc) in (F.rgetField @PUMS.Citizens rc F.&: voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [CVAP, Voters, DemVoters]
       psFld :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
-      psFld = FF.foldAllConstrained @Num FL.sum
+      psFld = (\cv v dv -> cv F.&: v F.&: dv F.&: V.RNil) <$> cvF <*> vF <*> dvF where
+        cvF = fromMaybe 0 <$> FL.premap (F.rgetField @CVAP) FL.last
+        vF = FL.premap (F.rgetField @Voters) FL.sum
+        dvF = FL.premap (F.rgetField @Voters) FL.sum
       addShare r = let v = F.rgetField @Voters r in r F.<+> (FT.recordSingleton @ET.DemShare $ if v < 1 then 0 else F.rgetField @DemVoters r / v)
       addTurnout r = let v = realToFrac (F.rgetField @CVAP r) in r F.<+> (FT.recordSingleton @Turnout $ if v < 1 then 0 else F.rgetField @Voters r / v)
       deps = (,) <$> acs_C <*> cces_C
-      onlyAlaska_C = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") <$> cces_C
-  K.ignoreCacheTime onlyAlaska_C >>= BR.logFrame
+--      onlyAlaska_C = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") <$> cces_C
+--  K.ignoreCacheTime onlyAlaska_C >>= BR.logFrame
   let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
   when clearCaches $ BR.clearIfPresentD statesCK
   states_C <- BR.retrieveOrMakeFrame statesCK deps $ \(acs, cces) -> do
@@ -1518,14 +1521,14 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         T_ElexAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_Elex, jsonData$Voted_CCES)" "ObsVoted"
       unwrapDVotes :: SR.UnwrapJSON = case prefDataSet of
         P_CCES _ -> SR.UnwrapNamed "DVotesInRace_CCES" "ObsDVotes"
-        P_Elex -> SR.UnwrapNamed "DVotesInRace_Elex" "ObsDVotes"
-        P_ElexAndCCES _ -> SR.UnwrapExpr "c(jsonData$DVotesInRace_Elex, jsonData$DVotesInRace_CCES)" "ObsDVoted"
+        P_Elex -> SR.UnwrapNamed "DVotesInRace_Elections" "ObsDVotes"
+        P_ElexAndCCES _ -> SR.UnwrapExpr "c(jsonData$DVotesInRace_Elections, jsonData$DVotesInRace_CCES)" "ObsDVoted"
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (secondF FS.unSFrame)
     $ MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing)
+    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 15) Nothing)
     stanParallelCfg
     dw
     stanCode
