@@ -447,6 +447,22 @@ aggregatePartiesF =
 
 type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
 
+makeElexDataFrame :: (K.KnitEffects r)
+                  => ET.OfficeT
+                  -> Int
+                  -> F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
+                  -> F.FrameRec PUMS.PUMS
+                  -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation]))
+makeElexDataFrame office earliestYear elex acs = do
+        let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
+        flattenedElex <- K.knitEither
+                         $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
+                         (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
+        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] $ pumsByState $ copy2019to2020 acs
+            (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
+        when (not $ null missing) $ K.knitError $ "prepSenateElectionData: missing keys in flattenedElex/acs join=" <> show missing
+        return $ fmap (F.rcast . addOffice) elexWithDemo
+
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
                              -> Int
@@ -458,22 +474,39 @@ prepPresidentialElectionData clearCache earliestYear = do
   acs_C <- PUMS.pumsLoaderAdults
 --  acsByState_C <- cachedPumsByState acs_C
   let deps = (,) <$> presElex_C <*> acs_C
-      makeFrame :: (K.KnitEffects r)
-                => F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
-                -> F.FrameRec PUMS.PUMS
-                -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation]))
-      makeFrame pElex acs = do
-        let addOffice rs = FT.recordSingleton @ET.Office ET.President F.<+> rs
-        flattenedElex <- K.knitEither
-                         $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
-                         (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) pElex)
-        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] $ pumsByState acs
-            (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
-        when (not $ null missing) $ K.knitError $ "prepPresidentialElectionData: missing keys in flattenedElex/acs join=" <> show missing
-        return $ fmap (F.rcast . addOffice) elexWithDemo
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(pElex, acs) -> makeFrame (fmap F.rcast pElex) (fmap F.rcast $ copy2019to2020 acs)
+    $ \(pElex, acs) -> makeElexDataFrame ET.President earliestYear (fmap F.rcast pElex) (fmap F.rcast acs)
 
+
+prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
+                       => Bool
+                       -> Int
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+prepSenateElectionData clearCache earliestYear = do
+  let cacheKey = "model/house/senateElexWithDemographics.bin"
+  when clearCache $ BR.clearIfPresentD cacheKey
+  senateElex_C <- BR.senateElectionsWithIncumbency
+  acs_C <- PUMS.pumsLoaderAdults
+--  acsByState_C <- cachedPumsByState acs_C
+  let deps = (,) <$> senateElex_C <*> acs_C
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(senateElex, acs) -> makeElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
+
+
+
+
+prepHouseElectionData :: (K.KnitEffects r, BR.CacheEffects r)
+                       => Bool
+                       -> Int
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+prepHouseElectionData clearCache earliestYear = do
+  let cacheKey = "model/house/houseElexWithDemographics.bin"
+  when clearCache $ BR.clearIfPresentD cacheKey
+  houseElex_C <- BR.houseElectionsWithIncumbency
+  acs_C <- PUMS.pumsLoaderAdults
+  let deps = (,) <$> houseElex_C <*> acs_C
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(senateElex, acs) -> makeElexDataFrame ET.House earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
 
 
 -- TODO:  Use weights?  Design effect?
@@ -993,14 +1026,14 @@ groupBuilderDM model psGroup states psKeys = do
       addTurnout = case turnoutData model of
         T_CCES -> loadCCESTurnoutData
         T_CPS -> loadCPSTurnoutData
-        T_Elex -> loadElexTurnoutData
+        T_Elex _ -> loadElexTurnoutData
         T_CCESAndCPS -> loadCCESTurnoutData >> loadCPSTurnoutData
-        T_ElexAndCPS -> loadElexTurnoutData >> loadCPSTurnoutData
+        T_ElexAndCPS _ -> loadElexTurnoutData >> loadCPSTurnoutData
       addPref :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       addPref = case prefData model of
         P_CCES vs -> loadCCESPrefData vs
-        P_Elex -> loadElexPrefData
-        P_ElexAndCCES vs -> loadElexPrefData >> loadCCESPrefData vs
+        P_Elex _ -> loadElexPrefData
+        P_ElexAndCCES _ vs -> loadElexPrefData >> loadCCESPrefData vs
   addTurnout
   addPref
 
@@ -1075,26 +1108,39 @@ wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 data TurnoutDataSet r where
    T_CCES :: TurnoutDataSet (F.Record CCESWithDensityEM)
    T_CPS :: TurnoutDataSet (F.Record CPSVWithDensityEM)
-   T_Elex :: TurnoutDataSet (F.Record ElectionWithDemographicsR)
+   T_Elex :: Int -> TurnoutDataSet (F.Record ElectionWithDemographicsR)
    T_CCESAndCPS :: TurnoutDataSet (Either (F.Record CCESWithDensityEM) (F.Record CPSVWithDensityEM))
-   T_ElexAndCPS :: TurnoutDataSet (Either (F.Record ElectionWithDemographicsR)  (F.Record CPSVWithDensityEM))
+   T_ElexAndCPS :: Int -> TurnoutDataSet (Either (F.Record ElectionWithDemographicsR)  (F.Record CPSVWithDensityEM))
 
-printTurnoutDataSet :: TurnoutDataSet tr -> Text
-printTurnoutDataSet T_CCES = "CCES"
-printTurnoutDataSet T_CPS = "CPS"
-printTurnoutDataSet T_Elex = "Elex"
-printTurnoutDataSet T_CCESAndCPS = "CCESAndCPS"
-printTurnoutDataSet T_ElexAndCPS = "ElexAndCPS"
+
+turnoutDataSetModelText :: TurnoutDataSet x -> Text
+turnoutDataSetModelText T_CCES = "CCES"
+turnoutDataSetModelText T_CPS = "CPS"
+turnoutDataSetModelText (T_Elex _) = "Elex"
+turnoutDataSetModelText T_CCESAndCPS = "CCESAndCPS"
+turnoutDataSetModelText (T_ElexAndCPS _) = "ElexAndCPS"
+
+turnoutDataSetDataText :: TurnoutDataSet x -> Text
+turnoutDataSetDataText T_CCES = "CCES"
+turnoutDataSetDataText T_CPS = "CPS"
+turnoutDataSetDataText (T_Elex n) = "ElexBy" <> show n
+turnoutDataSetDataText T_CCESAndCPS = "CCESAndCPS"
+turnoutDataSetDataText (T_ElexAndCPS n) = "ElexBy" <> show n <> "AndCPS"
 
 data PrefDataSet r where
   P_CCES :: CCESVoteSource -> PrefDataSet (F.Record CCESWithDensityEM)
-  P_Elex :: PrefDataSet (F.Record ElectionWithDemographicsR)
-  P_ElexAndCCES :: CCESVoteSource -> PrefDataSet (Either (F.Record ElectionWithDemographicsR) (F.Record CCESWithDensityEM))
+  P_Elex :: Int -> PrefDataSet (F.Record ElectionWithDemographicsR)
+  P_ElexAndCCES :: Int -> CCESVoteSource -> PrefDataSet (Either (F.Record ElectionWithDemographicsR) (F.Record CCESWithDensityEM))
 
-printPrefDataSet :: PrefDataSet r -> Text
-printPrefDataSet (P_CCES vs) = "CCES_" <> printVoteSource vs
-printPrefDataSet P_Elex = "Elex"
-printPrefDataSet (P_ElexAndCCES vs) = "ElexAndCCES_" <> printVoteSource vs
+prefDataSetModelText :: PrefDataSet r -> Text
+prefDataSetModelText (P_CCES vs) = "CCES_" <> printVoteSource vs
+prefDataSetModelText (P_Elex _) = "Elex"
+prefDataSetModelText (P_ElexAndCCES _ vs) = "ElexAndCCES_" <> printVoteSource vs
+
+prefDataSetDataText :: PrefDataSet r -> Text
+prefDataSetDataText (P_CCES vs) = "CCES_" <> printVoteSource vs
+prefDataSetDataText (P_Elex n) = "ElexBy" <> show n
+prefDataSetDataText (P_ElexAndCCES n vs) = "ElexBy" <> show n <> "AndCCES_" <> printVoteSource vs
 
 predictorFunctions :: SB.RowTypeTag r
                    -> DM.DesignMatrixRow r
@@ -1135,7 +1181,6 @@ setupCCESTData n = do
   return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES, ccesTIndex)
 
 
-
 setupCPSData ::  (Typeable md, Typeable gq)
              => Int
              -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
@@ -1149,16 +1194,19 @@ setupCPSData n = do
   dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
   return (cpsData, designMatrixRowCPS, cvapCPS, votedCPS, dmCPS, cpsIndex)
 
+
 setupElexTData :: (Typeable md, Typeable gq)
                => Int
+               -> Int
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexTData n = do
+setupElexTData voterScale dsIndex = do
+  let scaleVoters x = x `div` voterScale
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
-  elexTIndex <- SB.indexedConstIntArray elexTData Nothing n
-  cvapElex <- SB.addCountData elexTData "CVAP_Elex" (F.rgetField @PUMS.Citizens)
-  votedElex <- SB.addCountData elexTData "Voted_Elex" (F.rgetField @TVotes)
+  elexTIndex <- SB.indexedConstIntArray elexTData Nothing dsIndex
+  cvapElex <- SB.addCountData elexTData "CVAP_Elex" (scaleVoters . F.rgetField @PUMS.Citizens)
+  votedElex <- SB.addCountData elexTData "Voted_Elex" (scaleVoters . F.rgetField @TVotes)
   dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
   return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT, elexTIndex)
 
@@ -1171,7 +1219,7 @@ setupTurnoutData td = do
   case td of
     T_CCES -> setupCCESTData 0
     T_CPS -> setupCPSData 0
-    T_Elex -> setupElexTData 0
+    T_Elex n -> setupElexTData n 0
     T_CCESAndCPS -> do
       (ccesData, ccesDMR, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESTData (-1)
       (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
@@ -1184,8 +1232,8 @@ setupTurnoutData td = do
         indexCombo' <- stackVarsF "DataSetIndexT" ccesIndex cpsIndex
         return (cvapCombo', votedCombo', dmCombo', indexCombo')
       return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
-    T_ElexAndCPS -> do
-      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData 0
+    T_ElexAndCPS n -> do
+      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData n 0
       (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
       (comboData, stackVarsF) <- SB.stackDataSets "comboT" elexData cpsData groupSet
       comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR cpsDMR
@@ -1214,15 +1262,17 @@ setupCCESPData n vs = do
 
 setupElexPData :: (Typeable md, Typeable gq)
                => Int
+               -> Int
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexPData n = do
+setupElexPData voterScale dsIndex = do
+  let scale x = x `div` voterScale
   elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
-  elexPIndex <- SB.indexedConstIntArray elexPData Nothing n
+  elexPIndex <- SB.indexedConstIntArray elexPData Nothing dsIndex
   dmElexP <- DM.addDesignMatrix elexPData designMatrixRowElex
-  raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections" (F.rgetField @TVotes)
-  dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
+  raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections" (scale . F.rgetField @TVotes)
+  dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (scale . F.rgetField @DVotes)
   return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP, elexPIndex)
 
 setupPrefData :: forall x md gq. (Typeable md, Typeable gq)
@@ -1232,9 +1282,9 @@ setupPrefData pd = do
   let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
   case pd of
     P_CCES vs -> setupCCESPData 0 vs
-    P_Elex -> setupElexPData 0
-    P_ElexAndCCES vs -> do
-      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData 0
+    P_Elex n -> setupElexPData n 0
+    P_ElexAndCCES n vs -> do
+      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData n 0
       (ccesData, ccesDMR, ccesVIR, ccesDVIR, ccesDM, ccesIndex) <- setupCCESPData 1 vs
       (comboData, stackVarsF) <- SB.stackDataSets "comboP" elexData ccesData groupSet
       comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR ccesDMR
@@ -1285,6 +1335,7 @@ electionModelDM :: forall rs ks r tr pr.
                 => Bool
                 -> Bool
                 -> BR.StanParallel
+                -> Maybe SC.StanMCParameters
                 -> Text
                 -> Model tr pr
                 -> Int
@@ -1292,7 +1343,7 @@ electionModelDM :: forall rs ks r tr pr.
                 -> K.ActionWithCacheTime r CCESAndCPSEM
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSWithDensityEM, F.FrameRec rs)
                 -> K.Sem r (K.ActionWithCacheTime r (ModelCrossTabs, F.FrameRec (ModelResultsR ks)))
-electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   x <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
   let turnoutDataSet = turnoutData model
@@ -1303,13 +1354,13 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
           P_CCES vs -> do
             let numZeroVoteRows = countZeroVoteRows vs x
             K.logLE K.Diagnostic $ "CCES data has " <> show numZeroVoteRows <> " rows with no votes (for preference purposes)."
-          P_Elex -> pure ()
-          P_ElexAndCCES vs -> do
+          P_Elex _ -> pure ()
+          P_ElexAndCCES _ vs -> do
             let numZeroVoteRows = countZeroVoteRows vs x
             K.logLE K.Diagnostic $ "CCES data has " <> show numZeroVoteRows <> " rows with no votes (for preference purposes)."
   reportZeroRows
   let modelName = "LegDistricts_" <> modelLabel model <> if parallel then "_P" else ""
-      jsonDataName = "DM_" <> modelLabel model
+      jsonDataName = "DM_" <> dataLabel model
                      <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
@@ -1318,17 +1369,9 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
         DM.addDesignMatrixIndexes turnoutData turnoutDesignMatrixRow
 
         let distT = SB.binomialLogitDistWithConstants cvap
---        let distNormalT = SB.normalDist
 
         (prefData, prefDesignMatrixRow, votesInRace, dVotesInRace, dmPref, dsIndexP) <- setupPrefData prefDataSet
         let distP = SB.binomialLogitDistWithConstants votesInRace
---        let distNormalP = SB.normalDist
-
-        SB.inBlock SB.SBTransformedData $ do
-          SB.printVar "" cvap
-          SB.printVar "" voted
-          SB.printVar "" votesInRace
-          SB.printVar "" dVotesInRace
 
         (dmT, centerTF) <- DM.centerDataMatrix dmTurnout Nothing
         (dmP, centerPF) <- DM.centerDataMatrix dmPref Nothing
@@ -1354,15 +1397,15 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
             iPredT = case turnoutDataSet of
                        T_CCES -> predT
                        T_CPS -> predT
-                       T_Elex -> predT
+                       T_Elex _ -> predT
                        T_CCESAndCPS -> iPredT'
-                       T_ElexAndCPS -> iPredT'
+                       T_ElexAndCPS _ -> iPredT'
 
             iPredP :: SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr
             iPredP = case prefDataSet of
                         P_CCES _ -> predP
-                        P_Elex -> predP
-                        P_ElexAndCCES _ -> iPredP'
+                        P_Elex _ -> predP
+                        P_ElexAndCCES _ _ -> iPredP'
 
             vecT = SB.vectorizeExpr "voteDataBetaT" (iPredT alphaT dmT thetaT) (SB.dataSetName turnoutData)
             vecP = SB.vectorizeExpr "voteDataBetaP" (iPredP alphaP dmP thetaP) (SB.dataSetName prefData)
@@ -1486,7 +1529,7 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
                     g (k, (t, p)) = do
                       tCI <- MT.listToCI t
                       pCI <- MT.listToCI p
-                      return $ datYear F.&: k F.&: modelLabel model F.&: tCI F.&: pCI F.&: V.RNil
+                      return $ datYear F.&: k F.&: dataLabel model F.&: tCI F.&: pCI F.&: V.RNil
                 K.knitEither $ F.toFrame <$> (traverse g $ M.toList rm)
           ctBySex <- rmByGroup sexGroup
           ctByEducation <- rmByGroup educationGroup
@@ -1516,19 +1559,19 @@ electionModelDM clearCaches parallel stanParallelCfg modelDir model datYear (psG
   let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
         T_CCES -> SR.UnwrapNamed "Voted_CCES" "ObsVoted"
         T_CPS -> SR.UnwrapNamed "Voted_CPS" "ObsVoted"
-        T_Elex -> SR.UnwrapNamed "Voted_Elex" "ObsVoted"
+        T_Elex _ -> SR.UnwrapNamed "Voted_Elex" "ObsVoted"
         T_CCESAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_CCES, jsonData$Voted_CPS)" "ObsVoted"
-        T_ElexAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_Elex, jsonData$Voted_CCES)" "ObsVoted"
+        T_ElexAndCPS _ -> SR.UnwrapExpr "c(jsonData$Voted_Elex, jsonData$Voted_CPS)" "ObsVoted"
       unwrapDVotes :: SR.UnwrapJSON = case prefDataSet of
         P_CCES _ -> SR.UnwrapNamed "DVotesInRace_CCES" "ObsDVotes"
-        P_Elex -> SR.UnwrapNamed "DVotesInRace_Elections" "ObsDVotes"
-        P_ElexAndCCES _ -> SR.UnwrapExpr "c(jsonData$DVotesInRace_Elections, jsonData$DVotesInRace_CCES)" "ObsDVoted"
+        P_Elex _ -> SR.UnwrapNamed "DVotesInRace_Elections" "ObsDVotes"
+        P_ElexAndCCES _ _ -> SR.UnwrapExpr "c(jsonData$DVotesInRace_Elections, jsonData$DVotesInRace_CCES)" "ObsDVotes"
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (secondF FS.unSFrame)
     $ MRP.runMRPModel
     clearCaches
     (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
-    (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 15) Nothing)
+    (fromMaybe (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.9) (Just 15) Nothing) mStanParams)
     stanParallelCfg
     dw
     stanCode
@@ -1631,8 +1674,13 @@ data Model tr pr = Model { turnoutData :: TurnoutDataSet tr
 --type instance FI.VectorFor (Model tr pr) = Vector.Vector
 
 modelLabel :: Model tr pr -> Text
-modelLabel m = printTurnoutDataSet (turnoutData m) <> "_"
-               <> printPrefDataSet (prefData m) <> "_"
+modelLabel m = turnoutDataSetModelText (turnoutData m) <> "_"
+               <> prefDataSetModelText (prefData m) <> "_"
+               <> show (densityTransform m)
+
+dataLabel :: Model tr pr -> Text
+dataLabel m = turnoutDataSetDataText (turnoutData m) <> "_"
+               <> prefDataSetDataText (prefData m) <> "_"
                <> show (densityTransform m)
 
 type SLDLocation = (Text, ET.DistrictType, Int)

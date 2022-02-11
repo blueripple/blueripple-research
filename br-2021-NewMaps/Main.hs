@@ -134,7 +134,7 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     modelDiagnostics stanParallelCfg parallel
---    newCongressionalMapPosts stanParallelCfg parallel
+    newCongressionalMapPosts stanParallelCfg parallel
 --    newStateLegMapPosts stanParallelCfg parallel
 
   case resE of
@@ -263,7 +263,8 @@ modelDiagnostics stanParallelCfg parallel = do
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
       modelDir =  "br-2021-NewMaps/stanDMElex"
       vs = BRE.CCESComposite
-      dmModel = BRE.Model BRE.T_ElexAndCPS (BRE.P_ElexAndCCES vs) BRE.LogDensity
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
+      dmModel = BRE.Model (BRE.T_ElexAndCPS 10000) (BRE.P_ElexAndCCES 10000 vs) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
@@ -271,7 +272,7 @@ modelDiagnostics stanParallelCfg parallel = do
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   (crossTabsCPS, _) <- modelDM (fmap fixACS <$> acs2020_C)
 {-
@@ -432,6 +433,7 @@ newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo cc
       modelDir =  "br-2021-NewMaps/stanDMPhi"
       ccesVoteSource = BRE.CCESComposite
       dmModel td pd = BRE.Model td pd BRE.LogDensity
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo = (mapGroup
                       , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform BRE.LogDensity)
@@ -442,7 +444,7 @@ newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo cc
       modelDM td pd x = do
         let gqDeps = (,) <$> acs2020_C <*> x
             m = dmModel td pd
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir m 2020 postStratInfo ccesAndCPS2020_C gqDeps
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir m 2020 postStratInfo ccesAndCPS2020_C gqDeps
   (_, modeled) <- modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (fmap F.rcast <$> proposedDemo_C)
   BR.logFrame modeled
 --  proposedDemo <- K.ignoreCacheTime proposedDemo_C
@@ -481,24 +483,26 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
                       , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.LogDensity)
                       , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                       )
-      modelDM :: BRE.TurnoutDataSet x -> BRE.PrefDataSet y -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
+      model = BRE.Model (BRE.T_ElexAndCPS 10000) (BRE.P_ElexAndCCES 10000 ccesVoteSource) BRE.LogDensity
+      modelDM :: BRE.Model tr pr -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM tds pds name x = do
+      modelDM model name x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg modelDir (BRE.Model tds pds BRE.LogDensity) 2020 (psInfoDM name) ccesAndCPS2020_C gqDeps
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir model 2020 (psInfoDM name) ccesAndCPS2020_C gqDeps
 --  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
   --  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
-  modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  modelDM BRE.T_CPS (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (crossTabs, proposedBaseHV) <- modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource)  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (_, extantBaseHV) <- modelDM BRE.T_CCES  (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> extantDemo_C)
-  K.logLE K.Info $ "CCESAndCPS By State"
+--  modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+--  modelDM BRE.T_CPS (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  (crossTabs, proposedBaseHV) <- modelDM model  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
+  (_, extantBaseHV) <- modelDM model (stateAbbr <> "_Proposed") (fmap F.rcast <$> extantDemo_C)
+  K.logLE K.Info $ BRE.dataLabel model <> " :By State"
   BR.logFrame $ BRE.byState crossTabs
-  K.logLE K.Info $ "CCESAndCPS By Race"
+  K.logLE K.Info $ BRE.dataLabel model <> ": By Race"
   BR.logFrame $ BRE.byRace crossTabs
-  K.logLE K.Info $ "CCESAndCPS By Sex"
+  K.logLE K.Info $ BRE.dataLabel model <> ": By Sex"
   BR.logFrame $ BRE.bySex crossTabs
-  K.logLE K.Info $ "CCESAndCPS By Education"
+  K.logLE K.Info $ BRE.dataLabel model <> ": By Education"
   BR.logFrame $ BRE.byEducation crossTabs
 
 --  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
