@@ -1084,9 +1084,13 @@ designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
     densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
-designMatrixRowElex :: DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-designMatrixRowElex = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowElex :: Bool -> DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
+designMatrixRowElex stateAndDensityOnly = DM.DesignMatrixRow "DM"
+                                          $ if stateAndDensityOnly
+                                            then [zeroDMRP "Sex" 1, zeroDMRP "Education" 1, zeroDMRP "Race" 5, densRP, zeroDMRP "WhiteNonGrad" 1]
+                                            else [sexRP, eduRP, raceRP, densRP, wngRP]
   where
+    zeroDMRP t n = DM.DesignMatrixRowPart t n (const $ VU.replicate n 0.0)
     fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
     fracHispanic r =  F.rgetField @FracWhiteHispanic r + F.rgetField @FracNonWhiteHispanic r
     fracWhiteNonGrad r = fracWhite r - F.rgetField @FracWhiteGrad r
@@ -1196,19 +1200,20 @@ setupCPSData n = do
 
 
 setupElexTData :: (Typeable md, Typeable gq)
-               => Int
+               => Bool
+               -> Int
                -> Int
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexTData voterScale dsIndex = do
+setupElexTData stateAndDensityOnly voterScale dsIndex = do
   let scaleVoters x = x `div` voterScale
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
   elexTIndex <- SB.indexedConstIntArray elexTData Nothing dsIndex
   cvapElex <- SB.addCountData elexTData "CVAP_Elex" (scaleVoters . F.rgetField @PUMS.Citizens)
   votedElex <- SB.addCountData elexTData "Voted_Elex" (scaleVoters . F.rgetField @TVotes)
-  dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
-  return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT, elexTIndex)
+  dmElexT <- DM.addDesignMatrix elexTData $ designMatrixRowElex stateAndDensityOnly
+  return (elexTData, designMatrixRowElex stateAndDensityOnly, cvapElex, votedElex, dmElexT, elexTIndex)
 
 
 setupTurnoutData :: forall x md gq. (Typeable md, Typeable gq)
@@ -1219,7 +1224,7 @@ setupTurnoutData td = do
   case td of
     T_CCES -> setupCCESTData 0
     T_CPS -> setupCPSData 0
-    T_Elex n -> setupElexTData n 0
+    T_Elex n -> setupElexTData False n 0
     T_CCESAndCPS -> do
       (ccesData, ccesDMR, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESTData (-1)
       (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
@@ -1233,7 +1238,7 @@ setupTurnoutData td = do
         return (cvapCombo', votedCombo', dmCombo', indexCombo')
       return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
     T_ElexAndCPS n -> do
-      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData n 0
+      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData True n 0
       (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
       (comboData, stackVarsF) <- SB.stackDataSets "comboT" elexData cpsData groupSet
       comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR cpsDMR
@@ -1261,19 +1266,20 @@ setupCCESPData n vs = do
   return (ccesPData, designMatrixRowCCES, raceVotesCCES, dVotesInRaceCCES, dmCCESP, ccesPIndex)
 
 setupElexPData :: (Typeable md, Typeable gq)
-               => Int
+               => Bool
+               -> Int
                -> Int
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexPData voterScale dsIndex = do
+setupElexPData stateAndDensityOnly voterScale dsIndex = do
   let scale x = x `div` voterScale
   elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
   elexPIndex <- SB.indexedConstIntArray elexPData Nothing dsIndex
-  dmElexP <- DM.addDesignMatrix elexPData designMatrixRowElex
+  dmElexP <- DM.addDesignMatrix elexPData $ designMatrixRowElex stateAndDensityOnly
   raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections" (scale . F.rgetField @TVotes)
   dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (scale . F.rgetField @DVotes)
-  return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP, elexPIndex)
+  return (elexPData, designMatrixRowElex stateAndDensityOnly, raceVotesElex, dVotesInRaceElex, dmElexP, elexPIndex)
 
 setupPrefData :: forall x md gq. (Typeable md, Typeable gq)
               => PrefDataSet x
@@ -1282,9 +1288,9 @@ setupPrefData pd = do
   let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
   case pd of
     P_CCES vs -> setupCCESPData 0 vs
-    P_Elex n -> setupElexPData n 0
+    P_Elex n -> setupElexPData False n 0
     P_ElexAndCCES n vs -> do
-      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData n 0
+      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData True n 0
       (ccesData, ccesDMR, ccesVIR, ccesDVIR, ccesDM, ccesIndex) <- setupCCESPData 1 vs
       (comboData, stackVarsF) <- SB.stackDataSets "comboP" elexData ccesData groupSet
       comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR ccesDMR

@@ -264,7 +264,7 @@ modelDiagnostics stanParallelCfg parallel = do
       modelDir =  "br-2021-NewMaps/stanDMElex"
       vs = BRE.CCESComposite
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      dmModel = BRE.Model (BRE.T_ElexAndCPS 10000) (BRE.P_ElexAndCCES 10000 vs) BRE.LogDensity
+      dmModel = BRE.Model (BRE.T_ElexAndCPS 1000) (BRE.P_ElexAndCCES 1000 vs) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
@@ -313,9 +313,6 @@ diagTableColonnade cas =
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
       <> C.headed "Modeled D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
-
-
-
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newStateLegMapPosts stanParallelCfg parallel = do
@@ -484,7 +481,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
                       , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      model = BRE.Model (BRE.T_ElexAndCPS 10000) (BRE.P_ElexAndCCES 10000 ccesVoteSource) BRE.LogDensity
+      model = BRE.Model (BRE.T_ElexAndCPS 1000) (BRE.P_ElexAndCCES 1000 ccesVoteSource) BRE.LogDensity
       modelDM :: BRE.Model tr pr -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM model name x = do
