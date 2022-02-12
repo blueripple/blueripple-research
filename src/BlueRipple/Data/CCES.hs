@@ -119,16 +119,17 @@ cesLoader = do
 ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
 ces20Loader = K.wrapPrefix "ces20Loader" $ do
   let cacheKey = "data/ces_2020.bin"
-  K.logLE K.Info "Loading/Building CES 2020 data"
   let fixCES20 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES20) -> F.Rec (Maybe F.:. F.ElField) (FixBoth (F.RecordColumns CES20))
       fixCES20 r = fixPresVote
                    $ fixCESCLInt @(FixHouseVote (F.RecordColumns CES20))
                    $ fixCES  r
       transformCES20 = transformCESCLInt . transformCES 2020 . (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Democratic ET.Republican)
+  K.logLE (K.Debug 3) "Loading/Re-building CES 2020 data"
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
   ces20FileDep <- K.fileDependency (toString ces2020CSV)
   let deps = (,) <$> stateXWalk_C <*> ces20FileDep
   BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    K.logLE K.Info "Rebuilding CES 2020 data"
     allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES20)
                           (BR.LocalData $ toText ces2020CSV)
                           (Just cES20Parser)
@@ -140,13 +141,14 @@ ces20Loader = K.wrapPrefix "ces20Loader" $ do
 ces18Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
 ces18Loader = K.wrapPrefix "ces18Loader" $ do
   let cacheKey = "data/ces_2018.bin"
-  K.logLE K.Info "Loading/Building CES 2018 data"
   let fixCES18 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES18) -> F.Rec (Maybe F.:. F.ElField) (FixHouseVote (F.RecordColumns CES18))
       fixCES18 = fixCESCLInt . fixCES
+  K.logLE (K.Debug 3) "Loading/Re-building CES 2018 data"
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
   ces18FileDep <- K.fileDependency (toString ces2018CSV)
   let deps = (,) <$> stateXWalk_C <*> ces18FileDep
   BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    K.logLE K.Diagnostic "Re-building CES 2018 data"
     allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES18)
                           (BR.LocalData $ toText ces2018CSV)
                           (Just cES18Parser)
@@ -159,7 +161,7 @@ ces18Loader = K.wrapPrefix "ces18Loader" $ do
 ces16Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
 ces16Loader = K.wrapPrefix "ces16Loader" $ do
   let cacheKey = "data/ces_2016.bin"
-  K.logLE K.Info "Loading/Building CES 2016 data"
+  K.logLE (K.Debug 3) "Loading/Building CES 2016 data"
   let fixCES16 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16) -> F.Rec (Maybe F.:. F.ElField) (FixBoth (F.RecordColumns CES16))
       fixCES16 = fixPresVote . fixCESCLText @(FixHouseVote (F.RecordColumns CES16)) . fixCES
       transformCES16 = transformCESCLText . transformCES 2016 . (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Republican ET.Democratic)
@@ -167,6 +169,7 @@ ces16Loader = K.wrapPrefix "ces16Loader" $ do
   ces16FileDep <- K.fileDependency (toString ces2016CSV)
   let deps = (,) <$> stateXWalk_C <*> ces16FileDep
   BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, fp) -> do
+    K.logLE K.Diagnostic "Re-building CES 2016 data"
     allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES16)
                           (BR.LocalData $ toText ces2016CSV)
                           (Just cES16Parser)
