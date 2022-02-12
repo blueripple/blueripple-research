@@ -768,11 +768,6 @@ prepCCESAndPums clearCache = do
       ccesTAchenHurCacheKey = "model/house/CCEST_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesTAchenHurCacheKey
   ccesTAchenHur_C <- BR.retrieveOrMakeFrame ccesTAchenHurCacheKey ccesTAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur (for turnout): CCES (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
-    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
-
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
     let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
         ccesWithProb = fmap (FT.mutate ew) cces
@@ -794,11 +789,6 @@ prepCCESAndPums clearCache = do
       ccesPVAchenHurCacheKey = "model/house/CCESPV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesPVAchenHurCacheKey
   ccesPVAchenHur_C <- BR.retrieveOrMakeFrame ccesPVAchenHurCacheKey ccesPVAchenHurDeps $ \(cces, acsByCD, presElex) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur (for presidential voting): CCES (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
-    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
-
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES voting totals. ??"
     K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
     let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @PresDVotes r) / realToFrac (F.rgetField @PresVotes r))
@@ -809,8 +799,6 @@ prepCCESAndPums clearCache = do
     adjCCESProb <- FL.foldM (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] (realToFrac . F.rgetField @DVotes) presElex) ccesWithProbAndCit
     let adjVotes = adjUsing @AchenHurWeight @PresDVotes @PresVotes realToFrac round
         res = fmap (F.rcast @CCESByCDR . adjVotes) adjCCESProb
-    K.logLE K.Diagnostic $ "Post Achen-Hur (presidential votes): CCES (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
 
 -- now Achen-Hur for house voting, to match known Dem fraction in each CD. ??
@@ -819,11 +807,6 @@ prepCCESAndPums clearCache = do
       ccesHVAchenHurCacheKey = "model/house/CCESHV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
   ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(cces, acsByCD, houseElex) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur (for house voting): CCES (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
-    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
-
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES house vote totals. ??"
     let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @HouseDVotes r) / realToFrac (F.rgetField @HouseVotes r))
         ccesWithProb = fmap (FT.mutate ew) cces
@@ -833,13 +816,8 @@ prepCCESAndPums clearCache = do
     adjCCESProb <- FL.foldM (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] (realToFrac . F.rgetField @DVotes) houseElex) ccesWithProbAndCit
     let adjVotes = adjUsing @AchenHurWeight @HouseDVotes @HouseVotes realToFrac round
         res = fmap (F.rcast @CCESByCDR . adjVotes) adjCCESProb
-    K.logLE K.Diagnostic $ "Post Achen-Hur (house votes): CCES (by CD) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
 
---  K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
---  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePost" CCESComposite pumsByCD_C ccesAchenHur_C
---  BR.logFrame ccesDiagnosticStatesPost
   let deps = (,,) <$> ccesHVAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
