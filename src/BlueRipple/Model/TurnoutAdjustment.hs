@@ -191,6 +191,65 @@ adjTurnoutLong total unAdj = do
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
 
+
+adjTurnoutFoldG
+  :: forall p t ks qs rs f effs
+   . ( Foldable f
+     , K.KnitEffects effs
+     , F.ElemOf rs p
+     , F.ElemOf rs t
+     , rs F.⊆ (ks V.++ rs)
+     , ks F.⊆ (ks V.++ rs)
+     , ks F.⊆ qs
+     , F.RDeleteAll ks (ks V.++ rs) ~ rs
+     , V.KnownField p
+     , V.KnownField t
+     , V.Snd p ~ Int
+     , V.Snd t ~ Double
+     , FI.RecVec (ks V.++ rs)
+     , Show (F.Record rs)
+     , Show (F.Record ks)
+     , Ord (F.Record ks)
+     )
+  => (F.Record qs -> Double)
+  -> f (F.Record qs)
+  -> FL.FoldM
+       (K.Sem effs)
+       (F.Record (ks V.++ rs))
+       (F.FrameRec (ks V.++ rs))
+adjTurnoutFoldG getTotal totalsFrame =
+  let getKey  = F.rcast @ks
+      vtbsMap = FL.fold
+        (FL.premap
+         (\r ->
+            ( getKey r
+            , getTotal r
+            )
+         )
+         FL.map
+        )
+        totalsFrame
+      unpackM = FMR.generalizeUnpack FMR.noUnpack
+      assignM = FMR.generalizeAssign $ FMR.splitOnKeys @ks -- @(cs V.++ '[p, t])
+      adjustF ks =
+        let
+          tM = M.lookup ks vtbsMap
+          f x = case tM of
+            Nothing ->
+              K.knitError
+                ("Failed to find " <> show ks <> " in given totals."
+                )
+            Just t -> K.liftKnit $ do
+              let totalP = FL.fold (FL.premap (F.rgetField @p) FL.sum) x
+              adjTurnoutLong @p @t @rs (round $ t * realToFrac totalP) x
+        in
+          FMR.postMapM f $ FL.generalize FL.list
+      reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
+    in
+      FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
+
+
+
 type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
 
 
@@ -215,7 +274,8 @@ adjTurnoutFold
        (K.Sem effs)
        (F.Record (WithYS rs))
        (F.FrameRec (WithYS rs))
-adjTurnoutFold stateTurnoutFrame =
+adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, BR.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
+{-
   let getKey  = F.rcast @'[BR.Year, BR.StateAbbreviation]
       vtbsMap = FL.fold
         (FL.premap
@@ -245,7 +305,7 @@ adjTurnoutFold stateTurnoutFrame =
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
     in
       FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
-
+-}
 {-
 adjTurnout
   :: forall p t rs effs

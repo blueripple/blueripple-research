@@ -272,7 +272,7 @@ instance Flat.Flat CCESAndPUMS where
 
 data CCESAndCPSEM = CCESAndCPSEM { ccesEMRows :: F.FrameRec CCESWithDensityEM
                                  , cpsVEMRows :: F.FrameRec CPSVWithDensityEM
-                                 , electionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])
+                                 , electionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
                                  } deriving (Generic)
 
 instance Flat.Flat CCESAndCPSEM where
@@ -445,28 +445,28 @@ aggregatePartiesF =
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
-type ElectionResultWithDemographicsR locKey = '[BR.Year] V.++ locKey V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
+type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
 
-makeElexDataFrame :: (K.KnitEffects r)
-                  => ET.OfficeT
-                  -> Int
-                  -> F.FrameRec ([BR.Year, BR.StateAbbreviation] V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
-                  -> F.FrameRec PUMS.PUMS
-                  -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation]))
-makeElexDataFrame office earliestYear elex acs = do
+makeStateElexDataFrame ::  (K.KnitEffects r)
+                       => ET.OfficeT
+                       -> Int
+                       -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
+                       -> F.FrameRec PUMS.PUMS
+                       -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR [BR.Year, BR.StateAbbreviation]))
+makeStateElexDataFrame office earliestYear elex acs = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
         let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] $ pumsByState $ copy2019to2020 acs
             (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
-        when (not $ null missing) $ K.knitError $ "prepSenateElectionData: missing keys in flattenedElex/acs join=" <> show missing
+        when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in flattenedElex/acs join=" <> show missing
         return $ fmap (F.rcast . addOffice) elexWithDemo
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
                              -> Int
-                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year,BR.StateAbbreviation])))
 prepPresidentialElectionData clearCache earliestYear = do
   let cacheKey = "model/house/presElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -475,13 +475,13 @@ prepPresidentialElectionData clearCache earliestYear = do
 --  acsByState_C <- cachedPumsByState acs_C
   let deps = (,) <$> presElex_C <*> acs_C
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(pElex, acs) -> makeElexDataFrame ET.President earliestYear (fmap F.rcast pElex) (fmap F.rcast acs)
+    $ \(pElex, acs) -> makeStateElexDataFrame ET.President earliestYear (fmap F.rcast pElex) (fmap F.rcast acs)
 
 
 prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool
                        -> Int
-                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])))
 prepSenateElectionData clearCache earliestYear = do
   let cacheKey = "model/house/senateElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -490,15 +490,40 @@ prepSenateElectionData clearCache earliestYear = do
 --  acsByState_C <- cachedPumsByState acs_C
   let deps = (,) <$> senateElex_C <*> acs_C
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(senateElex, acs) -> makeElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
+    $ \(senateElex, acs) -> makeStateElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
 
 
+makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
+                       => ET.OfficeT
+                       -> Int
+                       -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
+                       -> K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
+                       -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
+makeCDElexDataFrame office earliestYear elex acs_C = do
+        let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
+            fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
+                         then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+                         else r
+
+        flattenedElex <- K.knitEither
+                         $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                         (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
+        cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+        pumsByCD_C <- cachedPumsByCD acs_C cdFromPUMA_C
+        pumsByCD <- K.ignoreCacheTime pumsByCD_C
+        let demographics = fmap fixDC_CD $ pumsMR @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] pumsByCD
+            (elexWithDemo, missing)
+              = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                (fmap fixDC_CD flattenedElex)
+                demographics
+        when (not $ null missing) $ K.knitError $ "makeCDElexDataFrame: missing keys in flattenedElex/acs join=" <> show missing
+        return $ fmap (F.rcast . addOffice) elexWithDemo
 
 
 prepHouseElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool
                        -> Int
-                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.StateAbbreviation])))
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])))
 prepHouseElectionData clearCache earliestYear = do
   let cacheKey = "model/house/houseElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -506,7 +531,7 @@ prepHouseElectionData clearCache earliestYear = do
   acs_C <- PUMS.pumsLoaderAdults
   let deps = (,) <$> houseElex_C <*> acs_C
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(senateElex, acs) -> makeElexDataFrame ET.House earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
+    $ \(houseElex, acs) -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex) acs_C
 
 
 -- TODO:  Use weights?  Design effect?
@@ -664,6 +689,7 @@ cachedPumsByState pums_C = do
     $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
     $ pure . FL.fold addZeroF . pumsByState
 
+type AchenHurWeight = "AchenHurWeight" F.:-> Double
 
 adjUsing :: forall x n d rs a.(V.KnownField x
                               , F.ElemOf rs x
@@ -707,19 +733,13 @@ prepCCESAndPums clearCache = do
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByState) [2012, 2014, 2016, 2018, 2020]
 
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
-    let ewW r = FT.recordSingleton @ET.ElectoralWeight (F.rgetField @BRCF.WeightedSuccesses r / F.rgetField @BRCF.WeightedCount r)
-        ewU r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @BRCF.Successes r) / realToFrac (F.rgetField @BRCF.Count r))
-        cpsWithProbW = fmap (FT.mutate ewW) cpsV
+    let ewU r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @BRCF.Successes r) / realToFrac (F.rgetField @BRCF.Count r))
         cpsWithProbU = fmap (FT.mutate ewU) cpsV
---        (cpsWithProbAndCitW, missingW) = FJ.leftJoinWithMissing @(StateKeyR V.++ CensusPredictorR) cpsWithProbW $ acsByState
         (cpsWithProbAndCitU, missingU) = FJ.leftJoinWithMissing @(StateKeyR V.++ CensusPredictorR) cpsWithProbU $ acsByState
---    when (not $ null missingW) $ K.knitError $ "prepCCESAndPums: Missing keys in weighted cpsV/acs join: " <> show missingW
     when (not $ null missingU) $ K.knitError $ "prepCCESAndPums: Missing keys in unweighted cpsV/acs join: " <> show missingU
---    when (fLength cpsWithProbW /= fLength cpsWithProbAndCitW) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(weighted cps,acs)"
     when (fLength cpsWithProbU /= fLength cpsWithProbAndCitU) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(unweighted cps,acs)"
-    adjCPSProbU <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) cpsWithProbAndCitU
-    let adjVotersW = adjUsing @ET.ElectoralWeight @BRCF.WeightedSuccesses @BRCF.WeightedCount id id
-        adjVotersU = adjUsing @ET.ElectoralWeight @BRCF.Successes @BRCF.Count realToFrac round
+    adjCPSProbU <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @AchenHurWeight stateTurnout) cpsWithProbAndCitU
+    let adjVotersU = adjUsing @AchenHurWeight @BRCF.Successes @BRCF.Count realToFrac round
         res = fmap (F.rcast @CPSVByStateR . adjVotersU) adjCPSProbU
     K.logLE K.Diagnostic $ "Post Achen-Hur: CPS (by state) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
@@ -728,47 +748,98 @@ prepCCESAndPums clearCache = do
 --  K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
 --  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePre" CCESComposite pumsByCD_C countedCCES_C
 --  BR.logFrame ccesDiagnosticStatesPre
-
-  let ccesAchenHurDeps = (,,) <$> countedCCES_C <*> pumsByCD_C <*> stateTurnout_C
-      ccesAchenHurCacheKey = "model/house/CCES_AchenHur.bin"
-  when clearCache $ BR.clearIfPresentD ccesAchenHurCacheKey
-  ccesAchenHur_C <- BR.retrieveOrMakeFrame ccesAchenHurCacheKey ccesAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur: CCES (by CD) rows per year:"
+  let acsWithZeroesCacheKey = "model/house/acsWithZeroes.bin"
+  acsWithZeroes_C <- BR.retrieveOrMakeFrame acsWithZeroesCacheKey pumsByCD_C $ \acsByCD -> do
+    K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
+    let zeroCount = 0 F.&: V.RNil :: F.Record '[PUMS.Citizens]
+        addZeroF = FMR.concatFold
+                   $ FMR.mapReduceFold
+                   FMR.noUnpack
+                   (FMR.assignKeysAndData @CDKeyR @(CCESPredictorR V.++ '[PUMS.Citizens]))
+                   (FMR.makeRecsWithKey id
+                    $ FMR.ReduceFold
+                    $ const
+                    $ BRK.addDefaultRec @CCESPredictorR zeroCount
+                   )
+        fixedACS = FL.fold addZeroF $ fmap (fixDC_CD . addRace5) acsByCD
+    return fixedACS
+  let ccesTAchenHurDeps = (,,) <$> countedCCES_C <*> acsWithZeroes_C <*> stateTurnout_C
+      ccesTAchenHurCacheKey = "model/house/CCEST_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD ccesTAchenHurCacheKey
+  ccesTAchenHur_C <- BR.retrieveOrMakeFrame ccesTAchenHurCacheKey ccesTAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
+    K.logLE K.Diagnostic $ "Pre Achen-Hur (for turnout): CCES (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
     K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
 
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
-    K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
-    let ew r = FT.recordSingleton @ET.ElectoralWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
-        zeroCount :: F.Record '[PUMS.Citizens] = 0 F.&: V.RNil
-        addZeroF = FMR.concatFold
-                 $ FMR.mapReduceFold
-                 FMR.noUnpack
-                 (FMR.assignKeysAndData @CDKeyR @(CCESPredictorR V.++ '[PUMS.Citizens]))
-                 (FMR.makeRecsWithKey id
-                  $ FMR.ReduceFold
-                  $ const
-                  $ BRK.addDefaultRec @CCESPredictorR zeroCount
-                 )
-        fixedACS = FL.fold addZeroF $ fmap (fixDC_CD . addRace5) acsByCD
+    let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
         ccesWithProb = fmap (FT.mutate ew) cces
-        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb fixedACS
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
     when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
-    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @ET.ElectoralWeight stateTurnout) ccesWithProbAndCit
+    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @AchenHurWeight stateTurnout) ccesWithProbAndCit
 
     -- NB: only turnout cols adjusted. HouseVotes and HouseDVotes, PresVotes and PresDVotes not adjusted
-    let adjVoters = adjUsing @ET.ElectoralWeight @Voted @Surveyed realToFrac round
+    let adjVoters = adjUsing @AchenHurWeight @Voted @Surveyed realToFrac round
         res = fmap (F.rcast @CCESByCDR . adjVoters) adjCCESProb
     K.logLE K.Diagnostic $ "Post Achen-Hur: CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
+    return res
+
+-- now Achen-Hur for presidential voting, to match known Dem fraction in each state. ??
+  presidentialElectionResults_C <- prepPresidentialElectionData clearCache earliestYear
+  let ccesPVAchenHurDeps = (,,) <$> ccesTAchenHur_C <*> acsWithZeroes_C <*> presidentialElectionResults_C
+      ccesPVAchenHurCacheKey = "model/house/CCESPV_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD ccesPVAchenHurCacheKey
+  ccesPVAchenHur_C <- BR.retrieveOrMakeFrame ccesPVAchenHurCacheKey ccesPVAchenHurDeps $ \(cces, acsByCD, presElex) -> do
+    K.logLE K.Diagnostic $ "Pre Achen-Hur (for voting): CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
+    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
+
+    K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES voting totals. ??"
+    K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
+    let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @PresDVotes r) / realToFrac (F.rgetField @PresVotes r))
+        ccesWithProb = fmap (FT.mutate ew) cces
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
+    when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
+    when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
+    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] (realToFrac . F.rgetField @DVotes) presElex) ccesWithProbAndCit
+    let adjVotes = adjUsing @AchenHurWeight @PresDVotes @PresVotes realToFrac round
+        res = fmap (F.rcast @CCESByCDR . adjVotes) adjCCESProb
+    K.logLE K.Diagnostic $ "Post Achen-Hur (presidential votes): CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
+    return res
+
+-- now Achen-Hur for house voting, to match known Dem fraction in each CD. ??
+  houseElectionResults_C <- prepHouseElectionData clearCache earliestYear
+  let ccesHVAchenHurDeps = (,,) <$> ccesPVAchenHur_C <*> acsWithZeroes_C <*> houseElectionResults_C
+      ccesHVAchenHurCacheKey = "model/house/CCESPP_AchenHur.bin"
+  when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
+  ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(cces, acsByCD, houseElex) -> do
+    K.logLE K.Diagnostic $ "Pre Achen-Hur (for voting): CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
+    K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
+    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
+
+    K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES house vote totals. ??"
+    let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @HouseDVotes r) / realToFrac (F.rgetField @HouseVotes r))
+        ccesWithProb = fmap (FT.mutate ew) cces
+        (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
+    when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
+    when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
+    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] (realToFrac . F.rgetField @DVotes) houseElex) ccesWithProbAndCit
+    let adjVotes = adjUsing @AchenHurWeight @HouseDVotes @HouseVotes realToFrac round
+        res = fmap (F.rcast @CCESByCDR . adjVotes) adjCCESProb
+    K.logLE K.Diagnostic $ "Post Achen-Hur (house votes): CCES (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
 
 --  K.logLE K.Info "CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
 --  ccesDiagnosticStatesPost <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePost" CCESComposite pumsByCD_C ccesAchenHur_C
 --  BR.logFrame ccesDiagnosticStatesPost
-  let deps = (,,) <$> ccesAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
+  let deps = (,,) <$> ccesHVAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
       cacheKey = "model/house/CCESAndPUMS.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeD cacheKey deps $ \(ccesByCD, cpsVByState, acsByCD) -> do
