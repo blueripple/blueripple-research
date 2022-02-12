@@ -497,9 +497,9 @@ makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
-                       -> K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
+                       -> F.FrameRec PUMSByCDR
                        -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
-makeCDElexDataFrame office earliestYear elex acs_C = do
+makeCDElexDataFrame office earliestYear elex acsByCD = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
             fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
                          then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
@@ -508,10 +508,7 @@ makeCDElexDataFrame office earliestYear elex acs_C = do
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-        pumsByCD_C <- cachedPumsByCD acs_C cdFromPUMA_C
-        pumsByCD <- K.ignoreCacheTime pumsByCD_C
-        let demographics = fmap fixDC_CD $ pumsMR @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] pumsByCD
+        let demographics = fmap fixDC_CD $ pumsMR @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] acsByCD
             (elexWithDemo, missing)
               = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
                 (fmap fixDC_CD flattenedElex)
@@ -529,9 +526,11 @@ prepHouseElectionData clearCache earliestYear = do
   when clearCache $ BR.clearIfPresentD cacheKey
   houseElex_C <- BR.houseElectionsWithIncumbency
   acs_C <- PUMS.pumsLoaderAdults
-  let deps = (,) <$> houseElex_C <*> acs_C
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  acsByCD_C <- cachedPumsByCD acs_C cdFromPUMA_C
+  let deps = (,) <$> houseElex_C <*> acsByCD_C
   BR.retrieveOrMakeFrame cacheKey deps
-    $ \(houseElex, acs) -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex) acs_C
+    $ \(houseElex, acsByCD) -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex) acsByCD
 
 
 -- TODO:  Use weights?  Design effect?
@@ -714,8 +713,6 @@ prepCCESAndPums clearCache = do
       fLength = FL.fold FL.length
       lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
   pums_C <- PUMS.pumsLoaderAdults
-  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
   pumsByState_C <- cachedPumsByState pums_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
@@ -748,7 +745,10 @@ prepCCESAndPums clearCache = do
 --  K.logLE K.Info "Pre Achen-Hur CCES Diagnostics (post-stratification of raw turnout * raw pref using ACS weights.)"
 --  ccesDiagnosticStatesPre <- fmap fst . K.ignoreCacheTimeM $ ccesDiagnostics clearCache "CompositePre" CCESComposite pumsByCD_C countedCCES_C
 --  BR.logFrame ccesDiagnosticStatesPre
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
   let acsWithZeroesCacheKey = "model/house/acsWithZeroes.bin"
+  when clearCache $ BR.clearIfPresentD acsWithZeroesCacheKey
   acsWithZeroes_C <- BR.retrieveOrMakeFrame acsWithZeroesCacheKey pumsByCD_C $ \acsByCD -> do
     K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
     let zeroCount = 0 F.&: V.RNil :: F.Record '[PUMS.Citizens]
@@ -763,6 +763,7 @@ prepCCESAndPums clearCache = do
                    )
         fixedACS = FL.fold addZeroF $ fmap (fixDC_CD . addRace5) acsByCD
     return fixedACS
+
   let ccesTAchenHurDeps = (,,) <$> countedCCES_C <*> acsWithZeroes_C <*> stateTurnout_C
       ccesTAchenHurCacheKey = "model/house/CCEST_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesTAchenHurCacheKey
@@ -793,7 +794,7 @@ prepCCESAndPums clearCache = do
       ccesPVAchenHurCacheKey = "model/house/CCESPV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesPVAchenHurCacheKey
   ccesPVAchenHur_C <- BR.retrieveOrMakeFrame ccesPVAchenHurCacheKey ccesPVAchenHurDeps $ \(cces, acsByCD, presElex) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur (for voting): CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ "Pre Achen-Hur (for presidential voting): CCES (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
     K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
@@ -818,7 +819,7 @@ prepCCESAndPums clearCache = do
       ccesHVAchenHurCacheKey = "model/house/CCESHV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
   ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(cces, acsByCD, houseElex) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur (for voting): CCES (by CD) rows per year:"
+    K.logLE K.Diagnostic $ "Pre Achen-Hur (for house voting): CCES (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cces) [2012, 2014, 2016, 2018, 2020]
     K.logLE K.Diagnostic $ "ACS (by CD) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByCD) [2012, 2014, 2016, 2018, 2020]
