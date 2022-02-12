@@ -343,7 +343,9 @@ retrieveOrMakeRecList key cachedDeps action =
     K.retrieveOrMakeTransformed  @SerializerC @CacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
 clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
-clearIfPresentD = K.clearIfPresent @T.Text @CacheData
+clearIfPresentD k = do
+  K.logLE K.Diagnostic $ "Clearing cached item with key=" <> show k
+  K.clearIfPresent @T.Text @CacheData k
 
 type SerializerC = Flat.Flat
 type RecSerializerC rs = FS.RecFlat rs

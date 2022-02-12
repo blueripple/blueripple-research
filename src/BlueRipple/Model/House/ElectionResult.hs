@@ -291,8 +291,8 @@ prepCCESAndCPSEM :: (K.KnitEffects r, BR.CacheEffects r)
 prepCCESAndCPSEM clearCache = do
   ccesAndPUMS_C <- prepCCESAndPums clearCache
   elex_C <- prepPresidentialElectionData clearCache 2016
-  K.logLE K.Diagnostic "Presidential Election Rows"
-  K.ignoreCacheTime elex_C >>= BR.logFrame
+--  K.logLE K.Diagnostic "Presidential Election Rows"
+--  K.ignoreCacheTime elex_C >>= BR.logFrame
   let cacheKey = "model/house/CCESAndCPSEM.bin"
       deps = (,) <$> ccesAndPUMS_C <*> elex_C
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -815,7 +815,7 @@ prepCCESAndPums clearCache = do
 -- now Achen-Hur for house voting, to match known Dem fraction in each CD. ??
   houseElectionResults_C <- prepHouseElectionData clearCache earliestYear
   let ccesHVAchenHurDeps = (,,) <$> ccesPVAchenHur_C <*> acsWithZeroes_C <*> houseElectionResults_C
-      ccesHVAchenHurCacheKey = "model/house/CCESPP_AchenHur.bin"
+      ccesHVAchenHurCacheKey = "model/house/CCESHV_AchenHur.bin"
   when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
   ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(cces, acsByCD, houseElex) -> do
     K.logLE K.Diagnostic $ "Pre Achen-Hur (for voting): CCES (by CD) rows per year:"
