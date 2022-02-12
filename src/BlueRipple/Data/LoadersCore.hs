@@ -172,7 +172,7 @@ cachedFrameLoader
 cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
   let cacheKey      = fromMaybe "data/" cachePathM <> key
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
-  K.logLE K.Diagnostic $ "loading or retrieving and saving data at key=" <> cacheKey
+  K.logLE (K.Debug 3) $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
     let recStream = recStreamLoader @qs @rs @SerialT dataPath parserOptionsM mFilter fixRow
     K.streamlyToKnit $ FStreamly.inCoreAoS @_ @rs @StreamlyS $ StreamlyStream recStream
@@ -203,7 +203,7 @@ frameLoader filePath mParserOptions mFilter fixRow = do
       filter !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
   path <- liftIO $ getPath filePath
-  K.logLE K.Diagnostic ("Attempting to load data from " <> toText path <> " into a frame.")
+  K.logLE (K.Debug 3) ("Attempting to load data from " <> toText path <> " into a frame.")
   fmap strictFix <$> BR.loadToFrame parserOptions path filter
 
 -- file has fs
