@@ -70,25 +70,19 @@ addRealData rtt varName mLower mUpper f = do
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
   SB.addColumnJson rtt varName stanType bounds f
 
-
 add2dMatrixData :: (Typeable md, Typeable gq)
                 => SB.RowTypeTag r
                 -> SB.MatrixRowFromData r
---                -> SME.StanName
---            -> Int
                 -> Maybe Double
                 -> Maybe Double
---            -> (r -> V.Vector Double)
             -> SB.StanBuilderM md gq SME.StanVar
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
-  let --stanType =  SB.StanMatrix (SB.NamedDim $ SB.dataSetName rtt) (SB.NamedDim colName)
-      bounds = case (mLower, mUpper) of
+  let bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
                  (Just l, Nothing) -> "<lower=" <> show l <> ">"
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
   SB.add2dMatrixJson rtt matrixRowFromData bounds (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
-
 
 sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do

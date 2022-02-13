@@ -69,6 +69,10 @@ data TExpr a = TExpr a StanType
 
 data StanVar = StanVar StanName StanType deriving (Show, Eq, Ord, Generic)
 
+data PossiblyVectorized a = UnVectorized a
+                          | Vectorized IndexKey a
+                          deriving (Show, Functor)
+
 varName :: StanVar -> StanName
 varName (StanVar n _) = n
 

@@ -166,7 +166,6 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
   traverse (\(g, _, _) -> splitToGroupVar n g v) $ designMatrixIndexes dmr
 
 
-data Parameterization = Centered | NonCentered deriving (Eq, Show)
 
 addDMParametersAndPriors :: (Typeable md, Typeable gq)
                          => Text
@@ -181,7 +180,7 @@ addDMParametersAndPriors :: (Typeable md, Typeable gq)
                                                   , SB.StanVar
                                                   , SB.StanVar
                                                   )
-addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, tauPrior, lkjParameter) mS =do
+addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, tauPrior, lkjParameter) mS = do
   let dmDimName = designMatrixName <> "_Cols"
       dmDim = SB.NamedDim dmDimName
       dmVec = SB.StanVector dmDim
