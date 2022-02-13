@@ -276,7 +276,7 @@ modelDiagnostics stanParallelCfg parallel = do
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   (crossTabsCPS, _) <- modelDM (fmap fixACS <$> acs2020_C)
 
-  diag_C <- BRE.ccesDiagnostics False "DiagPost" vs
+  diag_C <- BRE.ccesDiagnostics True "DiagPost" vs
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   (ccesDiagByState, _) <- K.ignoreCacheTime diag_C
@@ -304,9 +304,10 @@ diagTableColonnade cas =
       cvap = F.rgetField @PUMS.Citizens
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
-      rawTurnout r = (realToFrac @_ @Double  $ voters r) / (realToFrac  $ cvap r)
-      ccesTurnout  = F.rgetField @BRE.Turnout
-      rawDShare r = realToFrac @_ @Double (demVoters r) / realToFrac (voters r)
+      ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
+      rawTurnout r = ratio (voters r) (cvap r)
+      ccesTurnout  r = F.rgetField @BRE.Turnout r
+      rawDShare r = ratio (demVoters r) (voters r)
       ccesDShare = F.rgetField @ET.DemShare
   in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
       <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))

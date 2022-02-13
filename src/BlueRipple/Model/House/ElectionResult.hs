@@ -990,19 +990,28 @@ ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                                                       , F.FrameRec [BR.Year,BR.StateAbbreviation, ET.CongressionalDistrict, CVAP, Voters, DemVoters, Turnout, ET.DemShare])))
 ccesDiagnostics clearCaches cacheSuffix vs acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
-  let surveyed r =  F.rgetField @Surveyed r
-      pT r = (realToFrac $ F.rgetField @Voted r)/(realToFrac $ surveyed r)
-      pD r = let (v, dv) = getVotes vs in if v r == 0 then 0 else (realToFrac $ dv r)/(realToFrac $ v r)
-      cvap = realToFrac . F.rgetField @PUMS.Citizens
+  let surveyed =  F.rgetField @Surveyed
+      voted = F.rgetField @Voted
+      ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
+      pT r = ratio (voted r) (surveyed r)
+      (votesInRace, dVotesInRace) = getVotes vs
+      pD r = if votesInRace r == 0 then 0 else ratio (dVotesInRace r) (votesInRace r)
+      cvap = F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      compute rw rc = let voters = (pT rw * cvap rc) in (F.rgetField @PUMS.Citizens rc F.&: voters F.&: (pD rw * voters) F.&: V.RNil ) :: F.Record [CVAP, Voters, DemVoters]
+      compute rw rc = let voters = pT rw * realToFrac (cvap rc)
+                          dVotes = pD rw * voters
+                      in (cvap rc F.&: voters F.&: dVotes F.&: V.RNil ) :: F.Record [CVAP, Voters, DemVoters]
       psFld :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
       psFld = (\cv v dv -> cv F.&: v F.&: dv F.&: V.RNil) <$> cvF <*> vF <*> dvF where
-        cvF = fromMaybe 0 <$> FL.premap (F.rgetField @CVAP) FL.last
+        cvF = FL.premap (F.rgetField @CVAP) FL.sum
         vF = FL.premap (F.rgetField @Voters) FL.sum
-        dvF = FL.premap (F.rgetField @Voters) FL.sum
-      addShare r = let v = F.rgetField @Voters r in r F.<+> (FT.recordSingleton @ET.DemShare $ if v < 1 then 0 else F.rgetField @DemVoters r / v)
-      addTurnout r = let v = realToFrac (F.rgetField @CVAP r) in r F.<+> (FT.recordSingleton @Turnout $ if v < 1 then 0 else F.rgetField @Voters r / v)
+        dvF = FL.premap (F.rgetField @DemVoters) FL.sum
+      addShare r = let v = F.rgetField @Voters r
+                   in r F.<+> (FT.recordSingleton @ET.DemShare
+                               $ if v < 1 then 0 else F.rgetField @DemVoters r / v)
+      addTurnout r = let cv = realToFrac (F.rgetField @CVAP r)
+                     in r F.<+> (FT.recordSingleton @Turnout
+                                  $ if cv < 1 then 0 else F.rgetField @Voters r / cv)
       deps = (,) <$> acs_C <*> cces_C
 --      onlyAlaska_C = F.filterFrame (\r -> F.rgetField @BR.StateAbbreviation r == "AK") <$> cces_C
 --  K.ignoreCacheTime onlyAlaska_C >>= BR.logFrame
