@@ -76,6 +76,7 @@ import qualified Optics
 import qualified Stan.JSON as SJ
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Stan.ModelBuilder.ModelParameters as SMP
 import qualified Stan.ModelBuilder.GroupModel as SB
 import qualified Stan.ModelBuilder.FixedEffects as SFE
 import qualified Stan.ModelBuilder.DesignMatrix as DM
@@ -1220,8 +1221,8 @@ predictorFunctions rtt dmr suffixM dmColIndex dsIndexV = do
       suffix = fromMaybe "" suffixM
       iPredF :: SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
       iPredF = SB.useDataSetForBindings rtt $ do
-        dsAlpha <- SB.addSimpleParameter ("dsAplha" <> suffix) SB.StanReal SB.stdNormal
-        dsPhi <- SB.addParameterWithVectorizedPrior ("dsPhi" <> suffix) (SB.StanVector $ SB.NamedDim dmColIndex) SB.stdNormal dmColIndex
+        dsAlpha <- SMP.addSimpleParameter ("dsAplha" <> suffix) SB.StanReal SB.stdNormal
+        dsPhi <- SMP.addParameterWithVectorizedPrior ("dsPhi" <> suffix) (SB.StanVector $ SB.NamedDim dmColIndex) SB.stdNormal dmColIndex
         SB.inBlock SB.SBGeneratedQuantities $ SB.useDataSetForBindings rtt $ DM.splitToGroupVars dmr dsPhi
         return $ \aE dmE betaE -> predE (aE `SB.plus` SB.paren (SB.var dsAlpha `SB.times` SB.var dsIndexV))
                                          dmE

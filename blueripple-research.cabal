@@ -127,11 +127,12 @@ library  haskell-stan
                  , Stan.ModelBuilder
                  , Stan.ModelBuilder.BuilderTypes
                  , Stan.ModelBuilder.BuildingBlocks
+                 , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
-                 , Stan.ModelBuilder.DesignMatrix
+                 , Stan.ModelBuilder.ModelParameters
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames

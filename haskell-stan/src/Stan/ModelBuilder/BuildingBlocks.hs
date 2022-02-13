@@ -90,31 +90,6 @@ add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   SB.add2dMatrixJson rtt matrixRowFromData bounds (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
 
 
-intercept :: forall md gq. (Typeable md, Typeable gq) => Text -> SME.StanExpr -> SB.StanBuilderM md gq SB.StanVar
-intercept iName alphaPriorE = do
-  iVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
-  let --alphaE = SB.name iName
-      interceptE = SB.var iVar `SME.vectorSample` alphaPriorE
-  SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
-  return iVar
-
-addParameter :: Text -> SB.StanType -> Text -> (SB.StanVar -> SB.StanBuilderM md gq ()) -> SB.StanBuilderM md gq SB.StanVar
-addParameter pName pType pConstraint pPriorF = do
-  pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare pName pType pConstraint
-  SB.inBlock SB.SBModel $ pPriorF pv
-  return pv
-
-addSimpleParameter :: Text -> SB.StanType -> SB.StanExpr -> SB.StanBuilderM md gq SB.StanVar
-addSimpleParameter pName pType priorE = addParameter pName pType "" priorF
-  where
-    priorF v = SB.addExprLine "addSimpleParameter" $ SB.var v `SB.vectorSample` priorE
-
-addParameterWithVectorizedPrior :: Text -> SB.StanType -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
-addParameterWithVectorizedPrior pName pType priorE index = addParameter pName pType "" priorF
-  where
-    priorF v = SB.addExprLine "addSimpleParameter" $ SB.vectorizedOne index $ SB.var v `SB.vectorSample` priorE
-
-
 sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do
   let dsName = SB.dataSetName rtt
