@@ -88,6 +88,20 @@ betaProportionDist = StanDist Continuous sample lpdf lupdf rng expectation
     rng (muE, kE) = SME.function "beta_proportion_rng" (muE :| [kE])
     expectation (muE, _) = muE
 
+betaBinomialDist :: Bool -> SME.StanVar -> StanDist (SME.StanExpr, SME.StanExpr)
+betaBinomialDist sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng expectation
+  where
+    plusEq = SME.binOp "+="
+    sample (aE, bE) sv = if sampleWithConstants
+                         then SME.target `plusEq` SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
+                         else SME.var sv `SME.vectorSample` SME.function "beta_binomial" (SME.var tV :| [aE, bE])
+    lpmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
+    lupmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lupmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
+    rng (aE, bE) = SME.function "beta_binomial_rng" (SME.var tV :| [aE, bE])
+    expectation (aE, bE) = aE `SME.divide` (SME.paren $ aE `SME.plus` bE)
+
+
+
 
 -- for priors
 normal :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr

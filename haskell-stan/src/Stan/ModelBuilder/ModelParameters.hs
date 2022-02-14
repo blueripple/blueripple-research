@@ -111,7 +111,7 @@ addHierarchicalScalar name gtt parameterization prior = do
     Centered -> addParameter name pType "" (SME.Vectorized (one gName) prior)
     NonCentered f -> do
       let transform = SME.Vectorized (one gName) f
-      addTransformedParameter name pType transform (SME.UnVectorized prior)
+      addTransformedParameter name pType transform (SME.Vectorized (one gName) prior)
 
 centeredHierarchicalVectorPrior :: SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 centeredHierarchicalVectorPrior mu tau lCorr = do
@@ -142,12 +142,12 @@ addHierarchicalVector name rowIndex gtt parameterization priorE = do
       pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare name pType ""
       SB.inBlock SB.SBModel
         $ SB.addExprLine "addHierarchicalVector"
-        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var pv) `SME.eq` priorE
+        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var pv) `SME.vectorSample` priorE
       return pv
     NonCentered f -> do
       rpv <- SB.inBlock SB.SBParameters $ SB.stanDeclare (name <> "_raw") pType ""
       SB.inBlock SB.SBModel
         $ SB.addExprLine "addHierarchicalVector"
-        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var rpv) `SME.eq` priorE
+        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var rpv) `SME.vectorSample` priorE
       SB.inBlock SB.SBTransformedParameters
         $ SB.stanDeclareRHS name pType "" $ vecG $ vecR $ f rpv

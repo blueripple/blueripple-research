@@ -135,22 +135,24 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
 
-data LLDetails md gq args r = LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args) SME.StanVar
-data LLDetailsList md gq args r = LLDetailsList [LLDetails md gq args r]
+data LLDetails md gq r = forall args.LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args) SME.StanVar
+--  LLDetails :: forall args.SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> LLDetails md gq r
 
-addDetailsLists :: LLDetailsList md gq args r -> LLDetailsList md gq args r -> LLDetailsList md gq args r
+data LLDetailsList md gq r = LLDetailsList [LLDetails md gq r]
+
+addDetailsLists :: LLDetailsList md gq r -> LLDetailsList md gq r -> LLDetailsList md gq r
 addDetailsLists (LLDetailsList x) (LLDetailsList y) = LLDetailsList (x <> y)
 
-type LLSet md gq args = DHash.DHashMap SB.RowTypeTag (LLDetailsList md gq args)
+type LLSet md gq = DHash.DHashMap SB.RowTypeTag (LLDetailsList md gq)
 
-emptyLLSet :: LLSet md gq args
+emptyLLSet :: LLSet md gq
 emptyLLSet = DHash.empty
 
-addToLLSet :: SB.RowTypeTag r -> LLDetails md gq args r -> LLSet md gq args -> LLSet md gq args
+addToLLSet :: SB.RowTypeTag r -> LLDetails md gq r -> LLSet md gq  -> LLSet md gq
 addToLLSet rtt d llSet = DHash.insertWith addDetailsLists rtt (LLDetailsList [d]) llSet
 --data Res r = Res
 
-generateLogLikelihood' :: LLSet md gq args -> SB.StanBuilderM md gq ()
+generateLogLikelihood' :: LLSet md gq -> SB.StanBuilderM md gq ()
 generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   let prependSizeName rtt (LLDetailsList ds) ls = Prelude.replicate (Prelude.length ds) (SB.dataSetSizeName rtt) ++ ls
   llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llSet) of
@@ -159,7 +161,7 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
   SB.addDeclBinding' "LLIndex" llSizeE
   logLikV <- SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "LLIndex") ""
-  let doOne :: SB.RowTypeTag a -> LLDetails md gq args a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+  let doOne :: SB.RowTypeTag a -> LLDetails md gq a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
       doOne rtt (LLDetails dist argsM yV) = do
         prevSizes <- get
         lift $ SB.bracketed 2 $ SB.useDataSetForBindings rtt $ SB.indexBindingScope $ do
@@ -171,16 +173,26 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
             $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
         put $ SB.name (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
-      doList ::  SB.RowTypeTag a -> LLDetailsList md gq args a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+      doList ::  SB.RowTypeTag a -> LLDetailsList md gq a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
       doList rtt (LLDetailsList lls) = traverse_ (doOne rtt) lls >> pure rtt
   _ <- evalStateT (DHash.traverseWithKey doList llSet) []
   pure ()
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
-generatePosteriorPrediction rtt sv@(SME.StanVar ppName t) sDist args = SB.inBlock SB.SBGeneratedQuantities $ do
+generatePosteriorPrediction rtt sv sDist args = generatePosteriorPrediction' rtt sv sDist args id
+{-
+  SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE = SMD.familyRNG sDist args
   ppVar <- SB.stanDeclare ppName t ""
   SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` rngE
+  return sv
+-}
+
+generatePosteriorPrediction' :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> (SB.StanExpr -> SB.StanExpr) -> SB.StanBuilderM md gq SME.StanVar
+generatePosteriorPrediction' rtt sv@(SME.StanVar ppName t) sDist args f = SB.inBlock SB.SBGeneratedQuantities $ do
+  let rngE = SMD.familyRNG sDist args
+  ppVar <- SB.stanDeclare ppName t ""
+  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` f rngE
   return sv
 
 diagVectorFunction :: SB.StanBuilderM md gq Text
@@ -222,6 +234,11 @@ normalApproxBinomial = SB.addFunctionsOnce "normallyApproximatedBinomial"
   SB.addStanLine "vector[N] var = (p .* (1 - p)) .* trials"
   SB.addStanLine "return normal_lpdf(succ, m, sqrt(var))"
 -}
+
+realIntRatio :: SME.StanVar -> SME.StanVar -> SME.StanExpr
+realIntRatio k l = SB.binOp "/"
+                   (SB.paren $ (SB.scalar "1.0" `SB.times` SB.var k))
+                   (SB.paren $ (SB.scalar "1.0" `SB.times` SB.var l))
 
 matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
 matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
