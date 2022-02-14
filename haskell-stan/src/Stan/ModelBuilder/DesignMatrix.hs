@@ -12,6 +12,7 @@ module Stan.ModelBuilder.DesignMatrix where
 
 import Prelude hiding (All)
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
+import qualified Stan.ModelBuilder.ModelParameters as SMP
 import qualified Stan.ModelBuilder as SB
 
 import qualified Control.Foldl as FL
@@ -166,13 +167,15 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
   traverse (\(g, _, _) -> splitToGroupVar n g v) $ designMatrixIndexes dmr
 
 
+data DMParameterization = DMCentered | DMNonCentered deriving (Show, Eq)
+
 
 addDMParametersAndPriors :: (Typeable md, Typeable gq)
                          => Text
                          -> SB.GroupTypeTag k -- exchangeable contexts
                          -> SB.StanName -- name for beta parameter (so we can use theta if QR)
-                         -> Parameterization
-                         -> (SB.StanExpr, SB.StanExpr, Double) -- prior widths and lkj parameter
+                         -> DMParameterization
+                         -> (SB.StanExpr, SB.StanExpr, Double) -- priors for mu and tau and lkj parameter
                          -> Maybe Text -- suffix for varnames
                          -> SB.StanBuilderM md gq (SB.StanVar
                                                   , SB.StanVar
@@ -196,36 +199,36 @@ addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, 
 
   (alphaRaw, muAlpha, sigmaAlpha, mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
     alphaRaw' <- case parameterization of
-      Centered -> SB.stanDeclare ("alpha" <> s) gVec ""
-      NonCentered -> SB.stanDeclare ("alpha_raw" <> s) gVec ""
+      DMCentered -> SB.stanDeclare ("alpha" <> s) gVec ""
+      DMNonCentered -> SB.stanDeclare ("alpha_raw" <> s) gVec ""
     muAlpha' <- SB.stanDeclare ("mu_alpha" <> s) SB.StanReal ""
     sigmaAlpha' <- SB.stanDeclare ("sigma_alpha" <> s) SB.StanReal "<lower=0>"
     mu' <- SB.stanDeclare ("mu" <> s) dmVec ""
     tau' <- SB.stanDeclare ("tau" <> s) dmVec "<lower=0>"
     lCorr' <- SB.stanDeclare ("L" <> s) (SB.StanCholeskyFactorCorr dmDim) ""
     betaRaw' <- case parameterization of
-      Centered -> SB.stanDeclare (betaName <> s) (SB.StanMatrix (dmDim, gDim)) ""
-      NonCentered -> SB.stanDeclare (betaName <> s <> "_raw") (SB.StanMatrix (dmDim, gDim)) ""
+      DMCentered -> SB.stanDeclare (betaName <> s) (SB.StanMatrix (dmDim, gDim)) ""
+      DMNonCentered -> SB.stanDeclare (betaName <> s <> "_raw") (SB.StanMatrix (dmDim, gDim)) ""
     return (alphaRaw', muAlpha', sigmaAlpha', mu', tau', lCorr', betaRaw')
   let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
       repMu = SB.function "rep_matrix" (SB.var mu :| [SB.indexSize gName])
   beta <- case parameterization of
-    Centered -> return betaRaw
-    NonCentered -> SB.inBlock SB.SBTransformedParameters $
+    DMCentered -> return betaRaw
+    DMNonCentered -> SB.inBlock SB.SBTransformedParameters $
       SB.stanDeclareRHS (betaName <> s) (SB.StanMatrix (dmDim,gDim)) ""
         $ vecG $ vecDM $ repMu `SB.plus` (dpmE `SB.times` SB.var betaRaw)
   alpha <- case parameterization of
-    Centered -> return alphaRaw
-    NonCentered -> SB.inBlock SB.SBTransformedParameters $
+    DMCentered -> return alphaRaw
+    DMNonCentered -> SB.inBlock SB.SBTransformedParameters $
       SB.stanDeclareRHS ("alpha" <> s) gVec ""
       $ vecG $ SB.var muAlpha `SB.plus` (SB.var sigmaAlpha `SB.times` SB.var alphaRaw)
   SB.inBlock SB.SBModel $ do
     case parameterization of
-      Centered -> do
+      DMCentered -> do
         SB.addExprLines "addDMParametersAnsPriors"
           [vecDM $ SB.var betaRaw `SB.vectorSample` SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
           , vecG $ SB.var alphaRaw `SB.vectorSample` SB.function "normal" (SB.var muAlpha :| [SB.var sigmaAlpha])]
-      NonCentered ->
+      DMNonCentered ->
 --        SB.stanForLoopB "g" Nothing gName
         SB.addExprLines "addDMParametersAndPriors"
         [vecG $ vecDM $ SB.function "to_vector" (one $ SB.var betaRaw) `SB.vectorSample` SB.stdNormal

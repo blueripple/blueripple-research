@@ -53,21 +53,41 @@ familyExp (StanDist _ _ _ _ _ e) = e
 --vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
 
 binomialLogitDist' :: Bool -> SME.StanVar -> StanDist SME.StanExpr
-binomialLogitDist' sampleWithConstants tV = StanDist Discrete sample lpdf lupdf rng expectation where
-  plusEq = SME.binOp "+="
-  sample lpE sV = if sampleWithConstants
-                  then SME.target `plusEq` SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
-                  else SME.var sV `SME.vectorSample` SME.function "binomial_logit" (SME.var tV :| [lpE])
-  lpdf lpE sV = SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
-  lupdf lpE sV = SME.functionWithGivens "binomial_logit_lupmf" (one $ SME.var sV) (SME.var tV :| [lpE])
-  rng lpE = SME.function "binomial_rng" (SME.var tV :| [SME.function "inv_logit" (one lpE)])
-  expectation lpE = SME.function "inv_logit" (one lpE)
+binomialLogitDist' sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng expectation
+  where
+    plusEq = SME.binOp "+="
+    sample lpE sV = if sampleWithConstants
+                    then SME.target `plusEq` SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
+                    else SME.var sV `SME.vectorSample` SME.function "binomial_logit" (SME.var tV :| [lpE])
+    lpmf lpE sV = SME.functionWithGivens "binomial_logit_lpmf" (one $ SME.var sV) (SME.var tV :| [lpE])
+    lupmf lpE sV = SME.functionWithGivens "binomial_logit_lupmf" (one $ SME.var sV) (SME.var tV :| [lpE])
+    rng lpE = SME.function "binomial_rng" (SME.var tV :| [SME.function "inv_logit" (one lpE)])
+    expectation lpE = SME.function "inv_logit" (one lpE)
 
 binomialLogitDist :: SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist = binomialLogitDist' False
 
 binomialLogitDistWithConstants :: SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDistWithConstants = binomialLogitDist' True
+
+betaDist :: StanDist (SME.StanExpr, SME.StanExpr)
+betaDist = StanDist Continuous sample lpdf lupdf rng expectation
+  where
+    sample (aE, bE) sv = SME.var sv `SME.vectorSample` SME.function "beta" (aE :| [bE])
+    lpdf (aE, bE) sv = SME.functionWithGivens "beta_lpdf" (one $ SME.var sv) (aE :| [bE])
+    lupdf (aE, bE) sv = SME.functionWithGivens "beta_lupdf" (one $ SME.var sv) (aE :| [bE])
+    rng (aE, bE) = SME.function "beta_rng" (aE :| [bE])
+    expectation (aE, bE) = aE `SME.divide` (SME.paren $ aE `SME.plus` bE)
+
+betaProportionDist :: StanDist (SME.StanExpr, SME.StanExpr)
+betaProportionDist = StanDist Continuous sample lpdf lupdf rng expectation
+  where
+    sample (muE, kE) sv = SME.var sv `SME.vectorSample` SME.function "beta_proportion" (muE :| [kE])
+    lpdf (muE, kE) sv = SME.functionWithGivens "beta_proportion_lpdf" (one $ SME.var sv) (muE :| [kE])
+    lupdf (muE, kE) sv = SME.functionWithGivens "beta_proportion_lupdf" (one $ SME.var sv) (muE :| [kE])
+    rng (muE, kE) = SME.function "beta_proportion_rng" (muE :| [kE])
+    expectation (muE, _) = muE
+
 
 -- for priors
 normal :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr

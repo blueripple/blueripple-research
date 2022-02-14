@@ -110,6 +110,9 @@ templateVars =
 
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
+modelDir :: Text
+modelDir = "br-2021-NewMaps/stanDM2"
+
 main :: IO ()
 main = do
   pandocWriterConfig <-
@@ -134,7 +137,7 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     modelDiagnostics stanParallelCfg parallel
-    newCongressionalMapPosts stanParallelCfg parallel
+--    newCongressionalMapPosts stanParallelCfg parallel
 --    newStateLegMapPosts stanParallelCfg parallel
 
   case resE of
@@ -261,10 +264,10 @@ modelDiagnostics stanParallelCfg parallel = do
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
-      modelDir =  "br-2021-NewMaps/stanAH"
+--      modelDir =  "br-2021-NewMaps/stanAH"
       vs = BRE.CCESComposite
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      dmModel = BRE.Model (BRE.T_CCESAndCPS) (BRE.P_CCES vs) BRE.LogDensity
+      dmModel = BRE.Model (BRE.T_Elex 1) (BRE.P_Elex 1) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
@@ -433,7 +436,7 @@ newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo cc
   K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
-      modelDir =  "br-2021-NewMaps/stanAH"
+--      modelDir =  "br-2021-NewMaps/stanAH"
       ccesVoteSource = BRE.CCESComposite
       dmModel td pd = BRE.Model td pd BRE.LogDensity
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
@@ -480,7 +483,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
-      modelDir =  "br-2021-NewMaps/stanAH"
+--      modelDir =  "br-2021-NewMaps/stanAH"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup
                       , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.LogDensity)
