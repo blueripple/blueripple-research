@@ -1551,7 +1551,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
           $ SB.generatePosteriorPrediction elexTData ppElexVoted distElexT (betaAT elexTDMC, betaBT elexTDMC)
         let ppCPSVoted = SB.StanVar "CPSPVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName cpsTData)
         SB.useDataSetForBindings cpsTData
-          $ SB.generatePosteriorPrediction elexTData ppCPSVoted distCPS (betaAT cpsDMC, betaBT cpsDMC)
+          $ SB.generatePosteriorPrediction cpsTData ppCPSVoted distCPS (betaAT cpsDMC, betaBT cpsDMC)
 
 
   {-
@@ -1689,7 +1689,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
             groups = groupBuilderDM model psGroup states psKeys
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
-  let unwrapVoted = [SR.UnwrapNamed "Voted_Elections" "ObsElectionVotes", SR.UnwrapNamed "Voted_CPS" "ObsCPSVotes"]
+  let unwrapVoted = [SR.UnwrapNamed "Voted_Elex" "ObsElectionVotes", SR.UnwrapNamed "Voted_CPS" "ObsCPSVotes"]
   {-
   let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
         T_CCES -> SR.UnwrapNamed "Voted_CCES" "ObsVoted"
