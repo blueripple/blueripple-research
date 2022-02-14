@@ -22,42 +22,74 @@ intercept iName alphaPriorE = do
   SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
   return iVar
 
-data Prior = SimplePrior SB.StanExpr
-           | FunctionPrior (SME.StanVar -> SME.StanExpr)
+--data Prior = SimplePrior SB.StanExpr
+--           | FunctionPrior (SME.StanVar -> SME.StanExpr)
 
 data Parameterization = Centered
                       | NonCentered (SME.StanVar -> SME.StanExpr) --deriving (Eq, Show)
 
-scalarNonCenteredF :: SME.StanVar -> SME.StanVar -> (SME.StanVar -> SME.StanExpr)
-scalarNonCenteredF mu sigma v = SME.var mu `SME.plus` (SME.paren (SME.var sigma `SME.times` SME.var v))
+isReal :: Text -> SB.StanVar ->  SB.StanBuilder md gq ()
+isReal _ (SME.StanVar _ SME.StanReal) = return ()
+isReal errMsg (SME.StanVar n _) = SB.stanBuildError $ errMsg $ "(" <> n <> " is not of type StanReal"
 
-vectorNonCenteredF :: SME.IndexKey -> SME.StanVar -> SME.StanVar -> SME.StanVar -> (SME.StanVar -> SME.StanExpr)
-vectorNonCenteredF ik mu tau lCorr v = e
-  where
-    repMu = SB.function "rep_matrix" (SB.var mu :| [SB.indexSize ik])
-    dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
-    e = SB.vectorizedOne ik $ repMu `SB.plus` (dpmE `SB.times` SB.var v)
+isVec :: Text -> SB.StanVar -> SB.StanBuilder md gq SME.IndexKey
+isVec _ (SME.StanVar _ (SME.StanVector (SME.NamedDim ik))) = return ik
+isVec errMsg (SME.StanVar n (SME.StanVector _)) =
+  SB.stanBuildError $ errMsg <> ": " <> n <> " is of type StanVec but dimension is not named in isVec."
+isVec errMsg _ (SME.StanVar n _) =
+  SB.stanBuildError $ errMsg <> ": " <> n <> " is not of type StanVec in isVec."
+
+isCholeskyCorr :: Text -> SB.StanVar -> SB.StanBuilder md gq SME.IndexKey
+isCholeskyCorr errMsg (SME.StanCholeskyFactorCorr (SME.NamedDim ik)) = return ik
+isCholeskyCorr errMsg ik (SME.StanCholeskyFactorCorr _) =
+  SB.stanBuildError $ errMsg <> ": " <> n <> " is of type StanCholeskyCorr but dimension is not named in isCholeskyCorr."
+isCholeskyCorr errMsg (SME.StanVar n _)
+  SB.stanBuildError $ errMsg <> ": " <> n <> " is not of type StanCholeskyCorr in isCholeskyCorr."
+
+scalarNonCenteredF :: SME.StanVar -> SME.StanVar -> SB.StanBuilder md gq (SME.StanVar -> SME.StanExpr)
+scalarNonCenteredF mu sigma = do
+  isReal "scalarNonCenteredF: " mu
+  isReal "scalarNonCenteredF: " sigma
+  return $ \v -> SME.var mu `SME.plus` (SME.paren (SME.var sigma `SME.times` SME.var v))
+
+vectorNonCenteredF :: SME.IndexKey -> SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.StanBuilder md gq (SME.StanVar -> SME.StanExpr)
+vectorNonCenteredF ik mu tau lCorr = do
+  muIndex <- isVec "vectorNonCenteredF" mu
+  tauIndex <-isVec "vectorNonCenteredF" tau
+  corrIndex <- isCholeskyCorr "vectorNonCenteredF" lCorr
+  when (muIndex /= tauIndex || muIndex /= corrIndex)
+    $ SB.stanBuildError
+    $ "vectorNonCenteredF: index mismatch in given input parameters. "
+    <> "mu index=" <> muIndex <> "; tau index=" <> tauIndex <> "; corrIndex=" <> corrIndex
+  let repMu = SB.function "rep_matrix" (SB.var mu :| [SB.indexSize ik])
+      dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
+      f v = SB.vectorizedOne ik $ repMu `SB.plus` (dpmE `SB.times` SB.var v)
+  return f
 
 addParameter :: Text
              -> SME.StanType
              -> Text
-             -> SME.PossiblyVectorized Prior
-             -> SB.StanBuilderM md gq SB.StanVar
-addParameter pName pType pConstraint pPriorF = do
+             -> SME.PossiblyVectorized SME.StanExpr
+             -> SB.StanBuilderM md gq SME.StanVar
+addParameter pName pType pConstraint pvp = do
   pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare pName pType pConstraint
   SB.inBlock SB.SBModel
     $ SB.addExprLine "addParameter"
     $ case pPriorF of
-        SME.UnVectorized (SimplePrior e) -> SB.var pv `SB.vectorSample` e
-        SME.Vectorized ik (SimplePrior e) -> SB.vectorizedOne ik $ SB.var pv `SB.vectorSample` e
-        SME.UnVectorized (FunctionPrior f) -> SB.var pv `SB.vectorSample` f pv
-        SME.Vectorized ik (FunctionPrior f) -> SB.vectorizedOne ik $ SB.var pv `SB.vectorSample` f pv
+        SME.UnVectorized e -> SB.var pv `SB.vectorSample` e
+        SME.Vectorized iks e -> SB.vectorized iks $ SB.var pv `SB.vectorSample` e
   return pv
+
+lkjCorrelationMatrixParameter :: Text -> SME.IndexKey -> Double -> SB.StanBuilderM md gq SB.StanVar
+lkjCorrelationMatrixParameter name lkjDim lkjParameter = addParameter name lkjType "" lkjPrior
+  where
+    lkjType = SB.StanCholeskyFactorCorr lkjDim
+    lkjPrior = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
 
 addTransformedParameter :: Text
                         -> SB.StanType
                         -> SME.PossiblyVectorized (SB.StanVar -> SB.StanExpr)
-                        -> SME.PossiblyVectorized Prior
+                        -> SME.PossiblyVectorized SME.StanExpr
                         -> SB.StanBuilderM md gq SB.StanVar
 addTransformedParameter name sType fromRawF rawPrior = do
   rawV <- addParameter (name <> "_raw") sType "" rawPrior
@@ -65,30 +97,45 @@ addTransformedParameter name sType fromRawF rawPrior = do
     $ SB.stanDeclareRHS name sType ""
     $ case fromRawF of
         SME.UnVectorized f -> f rawV
-        SME.Vectorized ik f -> SME.vectorizedOne ik $ f rawV
+        SME.Vectorized iks f -> SME.vectorized ik $ f rawV
 
 addHierarchicalScalar :: Text
                       -> SB.GroupTypeTag k
                       -> Parameterization
-                      -> Prior
+                      -> SME.StanExpr
                       -> SB.StanBuilderM md gq SB.StanVar
-addHierarchicalScalar name gtt parameterization rawPrior = do
+addHierarchicalScalar name gtt parameterization prior = do
   let gName = SB.taggedGroupName gtt
       pType = SME.StanVector (SME.NamedDim gName)
   v <- case parameterization of
-    Centered -> addParameter name pType "" (SME.Vectorized gName prior)
+    Centered -> addParameter name pType "" (SME.Vectorized (one gName) prior)
     NonCentered f -> do
-      let transform = SME.Vectorized gName f
+      let transform = SME.Vectorized (one gName) f
       addTransformedParameter name sType transform prior
+
+centeredHierarchicalPrior :: SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.STanBuilderM md gq SME.StanExpr
+centeredHierarchicalPrior mu tau lCorr = do
+  muIndex <- isVec "vectorNonCenteredF" mu
+  tauIndex <-isVec "vectorNonCenteredF" tau
+  corrIndex <- isCholeskyCorr "vectorNonCenteredF" lCorr
+  when (muIndex /= tauIndex || muIndex /= corrIndex)
+    $ SB.stanBuildError
+    $ "vectorNonCenteredF: index mismatch in given input parameters. "
+    <> "mu index=" <> muIndex <> "; tau index=" <> tauIndex <> "; corrIndex=" <> corrIndex
 
 addHierarchicalVector :: Text
                       -> SME.IndexKey
                       -> SB.GroupTypeTag k
                       -> Parameterization
-                      -> SME.PossiblyVectorized Prior
+                      -> SME.StanExpr
                       -> SB.StanBuilderM md gq SB.StanVar
-addHierarchicalVector name rowIndex gtt parameterization pvp = do
+addHierarchicalVector name rowIndex gtt parameterization priorE = do
   let gName = SB.taggedGroupName gtt
       pType = SB.StanMatrix (SME.NamedDim rowIndex, SME.NamedDim gName)
+--      vecSet = Set.fromList [gName, rowIndex]
+      vecG = SB.vectorizedOne gName
+      vecR = SB.vectorizedOne rowIndex
   v <- case parameterization of
-    Centered ->
+    Centered -> do
+      pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare name pType ""
+      SB.inBlock SB.SBModel $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var pv) `SB.equal` e
