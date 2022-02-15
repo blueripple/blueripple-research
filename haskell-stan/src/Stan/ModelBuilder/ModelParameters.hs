@@ -84,7 +84,7 @@ lkjCorrelationMatrixParameter :: Text -> SME.IndexKey -> Double -> SB.StanBuilde
 lkjCorrelationMatrixParameter name lkjDim lkjParameter = addParameter name lkjType "" lkjPrior
   where
     lkjType = SB.StanCholeskyFactorCorr $ SME.NamedDim lkjDim
-    lkjPrior = SME.UnVectorized $ SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
+    lkjPrior = SME.Vectorized (one lkjDim) $ SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
 
 addTransformedParameter :: Text
                         -> SB.StanType
@@ -115,12 +115,12 @@ addHierarchicalScalar name gtt parameterization prior = do
 
 centeredHierarchicalVectorPrior :: SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 centeredHierarchicalVectorPrior mu tau lCorr = do
-  muIndex <- isVec "vectorNonCenteredF" mu
-  tauIndex <-isVec "vectorNonCenteredF" tau
-  corrIndex <- isCholeskyCorr "vectorNonCenteredF" lCorr
+  muIndex <- isVec "centeredHierarchicalVectorPrior " mu
+  tauIndex <-isVec "centeredHierarchicalVectorPrior" tau
+  corrIndex <- isCholeskyCorr "centeredHierarchicalVectorPrior " lCorr
   when (muIndex /= tauIndex || muIndex /= corrIndex)
     $ SB.stanBuildError
-    $ "vectorNonCenteredF: index mismatch in given input parameters. "
+    $ "centeredHierarchicalVectorPrior : index mismatch in given input parameters. "
     <> "mu index=" <> muIndex <> "; tau index=" <> tauIndex <> "; corrIndex=" <> corrIndex
   let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
   return $ SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
