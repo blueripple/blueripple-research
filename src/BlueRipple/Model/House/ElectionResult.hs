@@ -1102,6 +1102,7 @@ groupBuilderDM model psGroup states psKeys = do
 -}
   loadElexTurnoutData
   loadCPSTurnoutData
+  loadCCESTurnoutData
 
   -- GQ
   acsData <- SB.addGQDataToGroupBuilder "ACS" (SB.ToFoldable fst)
@@ -1437,9 +1438,6 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM, _) <- setupElexTData False 1 0
---        let vecElexThetaTE = SB.vectorizeExpr "elexThetaT" (SB.realIntRatio elexVoted elexCVAP) (SB.dataSetName elexTData)
---        vecElexThetaT <- SB.inBlock SB.SBTransformedData vecElexThetaTE
-
         dmColIndex <- case elexTDM of
           (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
           (SB.StanVar m _) -> SB.stanBuildError $ "electionModelDM: elexDM is not a matrix with named row index"
@@ -1449,14 +1447,13 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ SB.normal (Just $ SB.scalar $ show logitMeanTurnout) (SB.scalar "1"))
         sigmaStAlphaT <- SMP.addParameter "sigmaStAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ SB.normal Nothing (SB.scalar "1"))
         alphaNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaStAlphaT
-        stAlphaT <- SB.useDataSetForBindings elexTData $ SMP.addHierarchicalScalar "stAlphaT" stateGroup (SMP.NonCentered alphaNonCenterF) SB.stdNormal --normal (Just $ SB.var muAlphaT) (SB.var sigmaStAlphaT)
+        stAlphaT <- SB.useDataSetForBindings elexTData $ SMP.addHierarchicalScalar "stAlphaT" stateGroup (SMP.NonCentered alphaNonCenterF) SB.stdNormal
         muBetaT <- SMP.addParameter "muBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
         invSamplesT <- SMP.addParameter "invSamplesT" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         (elexTDMC, centerTF) <- DM.centerDataMatrix elexTDM Nothing
         let distElexT = SB.betaBinomialDist True elexCVAP
             dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
             muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
---        alphaT <- SB.inBlock SB.SBTransformedParameters $ SB.declareRHS "alphaT" = SB.var muAlphaT `SB.plus` SB.paren (SB.var sigmaStAlphaT `SB.times` SB.var stAlphaT)
             muT dm = muE (SB.var stAlphaT) (SB.var dm) (SB.var muBetaT)
             betaAT dm = muT dm `SB.divide` SB.var invSamplesT
             betaBT dm = SB.paren (SB.scalar "1.0" `SB.minus` muT dm) `SB.divide` SB.var invSamplesT
@@ -1469,11 +1466,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
             SB.sampleDistV elexTData distElexT (SB.var elexBetaAT, SB.var elexBetaBT) elexVoted
         (cpsTData, cpsDesignMatrixRow, cpsCVAP, cpsVoted, cpsDM, _) <- setupCPSData 0
         cpsDMC <- centerTF SC.ModelData cpsDM (Just "T")
-
---        stBetaT <- SMP.addHierarchicalVector "stBetaT" dmColIndex stateGroup SMP.Centered SB.stdNormal
         let distCPS = SB.betaBinomialDist True cpsCVAP
---            predCPSE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
---            predCPS dm = predElexE (SB.var muAlphaT) (SB.var dm) (SB.var muBetaT)
             vecCPSBetaAT = SB.vectorizeExpr "cpsDataBetaAT" (betaAT cpsDMC) (SB.dataSetName cpsTData)
             vecCPSBetaBT = SB.vectorizeExpr "cpsDataBetaBT" (betaBT cpsDMC) (SB.dataSetName cpsTData)
         SB.inBlock SB.SBModel $ do
@@ -1481,6 +1474,17 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
             cpsBetaAT <- vecCPSBetaAT
             cpsBetaBT <- vecCPSBetaBT
             SB.sampleDistV cpsTData distCPS (SB.var cpsBetaAT, SB.var cpsBetaBT) cpsVoted
+        (ccesTData, ccesDesignMatrixRow, ccesCVAP, ccesVoted, ccesDM, _) <- setupCCESTData 0
+        ccesDMC <- centerTF SC.ModelData ccesDM (Just "T")
+        let distCCES = SB.betaBinomialDist True ccesCVAP
+            vecCCESBetaAT = SB.vectorizeExpr "ccesDataBetaAT" (betaAT ccesDMC) (SB.dataSetName ccesTData)
+            vecCCESBetaBT = SB.vectorizeExpr "ccesDataBetaBT" (betaBT ccesDMC) (SB.dataSetName ccesTData)
+        SB.inBlock SB.SBModel $ do
+          SB.useDataSetForBindings ccesTData $ do
+            ccesBetaAT <- vecCCESBetaAT
+            ccesBetaBT <- vecCCESBetaBT
+            SB.sampleDistV ccesTData distCCES (SB.var ccesBetaAT, SB.var ccesBetaBT) ccesVoted
+
 
 {-
         (turnoutData, turnoutDesignMatrixRow, cvap, voted, dmTurnout, dsIndexT) <- setupTurnoutData turnoutDataSet
@@ -1541,6 +1545,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         let llSet :: SB.LLSet CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) =
               SB.addToLLSet elexTData (SB.LLDetails distElexT (pure (betaAT elexTDMC, betaBT elexTDMC)) elexVoted)
               $ SB.addToLLSet cpsTData (SB.LLDetails distCPS (pure (betaAT cpsDMC, betaBT cpsDMC)) cpsVoted)
+              $ SB.addToLLSet ccesTData (SB.LLDetails distCCES (pure (betaAT ccesDMC, betaBT ccesDMC)) ccesVoted)
 --              $ SB.addToLLSet prefData (SB.LLDetails distP (pure $ iPredP alphaP dmP thetaP) dVotesInRace)
               $ SB.emptyLLSet
         SB.generateLogLikelihood' llSet
@@ -1552,6 +1557,9 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         let ppCPSVoted = SB.StanVar "CPSPVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName cpsTData)
         SB.useDataSetForBindings cpsTData
           $ SB.generatePosteriorPrediction cpsTData ppCPSVoted distCPS (betaAT cpsDMC, betaBT cpsDMC)
+        let ppCCESVoted = SB.StanVar "CCESPVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName ccesTData)
+        SB.useDataSetForBindings ccesTData
+          $ SB.generatePosteriorPrediction ccesTData ppCCESVoted distCCES (betaAT ccesDMC, betaBT ccesDMC)
 
 
   {-
@@ -1689,7 +1697,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
             groups = groupBuilderDM model psGroup states psKeys
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
-  let unwrapVoted = [SR.UnwrapNamed "Voted_Elex" "ObsElectionVotes", SR.UnwrapNamed "Voted_CPS" "ObsCPSVotes"]
+  let unwrapVoted = [SR.UnwrapNamed "Voted_Elex" "ObsElectionVotes", SR.UnwrapNamed "Voted_CPS" "ObsCPSVotes", SR.UnwrapNamed "Voted_CCES" "ObsCCESVotes"]
   {-
   let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
         T_CCES -> SR.UnwrapNamed "Voted_CCES" "ObsVoted"
