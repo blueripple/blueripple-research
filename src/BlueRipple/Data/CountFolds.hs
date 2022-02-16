@@ -110,3 +110,16 @@ weightedCountFold getKey getData filterRow testData weightData =
     FMR.noUnpack
     (FMR.Assign $ \r ->  (getKey r, getData r))
     (FMR.foldAndAddKey $ weightedBinomialFold testData weightData)
+
+countsFld :: FL.Fold (F.Record CountCols) (F.Record CountCols)
+countsFld =
+  let wgt = F.rgetField @MeanWeight
+      sumF f = FL.premap f FL.sum
+      wgtdSumF f = (/) <$> fmap realToFrac (FL.premap (\r -> wgt r * f r) FL.sum) <*> sumF wgt
+  in (\c s wc ws mw vw -> c F.&: s F.&: wc F.&: ws F.&: mw F.&: vw F.&: V.RNil)
+     <$> sumF (F.rgetField @Count)
+     <*> sumF (F.rgetField @Successes)
+     <*> wgtdSumF (F.rgetField @WeightedCount)
+     <*> wgtdSumF (F.rgetField @WeightedSuccesses)
+     <*> sumF wgt
+     <*> wgtdSumF (F.rgetField @VarWeight) -- FIX: this is prolly bogus

@@ -135,11 +135,11 @@ findDelta totalVotes dat = do
       mappedDat = fmap toAnyRealFrac dat
 --      cost :: Floating b => b -> b
       cost x = FL.fold (votesErrorF totalVotes x) mappedDat
-      costHZ = HZ.VFunction $ \v -> cost (v V.! 0)
+--      costHZ = HZ.VFunction $ \v -> cost (v V.! 0)
       costNL v = cost (v VS.! 0)
-      gCost x = FL.fold (dVotesErrorF totalVotes x) mappedDat
-      gCostHZ = HZ.VGradient $ \v -> V.fromList [gCost $ v V.! 0]
-      paramsHZ = HZ.defaultParameters { HZ.printFinal  = False
+--      gCost x = FL.fold (dVotesErrorF totalVotes x) mappedDat
+--      gCostHZ = HZ.VGradient $ \v -> V.fromList [gCost $ v V.! 0]
+{-      paramsHZ = HZ.defaultParameters { HZ.printFinal  = False
                                       , HZ.printParams = False
                                       , HZ.verbose     = CG.Verbose
                                       }
@@ -147,7 +147,8 @@ findDelta totalVotes dat = do
       grad_tol = 0.0000001
       getResHZ (v, _, _) = v VS.! 0
 --   getResHZ <$> HZ.optimize paramsHZ grad_tol (V.fromList [0]) costHZ gCostHZ Nothing
-  let stopNL = NL.MinimumValue 1 :| [NL.ObjectiveRelativeTolerance 1e-6]
+-}
+  let stopNL = NL.MinimumValue 0.5 :| [NL.ObjectiveRelativeTolerance 1e-6]
       algoNL = NL.NELDERMEAD costNL [NL.LowerBounds (VS.fromList [-10])] Nothing
       problemNL = NL.LocalProblem 1 stopNL algoNL
   case NL.minimizeLocal problemNL (VS.fromList [0]) of
