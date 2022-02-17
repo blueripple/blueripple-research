@@ -364,12 +364,12 @@ pumsDataF =
       hisp = F.rgetField @DT.HispC
       wnh r = race4A r == DT.RA4_White && hisp r == DT.NonHispanic
       wh r = race4A r == DT.RA4_White && hisp r == DT.Hispanic
-      nwh r = race4A r /= DT.RA4_White && hisp r == DT.Hispanic -- this overlaps other categories
-      black r = race4A r == DT.RA4_Black
-      asian r = race4A r == DT.RA4_Asian
-      other r = race4A r == DT.RA4_Other
+      nwh r = race4A r /= DT.RA4_White && hisp r == DT.Hispanic
+      black r = race4A r == DT.RA4_Black && hisp r == DT.NonHispanic
+      asian r = race4A r == DT.RA4_Asian && hisp r == DT.NonHispanic
+      other r = race4A r == DT.RA4_Other && hisp r == DT.NonHispanic
       white r = race4A r == DT.RA4_White
-      whiteGrad r = (white r) && (F.rgetField @DT.CollegeGradC r == DT.Grad)
+      whiteNonHispanicGrad r = (wnh r) && (F.rgetField @DT.CollegeGradC r == DT.Grad)
   in FF.sequenceRecFold $
      FF.toFoldRecord (fracF ((== DT.Under) . F.rgetField @DT.SimpleAgeC))
      V.:& FF.toFoldRecord (fracF ((== DT.Female) . F.rgetField @DT.SexC))
@@ -380,7 +380,7 @@ pumsDataF =
      V.:& FF.toFoldRecord (fracF black)
      V.:& FF.toFoldRecord (fracF asian)
      V.:& FF.toFoldRecord (fracF other)
-     V.:& FF.toFoldRecord (intRatio <$> FL.prefilter whiteGrad citF <*> FL.prefilter white citF)
+     V.:& FF.toFoldRecord (fracF whiteNonHispanicGrad)
      V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
      V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
      V.:& FF.toFoldRecord citF
@@ -719,7 +719,7 @@ adjUsing toDbl r = r F.<+> FT.recordSingleton @n (F.rgetField @x r * toDbl (F.rg
 
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
-  let testRun = True
+  let testRun = False
       cacheKey x k = k <> if x then ".tbin" else ".bin"
   let earliestYear = 2016 -- set by ces for now
       earliest year = (>= year) . F.rgetField @BR.Year
@@ -785,7 +785,8 @@ prepCCESAndPums clearCache = do
   when clearCache $ BR.clearIfPresentD ccesTAchenHurCacheKey
   ccesTAchenHur_C <- BR.retrieveOrMakeFrame ccesTAchenHurCacheKey ccesTAchenHurDeps $ \(cces, acsByCD, stateTurnout) -> do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES for state-specific under-reporting."
-    let ew r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @Voted r) / realToFrac (F.rgetField @Surveyed r))
+    let pT r = let s = F.rgetField @Surveyed r in if s == 0 then 0.5 else realToFrac (F.rgetField @Voted r) / realToFrac s
+        ew = FT.recordSingleton @AchenHurWeight . pT
         ccesWithProb = fmap (FT.mutate ew) cces
         (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
@@ -807,18 +808,16 @@ prepCCESAndPums clearCache = do
   ccesPVAchenHur_C <- BR.retrieveOrMakeFrame ccesPVAchenHurCacheKey ccesPVAchenHurDeps $ \(cces, acsByCD, presElex) -> do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES voting totals. ??"
     K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
-    let presVotes = F.rgetField @PresVotes
---        pT r = realToFrac (presVotes r) / realToFrac (F.rgetField @Surveyed r)
-        pDP r = realToFrac (F.rgetField @PresDVotes r) / realToFrac (presVotes r)
+    let pDP r = let pv = F.rgetField @PresVotes r in if pv == 0 then 0.5 else realToFrac (F.rgetField @PresDVotes r) / realToFrac pv
         ew r = FT.recordSingleton @AchenHurWeight $ pDP r
         ccesWithProb = fmap (FT.mutate ew) cces
         (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
     when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
-    let votesInRace r = round $ realToFrac (F.rgetField @PUMS.Citizens r) * realToFrac (F.rgetField @PresVotes r) / realToFrac (F.rgetField @Surveyed r)
-        addVotesInRace r = r F.<+> (FT.recordSingleton @VotesInRace $ votesInRace r)
-    adjProb <- FL.foldM (BRTA.adjTurnoutFoldG @VotesInRace @AchenHurWeight @[BR.Year, BR.StateAbbreviation] (realToFrac . F.rgetField @DVotes) presElex)
-               (fmap addVotesInRace ccesWithProbAndCit)
+    let elexDShare r = realToFrac (F.rgetField @DVotes r) / realToFrac (F.rgetField @TVotes r)
+    adjProb <- FL.foldM
+               (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexDShare presElex)
+               ccesWithProbAndCit
     let adjVotes = adjUsing @AchenHurWeight @AHPresDVotes @PresVotes realToFrac
         res = fmap (F.rcast @(CCESByCDR V.++ [AHVoted, AHPresDVotes]) . adjVotes) adjProb
     return res
@@ -830,16 +829,16 @@ prepCCESAndPums clearCache = do
   when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
   ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(cces, acsByCD, houseElex) -> do
     K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CCES house vote totals. ??"
-    let houseVotes = F.rgetField @HouseVotes
-        pDH r = realToFrac (F.rgetField @HouseDVotes r) / realToFrac (houseVotes r)
-        ew r = FT.recordSingleton @AchenHurWeight $ pDH r --(realToFrac (F.rgetField @HouseDVotes r) / realToFrac (F.rgetField @HouseVotes r))
+    let pDH r = let hv = F.rgetField @HouseVotes r in if hv == 0 then 0.5 else realToFrac (F.rgetField @HouseDVotes r) / realToFrac hv
+        ew r = FT.recordSingleton @AchenHurWeight $ pDH r
         ccesWithProb = fmap (FT.mutate ew) cces
         (ccesWithProbAndCit, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) ccesWithProb acsByCD
     when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
     when (fLength ccesWithProb /= fLength ccesWithProbAndCit) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
-    let votesInRace r = round $ realToFrac (F.rgetField @PUMS.Citizens r) * realToFrac (F.rgetField @HouseVotes r) / realToFrac (F.rgetField @Surveyed r)
-        addVotesInRace r = r F.<+> (FT.recordSingleton @VotesInRace $ votesInRace r)
-    adjCCESProb <- FL.foldM (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] (realToFrac . F.rgetField @DVotes) houseElex) (fmap addVotesInRace ccesWithProbAndCit)
+    let elexDShare r = realToFrac (F.rgetField @DVotes r) / realToFrac (F.rgetField @TVotes r)
+    adjCCESProb <- FL.foldM
+                   (BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] elexDShare houseElex)
+                   ccesWithProbAndCit
     let adjVotes = adjUsing @AchenHurWeight @AHHouseDVotes @HouseVotes realToFrac
         res = fmap (F.rcast @(CCESByCDR V.++ CCESAH) . adjVotes) adjCCESProb
     return res
@@ -1051,7 +1050,7 @@ ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
 --                -> CCESVoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
                 -> K.ActionWithCacheTime r (F.FrameRec CCESByCDAH)
-                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year,BR.StateAbbreviation, Surveyed, AHVoted, PresVotes, AHPresDVotes, HouseVotes, AHHouseDVotes]))
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year,BR.StateAbbreviation, CVAP, Surveyed, AHVoted, PresVotes, AHPresDVotes, HouseVotes, AHHouseDVotes]))
 ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyed =  F.rgetField @Surveyed
@@ -1063,16 +1062,17 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
       presDVotes = F.rgetField @AHPresDVotes
       houseVotes = F.rgetField @HouseVotes
       houseDVotes = F.rgetField @AHHouseDVotes
-      pDP r = if presVotes r == 0 then 0 else ratio (presDVotes r) (presVotes r)
-      pDH r = if houseVotes r == 0 then 0 else ratio (houseDVotes r) (houseVotes r)
+      pDP r = if presVotes r == 0 then 0.5 else ratio (presDVotes r) (presVotes r)
+      pDH r = if houseVotes r == 0 then 0.5 else ratio (houseDVotes r) (houseVotes r)
       cvap = F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                          dVotesP = pDP rw * voters
-                          dVotesH = pDH rw * voters
-                          presVotesInRace = round $ realToFrac (cvap rc) * realToFrac (presVotes rw) / realToFrac (surveyed rw)
-                          houseVotesInRace = round $ realToFrac (cvap rc) * realToFrac (houseVotes rw) / realToFrac (surveyed rw)
-                      in (cvap rc F.&: voters F.&: presVotesInRace F.&: dVotesP F.&: houseVotesInRace F.&: dVotesH F.&: V.RNil ) :: F.Record [Surveyed, AHVoted, PresVotes, AHPresDVotes, HouseVotes, AHHouseDVotes]
+                          wSurveyed = round $ realToFrac (cvap rc) * realToFrac (surveyed rw)
+                          presVotesInRace = realToFrac (cvap rc) * ratio (presVotes rw) (surveyed rw)
+                          houseVotesInRace = realToFrac (cvap rc) * ratio (houseVotes rw) (surveyed rw)
+                          dVotesP =  realToFrac (cvap rc) * pDP rw
+                          dVotesH =   realToFrac (cvap rc) * pDH rw
+                      in (cvap rc F.&: wSurveyed F.&: voters F.&: round presVotesInRace F.&: dVotesP F.&: round houseVotesInRace F.&: dVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, AHVoted, PresVotes, AHPresDVotes, HouseVotes, AHHouseDVotes]
       deps = (,) <$> acs_C <*> cces_C
   let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
   when clearCaches $ BR.clearIfPresentD statesCK
@@ -1161,7 +1161,7 @@ groupBuilderDM model psGroup states psKeys = do
   loadCPSTurnoutData
   loadCCESTurnoutData
   loadElexPrefData
-  loadCCESPrefData CCESComposite
+  loadCCESPrefData CCESPres
 
   -- GQ
   acsData <- SB.addGQDataToGroupBuilder "ACS" (SB.ToFoldable fst)
@@ -1180,7 +1180,7 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
                 => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRow = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP]-- , wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1192,7 +1192,7 @@ designMatrixRowCCES :: DM.DesignMatrixRow (F.Record CCESWithDensityEM)
 designMatrixRowCCES = designMatrixRow
 
 designMatrixRowCPS :: DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --, wngRP]
  where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1202,7 +1202,7 @@ designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
 
 
 designMatrixRowACS :: DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
-designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1213,8 +1213,8 @@ designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
 designMatrixRowElex :: Bool -> DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
 designMatrixRowElex stateAndDensityOnly = DM.DesignMatrixRow "DM"
                                           $ if stateAndDensityOnly
-                                            then [zeroDMRP "Sex" 1, zeroDMRP "Education" 1, zeroDMRP "Race" 5, densRP, zeroDMRP "WhiteNonGrad" 1]
-                                            else [sexRP, eduRP, raceRP, densRP, wngRP]
+                                            then [zeroDMRP "Sex" 1, zeroDMRP "Education" 1, zeroDMRP "Race" 5, densRP] --, zeroDMRP "WhiteNonGrad" 1]
+                                            else [sexRP, eduRP, raceRP, densRP] --, wngRP]
   where
     zeroDMRP t n = DM.DesignMatrixRowPart t n (const $ VU.replicate n 0.0)
     fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
@@ -1306,8 +1306,8 @@ setupCCESTData n = do
   ccesTData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCEST"
   ccesTIndex <- SB.indexedConstIntArray ccesTData (Just "T") n
   dmCCES <- DM.addDesignMatrix ccesTData designMatrixRowCCES
-  cvapCCES <- SB.addRealData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
-  votedCCES <- SB.addRealData ccesTData "Voted_CCES" (F.rgetField @AHVoted)
+  cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
+  votedCCES <- SB.addCountData ccesTData "Voted_CCES" (round . F.rgetField @AHVoted)
   return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES, ccesTIndex)
 
 
@@ -1319,8 +1319,8 @@ setupCPSData ::  (Typeable md, Typeable gq)
 setupCPSData n = do
   cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
   cpsIndex <- SB.indexedConstIntArray cpsData Nothing n
-  cvapCPS <- SB.addRealData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
-  votedCPS <- SB.addRealData cpsData "Voted_CPS" (F.rgetField @AHSuccesses)
+  cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
+  votedCPS <- SB.addCountData cpsData "Voted_CPS"  (round . F.rgetField @AHSuccesses)
   dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
   return (cpsData, designMatrixRowCPS, cvapCPS, votedCPS, dmCPS, cpsIndex)
 
@@ -1336,8 +1336,8 @@ setupElexTData stateAndDensityOnly voterScale dsIndex = do
   let scaleVoters x = x `div` voterScale
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
   elexTIndex <- SB.indexedConstIntArray elexTData Nothing dsIndex
-  cvapElex <- SB.addRealData elexTData "CVAP_Elections" (scaleVoters . F.rgetField @PUMS.Citizens)
-  votedElex <- SB.addRealData elexTData "Voted_Election" (scaleVoters . F.rgetField @TVotes)
+  cvapElex <- SB.addCountData elexTData "CVAP_Elections" (scaleVoters . F.rgetField @PUMS.Citizens)
+  votedElex <- SB.addCountData elexTData "Voted_Election" (scaleVoters . F.rgetField @TVotes)
   dmElexT <- DM.addDesignMatrix elexTData $ designMatrixRowElex stateAndDensityOnly
   return (elexTData, designMatrixRowElex stateAndDensityOnly, cvapElex, votedElex, dmElexT, elexTIndex)
 
@@ -1387,8 +1387,8 @@ setupCCESPData n vs = do
   ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCESP"
   ccesPIndex <- SB.indexedConstIntArray ccesPData (Just "P") n
   dmCCESP <- DM.addDesignMatrix ccesPData designMatrixRowCCES
-  raceVotesCCES <- SB.addRealData ccesPData "VotesInRace_CCES" votesF
-  dVotesInRaceCCES <- SB.addRealData ccesPData "DVotesInRace_CCES" dVotesF
+  raceVotesCCES <- SB.addCountData ccesPData "VotesInRace_CCES" (round . votesF)
+  dVotesInRaceCCES <- SB.addCountData ccesPData "DVotesInRace_CCES" (round . dVotesF)
   return (ccesPData, designMatrixRowCCES, raceVotesCCES, dVotesInRaceCCES, dmCCESP, ccesPIndex)
 
 setupElexPData :: (Typeable md, Typeable gq)
@@ -1889,9 +1889,9 @@ printVoteSource CCESPres = "PresVotes"
 printVoteSource CCESComposite = "CompositeVotes"
 
 getVotes :: (F.ElemOf rs HouseVotes
-            , F.ElemOf rs HouseDVotes
+            , F.ElemOf rs AHHouseDVotes
             , F.ElemOf rs PresVotes
-            , F.ElemOf rs PresDVotes
+            , F.ElemOf rs AHPresDVotes
             )
          => CCESVoteSource -> (F.Record rs -> Double, F.Record rs -> Double)
 getVotes CCESHouse = (realToFrac . F.rgetField @HouseVotes, F.rgetField @AHHouseDVotes)
@@ -1905,9 +1905,7 @@ getVotes CCESComposite =
   in (f hv pv, f hdv pdv)
 
 zeroVotes ::  (F.ElemOf rs HouseVotes
-              , F.ElemOf rs HouseDVotes
               , F.ElemOf rs PresVotes
-              , F.ElemOf rs PresDVotes
               )
           => CCESVoteSource -> F.Record rs -> Bool
 zeroVotes CCESHouse r = F.rgetField @HouseVotes r == 0
@@ -1915,9 +1913,7 @@ zeroVotes CCESPres r = F.rgetField @PresVotes r == 0
 zeroVotes CCESComposite r = F.rgetField @HouseVotes r == 0 && F.rgetField @PresVotes r == 0
 
 countZeroVoteRows :: (F.ElemOf rs HouseVotes
-                     , F.ElemOf rs HouseDVotes
                      , F.ElemOf rs PresVotes
-                     , F.ElemOf rs PresDVotes
                      , Foldable f
                      )
                   => CCESVoteSource -> f (F.Record rs) -> Int

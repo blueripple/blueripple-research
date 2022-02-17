@@ -101,8 +101,8 @@ adjTurnoutP delta unadjTurnoutP =
 
 -- here we redo with a different data structure
 --adjP :: (Ord a, Floating a) => a -> a -> a
-adjP p x = p' / (p' + (1 - p') * exp (negate x))
-  where p' = if 1 - p < 1e-6 then 0.99999 else p
+adjP p x = if p < 1e-6 then p * exp x else p' / (p' + (1 - p') * exp (negate x))
+  where p' = if (1 - p) < 1e-6 then 0.99999 else p
 
 
 data Pair a b = Pair !a !b deriving (Show)
@@ -155,7 +155,7 @@ findDelta totalVotes dat = do
     Left res -> error $ show res
     Right (NL.Solution c dv res) -> do
 --      Say.say $ show res
-      return $ dv VS.! 0
+      pure $ dv VS.! 0
 
 
 
@@ -177,13 +177,21 @@ adjTurnoutLong
 adjTurnoutLong total unAdj = do
   let adj d x = adjP x d -- invLogit (logit x + d)
       toPair r = Pair (F.rgetField @p r) (F.rgetField @t r)
+      initial = FL.fold (FL.premap toPair $ votesErrorF total 0) unAdj
+  when (isNaN initial) $ error "adjTurnoutLong: NaN result in initial votesError function!"
   delta <- findDelta total $ fmap toPair unAdj
   let res =  fmap (\r -> flip (F.rputField @t) r $ adj delta $ F.rgetField @t r) unAdj
       showFld = FL.premap toPair FL.list
---  Say.say $ "AdjTurnoutLong-before: " <> show (FL.fold showFld unAdj)
---  Say.say $ "delta=" <> show delta
+{-
+  Say.say $ "AdjTurnoutLong-before: " <> show (FL.fold showFld unAdj)
+  Say.say $ "Total votes: " <> show total
+  Say.say $ "Votes error before: " <> show initial
+  Say.say $ "delta=" <> show delta
 --  Say.say $ "AdjTurnoutLong-after: " <> show (FL.fold showFld res)
-  return res
+  Say.say $ "Votes error using delta: " <> show (FL.fold (FL.premap toPair $ votesErrorF total delta) unAdj)
+  Say.say $ "Votes error result: " <> show (FL.fold (FL.premap toPair $ votesErrorF total 0) res)
+-}
+  pure res
 
 
 -- Want a generic fold such that given:

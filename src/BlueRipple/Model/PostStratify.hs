@@ -110,3 +110,7 @@ joinAndPostStratify compute psFld wgts cnts = (FL.fold fld computed, missing) wh
         FMR.noUnpack
         (FMR.assignKeysAndData @ks @ds)
         (FMR.foldAndAddKey psFld)
+{-
+weightedSumFold :: FL.Fold (F.Record (w ': rs)) (F.Record (w ': rs))
+weightedSumFold
+-}
