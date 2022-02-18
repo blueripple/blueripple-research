@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 
@@ -29,7 +31,8 @@ import qualified Data.Vinyl as V
 import Data.Word (Word8)
 import qualified Flat
 import qualified Frames as F
-import qualified Frames.InCore as FI
+import qualified Frames.Streamly.InCore as FI
+import qualified Frames.Streamly.TH as FS
 import qualified Frames.ShowCSV as FCSV
 import qualified Frames.Visualization.VegaLite.Data as FV
 import GHC.Generics (Generic)
@@ -68,7 +71,7 @@ updateMajorPartyParticipation JustR "democrat" = Both
 updateMajorPartyParticipation JustD "republican" = Both
 updateMajorPartyParticipation x _ = x
 
-type MajorPartyParticipationC = "MajorPartyParticipation" F.:-> MajorPartyParticipation
+FS.declareColumn "MajorPartyParticipationC" ''MajorPartyParticipation
 
 data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
 
@@ -89,7 +92,7 @@ derivingUnbox
 
 type instance FI.VectorFor PartyT = UVec.Vector
 
-type Party = "Party" F.:-> PartyT
+FS.declareColumn "Party" ''PartyT
 
 instance FV.ToVLDataValue (F.ElField Party) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
@@ -111,7 +114,7 @@ derivingUnbox
 
 type instance FI.VectorFor OfficeT = UVec.Vector
 
-type Office = "Office" F.:-> OfficeT
+FS.declareColumn "Office" ''OfficeT
 
 instance FV.ToVLDataValue (F.ElField Office) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
@@ -122,9 +125,7 @@ instance S.Serialize DistrictType
 instance B.Binary DistrictType
 instance Flat.Flat DistrictType
 instance Grouping DistrictType
-
 instance FCSV.ShowCSV DistrictType
-
 derivingUnbox
   "DistrictType"
   [t|DistrictType -> Word8|]
@@ -132,29 +133,29 @@ derivingUnbox
   [|toEnum . fromEnum|]
 
 type instance FI.VectorFor DistrictType = UVec.Vector
-
-type DistrictTypeC = "DistrictType" F.:-> DistrictType
+FS.declareColumn "DistrictTypeC" ''DistrictType
 
 instance FV.ToVLDataValue (F.ElField DistrictTypeC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type DistrictNumber = "DistrictNumber" F.:-> Int
+FS.declareColumn "DistrictNumber" ''Int
+
 instance FV.ToVLDataValue (F.ElField DistrictNumber) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
-type Votes = "Votes" F.:-> Int
+FS.declareColumn "Votes" ''Int
 
 instance FV.ToVLDataValue (F.ElField Votes) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
-type TotalVotes = "TotalVotes" F.:-> Int
+FS.declareColumn "TotalVotes" ''Int
 
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
 data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type PrefType = "PrefType" F.:-> PrefTypeT
+FS.declareColumn "PrefType" ''PrefTypeT
 
 instance Grouping PrefTypeT
 
@@ -175,14 +176,28 @@ type instance FI.VectorFor PrefTypeT = UVec.Vector
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type ElectoralWeight = "ElectoralWeight" F.:-> Double
+data VoteShareType = TwoPartyShare | FullShare deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+FS.declareColumn "VoteShareTypeC" ''VoteShareType
+
+instance Grouping VoteShareType
+instance S.Serialize VoteShareType
+instance B.Binary VoteShareType
+instance Flat.Flat VoteShareType
+instance FCSV.ShowCSV VoteShareType
+derivingUnbox
+  "VoteShareType"
+  [t|VoteShareType -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+
+FS.declareColumn "ElectoralWeight" ''Double
 
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ V.getField x)
 
 data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type ElectoralWeightSource = "ElectoralWeightSource" F.:-> ElectoralWeightSourceT
+FS.declareColumn "ElectoralWeightSource" ''ElectoralWeightSourceT
 
 instance Grouping ElectoralWeightSourceT
 
@@ -212,7 +227,7 @@ data ElectoralWeightOfT
     EW_All
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type ElectoralWeightOf = "ElectoralWeightOf" F.:-> ElectoralWeightOfT
+FS.declareColumn "ElectoralWeightOf" ''ElectoralWeightOfT
 
 instance Grouping ElectoralWeightOfT
 
@@ -235,8 +250,9 @@ type EWCols = [ElectoralWeightSource, ElectoralWeightOf, ElectoralWeight]
 ewRec :: ElectoralWeightSourceT -> ElectoralWeightOfT -> Double -> F.Record EWCols
 ewRec ws wo w = ws F.&: wo F.&: w F.&: V.RNil
 
-type CVAP = "CVAP" F.:-> Int
-type VAP = "VAP" F.:-> Int
+FS.declareColumn "CVAP" ''Int
+FS.declareColumn "VAP" ''Int
+FS.declareColumn "VEP" ''Int
 
 instance FV.ToVLDataValue (F.ElField CVAP) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
@@ -255,7 +271,7 @@ data VoteWhyNot
   | VWN_Other
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type VoteWhyNotC = "VoteWhyNot" F.:-> VoteWhyNot
+FS.declareColumn "VoteWhyNotC" ''VoteWhyNot
 
 instance Grouping VoteWhyNot
 
@@ -284,7 +300,8 @@ data RegWhyNot
   | RWN_Other
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type RegWhyNotC = "RegWhyNot" F.:-> RegWhyNot
+
+FS.declareColumn "RegWhyNotC" ''RegWhyNot
 
 instance Grouping RegWhyNot
 
@@ -306,7 +323,7 @@ data VoteHow
   | VH_Other
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type VoteHowC = "VoteHow" F.:-> VoteHow
+FS.declareColumn "VoteHowC" ''VoteHow
 
 instance Grouping VoteHow
 
@@ -330,7 +347,8 @@ data VoteWhen
   | VW_Other
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type VoteWhenC = "VoteWhen" F.:-> VoteWhen
+
+FS.declareColumn "VoteWhenC" ''VoteWhen
 
 instance Grouping VoteWhen
 
@@ -355,7 +373,7 @@ data VotedYN
   | VYN_NotInUniverse
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type VotedYNC = "Voted" F.:-> VotedYN
+FS.declareColumn "VotedYNC" ''VotedYN
 
 instance Grouping VotedYN
 
@@ -379,7 +397,7 @@ data RegisteredYN
   | RYN_Other
   deriving (Enum, Bounded, Eq, Ord, Show, Generic)
 
-type RegisteredYNC = "RegisteredYN" F.:-> RegisteredYN
+FS.declareColumn "RegisteredYNC" ''RegisteredYN
 
 instance Grouping RegisteredYN
 
@@ -397,11 +415,8 @@ derivingUnbox
 
 type instance FI.VectorFor RegisteredYN = UVec.Vector
 
-type DemPref = "DemPref" F.:-> Double
-
-type DemShare = "DemShare" F.:-> Double
-type RepShare = "RepShare" F.:-> Double
-
-type DemVPV = "DemVPV" F.:-> Double
-
-type Incumbent = "Incumbent" F.:-> Bool
+FS.declareColumn "DemPref" ''Double
+FS.declareColumn "DemShare" ''Double
+FS.declareColumn "RepShare" ''Double
+FS.declareColumn "DemVPV" ''Double
+FS.declareColumn "Incumbent" ''Bool

@@ -111,7 +111,7 @@ templateVars =
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stanDM2"
+modelDir = "br-2021-NewMaps/stanDM3"
 
 main :: IO ()
 main = do
@@ -265,9 +265,9 @@ modelDiagnostics stanParallelCfg parallel = do
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
 --      modelDir =  "br-2021-NewMaps/stanAH"
-      vs = BRE.CCESComposite
+--      vs = BRE.CCESComposite
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      dmModel = BRE.Model (BRE.T_Elex 1) (BRE.P_Elex 1) BRE.LogDensity
+      dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
@@ -447,21 +447,23 @@ newStateLegMapAnalysis clearCaches stanParallelCfg parallel postSpec postInfo cc
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
 --      modelDir =  "br-2021-NewMaps/stanAH"
-      ccesVoteSource = BRE.CCESComposite
-      dmModel td pd = BRE.Model td pd BRE.LogDensity
+--      ccesVoteSource = BRE.CCESComposite
+--      dmModel td pd = BRE.Model td pd BRE.LogDensity
+      dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
+
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo = (mapGroup
                       , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform BRE.LogDensity)
                       , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                       )
-      modelDM :: BRE.TurnoutDataSet x -> BRE.PrefDataSet y -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM td pd x = do
+      modelDM x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-            m = dmModel td pd
-        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir m 2020 postStratInfo ccesAndCPS2020_C gqDeps
-  (_, modeled) <- modelDM BRE.T_CCESAndCPS (BRE.P_CCES ccesVoteSource) (fmap F.rcast <$> proposedDemo_C)
+--            m = dmModel td pd
+        K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
+  (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
   BR.logFrame modeled
 --  proposedDemo <- K.ignoreCacheTime proposedDemo_C
 --  BR.logFrame proposedDemo
@@ -488,7 +490,7 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
   let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
       ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
-      ccesVoteSource = BRE.CCESComposite
+--      ccesVoteSource = BRE.CCESComposite
       addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
@@ -500,8 +502,8 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
                       , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      model =  BRE.Model (BRE.T_Elex 1) (BRE.P_Elex 1) BRE.LogDensity --BRE.Model (BRE.T_CCESAndCPS) (BRE.P_CCES ccesVoteSource) BRE.LogDensity
-      modelDM :: BRE.Model tr pr -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      model = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
+      modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM model name x = do
         let gqDeps = (,) <$> acs2020_C <*> x
