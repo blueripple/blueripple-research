@@ -279,7 +279,7 @@ modelDiagnostics stanParallelCfg parallel = do
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   (crossTabs, _) <- modelDM (fmap fixACS <$> acs2020_C)
 
-  diag_C <- BRE.ccesDiagnostics True "DiagPost"
+  diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   ccesDiagByState <- K.ignoreCacheTime diag_C
@@ -313,13 +313,14 @@ diagTableColonnade cas =
       cvap = F.rgetField @PUMS.Citizens
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
+      repVoters = F.rgetField @BRE.RVotes
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
       rawTurnout r = ratio (voters r) (cvap r)
       ahTurnoutTarget = F.rgetField @BR.BallotsCountedVEP
       ccesTurnout  r = F.rgetField @BRE.AHVoted r / realToFrac (F.rgetField @ET.CVAP r)
       cpsTurnout r = ratio (F.rgetField @BRE.AHSuccesses r) (F.rgetField @BRCF.Count r)
-      rawDShare r = ratio (demVoters r) (voters r)
-      ccesDShare r = F.rgetField @BRE.AHPresDVotes r / realToFrac (F.rgetField @ET.CVAP r)
+      rawDShare r = ratio (demVoters r) (demVoters r + repVoters r)
+      ccesDShare r = F.rgetField @BRE.AHPresDVotes r / realToFrac (F.rgetField @BRE.AHPresDVotes r + F.rgetField @BRE.AHPresRVotes r)
   in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
       <> C.headed "ACS CVAP" (BR.toCell cas "ACS CVAP" "ACS CVAP" (BR.numberToStyledHtml "%d" . cvap))
       <> C.headed "Elex Votes" (BR.toCell cas "Elex Votes" "Votes" (BR.numberToStyledHtml "%d" . voters))
@@ -329,9 +330,9 @@ diagTableColonnade cas =
       <> C.headed "CPS (PS) Turnout" (BR.toCell cas "CPS Turnout" "CPS Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . cpsTurnout))
       <> C.headed "CCES (PS) Turnout" (BR.toCell cas "CCES Turnout" "CCES Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesTurnout))
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
-      <> C.headed "Raw D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
-      <> C.headed "CCES (PS) D Share" (BR.toCell cas "CCES D Share" "CCES D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesDShare))
-      <> C.headed "Modeled D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+      <> C.headed "Raw 2-party D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
+      <> C.headed "CCES (PS) 2-party D Share" (BR.toCell cas "CCES D Share" "CCES D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesDShare))
+      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newStateLegMapPosts stanParallelCfg parallel = do
