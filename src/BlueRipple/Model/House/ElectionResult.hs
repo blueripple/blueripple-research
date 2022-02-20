@@ -1203,7 +1203,7 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
                 => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP]-- , wngRP]
+designMatrixRow = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1215,7 +1215,7 @@ designMatrixRowCCES :: DM.DesignMatrixRow (F.Record CCESWithDensityEM)
 designMatrixRowCCES = designMatrixRow
 
 designMatrixRowCPS :: DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --, wngRP]
+designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
  where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1225,7 +1225,7 @@ designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --
 
 
 designMatrixRowACS :: DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
-designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --, wngRP]
+designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1234,7 +1234,7 @@ designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP] --
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
 designMatrixRowElex :: DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-designMatrixRowElex = DM.DesignMatrixRow "DM" [sexRP, eduRP, raceRP, densRP] --, wngRP]
+designMatrixRowElex = DM.DesignMatrixRow "DM" [sexRP, eduRP, raceRP, densRP, wngRP]
   where
 --    zeroDMRP t n = DM.DesignMatrixRowPart t n (const $ VU.replicate n 0.0)
     fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
@@ -1500,7 +1500,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         K.logLE K.Diagnostic $ "CCES data has " <> show numZeroHouseRows <> " rows with no house votes and "
           <> show numZeroPresRows <> " rows with no votes for president."
   reportZeroRows
-  let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha" <> if parallel then "_P" else ""
+  let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlphaWNG_ix" <> if parallel then "_P" else ""
       jsonDataName = "DM_" <> dataLabel model
                      <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
@@ -1525,16 +1525,18 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 --          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
 --          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
           pure muBetaT
-        invSamplesElex <- SMP.addParameter "invSamplesElex" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
+        invSamplesElexT <- SMP.addParameter "invSamplesElexT" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         (elexTDMC, centerTF) <- DM.centerDataMatrix elexTDM Nothing
         let distElexT = SB.betaBinomialDist True elexCVAP
             dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
             muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
-            muT dm = muE (SB.var alphaT) (SB.var dm) (SB.var betaT)
-            betaAT is dm = muT dm `SB.divide` SB.var is
-            betaBT is dm = SB.paren (SB.scalar "1.0" `SB.minus` muT dm) `SB.divide` SB.var is
-            vecElexBetaAT = SB.vectorizeExpr "elexBetaAT" (betaAT invSamplesElex elexTDMC) (SB.dataSetName elexTData)
-            vecElexBetaBT = SB.vectorizeExpr "elexBetaBT" (betaBT invSamplesElex elexTDMC) (SB.dataSetName elexTData)
+            muT ixM dm = case ixM of
+              Nothing -> muE (SB.var alphaT) (SB.var dm) (SB.var betaT)
+              Just ixV -> muE (SB.var ixV `SB.plus` SB.var alphaT) (SB.var dm) (SB.var betaT)
+            betaAT ixM is dm = muT ixM dm `SB.divide` SB.var is
+            betaBT ixM is dm = SB.paren (SB.scalar "1.0" `SB.minus` muT ixM dm) `SB.divide` SB.var is
+            vecElexBetaAT = SB.vectorizeExpr "elexBetaAT" (betaAT Nothing invSamplesElexT elexTDMC) (SB.dataSetName elexTData)
+            vecElexBetaBT = SB.vectorizeExpr "elexBetaBT" (betaBT Nothing invSamplesElexT elexTDMC) (SB.dataSetName elexTData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings elexTData $ do
             elexBetaAT <- vecElexBetaAT
@@ -1544,9 +1546,10 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         (cpsTData, cpsDesignMatrixRow, cpsCVAP, cpsVoted, cpsTDM) <- setupCPSData
         cpsTDMC <- centerTF SC.ModelData cpsTDM (Just "T")
         invSamplesCPS <- SMP.addParameter "invSamplesCPS" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
+        ixCPS <- SMP.addParameter "ixCPS" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
         let distCPS = SB.betaBinomialDist True cpsCVAP
-            vecCPSBetaAT = SB.vectorizeExpr "cpsDataBetaAT" (betaAT invSamplesCPS cpsTDMC) (SB.dataSetName cpsTData)
-            vecCPSBetaBT = SB.vectorizeExpr "cpsDataBetaBT" (betaBT invSamplesCPS cpsTDMC) (SB.dataSetName cpsTData)
+            vecCPSBetaAT = SB.vectorizeExpr "cpsDataBetaAT" (betaAT (Just ixCPS) invSamplesCPS cpsTDMC) (SB.dataSetName cpsTData)
+            vecCPSBetaBT = SB.vectorizeExpr "cpsDataBetaBT" (betaBT (Just ixCPS) invSamplesCPS cpsTDMC) (SB.dataSetName cpsTData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings cpsTData $ do
             cpsBetaAT <- vecCPSBetaAT
@@ -1555,10 +1558,11 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 
         (ccesTData, ccesDesignMatrixRow, ccesCVAP, ccesVoted, ccesTDM) <- setupCCESTData
         ccesTDMC <- centerTF SC.ModelData ccesTDM (Just "T")
-        invSamplesCCES <- SMP.addParameter "invSamplesCCES" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
+        invSamplesCCEST <- SMP.addParameter "invSamplesCCEST" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
+        ixCCEST <- SMP.addParameter "ixCCEST" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
         let distCCEST = SB.betaBinomialDist True ccesCVAP
-            vecCCESBetaAT = SB.vectorizeExpr "ccesDataBetaAT" (betaAT invSamplesCCES ccesTDMC) (SB.dataSetName ccesTData)
-            vecCCESBetaBT = SB.vectorizeExpr "ccesDataBetaBT" (betaBT invSamplesCCES ccesTDMC) (SB.dataSetName ccesTData)
+            vecCCESBetaAT = SB.vectorizeExpr "ccesDataBetaAT" (betaAT (Just ixCCEST) invSamplesCCEST ccesTDMC) (SB.dataSetName ccesTData)
+            vecCCESBetaBT = SB.vectorizeExpr "ccesDataBetaBT" (betaBT (Just ixCCEST) invSamplesCCEST ccesTDMC) (SB.dataSetName ccesTData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings ccesTData $ do
             ccesBetaAT <- vecCCESBetaAT
@@ -1566,6 +1570,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
             SB.sampleDistV ccesTData distCCEST (SB.var ccesBetaAT, SB.var ccesBetaBT) ccesVoted
 
         (elexPData, _, elexVotesInRace, elexDVotesInRace, elexPDM) <- setupElexPData (voteShareType model)
+        invSamplesElexP <- SMP.addParameter "invSamplesElexP" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ SB.normal Nothing (SB.scalar "1"))
@@ -1581,22 +1586,26 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
           pure muBetaP
         (elexPDMC, centerPF) <- DM.centerDataMatrix elexPDM Nothing
         let distElexP = SB.betaBinomialDist True elexVotesInRace
-            muP dm = muE (SB.var alphaP) (SB.var dm) (SB.var betaP)
-            betaAP is dm = muP dm `SB.divide` SB.var is
-            betaBP is dm = SB.paren (SB.scalar "1.0" `SB.minus` muP dm) `SB.divide` SB.var is
-            vecElexBetaAP = SB.vectorizeExpr "elexBetaAP" (betaAP invSamplesElex elexPDMC) (SB.dataSetName elexPData)
-            vecElexBetaBP = SB.vectorizeExpr "elexBetaBP" (betaBP invSamplesElex elexPDMC) (SB.dataSetName elexPData)
+            muP ixM dm = case ixM of
+              Nothing -> muE (SB.var alphaP) (SB.var dm) (SB.var betaP)
+              Just ixV -> muE (SB.var ixV `SB.plus` SB.var alphaP) (SB.var dm) (SB.var betaP)
+            betaAP ixM is dm = muP ixM dm `SB.divide` SB.var is
+            betaBP ixM is dm = SB.paren (SB.scalar "1.0" `SB.minus` muP ixM dm) `SB.divide` SB.var is
+            vecElexBetaAP = SB.vectorizeExpr "elexBetaAP" (betaAP Nothing invSamplesElexP elexPDMC) (SB.dataSetName elexPData)
+            vecElexBetaBP = SB.vectorizeExpr "elexBetaBP" (betaBP Nothing invSamplesElexP elexPDMC) (SB.dataSetName elexPData)
         SB.inBlock SB.SBModel $ do
           SB.useDataSetForBindings elexPData $ do
             elexBetaAP <- vecElexBetaAP
             elexBetaBP <- vecElexBetaBP
             SB.sampleDistV elexPData distElexP (SB.var elexBetaAP, SB.var elexBetaBP) elexDVotesInRace
+        ixCCESP <- SMP.addParameter "ixCCESP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+        invSamplesCCESP <- SMP.addParameter "invSamplesCCESP" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         let addCCESPref office = do
               (ccesPData, _, ccesVotesInRace, ccesDVotesInRace, ccesPDM) <- setupCCESPData office (voteShareType model)
               ccesPDMC <- centerPF SC.ModelData ccesPDM (Just $ "P_" <> show office)
               let distCCESP = SB.betaBinomialDist True ccesVotesInRace
-                  vecCCESBetaAP = SB.vectorizeExpr ("ccesDataBetaAP_" <> show office) (betaAP invSamplesCCES ccesPDMC) (SB.dataSetName ccesPData)
-                  vecCCESBetaBP = SB.vectorizeExpr ("ccesDataBetaBP_" <> show office) (betaBP invSamplesCCES ccesPDMC) (SB.dataSetName ccesPData)
+                  vecCCESBetaAP = SB.vectorizeExpr ("ccesDataBetaAP_" <> show office) (betaAP (Just ixCCESP) invSamplesCCESP ccesPDMC) (SB.dataSetName ccesPData)
+                  vecCCESBetaBP = SB.vectorizeExpr ("ccesDataBetaBP_" <> show office) (betaBP (Just ixCCESP) invSamplesCCESP ccesPDMC) (SB.dataSetName ccesPData)
               SB.inBlock SB.SBModel $ do
                 SB.useDataSetForBindings ccesPData $ do
                   ccesBetaAP <- vecCCESBetaAP
@@ -1604,33 +1613,43 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
                   SB.sampleDistV ccesPData distCCESP (SB.var ccesBetaAP, SB.var ccesBetaBP) ccesDVotesInRace
               let ppCCESDVotes = SB.StanVar ("PP_CCESDVotes_" <> show office) (SB.StanVector $ SB.NamedDim $ SB.dataSetName ccesPData)
               SB.useDataSetForBindings ccesPData
-                $ SB.generatePosteriorPrediction ccesPData ppCCESDVotes distCCESP (betaAP invSamplesCCES ccesPDMC, betaBP invSamplesCCES ccesPDMC)
-              return $ (ccesPData, SB.LLDetails distCCESP (pure (betaAP invSamplesCCES ccesPDMC, betaBP invSamplesCCES ccesPDMC)) ccesDVotesInRace)
+                $ SB.generatePosteriorPrediction ccesPData ppCCESDVotes distCCESP (betaAP (Just ixCCESP) invSamplesCCESP ccesPDMC
+                                                                                  , betaBP (Just ixCCESP) invSamplesCCESP ccesPDMC)
+              return $ (ccesPData, SB.LLDetails distCCESP (pure (betaAP (Just ixCCESP) invSamplesCCESP ccesPDMC
+                                                                , betaBP (Just ixCCESP) invSamplesCCESP ccesPDMC)) ccesDVotesInRace)
         ccesPLLSetP <- if Set.member ET.President (votesFrom model) then fmap pure (addCCESPref ET.President) else return []
         ccesPLLSetH <- if Set.member ET.House (votesFrom model) then fmap pure (addCCESPref ET.House) else return []
 
 
         let llSet :: SB.LLSet CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) =
-              SB.addToLLSet elexTData (SB.LLDetails distElexT (pure (betaAT invSamplesElex elexTDMC, betaBT invSamplesElex elexTDMC)) elexVoted)
-              $ SB.addToLLSet cpsTData (SB.LLDetails distCPS (pure (betaAT invSamplesCPS cpsTDMC, betaBT invSamplesCPS cpsTDMC)) cpsVoted)
-              $ SB.addToLLSet ccesTData (SB.LLDetails distCCEST (pure (betaAT invSamplesCCES ccesTDMC, betaBT invSamplesCCES ccesTDMC)) ccesVoted)
-              $ SB.addToLLSet elexPData (SB.LLDetails distElexP (pure (betaAP invSamplesElex elexPDMC, betaBP invSamplesElex elexPDMC)) elexDVotesInRace)
+              SB.addToLLSet elexTData (SB.LLDetails distElexT (pure (betaAT Nothing invSamplesElexT elexTDMC
+                                                                    , betaBT Nothing invSamplesElexT elexTDMC)) elexVoted)
+              $ SB.addToLLSet cpsTData (SB.LLDetails distCPS (pure (betaAT (Just ixCPS) invSamplesCPS cpsTDMC
+                                                                   , betaBT (Just ixCPS) invSamplesCPS cpsTDMC)) cpsVoted)
+              $ SB.addToLLSet ccesTData (SB.LLDetails distCCEST (pure (betaAT (Just ixCCEST) invSamplesCCEST ccesTDMC
+                                                                      , betaBT (Just ixCCEST) invSamplesCCEST ccesTDMC)) ccesVoted)
+              $ SB.addToLLSet elexPData (SB.LLDetails distElexP (pure (betaAP Nothing invSamplesElexP elexPDMC
+                                                                      , betaBP Nothing invSamplesElexP elexPDMC)) elexDVotesInRace)
               $ foldl' (\lls (rtt, lld) -> SB.addToLLSet rtt lld lls) SB.emptyLLSet (ccesPLLSetP ++ ccesPLLSetH)
         SB.generateLogLikelihood' llSet
 
         -- for posterior predictive checks
         let ppElexVoted = SB.StanVar "PP_ElectionVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName elexTData)
         SB.useDataSetForBindings elexTData
-          $ SB.generatePosteriorPrediction elexTData ppElexVoted distElexT (betaAT invSamplesElex elexTDMC, betaBT invSamplesElex elexTDMC)
+          $ SB.generatePosteriorPrediction elexTData ppElexVoted distElexT (betaAT Nothing invSamplesElexT elexTDMC
+                                                                           , betaBT Nothing invSamplesElexT elexTDMC)
         let ppCCESVoted = SB.StanVar "PP_CCESVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName ccesTData)
         SB.useDataSetForBindings ccesTData
-          $ SB.generatePosteriorPrediction ccesTData ppCCESVoted distCCEST (betaAT invSamplesCCES ccesTDMC, betaBT invSamplesCCES ccesTDMC)
+          $ SB.generatePosteriorPrediction ccesTData ppCCESVoted distCCEST (betaAT (Just ixCCEST) invSamplesCCEST ccesTDMC
+                                                                           , betaBT (Just ixCCEST) invSamplesCCEST ccesTDMC)
         let ppCPSVoted = SB.StanVar "PP_CPSVoted" (SB.StanVector $ SB.NamedDim $ SB.dataSetName cpsTData)
         SB.useDataSetForBindings cpsTData
-          $ SB.generatePosteriorPrediction cpsTData ppCPSVoted distCPS (betaAT invSamplesCPS cpsTDMC, betaBT invSamplesCPS cpsTDMC)
+          $ SB.generatePosteriorPrediction cpsTData ppCPSVoted distCPS (betaAT (Just ixCPS) invSamplesCPS cpsTDMC
+                                                                       , betaBT (Just ixCPS) invSamplesCPS cpsTDMC)
         let ppElexDVotes = SB.StanVar "PP_ElectionDVotes" (SB.StanVector $ SB.NamedDim $ SB.dataSetName elexPData)
         SB.useDataSetForBindings elexPData
-          $ SB.generatePosteriorPrediction elexPData ppElexDVotes distElexP (betaAP invSamplesElex elexPDMC, betaBP invSamplesElex elexPDMC)
+          $ SB.generatePosteriorPrediction elexPData ppElexDVotes distElexP (betaAP Nothing invSamplesElexP elexPDMC
+                                                                            , betaBP Nothing invSamplesElexP elexPDMC)
 
 
   {-
@@ -1645,15 +1664,15 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         dmACS_T <- SB.useDataSetForBindings acsData $ centerTF SC.GQData dmACS' (Just "T")
         dmACS_P <- SB.useDataSetForBindings acsData $ centerPF SC.GQData dmACS' (Just "P")
         let psTPrecompute = do
-              betaA <- SB.vectorizeExpr "acsBetaAT" (betaAT invSamplesElex dmACS_T) (SB.dataSetName acsData)
-              betaB <- SB.vectorizeExpr "acsBetaBT" (betaBT invSamplesElex dmACS_T) (SB.dataSetName acsData)
+              betaA <- SB.vectorizeExpr "acsBetaAT" (betaAT Nothing invSamplesElexT dmACS_T) (SB.dataSetName acsData)
+              betaB <- SB.vectorizeExpr "acsBetaBT" (betaBT Nothing invSamplesElexT dmACS_T) (SB.dataSetName acsData)
               return (betaA, betaB)
             psTExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psTExpr (bA, bB) =  pure $ SB.familyExp distElexT (SB.var bA, SB.var bB)
             -- FIXME (T back to P)
             psPPrecompute = do
-              betaA <- SB.vectorizeExpr "acsBetaAP" (betaAP invSamplesElex dmACS_P) (SB.dataSetName acsData)
-              betaB <- SB.vectorizeExpr "acsBetaBP" (betaBP invSamplesElex dmACS_P) (SB.dataSetName acsData)
+              betaA <- SB.vectorizeExpr "acsBetaAP" (betaAP Nothing invSamplesElexP dmACS_P) (SB.dataSetName acsData)
+              betaB <- SB.vectorizeExpr "acsBetaBP" (betaBP Nothing invSamplesElexP dmACS_P) (SB.dataSetName acsData)
               return (betaA, betaB)
             psPExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psPExpr (bA, bB) =  pure $ SB.familyExp distElexP (SB.var bA, SB.var bB)
@@ -1687,10 +1706,10 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         let psPreCompute = do
               dmPS_T <- centerTF SC.GQData dmPS' (Just "T")
               dmPS_P <- centerPF SC.GQData dmPS' (Just "P")
-              psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaAT invSamplesElex dmPS_T) (SB.dataSetName psData)
-              psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaBT invSamplesElex dmPS_T) (SB.dataSetName psData)
-              psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaAP invSamplesElex dmPS_P) (SB.dataSetName psData)
-              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaBP invSamplesElex dmPS_P) (SB.dataSetName psData)
+              psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaAT Nothing invSamplesElexT dmPS_T) (SB.dataSetName psData)
+              psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaBT Nothing invSamplesElexT dmPS_T) (SB.dataSetName psData)
+              psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaAP Nothing invSamplesElexP dmPS_P) (SB.dataSetName psData)
+              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaBP Nothing invSamplesElexP dmPS_P) (SB.dataSetName psData)
               pure (psBetaAT, psBetaBT, psBetaAP, psBetaBP)
 
             psExprF (bAT, bBT, bAP, bBP) = do --(psT_v, psP_v) = do
