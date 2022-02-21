@@ -1175,16 +1175,17 @@ groupBuilderDM model psGroup states psKeys = do
       loadCCESTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) () = do
         ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable ccesEMRows)
         SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-      loadCCESPrefData :: ET.OfficeT ->  SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
-      loadCCESPrefData office = do
-        ccesPrefData <- SB.addModelDataToGroupBuilder ("CCESP_" <> show office) (SB.ToFoldable $ F.filterFrame (not . zeroCCESVotes office) . ccesEMRows)
+      loadCCESPrefData :: ET.OfficeT -> ET.VoteShareType -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
+      loadCCESPrefData office vst = do
+        ccesPrefData <- SB.addModelDataToGroupBuilder ("CCESP_" <> show office)
+                        (SB.ToFoldable $ F.filterFrame (not . zeroCCESVotes office vst) . ccesEMRows)
         SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   loadElexTurnoutData
   loadCPSTurnoutData
   loadCCESTurnoutData
   loadElexPrefData $ votesFrom model
-  when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President
-  when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House
+  when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
+  when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
   -- GQ
   acsData <- SB.addGQDataToGroupBuilder "ACS" (SB.ToFoldable fst)
@@ -1222,7 +1223,6 @@ designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
     raceRP = DM.boundedEnumRowPart "Race" race5Census
     densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
-
 
 designMatrixRowACS :: DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
 designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
@@ -1495,8 +1495,8 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
   ccesDataRows <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
   let reportZeroRows :: K.Sem r ()
       reportZeroRows = do
-        let numZeroHouseRows = countCCESZeroVoteRows ET.House ccesDataRows
-            numZeroPresRows = countCCESZeroVoteRows ET.President ccesDataRows
+        let numZeroHouseRows = countCCESZeroVoteRows ET.House (voteShareType model) ccesDataRows
+            numZeroPresRows = countCCESZeroVoteRows ET.President (voteShareType model) ccesDataRows
         K.logLE K.Diagnostic $ "CCES data has " <> show numZeroHouseRows <> " rows with no house votes and "
           <> show numZeroPresRows <> " rows with no votes for president."
   reportZeroRows
@@ -1885,19 +1885,25 @@ getCCESVotes _ _ = (const 0, const 0) -- we shouldn't call this
 
 zeroCCESVotes ::  (F.ElemOf rs HouseVotes
                   , F.ElemOf rs PresVotes
+                  , F.ElemOf rs AHHouseDVotes
+                  , F.ElemOf rs AHHouseRVotes
+                  , F.ElemOf rs AHPresDVotes
+                  , F.ElemOf rs AHPresRVotes
                   )
-              => ET.OfficeT -> F.Record rs -> Bool
-
-zeroCCESVotes ET.House r = F.rgetField @HouseVotes r == 0
-zeroCCESVotes ET.President r = F.rgetField @PresVotes r == 0
-zeroCCESVotes _ _ = True
+              => ET.OfficeT -> ET.VoteShareType -> F.Record rs -> Bool
+zeroCCESVotes office vst r = votesInRace r == 0 where
+  (votesInRace, _) = getCCESVotes office vst
 
 countCCESZeroVoteRows :: (F.ElemOf rs HouseVotes
                          , F.ElemOf rs PresVotes
+                         , F.ElemOf rs AHHouseDVotes
+                         , F.ElemOf rs AHHouseRVotes
+                         , F.ElemOf rs AHPresDVotes
+                         , F.ElemOf rs AHPresRVotes
                          , Foldable f
-                     )
-                      => ET.OfficeT -> f (F.Record rs) -> Int
-countCCESZeroVoteRows office  = FL.fold (FL.prefilter (zeroCCESVotes office) FL.length)
+                         )
+                      => ET.OfficeT -> ET.VoteShareType -> f (F.Record rs) -> Int
+countCCESZeroVoteRows office vst = FL.fold (FL.prefilter (zeroCCESVotes office vst) FL.length)
 
 data Model = Model { voteShareType :: ET.VoteShareType
                    , votesFrom :: Set ET.OfficeT
