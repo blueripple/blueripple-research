@@ -278,6 +278,14 @@ modelDiagnostics stanParallelCfg parallel = do
         K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
       postInfoDiagnostics = BR.PostInfo BR.LocalDraft (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   (crossTabs, _) <- modelDM (fmap fixACS <$> acs2020_C)
+  K.logLE K.Info $ BRE.dataLabel dmModel <> " :By State"
+  BR.logFrame $ BRE.byState crossTabs
+  K.logLE K.Info $ BRE.dataLabel dmModel <> ": By Race"
+  BR.logFrame $ BRE.byRace crossTabs
+  K.logLE K.Info $ BRE.dataLabel dmModel <> ": By Sex"
+  BR.logFrame $ BRE.bySex crossTabs
+  K.logLE K.Info $ BRE.dataLabel dmModel <> ": By Education"
+  BR.logFrame $ BRE.byEducation crossTabs
 
   diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
@@ -333,7 +341,7 @@ diagTableColonnade cas =
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw 2-party D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
       <> C.headed "CCES (PS) 2-party D Share" (BR.toCell cas "CCES D Share" "CCES D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesDShare))
-      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
       <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
@@ -365,6 +373,24 @@ addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDis
 
 fixACS :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
 fixACS = F.rcast . addRace5 . addDistrict . addCount
+
+peopleWeightedLogDensity :: (F.ElemOf rs DT.PopPerSqMile, Foldable f)
+                         => (F.Record rs -> Int)
+                         -> f (F.Record rs)
+                         -> Double
+peopleWeightedLogDensity ppl rows =
+  let dens = F.rgetField @DT.PopPerSqMile
+      x r = if dens r >= 1 then realToFrac (ppl r) * Numeric.log (dens r) else 0
+      fld = (/) <$> FL.premap x FL.sum <*> fmap realToFrac (FL.premap ppl FL.sum)
+  in FL.fold fld rows
+
+rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
+               => Double
+               -> f (F.Record rs)
+               -> f (F.Record rs)
+rescaleDensity s = fmap g
+  where
+    g = FT.fieldEndo @DT.PopPerSqMile (*s)
 
 newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newCongressionalMapPosts stanParallelCfg parallel = do
@@ -493,8 +519,17 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
   let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
       ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
---      ccesVoteSource = BRE.CCESComposite
-      addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+  extant <- K.ignoreCacheTime extantDemo_C
+  proposed <- K.ignoreCacheTime proposedDemo_C
+  acsForState <- fmap (F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)) $ K.ignoreCacheTime acs2020_C
+  let extantPWLD = peopleWeightedLogDensity (F.rgetField @BRC.Count) extant
+      proposedPWLD = peopleWeightedLogDensity (F.rgetField @BRC.Count) proposed
+      acs2020PWLD = peopleWeightedLogDensity (F.rgetField @PUMS.Citizens) acsForState
+      rescaleExtant = rescaleDensity $ Numeric.exp (acs2020PWLD - extantPWLD)
+      rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
+  K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD
+  --      ccesVoteSource = BRE.CCESComposite
+  let addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
@@ -511,20 +546,9 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
       modelDM model name x = do
         let gqDeps = (,) <$> acs2020_C <*> x
         K.ignoreCacheTimeM $ BRE.electionModelDM False parallel stanParallelCfg (Just stanParams) modelDir model 2020 (psInfoDM name) ccesAndCPS2020_C gqDeps
---  extantBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
-  --  proposedBaseHV <- model2020 partiallyPooledDLog (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
---  modelDM BRE.T_CCES (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
---  modelDM BRE.T_CPS (BRE.P_CCES ccesVoteSource) (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (crossTabs, proposedBaseHV) <- modelDM model  (stateAbbr <> "_Proposed") (fmap F.rcast <$> proposedDemo_C)
-  (_, extantBaseHV) <- modelDM model (stateAbbr <> "_Proposed") (fmap F.rcast <$> extantDemo_C)
-  K.logLE K.Info $ BRE.dataLabel model <> " :By State"
-  BR.logFrame $ BRE.byState crossTabs
-  K.logLE K.Info $ BRE.dataLabel model <> ": By Race"
-  BR.logFrame $ BRE.byRace crossTabs
-  K.logLE K.Info $ BRE.dataLabel model <> ": By Sex"
-  BR.logFrame $ BRE.bySex crossTabs
-  K.logLE K.Info $ BRE.dataLabel model <> ": By Education"
-  BR.logFrame $ BRE.byEducation crossTabs
+
+  (_, proposedBaseHV) <- modelDM model  (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
+  (_, extantBaseHV) <- modelDM model (stateAbbr <> "_Proposed") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
 
 --  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  (_, proposedBaseHV) <- modelDM dmModel BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
@@ -607,6 +631,11 @@ newCongressionalMapAnalysis clearCaches stanParallelCfg parallel postSpec postIn
          (FV.ViewConfig 600 600 5)
          (fmap F.rcast oldMapsCompare)
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterModelElection"
+    BR.brAddRawHtmlTable
+      ("2020 Dem Vote Share, " <> stateAbbr <> ": Demographic Model vs. Election Results")
+      (BHA.class_ "brTable")
+      (extantModeledColonnade mempty)
+      oldMapsCompare
   oldDistrictsNoteUrl <- K.knitMaybe "extant districts Note Url is Nothing" $ mOldDistrictsUrl
   let oldDistrictsNoteRef = "[oldDistricts]:" <> oldDistrictsNoteUrl
   BR.brAddPostMarkDownFromFile postPaths "_intro"
@@ -730,6 +759,20 @@ daveModelColonnade cas =
 --     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
 --     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
 --     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
+
+
+extantModeledColonnade cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      dNum = F.rgetField @ET.DistrictNumber
+      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
+      elexDVotes = F.rgetField @BRE.DVotes
+      elexRVotes = F.rgetField @BRE.RVotes
+      elexShare r = realToFrac @_ @Double (elexDVotes r)/realToFrac (elexDVotes r + elexRVotes r)
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%2.1f" . (100*) . share50))
+     <> C.headed "2020 Election" (BR.toCell cas "Election" "Election" (BR.numberToStyledHtml "%2.1f" . (100*) . elexShare))
+--
 
 
 {-
