@@ -171,7 +171,7 @@ indexesToExprs = fmap stanDimToExpr
 collapseArray :: StanType -> StanType
 collapseArray (StanArray dims st) = case st of
   StanArray dims' st -> collapseArray $ StanArray (dims ++ dims') st
-  x -> StanArray dims st
+  _ -> StanArray dims st
 collapseArray st = st
 
 declarationPart :: StanType -> Text -> StanExpr
@@ -183,7 +183,8 @@ declarationPart  st c = case st of
   StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
   StanCovMatrix dim -> withIndexes (name "cov_matrix") [dim]
   StanMatrix (d1, d2) -> withIndexes (name $ "matrix" <> c) [d1, d2]
-  StanArray dims st -> declarationPart st c
+  StanArray dims t -> withIndexes (name $ "array") dims `spaced` declarationPart t c
+--  StanArray dims st -> declarationPart st c
 
 -- for use in function declarations
 varAsArgument :: StanVar -> StanExpr
@@ -194,9 +195,8 @@ varAsArgument (StanVar sn st) = bare $ (typePart st) <> " " <> sn where
     StanReal -> "real"
     StanVector _ -> "vector"
     StanMatrix _ -> "matrix"
-    StanArray _ y -> case y of
-      StanArray _ z -> typePart z
-      _ -> typePart y <> "[]"
+    s@(StanArray ds y) -> let StanArray cs z = collapseArray s
+                          in "[" <> T.replicate (length cs - 1) "," <> "]"
     _ -> error $ "varAsArgument: type=" <> show st <> " not supported as function argument"
   --  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
 --  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
@@ -207,10 +207,10 @@ varNameE :: StanVar -> StanExpr
 varNameE (StanVar sn _) = name sn
 
 declarationExpr :: StanVar -> Text -> StanExpr
-declarationExpr (StanVar sn st) c = case st of
-  sa@(StanArray _ _) -> let (StanArray dims st) = collapseArray sa
-                        in spaced (declarationPart st c) (withIndexes (name sn) dims)
-  _ -> spaced (declarationPart st c) (name sn)
+declarationExpr (StanVar sn st) c = spaced (declarationPart st' c) (name sn)
+  where st' = case st of
+                sa@(StanArray _ _) -> collapseArray sa
+                t -> t
 
 tExprToExpr :: TExpr StanExpr -> StanExpr
 tExprToExpr (TExpr ne st) = withIndexes ne dims where
