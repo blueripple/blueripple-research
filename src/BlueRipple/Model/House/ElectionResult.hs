@@ -11,6 +11,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -108,21 +109,21 @@ import BlueRipple.Data.DataFrames (cVAPByCDAndRace_RawParser)
 
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
 type AHVoted = "AHVoted" F.:-> Double
-
+{-
 type AHHouseDVotes = "AHHouseDVotes" F.:-> Double
 type AHHouseRVotes = "AHHouseRVotes" F.:-> Double
 type AHPresDVotes = "AHPresDVotes" F.:-> Double
 type AHPresRVotes = "AHPresRVotes" F.:-> Double
 type AchenHurWeight = "AchenHurWeight" F.:-> Double
 type VotesInRace = "VotesInRace" F.:-> Int
-{-
+-}
 FS.declareColumn "AHHouseDVotes" ''Double
 FS.declareColumn "AHHouseRVotes" ''Double
 FS.declareColumn "AHPresDVotes" ''Double
 FS.declareColumn "AHPresRVotes" ''Double
 FS.declareColumn "AchenHurWeight" ''Double
 FS.declareColumn "VotesInRace" ''Int
--}
+{-
 type DVotes = "DVotes" F.:-> Int
 type RVotes = "RVotes" F.:-> Int
 type TVotes = "TVotes" F.:-> Int
@@ -133,8 +134,8 @@ type HouseRVotes = "HouseRVotes" F.:-> Int
 type PresVotes = "HouseVotes" F.:-> Int
 type PresDVotes = "HouseDVotes" F.:-> Int
 type PresRVotes = "HouseRVotes" F.:-> Int
+-}
 
-{-
 FS.declareColumn "DVotes" ''Int
 FS.declareColumn "RVotes" ''Int
 FS.declareColumn "TVotes" ''Int
@@ -145,7 +146,7 @@ FS.declareColumn "HouseRVotes" ''Int
 FS.declareColumn "PresVotes" ''Int
 FS.declareColumn "PresDVotes" ''Int
 FS.declareColumn "PresRVotes" ''Int
--}
+
 
 type FracUnder45 = "FracUnder45" F.:-> Double
 
@@ -1676,19 +1677,31 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
               return (betaA, betaB)
             psPExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psPExpr (bA, bB) =  pure $ SB.familyExp distElexP (SB.var bA, SB.var bB)
+            psDVotePreCompute = do
+              betaTs <- psTPrecompute
+              betaPs <- psPPrecompute
+              return (betaTs, betaPs)
+            psDVoteExpr :: ((SB.StanVar, SB.StanVar), (SB.StanVar, SB.StanVar))  -> SB.StanBuilderM md gq SB.StanExpr
+            psDVoteExpr ((bAT, bBT), (bAP, bBP)) = do
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distElexT (SB.var bAT, SB.var bBT)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distElexP (SB.var bAP, SB.var bBP)
+              pure $ SB.var pT `SB.times` SB.var pD
 
-            turnoutPS = (psTPrecompute, psTExpr)
-            prefPS = (psPPrecompute, psPExpr)
+            turnoutPS = ((psTPrecompute, psTExpr), Nothing)
+            prefPS = ((psPPrecompute, psPExpr), Nothing)
+            dVotePS = ((psDVotePreCompute, psDVoteExpr), Just $ SB.name "pT")
             psACS :: (Typeable md, Typeable gq, Ord k)
-                  => Text -> (SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr) -> SB.GroupTypeTag k -> SB.StanBuilderM md gq SB.StanVar
+                  => Text
+                  -> ((SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr), Maybe SB.StanExpr)
+                  -> SB.GroupTypeTag k -> SB.StanBuilderM md gq SB.StanVar
             psACS name psCalcs grp =
               MRP.addPostStratification
-              psCalcs
+              (fst psCalcs)
               (Just name)
               elexTData
               acsData
               (realToFrac . F.rgetField @PUMS.Citizens)
-              (MRP.PSShare Nothing)
+              (MRP.PSShare $ snd psCalcs)
               (Just grp)
         psACS "Turnout" turnoutPS raceGroup
         psACS "Turnout" turnoutPS educationGroup
@@ -1698,6 +1711,10 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         psACS "Pref" prefPS educationGroup
         psACS "Pref" prefPS sexGroup
         psACS "Pref" prefPS stateGroup
+        psACS "DVote" dVotePS raceGroup
+        psACS "DVote" dVotePS educationGroup
+        psACS "DVote" dVotePS sexGroup
+        psACS "DVote" dVotePS stateGroup
 
         -- post-stratification for results
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
@@ -1756,12 +1773,15 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
               rmByGroup g = do
                 turnoutRM <- resultsMap acsRowTag g "Turnout_ACS_"
                 prefRM <- resultsMap acsRowTag  g "Pref_ACS_"
-                let rm = M.merge M.dropMissing M.dropMissing (M.zipWithMatched $ \_ x y -> (x,y)) turnoutRM prefRM
-                    g (k, (t, p)) = do
+                dVoteRM <- resultsMap acsRowTag  g "DVote_ACS_"
+                let rmTP = M.merge M.dropMissing M.dropMissing (M.zipWithMatched $ \_ x y -> (x,y)) turnoutRM prefRM
+                    rmTPD = M.merge M.dropMissing M.dropMissing (M.zipWithMatched $ \_ (x, y) z -> (x,y,z)) rmTP dVoteRM
+                    g (k, (t, p, d)) = do
                       tCI <- MT.listToCI t
                       pCI <- MT.listToCI p
-                      return $ datYear F.&: k F.&: dataLabel model F.&: tCI F.&: pCI F.&: V.RNil
-                K.knitEither $ F.toFrame <$> (traverse g $ M.toList rm)
+                      dCI <- MT.listToCI d
+                      return $ datYear F.&: k F.&: dataLabel model F.&: tCI F.&: pCI F.&: dCI F.&: V.RNil
+                K.knitEither $ F.toFrame <$> (traverse g $ M.toList rmTPD)
           ctBySex <- rmByGroup sexGroup
           ctByEducation <- rmByGroup educationGroup
           ctByRace <- rmByGroup raceGroup
@@ -1931,7 +1951,7 @@ type ModelDesc = "ModelDescription" F.:-> Text
 
 type ModelResultsR ks  = '[BR.Year] V.++ ks V.++ '[ModelDesc, ModeledShare]
 
-type CrossTabFrame k  = F.FrameRec [BR.Year, k, ModelDesc, ModeledTurnout, ModeledPref]
+type CrossTabFrame k  = F.FrameRec [BR.Year, k, ModelDesc, ModeledTurnout, ModeledPref, ModeledShare]
 
 data ModelCrossTabs = ModelCrossTabs
   {

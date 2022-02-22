@@ -310,6 +310,7 @@ diagTableColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
       cvap = F.rgetField @PUMS.Citizens
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
@@ -332,7 +333,8 @@ diagTableColonnade cas =
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw 2-party D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
       <> C.headed "CCES (PS) 2-party D Share" (BR.toCell cas "CCES D Share" "CCES D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesDShare))
-      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.StanParallel -> Bool -> K.Sem r ()
 newStateLegMapPosts stanParallelCfg parallel = do
