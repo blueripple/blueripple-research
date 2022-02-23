@@ -1205,7 +1205,7 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
                 => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRow = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1217,7 +1217,7 @@ designMatrixRowCCES :: DM.DesignMatrixRow (F.Record CCESWithDensityEM)
 designMatrixRowCCES = designMatrixRow
 
 designMatrixRowCPS :: DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
  where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1226,7 +1226,7 @@ designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
 designMatrixRowACS :: DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
-designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowACS = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
@@ -1235,7 +1235,7 @@ designMatrixRowACS = DM.DesignMatrixRow "DM" $ [sexRP, eduRP, raceRP, densRP, wn
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
 designMatrixRowElex :: DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-designMatrixRowElex = DM.DesignMatrixRow "DM" [sexRP, eduRP, raceRP, densRP, wngRP]
+designMatrixRowElex = DM.DesignMatrixRow "DM" [densRP, sexRP, eduRP, raceRP, wngRP]
   where
 --    zeroDMRP t n = DM.DesignMatrixRowPart t n (const $ VU.replicate n 0.0)
     fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
@@ -1255,45 +1255,6 @@ designMatrixRowElex = DM.DesignMatrixRow "DM" [sexRP, eduRP, raceRP, densRP, wng
 race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
 wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
-
-{-
-data TurnoutDataSet r where
-   T_CCES :: TurnoutDataSet (F.Record CCESWithDensityEM)
-   T_CPS :: TurnoutDataSet (F.Record CPSVWithDensityEM)
-   T_Elex :: Int -> TurnoutDataSet (F.Record ElectionWithDemographicsR)
-   T_CCESAndCPS :: TurnoutDataSet (Either (F.Record CCESWithDensityEM) (F.Record CPSVWithDensityEM))
-   T_ElexAndCPS :: Int -> TurnoutDataSet (Either (F.Record ElectionWithDemographicsR)  (F.Record CPSVWithDensityEM))
-
-
-turnoutDataSetModelText :: TurnoutDataSet x -> Text
-turnoutDataSetModelText T_CCES = "CCES"
-turnoutDataSetModelText T_CPS = "CPS"
-turnoutDataSetModelText (T_Elex _) = "Elex"
-turnoutDataSetModelText T_CCESAndCPS = "CCESAndCPS"
-turnoutDataSetModelText (T_ElexAndCPS _) = "ElexAndCPS"
-
-turnoutDataSetDataText :: TurnoutDataSet x -> Text
-turnoutDataSetDataText T_CCES = "CCES"
-turnoutDataSetDataText T_CPS = "CPS"
-turnoutDataSetDataText (T_Elex n) = "ElexBy" <> show n
-turnoutDataSetDataText T_CCESAndCPS = "CCESAndCPS"
-turnoutDataSetDataText (T_ElexAndCPS n) = "ElexBy" <> show n <> "AndCPS"
-
-data PrefDataSet r where
-  P_CCES :: CCESVoteSource -> PrefDataSet (F.Record CCESWithDensityEM)
-  P_Elex :: Int -> PrefDataSet (F.Record ElectionWithDemographicsR)
-  P_ElexAndCCES :: Int -> CCESVoteSource -> PrefDataSet (Either (F.Record ElectionWithDemographicsR) (F.Record CCESWithDensityEM))
-
-prefDataSetModelText :: PrefDataSet r -> Text
-prefDataSetModelText (P_CCES vs) = "CCES_" <> printVoteSource vs
-prefDataSetModelText (P_Elex _) = "Elex"
-prefDataSetModelText (P_ElexAndCCES _ vs) = "ElexAndCCES_" <> printVoteSource vs
-
-prefDataSetDataText :: PrefDataSet r -> Text
-prefDataSetDataText (P_CCES vs) = "CCES_" <> printVoteSource vs
-prefDataSetDataText (P_Elex n) = "ElexBy" <> show n
-prefDataSetDataText (P_ElexAndCCES n vs) = "ElexBy" <> show n <> "AndCCES_" <> printVoteSource vs
--}
 
 predictorFunctions :: SB.RowTypeTag r
                    -> DM.DesignMatrixRow r
@@ -1352,45 +1313,11 @@ setupElexTData = do
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
 --  elexTIndex <- SB.indexedConstIntArray elexTData Nothing dsIndex
   cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
-  votedElex <- SB.addCountData elexTData "Voted_Election" (F.rgetField @TVotes)
+  votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
   dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
   return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT)
 
-{-
-setupTurnoutData :: forall x md gq. (Typeable md, Typeable gq)
-                 => TurnoutDataSet x
-                 -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupTurnoutData td = do
-  let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
-  case td of
-    T_CCES -> setupCCESTData 0
-    T_CPS -> setupCPSData 0
-    T_Elex n -> setupElexTData False n 0
-    T_CCESAndCPS -> do
-      (ccesData, ccesDMR, ccesCVAP, ccesVoted, ccesDM, ccesIndex) <- setupCCESTData (-1)
-      (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
-      (comboData, stackVarsF) <- SB.stackDataSets "comboT" ccesData cpsData groupSet
-      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows ccesDMR cpsDMR
-      (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-        cvapCombo' <- stackVarsF "CVAP" ccesCVAP cpsCVAP
-        votedCombo' <- stackVarsF "Voted" ccesVoted cpsVoted
-        dmCombo' <- stackVarsF "DMTurnout" ccesDM cpsDM
-        indexCombo' <- stackVarsF "DataSetIndexT" ccesIndex cpsIndex
-        return (cvapCombo', votedCombo', dmCombo', indexCombo')
-      return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
-    T_ElexAndCPS n -> do
-      (elexData, elexDMR, elexCVAP, elexVoted, elexDM, elexIndex) <- setupElexTData True n 0
-      (cpsData, cpsDMR, cpsCVAP, cpsVoted, cpsDM, cpsIndex) <- setupCPSData 1
-      (comboData, stackVarsF) <- SB.stackDataSets "comboT" elexData cpsData groupSet
-      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR cpsDMR
-      (cvap, voted, dmCombo, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-        cvapCombo' <- stackVarsF "CVAP" elexCVAP cpsCVAP
-        votedCombo' <- stackVarsF "Voted" elexVoted cpsVoted
-        dmCombo' <- stackVarsF "DMTurnout" elexDM cpsDM
-        indexCombo' <- stackVarsF "DataSetIndexT" elexIndex cpsIndex
-        return (cvapCombo', votedCombo', dmCombo', indexCombo')
-      return (comboData, comboDMR, cvap, voted, dmCombo, indexCombo)
--}
+
 setupCCESPData :: (Typeable md, Typeable gq)
                => ET.OfficeT
                -> ET.VoteShareType
@@ -1422,28 +1349,7 @@ setupElexPData vst = do
   dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
   return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP)
 
-{-
-setupPrefData :: forall x md gq. (Typeable md, Typeable gq)
-              => PrefDataSet x
-              -> SB.StanBuilderM md gq (SB.RowTypeTag x, DM.DesignMatrixRow x, SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
-setupPrefData pd = do
-  let groupSet =  SB.addGroupToSet stateGroup SB.emptyGroupSet
-  case pd of
-    P_CCES vs -> setupCCESPData 0 vs
-    P_Elex n -> setupElexPData False n 0
-    P_ElexAndCCES n vs -> do
-      (elexData, elexDMR, elexVIR, elexDVIR, elexDM, elexIndex) <- setupElexPData True n 0
-      (ccesData, ccesDMR, ccesVIR, ccesDVIR, ccesDM, ccesIndex) <- setupCCESPData 1 vs
-      (comboData, stackVarsF) <- SB.stackDataSets "comboP" elexData ccesData groupSet
-      comboDMR <- SB.stanBuildEither $ DM.stackDesignMatrixRows elexDMR ccesDMR
-      (votesInRace, dVotesInRace, dmComboP, indexCombo) <-  SB.inBlock SB.SBTransformedData $ do
-        virCombo <- stackVarsF "VotesInRace" elexVIR ccesVIR
-        dvirCombo <- stackVarsF "DVotesInRace" elexDVIR ccesDVIR
-        dmCombo <- stackVarsF "DMPref" elexDM ccesDM
-        indexCombo' <- stackVarsF "DataSetIndexP" elexIndex ccesIndex
-        return (virCombo, dvirCombo, dmCombo, indexCombo')
-      return (comboData, comboDMR, votesInRace, dVotesInRace, dmComboP, indexCombo)
--}
+
 electionModelDM :: forall rs ks r tr pr.
                    (K.KnitEffects r
                    , BR.CacheEffects r
@@ -1501,9 +1407,10 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         K.logLE K.Diagnostic $ "CCES data has " <> show numZeroHouseRows <> " rows with no house votes and "
           <> show numZeroPresRows <> " rows with no votes for president."
   reportZeroRows
-  let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlphaWNG_ix" <> if parallel then "_P" else ""
+  let modelName = "LegDistricts_" <> modelLabel model <> "_Full" <> if parallel then "_P" else ""
       jsonDataName = "DM_" <> dataLabel model
-                     <> "_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+                     <> "_NoDensity_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+      psDataSetName' = psDataSetName -- <> "_NoDensity"
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM) <- setupElexTData
@@ -1521,11 +1428,11 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 --          pure muAlphaT
         betaT <- SB.useDataSetForBindings elexTData $ do
           muBetaT <- SMP.addParameter "muBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
---          tauBetaT <- SMP.addParameter "tauBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
---          corrBetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndex 4
---          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
---          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
-          pure muBetaT
+          tauBetaT <- SMP.addParameter "tauBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
+          corrBetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndex 4
+          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
+          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
+--          pure muBetaT
         invSamplesElexT <- SMP.addParameter "invSamplesElexT" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         (elexTDMC, centerTF) <- DM.centerDataMatrix elexTDM Nothing
         let distElexT = SB.betaBinomialDist True elexCVAP
@@ -1580,11 +1487,11 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 --          pure muAlphaP
         betaP <- SB.useDataSetForBindings elexPData $ do
           muBetaP <- SMP.addParameter "muBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
---          tauBetaP <- SMP.addParameter "tauBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
---          corrBetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndex 4
---          betaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaP tauBetaP corrBetaP
---          SMP.addHierarchicalVector "betaP" dmColIndex stateGroup (SMP.NonCentered betaPNonCenteredF) SB.stdNormal
-          pure muBetaP
+          tauBetaP <- SMP.addParameter "tauBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
+          corrBetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndex 4
+          betaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaP tauBetaP corrBetaP
+          SMP.addHierarchicalVector "betaP" dmColIndex stateGroup (SMP.NonCentered betaPNonCenteredF) SB.stdNormal
+--          pure muBetaP
         (elexPDMC, centerPF) <- DM.centerDataMatrix elexPDM Nothing
         let distElexP = SB.betaBinomialDist True elexVotesInRace
             muP ixM dm = case ixM of
@@ -1812,23 +1719,12 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
                      ++ if (Set.member ET.President $ votesFrom model) then [SR.UnwrapNamed "DVotesInRace_CCES_President" "yCCESDVotesPresident"] else []
                      ++ if (Set.member ET.House $ votesFrom model) then [SR.UnwrapNamed "DVotesInRace_CCES_House" "yCCESDVotesHouse"] else []
 
-  {-
-  let unwrapVoted :: SR.UnwrapJSON = case turnoutDataSet of
-        T_CCES -> SR.UnwrapNamed "Voted_CCES" "ObsVoted"
-        T_CPS -> SR.UnwrapNamed "Voted_CPS" "ObsVoted"
-        T_Elex _ -> SR.UnwrapNamed "Voted_Elex" "ObsVoted"
-        T_CCESAndCPS -> SR.UnwrapExpr "c(jsonData$Voted_CCES, jsonData$Voted_CPS)" "ObsVoted"
-        T_ElexAndCPS _ -> SR.UnwrapExpr "c(jsonData$Voted_Elex, jsonData$Voted_CPS)" "ObsVoted"
-      unwrapDVotes :: SR.UnwrapJSON = case prefDataSet of
-        P_CCES _ -> SR.UnwrapNamed "DVotesInRace_CCES" "ObsDVotes"
-        P_Elex _ -> SR.UnwrapNamed "DVotesInRace_Elections" "ObsDVotes"
-        P_ElexAndCCES _ _ -> SR.UnwrapExpr "c(jsonData$DVotesInRace_Elections, jsonData$DVotesInRace_CCES)" "ObsDVotes"
--}
+
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
   fmap (secondF FS.unSFrame)
     $ MRP.runMRPModel
     clearCaches
-    (SC.RunnerInputNames modelDir modelName (Just psDataSetName) jsonDataName)
+    (SC.RunnerInputNames modelDir modelName (Just psDataSetName') jsonDataName)
     (fromMaybe (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.9) (Just 15) Nothing) mStanParams)
     stanParallelCfg
     dw
