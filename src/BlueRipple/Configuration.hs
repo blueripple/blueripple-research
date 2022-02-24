@@ -13,7 +13,7 @@ import           Data.String.Here               ( i )
 import qualified Data.Text as T
 import qualified Path
 import qualified Path.IO as Path
-import           Path (Path, Abs, Rel, Dir, File, PathException, (</>))
+import           Path (Path, Abs, Rel, Dir, File, PathException, (</>), parseRelDir)
 import qualified Data.Time.Calendar as Time
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Say
@@ -72,25 +72,41 @@ brLocalRoot :: T.Text
 brLocalRoot = "posts/"
 
 -- command line
-data CommandLine = CommandLine
-  {
-    postStage :: PostStage
-  , stanChains :: Int
-  , stanCores :: Int
-  } deriving (Show, CmdArgs.Data, Typeable, Eq)
+data CommandLine =
+  CLLocalDraft { stanChains :: Int, subDir :: Maybe Text }
+  | CLOnlineDraft { stanChains :: Int }
+  | CLPublished {stanChains :: Int }
+  deriving (Show, CmdArgs.Data, Typeable, Eq)
 
-commandLine = CommandLine
-  { postStage = CmdArgs.enum [LocalDraft CmdArgs.&= CmdArgs.help "Write result HTML locally."
-                             ,OnlineDraft CmdArgs.&= CmdArgs.help "Write result HTML to github draft directory."
-                             ,OnlinePublished CmdArgs.&= CmdArgs.help "Write result HTML to blueripple publish directory."
-                             ]
-  , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-  , stanCores = 4 CmdArgs.&= CmdArgs.help "Number of cores to use per Stan chain for within chain parallelization (if not using the maximum)."
-  }
+localDraft = CLLocalDraft
+             {
+               stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+             , subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
+             } CmdArgs.&= CmdArgs.help "Build local drafts"
+
+onlineDraft = CLOnlineDraft
+              { stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+              } CmdArgs.&= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
+published = CLPublished {
+  stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+  } CmdArgs.&= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
+
+
+commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, published]
+  CmdArgs.&= CmdArgs.help "Build Posts"
+
+postStage :: CommandLine -> PostStage
+postStage (CLLocalDraft _ _) = LocalDraft
+postStage (CLOnlineDraft _) = OnlineDraft
+postStage (CLPublished _) = OnlinePublished
+
+clStanChains :: CommandLine -> Int
+clStanChains (CLLocalDraft n _) = n
+clStanChains (CLOnlineDraft n) = n
+clStanChains (CLPublished n ) = n
 
 clStanParallel :: CommandLine -> StanParallel
-clStanParallel (CommandLine _ nChains nCores)  = StanParallel nChains cpc where
-  cpc = if nCores < 1 then MaxCores else FixedCores nCores
+clStanParallel cl = StanParallel (clStanChains cl) MaxCores
 
 data StanParallel = StanParallel { parallelChains :: Int, cores :: StanCores } deriving (Show, Eq)
 
@@ -107,7 +123,9 @@ data NoteName = Used Text | Unused Text deriving (Show)
 
 data PubTime = Unpublished | Published Time.Day deriving (Show)
 
-data PostStage = LocalDraft | OnlineDraft | OnlinePublished deriving (Show, Read, CmdArgs.Data, Typeable, Eq)
+data PostStage = LocalDraft
+               | OnlineDraft
+               | OnlinePublished deriving (Show, Read, CmdArgs.Data, Typeable, Eq)
 
 data PubTimes =  PubTimes { initialPT :: PubTime
                           , updatePT  :: Maybe PubTime

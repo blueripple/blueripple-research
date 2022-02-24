@@ -105,6 +105,7 @@ import BlueRipple.Data.DemographicTypes (demographicsFold)
 import qualified Stan.ModelBuilder as SB
 import Graphics.Vega.VegaLite (dataFromColumns)
 import BlueRipple.Data.DataFrames (cVAPByCDAndRace_RawParser)
+import BlueRipple.Configuration (clStanParallel)
 
 
 type Surveyed = "Surveyed" F.:-> Int -- total people in each bucket
@@ -1387,8 +1388,7 @@ electionModelDM :: forall rs ks r tr pr.
                      (F.Rec FS.SElField (ks V.++ '[ModelDesc, ModeledShare]))
                  )
                 => Bool
-                -> Bool
-                -> BR.StanParallel
+                -> BR.CommandLine
                 -> Maybe SC.StanMCParameters
                 -> Text
                 -> Model
@@ -1397,7 +1397,7 @@ electionModelDM :: forall rs ks r tr pr.
                 -> K.ActionWithCacheTime r CCESAndCPSEM
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSWithDensityEM, F.FrameRec rs)
                 -> K.Sem r (K.ActionWithCacheTime r (ModelCrossTabs, F.FrameRec (ModelResultsR ks)))
-electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
+electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   ccesDataRows <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
   let reportZeroRows :: K.Sem r ()
@@ -1407,9 +1407,9 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
         K.logLE K.Diagnostic $ "CCES data has " <> show numZeroHouseRows <> " rows with no house votes and "
           <> show numZeroPresRows <> " rows with no votes for president."
   reportZeroRows
-  let modelName = "LegDistricts_" <> modelLabel model <> "_Full" <> if parallel then "_P" else ""
+  let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha"
       jsonDataName = "DM_" <> dataLabel model
-                     <> "_NoDensity_" <> show datYear <> if parallel then "_P" else ""  -- because of grainsize
+                     <> "_NoDensity_" <> show datYear
       psDataSetName' = psDataSetName -- <> "_NoDensity"
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
@@ -1428,11 +1428,11 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 --          pure muAlphaT
         betaT <- SB.useDataSetForBindings elexTData $ do
           muBetaT <- SMP.addParameter "muBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
-          tauBetaT <- SMP.addParameter "tauBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
-          corrBetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndex 4
-          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
-          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
---          pure muBetaT
+--          tauBetaT <- SMP.addParameter "tauBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
+--          corrBetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndex 4
+--          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
+--          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
+          pure muBetaT
         invSamplesElexT <- SMP.addParameter "invSamplesElexT" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         (elexTDMC, centerTF) <- DM.centerDataMatrix elexTDM Nothing
         let distElexT = SB.betaBinomialDist True elexCVAP
@@ -1487,11 +1487,11 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
 --          pure muAlphaP
         betaP <- SB.useDataSetForBindings elexPData $ do
           muBetaP <- SMP.addParameter "muBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
-          tauBetaP <- SMP.addParameter "tauBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
-          corrBetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndex 4
-          betaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaP tauBetaP corrBetaP
-          SMP.addHierarchicalVector "betaP" dmColIndex stateGroup (SMP.NonCentered betaPNonCenteredF) SB.stdNormal
---          pure muBetaP
+--          tauBetaP <- SMP.addParameter "tauBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
+--          corrBetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndex 4
+--          betaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaP tauBetaP corrBetaP
+--          SMP.addHierarchicalVector "betaP" dmColIndex stateGroup (SMP.NonCentered betaPNonCenteredF) SB.stdNormal
+          pure muBetaP
         (elexPDMC, centerPF) <- DM.centerDataMatrix elexPDM Nothing
         let distElexP = SB.betaBinomialDist True elexVotesInRace
             muP ixM dm = case ixM of
@@ -1726,7 +1726,7 @@ electionModelDM clearCaches parallel stanParallelCfg mStanParams modelDir model 
     clearCaches
     (SC.RunnerInputNames modelDir modelName (Just psDataSetName') jsonDataName)
     (fromMaybe (SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.9) (Just 15) Nothing) mStanParams)
-    stanParallelCfg
+    (BR.clStanParallel cmdLine)
     dw
     stanCode
     (MRP.Both $ unwrapVoted ++ unwrapDVotes)
