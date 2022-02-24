@@ -13,11 +13,12 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-This post focuses on Texas. (If you’re interested in other states,
-check out [our analysis of NC][NCPost].) Here’s what we’ll cover:
+This post focuses on Texas. (We’ve done a similar
+[analysis for NC][NCPost],
+but that map is changing due to litigation. Updates to come there soon!)
+Here’s what we’ll cover:
 
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
-
 
 1. Dem-lean by district in TX: our demographic model vs. historical data
 2. Districts worthy of Dem donor support

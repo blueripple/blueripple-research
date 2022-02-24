@@ -656,8 +656,8 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
-      safeDLower = 0.53
-      safeRUpper = 0.47
+      safeDLower = 0.55
+      safeRUpper = 0.45
       safeR ci = MT.ciMid ci <= safeRUpper
       leanR ci = MT.ciMid ci < 0.5 && MT.ciMid ci >= safeRUpper
       leanD ci = MT.ciMid ci >= 0.5 && MT.ciMid ci <= safeDLower
@@ -726,8 +726,8 @@ distType safeRUpper safeDLower x
 
 brDistrictFramework :: Double -> Double -> Text
 brDistrictFramework brModel dra =
-  let safeRUpper = 0.47
-      safeDLower = 0.53
+  let safeRUpper = 0.45
+      safeDLower = 0.55
   in case (distType safeRUpper safeDLower brModel, distType safeRUpper safeDLower dra) of
     (SafeD, SafeR) -> "Latent Flip Opportunity"
     (SafeD, LeanD) -> "Winnable"
