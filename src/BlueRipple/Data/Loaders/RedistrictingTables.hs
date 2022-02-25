@@ -60,6 +60,8 @@ plans = M.fromList
   , (redistrictingPlanId "TX" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/cd117_TX.csv" "data/redistricting/TX-proposed.csv")
   , (redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower, RedistrictingPlanFiles "../bigData/Census/nc_2022_sldl.csv" "data/redistricting/nc_2022_sldl.csv")
   , (redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper, RedistrictingPlanFiles "../bigData/Census/nc_2022_sldu.csv" "data/redistricting/nc_2022_sldu.csv")
+  , (redistrictingPlanId "AZ" "Passed" ET.Congressional, RedistrictingPlanFiles "../bigData/Census/az_cd117.csv" "data/redistricting/az_congressional.csv")
+  , (redistrictingPlanId "AZ" "Passed" ET.StateUpper, RedistrictingPlanFiles "../bigData/Census/az_sld.csv" "data/redistricting/az_SLD.csv")
   ]
 
 redistrictingAnalysisCols :: Set FS.HeaderText
