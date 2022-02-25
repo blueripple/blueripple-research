@@ -64,7 +64,7 @@ import qualified Streamly.Memory.Array         as Streamly.Array
 import qualified Streamly.External.ByteString  as Streamly.ByteString
 import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
-import qualified System.Directory as System
+--import qualified System.Directory as System
 import qualified System.IO.Error as SE
 import qualified System.Random.MWC as MWC
 import qualified Text.Blaze.Colonnade as BC
@@ -122,6 +122,9 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                   $ exts
             }
 
+
+
+
 brAddAnchor :: K.KnitOne r => T.Text -> K.Sem r Text
 brAddAnchor t = do
   brAddMarkDown $ "<a name=\"" <> t <> "\"></a>"
@@ -145,14 +148,31 @@ brAddDates updated pubDate updateDate tMap =
              else M.empty
    in tMap <> pubT <> updT
 
+
+
+brAddToPostFromFile :: K.KnitOne r => (Text -> K.Sem r ()) -> Bool -> Path.Path Path.Abs Path.File -> K.Sem r ()
+brAddToPostFromFile toPost errorIfMissing p = do
+  isPresent <- K.liftKnit $ SD.doesFileExist $ Path.toFilePath p
+  case isPresent of
+    True -> do
+       fText <- K.liftKnit (T.readFile $ Path.toFilePath p)
+       toPost fText
+    False -> do
+      case errorIfMissing of
+        True -> K.knitError $ "Post input file " <> show p <> " not found!"
+        False -> do
+          K.logLE K.Warning $ "Post input file " <> show p <> " not found. Inserting placeholder text"
+          brAddMarkDown $ "**Post input file " <> show p <> " not found. Please fix/remove**"
+
+brAddToPostFromFileWith :: K.KnitOne r => (Text -> K.Sem r ()) -> Bool -> Path.Path Path.Abs Path.File -> Maybe Text -> K.Sem r ()
+brAddToPostFromFileWith toPost errorIfMissing p mRefs = brAddToPostFromFile toPost' errorIfMissing p
+  where
+    toPost' = maybe toPost (\t -> toPost . (<> "\n" <> t)) mRefs
+
 brAddPostMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> Maybe Text -> K.Sem r ()
 brAddPostMarkDownFromFileWith pp postFileEnd mRefs = do
   postInputPath <- K.knitEither $ BRC.postInputPath pp (postFileEnd <> ".md")
-  fText <- K.liftKnit (T.readFile $ Path.toFilePath postInputPath)
-  K.addMarkDown $ case mRefs of
-                    Nothing -> fText
-                    Just refs -> fText <> "\n" <> refs
-
+  brAddToPostFromFileWith K.addMarkDown False postInputPath mRefs
 
 brAddPostMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> K.Sem r ()
 brAddPostMarkDownFromFile pp postFileEnd = brAddPostMarkDownFromFileWith pp postFileEnd Nothing
@@ -160,10 +180,7 @@ brAddPostMarkDownFromFile pp postFileEnd = brAddPostMarkDownFromFileWith pp post
 brAddNoteMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do
   notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".md")
-  fText <- K.liftKnit (T.readFile $ Path.toFilePath notePath)
-  K.addMarkDown $ case mRefs of
-                    Nothing -> fText
-                    Just refs -> fText <> "\n" <> refs
+  brAddToPostFromFileWith K.addMarkDown False notePath mRefs
 
 brAddNoteMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> K.Sem r ()
 brAddNoteMarkDownFromFile  pp nn noteFileEnd = brAddNoteMarkDownFromFileWith pp nn noteFileEnd Nothing
@@ -172,14 +189,10 @@ brAddNoteMarkDownFromFile  pp nn noteFileEnd = brAddNoteMarkDownFromFileWith pp 
 brAddNoteRSTFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteRSTFromFileWith pp nn noteFileEnd mRefs = do
   notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".rst")
-  fText <- K.liftKnit (T.readFile $ Path.toFilePath notePath)
-  K.addRST $ case mRefs of
-               Nothing -> fText
-               Just refs -> fText <> "\n" <> refs
+  brAddToPostFromFileWith K.addRST False notePath mRefs
 
 brAddNoteRSTFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> K.Sem r ()
 brAddNoteRSTFromFile  pp nn noteFileEnd = brAddNoteRSTFromFileWith pp nn noteFileEnd Nothing
-
 
 brDatesFromPostInfo :: K.KnitEffects r => BRC.PostInfo -> K.Sem r (M.Map String String)
 brDatesFromPostInfo (BRC.PostInfo _ (BRC.PubTimes ppt mUpt)) = do

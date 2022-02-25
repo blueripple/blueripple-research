@@ -656,8 +656,8 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
-      safeDLower = 0.53
-      safeRUpper = 0.47
+      safeDLower = 0.55
+      safeRUpper = 0.45
       safeR ci = MT.ciMid ci <= safeRUpper
       leanR ci = MT.ciMid ci < 0.5 && MT.ciMid ci >= safeRUpper
       leanD ci = MT.ciMid ci >= 0.5 && MT.ciMid ci <= safeDLower

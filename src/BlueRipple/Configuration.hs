@@ -82,7 +82,7 @@ localDraft = CLLocalDraft
              {
                stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
              , subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
-             } CmdArgs.&= CmdArgs.help "Build local drafts"
+             } CmdArgs.&= CmdArgs.help "Build local drafts" CmdArgs.&= CmdArgs.auto
 
 onlineDraft = CLOnlineDraft
               { stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
