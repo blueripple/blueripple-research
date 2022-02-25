@@ -356,6 +356,8 @@ newStateLegMapPosts cmdLine = do
   acs_C <- BRE.prepACS False
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
   proposedDistricts_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
+
+{-
   let postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   ncPaths <- postPaths "NC_StateLeg" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC_SLD" $ do
@@ -367,6 +369,21 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedDistricts_C)
+-}
+
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  azPaths <- postPaths "AZ_StateLeg" cmdLine
+  BR.brNewPost azPaths postInfoAZ "AZ_SLD" $ do
+    -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
+    azLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
+    azUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
+    let postSpec = NewSLDMapsPostSpec "AZ" azPaths azLowerDRA azUpperDRA
+    newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedDistricts_C)
+
 
 addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
 addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -480,9 +497,6 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
   K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
---      modelDir =  "br-2021-NewMaps/stanAH"
---      ccesVoteSource = BRE.CCESComposite
---      dmModel td pd = BRE.Model td pd BRE.LogDensity
       dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
 
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
@@ -495,12 +509,9 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM x = do
         let gqDeps = (,) <$> acs2020_C <*> x
---            m = dmModel td pd
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
   (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
-  BR.logFrame modeled
---  proposedDemo <- K.ignoreCacheTime proposedDemo_C
---  BR.logFrame proposedDemo
+
   pure ()
 
 
@@ -656,23 +667,21 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
-      safeDLower = 0.55
-      safeRUpper = 0.45
-      safeR ci = MT.ciMid ci <= safeRUpper
-      leanR ci = MT.ciMid ci < 0.5 && MT.ciMid ci >= safeRUpper
-      leanD ci = MT.ciMid ci >= 0.5 && MT.ciMid ci <= safeDLower
-      safeD ci = MT.ciMid ci > safeDLower
-      mi = F.rgetField @BRE.ModeledShare
+      safeR (l, _) x = x <= l
+      leanR (l, _) x = x < 50 && x  >= l
+      leanD (_, u) x = x >= 50 && x <= u
+      safeD (_, u) x = x > u
+      modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       bordered c = "border: 3px solid " <> c
-      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR (mi r) && h == "Demographic"
-      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["Demographic"]
-      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["Demographic"]
-      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "Demographic"
-      dra = F.rgetField @TwoPartyDShare
-      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> (dra r < safeRUpper) && h == "Historical"
-      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> (dra r >= safeRUpper && dra r < 0.50) && h == "Historical"
-      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> (dra r >= 0.5 && dra r < safeDLower) && h == "Historical"
-      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> (dra r > safeDLower) && h == "Historical"
+      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR brShareRange (modMid r) && h == "Demographic"
+      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR brShareRange (modMid r) && h `elem` ["Demographic"]
+      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD brShareRange (modMid r) && h `elem` ["Demographic"]
+      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD brShareRange (modMid r) && h == "Demographic"
+      dra = round . (100*) . F.rgetField @TwoPartyDShare
+      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> safeR draShareRange (dra r) && h == "Historical"
+      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> leanR draShareRange (dra r) && h == "Historical"
+      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draShareRange (dra r)&& h == "Historical"
+      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draShareRange (dra r) && h == "Historical"
       tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
     ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
@@ -716,66 +725,63 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
 
   return ()
 
+brShareRange :: (Int, Int)
+brShareRange = (45, 55)
+draShareRange :: (Int, Int)
+draShareRange = (47, 53)
+
 data DistType = SafeR | LeanR | LeanD | SafeD deriving (Eq, Ord, Show)
-distType :: Double -> Double -> Double -> DistType
+distType :: Int -> Int -> Int -> DistType
 distType safeRUpper safeDLower x
   | x < safeRUpper = SafeR
-  | x >= safeRUpper && x < 0.5 = LeanR
-  | x >= 0.5 && x < safeDLower = LeanD
+  | x >= safeRUpper && x < 50 = LeanR
+  | x >= 50 && x < safeDLower = LeanD
   | otherwise = SafeD
 
-brDistrictFramework :: Double -> Double -> Text
-brDistrictFramework brModel dra =
-  let safeRUpper = 0.45
-      safeDLower = 0.55
-  in case (distType safeRUpper safeDLower brModel, distType safeRUpper safeDLower dra) of
-    (SafeD, SafeR) -> "Latent Flip Opportunity"
-    (SafeD, LeanD) -> "Winnable"
-    (SafeD, LeanR) -> "Flippable"
+brDistrictFramework :: (Int, Int) -> (Int, Int) -> Int -> Int -> Text
+brDistrictFramework brRange draRange brModel dra =
+  case (uncurry distType brRange brModel, uncurry distType draRange dra) of
+    (SafeD, SafeR) -> "Latent Flip/Win Opportunity"
+    (SafeD, LeanD) -> "Flippable/Winnable"
+    (SafeD, LeanR) -> "Flippable/Winnable"
     (SafeD, SafeD) -> "Safe D"
-    (LeanD, SafeR) -> "Possible Long-Term Flip"
-    (LeanR, SafeR) -> "Possible Long-Term Flip"
+    (LeanD, SafeR) -> "Latent Flip Opportunity"
+    (LeanR, SafeR) -> "Possible Long-Term Win/Flip"
     (LeanD, LeanR) -> "Toss-Up"
     (LeanR, LeanR) -> "Toss-Up"
     (LeanD, LeanD) -> "Toss-Up"
     (LeanR, LeanD) -> "Toss-Up"
-    (LeanD, SafeD) -> "Possibly Long-Term Vulnerable"
-    (LeanR, SafeD) -> "Possibly Long-Term Vulnerable"
+    (LeanD, SafeD) -> "Possible Long-Term Vulnerability"
+    (LeanR, SafeD) -> "Latent Vulnerability"
     (SafeR, SafeR) -> "Safe R"
     (SafeR, LeanR) -> "Highly Vulnerable"
     (SafeR, LeanD) -> "Highly Vulnerable"
-    (SafeR, SafeD) -> "Latent Vulnerable"
+    (SafeR, SafeD) -> "Latent Vulnerability"
 
 
 daveModelColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       dNum = F.rgetField @ET.DistrictNumber
-      dave = F.rgetField @TwoPartyDShare
-      share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
-      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
-      share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
+      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
---     <> C.headed "Model Variation" (BR.toCell cas "ModelId" "ModelId" (BR.textToStyledHtml . BRE.modelLabel . F.rgetField @(MT.ModelId BRE.Model)))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%2.1f" . (100*) . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.1f" . (100*) . F.rgetField @TwoPartyDShare))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework (share50 r) (dave r))))
---     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
---     <> C.headed "5% Model CI" (BR.toCell cas "5% Model CI" "5% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
---     <> C.headed "95% Model CI" (BR.toCell cas "95% Model CI" "95% Model CI" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
 
 
 extantModeledColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       dNum = F.rgetField @ET.DistrictNumber
-      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
+      share50 = round @_ @Int . (100*) . MT.ciMid . F.rgetField @BRE.ModeledShare
       elexDVotes = F.rgetField @BRE.DVotes
       elexRVotes = F.rgetField @BRE.RVotes
       elexShare r = realToFrac @_ @Double (elexDVotes r)/realToFrac (elexDVotes r + elexRVotes r)
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%2.1f" . (100*) . share50))
-     <> C.headed "2020 Election" (BR.toCell cas "Election" "Election" (BR.numberToStyledHtml "%2.1f" . (100*) . elexShare))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "2020 Election" (BR.toCell cas "Election" "Election" (BR.numberToStyledHtml "%2.0f" . (100*) . elexShare))
 --
 
 

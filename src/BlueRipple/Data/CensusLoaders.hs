@@ -198,6 +198,7 @@ censusTablesFor2022SLDs ::  (K.KnitEffects r
 censusTablesFor2022SLDs = censusTablesByDistrict fileByYear "SLDs_2022" where
   fileByYear = [(BRC.TY2018, censusDataDir <> "/nc_2022_sldl.csv")
                ,(BRC.TY2018, censusDataDir <> "/nc_2022_sldu.csv")
+               ,(BRC.TY2018, censusDataDir <> "/az_2022_sld.csv")
                ]
 
 
