@@ -726,8 +726,8 @@ distType safeRUpper safeDLower x
 
 brDistrictFramework :: Double -> Double -> Text
 brDistrictFramework brModel dra =
-  let safeRUpper = 0.47
-      safeDLower = 0.53
+  let safeRUpper = 0.45
+      safeDLower = 0.55
   in case (distType safeRUpper safeDLower brModel, distType safeRUpper safeDLower dra) of
     (SafeD, SafeR) -> "Latent Flip Opportunity"
     (SafeD, LeanD) -> "Winnable"
