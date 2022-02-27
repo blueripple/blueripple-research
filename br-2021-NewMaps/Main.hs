@@ -135,8 +135,8 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
-    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
---    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+--    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -270,8 +270,6 @@ modelDiagnostics cmdLine = do
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
---      modelDir =  "br-2021-NewMaps/stanAH"
---      vs = BRE.CCESComposite
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
@@ -309,9 +307,6 @@ modelDiagnostics cmdLine = do
   when (not $ null missingTableTurnout) $ K.logLE K.Diagnostic $ "Missing keys when joining stateTurnout: " <> show missingTableTurnout
   when (not $ null missingCPS) $ K.logLE K.Diagnostic $ "Missing keys when joining CPS: " <> show missingCPS
   diagnosticsPaths <- postPaths "Diagnostics" cmdLine
---  BR.logFrame ccesDiagByState
---  BR.logFrame $ BRE.byState crossTabsCPS
---  BR.logFrame diagTable
   BR.brNewPost diagnosticsPaths postInfoDiagnostics "Diagnostics" $ do
     BR.brAddRawHtmlTable
       "Diagnostics"
@@ -511,7 +506,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         let gqDeps = (,) <$> acs2020_C <*> x
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
   (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
-
+  BR.logFrame modeled
   pure ()
 
 
