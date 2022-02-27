@@ -249,8 +249,8 @@ logFrame ::
   (K.KnitEffects r, Foldable f, Show (F.Record rs)) =>
   f (F.Record rs) ->
   K.Sem r ()
-logFrame =
-  K.logLE K.Info . T.intercalate "\n" . fmap show . FL.fold FL.list
+logFrame fr =
+  K.logLE K.Info $ "\n" <> (T.intercalate "\n" . fmap show $ FL.fold FL.list fr)
 
 retrieveOrMakeD ::
   ( K.KnitEffects r,

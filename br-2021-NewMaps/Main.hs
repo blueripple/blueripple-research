@@ -358,7 +358,7 @@ newStateLegMapPosts cmdLine = do
   BR.brNewPost ncPaths postInfoNC "NC_SLD" $ do
     ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower)
     ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper)
-    let postSpec = NewSLDMapsPostSpec "NC" ncPaths ncLowerDRA ncUpperDRA
+    let postSpec = NewSLDMapsPostSpec "NC" ncPaths (ncLowerDRA <> ncUpperDRA)
     newStateLegMapAnalysis False cmdLine postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -366,13 +366,12 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedDistricts_C)
 -}
 
-  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   azPaths <- postPaths "AZ_StateLeg" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ_SLD" $ do
     -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
-    azLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
     azUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
-    let postSpec = NewSLDMapsPostSpec "AZ" azPaths azLowerDRA azUpperDRA
+    let postSpec = NewSLDMapsPostSpec "AZ" azPaths azUpperDRA
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -475,7 +474,7 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
-data NewSLDMapsPostSpec = NewSLDMapsPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis) (F.Frame Redistrict.DRAnalysis)
+data NewSLDMapsPostSpec = NewSLDMapsPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
 newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                        => Bool
@@ -488,8 +487,9 @@ newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r
                        -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
                        -> K.Sem r ()
 newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C proposedDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
-  let (NewSLDMapsPostSpec stateAbbr postPaths draLower draUpper) = postSpec
+  let (NewSLDMapsPostSpec stateAbbr postPaths dra) = postSpec
   K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr
+  BR.brAddPostMarkDownFromFile postPaths "_intro"
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
@@ -506,7 +506,38 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         let gqDeps = (,) <$> acs2020_C <*> x
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
   (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
-  BR.logFrame modeled
+  proposedDemo <- K.ignoreCacheTime proposedDemo_C
+  let (modelDRA, modelDRAMissing)
+        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        modeled
+        (fmap addTwoPartyDShare dra)
+
+  when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in demographics/model join. " <> show modelDRAMissing
+  let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
+      dra = round . (100*) . F.rgetField @TwoPartyDShare
+      inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
+      modelAndDRAInRange = F.filterFrame inRange modelDRA
+  let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
+  BR.brAddRawHtmlTable
+    ("Dem Vote Share, " <> stateAbbr <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
+    (BHA.class_ "brTable")
+    (daveModelColonnade modelVsHistoricalTableCellStyle)
+    sortedModelAndDRA
+--  BR.logFrame modeled
+  BR.brAddPostMarkDownFromFile postPaths "_afterModelDRATable"
+  let proposedByModelShare = modelShareSort modeled --proposedPlusStateAndStateRace_RaceDensityNC
+  _ <- K.addHvega Nothing Nothing
+       $ BRV.demoCompare
+       ("Race", show . F.rgetField @DT.Race5C, raceSort)
+       ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
+       (F.rgetField @BRC.Count)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
+       (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
+       (stateAbbr <> " New: By Race and Education")
+       (FV.ViewConfig 600 600 5)
+       proposedDemo
+
+
   pure ()
 
 
@@ -571,13 +602,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   elections <- fmap (onlyState stateAbbr) $ K.ignoreCacheTime elections_C
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
-  let textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
-      distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
-      raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
-      eduSort = Just $ show <$> [DT.NonGrad, DT.Grad]
-      modelShareSort = reverse . fmap fst . sortOn snd
-                       . fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
-                       . FL.fold FL.list
+  let
       safeLog x = if x < 1e-12 then 0 else Numeric.log x
       xyFold' = FMR.mapReduceFold
                 FMR.noUnpack
@@ -620,7 +645,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
     _ <- K.addHvega Nothing Nothing
       $ BRV.demoCompareXYCS
       "District"
-      "% non-white"
+     "% non-white"
       "% college grad"
       "Modeled D-Edge"
       "log density"
@@ -662,26 +687,10 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (fmap F.rcast modelAndDR)
   BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
-      safeR (l, _) x = x <= l
-      leanR (l, _) x = x < 50 && x  >= l
-      leanD (_, u) x = x >= 50 && x <= u
-      safeD (_, u) x = x > u
-      modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
-      bordered c = "border: 3px solid " <> c
-      longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR brShareRange (modMid r) && h == "Demographic"
-      leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR brShareRange (modMid r) && h `elem` ["Demographic"]
-      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD brShareRange (modMid r) && h `elem` ["Demographic"]
-      safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD brShareRange (modMid r) && h == "Demographic"
-      dra = round . (100*) . F.rgetField @TwoPartyDShare
-      longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> safeR draShareRange (dra r) && h == "Historical"
-      leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> leanR draShareRange (dra r) && h == "Historical"
-      leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draShareRange (dra r)&& h == "Historical"
-      safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draShareRange (dra r) && h == "Historical"
-      tableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   BR.brAddRawHtmlTable
     ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (daveModelColonnade tableCellStyle)
+    (daveModelColonnade modelVsHistoricalTableCellStyle)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
 --  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
@@ -720,10 +729,50 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
 
   return ()
 
+raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
+
+eduSort = Just $ show <$> [DT.NonGrad, DT.Grad]
+
+textDist :: F.ElemOf rs ET.DistrictNumber => F.Record rs -> Text
+textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
+
+distLabel :: (F.ElemOf rs ET.DistrictNumber, F.ElemOf rs BR.StateAbbreviation) => F.Record rs -> Text
+distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
+
+modelShareSort :: (Foldable f
+                  , F.ElemOf rs BRE.ModeledShare
+                  , F.ElemOf rs ET.DistrictNumber
+                  , F.ElemOf rs BR.StateAbbreviation
+                  ) => f (F.Record rs) -> [Text]
+modelShareSort = reverse . fmap fst . sortOn snd
+                 . fmap (\r -> (distLabel r, MT.ciMid $ F.rgetField @BRE.ModeledShare r))
+                 . FL.fold FL.list
+
 brShareRange :: (Int, Int)
 brShareRange = (45, 55)
 draShareRange :: (Int, Int)
 draShareRange = (47, 53)
+
+modelVsHistoricalTableCellStyle :: (F.ElemOf rs BRE.ModeledShare
+                                   , F.ElemOf rs TwoPartyDShare)
+                                => BR.CellStyle (F.Record rs) String
+modelVsHistoricalTableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
+  where
+    safeR (l, _) x = x <= l
+    leanR (l, _) x = x < 50 && x  >= l
+    leanD (_, u) x = x >= 50 && x <= u
+    safeD (_, u) x = x > u
+    modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
+    bordered c = "border: 3px solid " <> c
+    longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR brShareRange (modMid r) && h == "Demographic"
+    leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR brShareRange (modMid r) && h `elem` ["Demographic"]
+    leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD brShareRange (modMid r) && h `elem` ["Demographic"]
+    safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD brShareRange (modMid r) && h == "Demographic"
+    dra = round . (100*) . F.rgetField @TwoPartyDShare
+    longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> safeR draShareRange (dra r) && h == "Historical"
+    leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> leanR draShareRange (dra r) && h == "Historical"
+    leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draShareRange (dra r)&& h == "Historical"
+    safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draShareRange (dra r) && h == "Historical"
 
 data DistType = SafeR | LeanR | LeanD | SafeD deriving (Eq, Ord, Show)
 distType :: Int -> Int -> Int -> DistType
