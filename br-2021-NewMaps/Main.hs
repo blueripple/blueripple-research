@@ -22,6 +22,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.DistrictOverlaps as DO
 --import qualified BlueRipple.Data.CCES as CCES
 --import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.Loaders as BR
@@ -91,6 +92,7 @@ import qualified CmdStan as CS
 import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
 import BlueRipple.Data.Loaders (stateAbbrCrosswalkLoader)
+import qualified BlueRipple.Data.DistrictOverlaps as DO
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -523,10 +525,11 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
+  overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" ET.StateUpper ET.Congressional
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (daveModelColonnade modelVsHistoricalTableCellStyle)
+    (dmColonnadeOverlap 0.25 overlaps modelVsHistoricalTableCellStyle)
     sortedModelAndDRA
 --  BR.logFrame modeled
   BR.brAddPostMarkDownFromFile postPaths "_afterModelDRATable"
@@ -558,6 +561,17 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       (FL.fold xyFold' modelDRADemo)
   pure ()
 
+dmColonnadeOverlap x ols cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      dNum = F.rgetField @ET.DistrictNumber
+      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "Overlaps" (BR.toCell cas "Overlaps" "Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . DO.overlapsOverThresholdForRow x ols . dNum))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
