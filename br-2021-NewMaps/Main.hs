@@ -507,12 +507,19 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
   (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
   proposedDemo <- K.ignoreCacheTime proposedDemo_C
-  let (modelDRA, modelDRAMissing)
+{-  let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
         modeled
         (fmap addTwoPartyDShare dra)
-
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in demographics/model join. " <> show modelDRAMissing
+-}
+  let (modelDRADemo, modelDRAMissing, demoMissing)
+        = FJ.leftJoin3WithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        modeled
+        (fmap addTwoPartyDShare dra)
+        (FL.fold xyFold' proposedDemo)
+  when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
+  when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
   let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
@@ -603,19 +610,6 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
   let
-      safeLog x = if x < 1e-12 then 0 else Numeric.log x
-      xyFold' = FMR.mapReduceFold
-                FMR.noUnpack
-                (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
-                (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
-        where
-          allF = FL.premap (F.rgetField @BRC.Count) FL.sum
-          wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
-          gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
-          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @DT.PopPerSqMile) FL.last
-          modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
-          foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
-                     <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
       oldDistrictsNoteName = BR.Used "Old_Districts"
   extantDemo <- K.ignoreCacheTime extantDemo_C
   mOldDistrictsUrl <- BR.brNewNote postPaths postInfo oldDistrictsNoteName (stateAbbr <> ": Old Districts") $ do
@@ -728,6 +722,20 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   BR.brAddPostMarkDownFromFileWith postPaths "_afterNewDemographics" (Just oldDistrictsNoteRef)
 
   return ()
+
+safeLog x = if x < 1e-12 then 0 else Numeric.log x
+xyFold' = FMR.mapReduceFold
+          FMR.noUnpack
+          (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber, ET.DistrictTypeC] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
+          (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
+        where
+          allF = FL.premap (F.rgetField @BRC.Count) FL.sum
+          wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
+          gradsF = FL.prefilter ((== DT.Grad) . F.rgetField @DT.CollegeGradC) allF
+          densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @DT.PopPerSqMile) FL.last
+          modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
+          foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
+                     <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
 
 raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
 
