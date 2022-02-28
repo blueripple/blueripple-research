@@ -513,17 +513,15 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         (fmap addTwoPartyDShare dra)
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in demographics/model join. " <> show modelDRAMissing
 -}
-  let (modelDRADemo, modelDRAMissing, demoMissing)
-        = FJ.leftJoin3WithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+  let (modelDRA, modelDRAMissing)
+        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
         modeled
         (fmap addTwoPartyDShare dra)
-        (FL.fold xyFold' proposedDemo)
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
-  when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
   let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
-      modelAndDRAInRange = F.filterFrame inRange modelDRA
+      modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
@@ -544,7 +542,20 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
        (FV.ViewConfig 600 600 5)
        proposedDemo
 
-
+  let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+                                    modelDRA
+                                    proposedDemo
+  when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
+  _ <- K.addHvega Nothing Nothing
+      $ BRV.demoCompareXYCS
+      "District"
+     "% non-white"
+      "% college grad"
+      "Modeled D-Edge"
+      "log density"
+      (stateAbbr <> " demographic scatter")
+      (FV.ViewConfig 600 600 5)
+      (FL.fold xyFold' modelDRADemo)
   pure ()
 
 
