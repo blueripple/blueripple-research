@@ -41,7 +41,13 @@ population density, with some adjustments to fit past results in each state.
 In the table below,
 we compare our predictions to a “historical” model (from the excellent
 [Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level
-results in prior elections[^voteShare]. (See methods at the end of this post for more details.)
+results in prior elections[^voteShare]. The “BR Stance” column uses a combination
+of the models to classify districts into categories that we use to make donation
+recommendations.
+We also include significant overlaps (by population) with AZ’s congressional districts and highlight
+those we think are competitive.  Given two equally appealing districts, we’d prefer to donate
+to one where that money and work might also help in a competitive congressional district.
+(See methods at the end of this post for more details.)
 
 [DavesR]: https://davesredistricting.org/maps#aboutus
 
@@ -52,14 +58,24 @@ for the Democratic candidate, that is, D Votes/(D Votes + R Votes). That makes i
 comparable with the Demographic model which also produces 2-party vote share.
 
 One crucial note before we dive into the findings.  Our model is not meant to be predictive
-and where we differ strongly from the historical model, we think the historical model is more
-likely to be accurate.  But what we hope to unearth, are districts where the demographics tell
+and where we differ strongly from the historical model,
+we think the historical model is likely more accurate.
+We hope to unearth districts where the demographics tell
 us that a different outcome is plausible or more likely than we might think.  This can cut both
-ways: our model might see D+6 in a place that is historically R+5 (AZ-27) and we think that makes
+ways: In AZ-27 our model sees D+6 in a place that is historically R+5. We think that makes
 that district worth a longer look, especially if a strong candidate is running and/or there is
-strong local organizing.  Conversely, we may see R+3 where the historical model sees D+8 (AZ-23).
+strong local organizing.  Conversely, in AZ-23, we see R+3 where the historical model sees D+8.
 There, we think it might be important to make sure the D candidate is well supported because the
-demographics would support an R win.
+demographics might support an R win.
+
+We also know that our approach misses all sorts of local factors that created the history used by the
+DR model.
+
+Some quick observations before we look at the table:
 
 - Our model is more “optimistic” than the historical model, seeing more D leaning
 districts (18)
+
+- Our result in AZ-6 is obviously wrong. We use population density as one
+of our predictors and AZ-6, with 20 people/sq mile, is an extreme outlier,
+one which our model cannot handle. We’re working on it!

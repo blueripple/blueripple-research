@@ -352,7 +352,8 @@ newStateLegMapPosts cmdLine = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
-  proposedDistricts_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
+  proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
+  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
 
 {-
   let postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
@@ -371,14 +372,17 @@ newStateLegMapPosts cmdLine = do
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   azPaths <- postPaths "AZ_StateLeg" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ_SLD" $ do
+    overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
     -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
-    azUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
-    let postSpec = NewSLDMapsPostSpec "AZ" azPaths azUpperDRA
+    sldDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
+    cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
+    let postSpec = NewSLDMapsPostSpec "AZ" azPaths sldDRA cdDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedDistricts_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedSLDs_C)
 
 
 addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
@@ -476,7 +480,12 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
-data NewSLDMapsPostSpec = NewSLDMapsPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
+data NewSLDMapsPostSpec = NewSLDMapsPostSpec { stateAbbr :: Text
+                                             , paths :: BR.PostPaths BR.Abs
+                                             , sldDRAnalysis :: F.Frame Redistrict.DRAnalysis
+                                             , cdDRAnalysis :: F.Frame Redistrict.DRAnalysis
+                                             , overlaps :: DO.DistrictOverlaps Int
+                                             }
 
 newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                        => Bool
@@ -486,12 +495,13 @@ newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r
                        -> K.ActionWithCacheTime r (F.FrameRec BRE.CCESWithDensityEM)
                        -> K.ActionWithCacheTime r BRE.CCESAndCPSEM
                        -> K.ActionWithCacheTime r (F.FrameRec BRE.PUMSWithDensityEM) -- ACS data
-                       -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
+                       -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- (proposed) congressional districts
+                       -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- proposed SLDs
                        -> K.Sem r ()
-newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C proposedDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
-  let (NewSLDMapsPostSpec stateAbbr postPaths dra) = postSpec
-  K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
+newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C cdDemo_C sldDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
+--  let (NewSLDMapsPostSpec stateAbbr postPaths sldDRA cdDRA overlaps) = postSpec
+  K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr postSpec
+  BR.brAddPostMarkDownFromFile (paths postSpec) "_intro"
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
@@ -499,7 +509,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo = (mapGroup
-                      , "DM" <> "_" <> stateAbbr <> "_SLD_" <> (BRE.printDensityTransform BRE.LogDensity)
+                      , "DM" <> "_" <> stateAbbr postSpec <> "_SLD_" <> (BRE.printDensityTransform BRE.LogDensity)
                       , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                       )
       modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
@@ -507,8 +517,9 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       modelDM x = do
         let gqDeps = (,) <$> acs2020_C <*> x
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir dmModel 2020 postStratInfo ccesAndCPS2020_C gqDeps
-  (_, modeled) <- modelDM (fmap F.rcast <$> proposedDemo_C)
-  proposedDemo <- K.ignoreCacheTime proposedDemo_C
+  (_, modeledCDs) <- modelDM (fmap F.rcast <$> cdDemo_C)
+  (_, modeledSLDs) <- modelDM (fmap F.rcast <$> sldDemo_C)
+  sldDemo <- K.ignoreCacheTime sldDemo_C
 {-  let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
         modeled
@@ -517,37 +528,37 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
 -}
   let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
-        modeled
-        (fmap addTwoPartyDShare dra)
+        modeledSLDs
+        (fmap addTwoPartyDShare $ sldDRAnalysis postSpec)
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
   let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
+
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
-  overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
   BR.brAddRawHtmlTable
-    ("Dem Vote Share, " <> stateAbbr <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
+    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (dmColonnadeOverlap 0.25 overlaps modelVsHistoricalTableCellStyle)
+    (dmColonnadeOverlap 0.25 (overlaps postSpec) modelVsHistoricalTableCellStyle)
     sortedModelAndDRA
 --  BR.logFrame modeled
-  BR.brAddPostMarkDownFromFile postPaths "_afterModelDRATable"
-  let proposedByModelShare = modelShareSort modeled --proposedPlusStateAndStateRace_RaceDensityNC
+  BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
+  let sldByModelShare = modelShareSort modeledSLDs --proposedPlusStateAndStateRace_RaceDensityNC
   _ <- K.addHvega Nothing Nothing
        $ BRV.demoCompare
        ("Race", show . F.rgetField @DT.Race5C, raceSort)
        ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
        (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just sldByModelShare)
        (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
-       (stateAbbr <> " New: By Race and Education")
+       (stateAbbr postSpec <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
-       proposedDemo
+       sldDemo
 
   let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
                                     modelDRA
-                                    proposedDemo
+                                    sldDemo
   when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
   _ <- K.addHvega Nothing Nothing
       $ BRV.demoCompareXYCS
@@ -556,7 +567,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       "% college grad"
       "Modeled D-Edge"
       "log density"
-      (stateAbbr <> " demographic scatter")
+      (stateAbbr postSpec <> " demographic scatter")
       (FV.ViewConfig 600 600 5)
       (FL.fold xyFold' modelDRADemo)
   pure ()
@@ -785,6 +796,10 @@ brShareRange :: (Int, Int)
 brShareRange = (45, 55)
 draShareRange :: (Int, Int)
 draShareRange = (47, 53)
+
+between :: (Int, Int) -> Int -> Bool
+between (l, h) x = x >= l && x <= h
+
 
 modelVsHistoricalTableCellStyle :: (F.ElemOf rs BRE.ModeledShare
                                    , F.ElemOf rs TwoPartyDShare)
