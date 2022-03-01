@@ -38,7 +38,7 @@ loadOverlapsFromCSV fp stateAbbr rowDType colDType = do
 
 
 overlapFractionsForRow :: DistrictOverlaps Int -> Int -> Vec.Vector Double
-overlapFractionsForRow (DistrictOverlaps _ _ _ p ols) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! (n -1))) $ ols Vec.! (n - 1)
+overlapFractionsForRow (DistrictOverlaps _ _ _ p ols) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! (n - 1))) $ ols Vec.! (n - 1)
 
 overlapsOverThresholdForRow :: Double -> DistrictOverlaps Int -> Int -> [(Int, Double)]
 overlapsOverThresholdForRow threshold x n = filter ((>= threshold) . snd) $ zip [1..] (Vec.toList (overlapFractionsForRow x n))

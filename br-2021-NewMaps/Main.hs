@@ -46,6 +46,7 @@ import qualified Control.Foldl.Statistics as FLS
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
+import qualified Data.Monoid as Monoid
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
@@ -544,12 +545,16 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
+      tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictNumber) => BR.CellStyle (F.Record rs) String
+      tableCAS =  modelVsHistoricalTableCellStyle <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
+        where
+          os r = fmap fst $ DO.overlapsOverThresholdForRow 0.25 (overlaps postSpec) (dNum r)
+          f r = Monoid.getAny $ mconcat $ fmap (Monoid.Any . modelCompetitive) (os r)
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (dmColonnadeOverlap 0.25 (overlaps postSpec) modelVsHistoricalTableCellStyle)
+    (dmColonnadeOverlap 0.25 (overlaps postSpec) tableCAS)
     sortedModelAndDRA
---  BR.logFrame modeled
   BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
   let sldByModelShare = modelShareSort modeledSLDs --proposedPlusStateAndStateRace_RaceDensityNC
   _ <- K.addHvega Nothing Nothing

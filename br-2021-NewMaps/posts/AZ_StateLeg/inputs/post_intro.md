@@ -1,8 +1,7 @@
 # AZ New State-Legislative Map
 
 Like all states, Arizona is locking down new state-legislative maps,
-which affect
-Democrat’s odds in 2022 races.
+which affect Democrat’s odds in 2022 races.
 In this reshaped landscape,
 how can donors focus their attention on races with the biggest “bang for buck”
 for flipping tenuous GOP seats or protecting vulnerable Dems?
@@ -12,12 +11,13 @@ a demographic
 model that predicts Democratic lean in each district based on its
 makeup in terms of race, sex, education, and population density.
 We then compare those results to an existing model based on historical
-data to help Dem donors identify races that we think deserve support
+data to help Dem donors identify races that we think deserve support, either
 for “offense” or “defense”.
 
-This post focuses on Arizona. We’ve done a similar
-analysis for Congressional districts in [Texas][TXPost] and
-[North Carolina][NCPost] (though the NC map is in flux due to litigation and we
+This post focuses on the Arizona state-legislature districts.
+We’ve done a similar analyses for Congressional districts
+in [Texas][TXPost] and [North Carolina][NCPost]
+(though the NC map is in flux due to litigation and we
 will update that post once a new map seems clear)
 Here’s what we’ll cover:
 
@@ -32,7 +32,7 @@ Here’s what we’ll cover:
 
 ## 1. Dem-lean by district in AZ: our demographic model vs. historical data
 
-The new AZ map has 30 State-Legislative districts.  AZ is unusual in that
+The new AZ map has 30 State-Legislative districts. AZ is unusual in that
 the upper and lower state-house seats use the same districts: one state senator
 and two state representatives are elected in each district.
 Our “demographic” model forecasts the potential Democratic lean of each
@@ -44,8 +44,9 @@ we compare our predictions to a “historical” model (from the excellent
 results in prior elections[^voteShare]. The “BR Stance” column uses a combination
 of the models to classify districts into categories that we use to make donation
 recommendations.
-We also include significant overlaps (by population) with AZ’s congressional districts and highlight
-those we think are competitive.  Given two equally appealing districts, we’d prefer to donate
+We also include significant overlaps (by population) with AZ’s congressional
+districts and highlight those we think are competitive.
+Given two equally appealing districts, we’d prefer to donate
 to one where that money and work might also help in a competitive congressional district.
 (See methods at the end of this post for more details.)
 
@@ -59,23 +60,20 @@ comparable with the Demographic model which also produces 2-party vote share.
 
 One crucial note before we dive into the findings.  Our model is not meant to be predictive
 and where we differ strongly from the historical model,
-we think the historical model is likely more accurate.
+the historical model is likely more accurate.
 We hope to unearth districts where the demographics tell
-us that a different outcome is plausible or more likely than we might think.  This can cut both
+us that a different outcome is more likely than we might think.  This can cut both
 ways: In AZ-27 our model sees D+6 in a place that is historically R+5. We think that makes
 that district worth a longer look, especially if a strong candidate is running and/or there is
 strong local organizing.  Conversely, in AZ-23, we see R+3 where the historical model sees D+8.
 There, we think it might be important to make sure the D candidate is well supported because the
 demographics might support an R win.
 
-We also know that our approach misses all sorts of local factors that created the history used by the
-DR model.
-
 Some quick observations before we look at the table:
 
 - Our model is more “optimistic” than the historical model, seeing more D leaning
-districts (18)
+districts (18 vs 13)
 
 - Our result in AZ-6 is obviously wrong. We use population density as one
-of our predictors and AZ-6, with 20 people/sq mile, is an extreme outlier,
+of our predictors and AZ-6, with 20 people/sq mile, is a very extreme outlier,
 one which our model cannot handle. We’re working on it!
