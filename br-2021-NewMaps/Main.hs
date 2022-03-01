@@ -535,8 +535,15 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
-
-  let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
+  let dNum = F.rgetField @ET.DistrictNumber
+      modMid r = round @_ @Int . (100*) $ MT.ciMid $ F.rgetField @BRE.ModeledShare r
+      dra r =  round @_ @Int . (100*) $ F.rgetField @TwoPartyDShare r
+      cdModelMap = FL.fold (FL.premap (\r -> (dNum r, modMid r)) FL.map) modeledCDs
+      cdDRAMap = FL.fold (FL.premap (\r -> (dNum r, dra r)) FL.map) $ fmap addTwoPartyDShare $ cdDRAnalysis postSpec
+      modelCompetitive n = brCompetitive || draCompetitive
+        where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
+              brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
+      sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
