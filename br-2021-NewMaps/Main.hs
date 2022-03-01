@@ -525,7 +525,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
-  overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" ET.StateUpper ET.Congressional
+  overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr <> " State-Leg 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
@@ -571,7 +571,7 @@ dmColonnadeOverlap x ols cas =
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
-     <> C.headed "Overlaps" (BR.toCell cas "Overlaps" "Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . DO.overlapsOverThresholdForRow x ols . dNum))
+     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . DO.overlapsOverThresholdForRow x ols . dNum))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
