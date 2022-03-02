@@ -149,7 +149,7 @@ main = do
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM4"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.QuantileDensity 10)
+modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity -- (BRE.QuantileDensity 10)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -356,8 +356,8 @@ newStateLegMapPosts cmdLine = do
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
   proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  onlyUpper = F.filterFrame ((== ET.StateUpper) . F.rgetField @ET.DistrictTypeC)
-  onlyLower = F.filterFrame ((== ET.StateLower) . F.rgetField @ET.DistrictTypeC)
+  let onlyUpper = F.filterFrame ((== ET.StateUpper) . F.rgetField @ET.DistrictTypeC)
+      onlyLower = F.filterFrame ((== ET.StateLower) . F.rgetField @ET.DistrictTypeC)
 
 {-
   let postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
