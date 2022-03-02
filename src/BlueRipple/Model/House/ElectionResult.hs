@@ -1948,11 +1948,11 @@ densityMatrixRowPartFromData (QuantileDensity n) dat = DM.DesignMatrixRowPart "D
   quantilesExtra = List.length sortedData `rem` n
   quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
   quantileBreaks = fmap (\k -> sortedData List.!! quantileMaxIndex k) $ [1..n]
-  indexedBreaks = zip quantileBreaks [1..n] -- should this be 0 centered??
-  go x [] = n
+  indexedBreaks = zip quantileBreaks $ fmap (\k -> (realToFrac k)/(realToFrac n)) [1..n] -- should this be 0 centered??
+  go x [] = 1.0
   go x ((y, k): xs) = if x < y then k else go x xs
   quantileF x = go x indexedBreaks
-  g x = VU.fromList [realToFrac $ quantileF x]
+  g x = VU.fromList [quantileF x]
   f = g . F.rgetField @DT.PopPerSqMile
 
 

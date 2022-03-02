@@ -269,7 +269,6 @@ modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
-
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
@@ -278,7 +277,10 @@ modelDiagnostics cmdLine = do
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
-      postStratInfo = (mapGroup, "DM_Diagnostics_AllCDs", SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet)
+      postStratInfo = (mapGroup
+                      , "DM_" <> BRE.printDensityTransform (BRE.densityTransform modelVariant) <> "Diagnostics_AllCDs"
+                      , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
+                      )
       modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM x = do
