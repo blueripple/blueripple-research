@@ -1205,38 +1205,38 @@ designMatrixRow :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.HispC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
-                => DM.DesignMatrixRow (F.Record rs)
-designMatrixRow = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
+                => DM.DesignMatrixRowPart (F.Record rs) -> DM.DesignMatrixRow (F.Record rs)
+designMatrixRow densRP = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" mergeRace5AndHispanic
-    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+--    densRP = densityMatrixRowFromData dt DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCCES
 
-designMatrixRowCCES :: DM.DesignMatrixRow (F.Record CCESWithDensityEM)
+designMatrixRowCCES :: DM.DesignMatrixRowPart (F.Record CCESWithDensityEM) -> DM.DesignMatrixRow (F.Record CCESWithDensityEM)
 designMatrixRowCCES = designMatrixRow
 
-designMatrixRowCPS :: DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
+designMatrixRowCPS :: DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM) -> DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
+designMatrixRowCPS densRP = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
  where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" race5Census
-    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+--    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
-designMatrixRowACS :: DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
-designMatrixRowACS = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
+designMatrixRowACS :: DM.DesignMatrixRowPart (F.Record PUMSWithDensityEM) -> DM.DesignMatrixRow (F.Record PUMSWithDensityEM)
+designMatrixRowACS densRP = DM.DesignMatrixRow "DM" $ [densRP, sexRP, eduRP, raceRP, wngRP]
   where
     sexRP = DM.boundedEnumRowPart "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart "Race" race5Census
-    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+--    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.boundedEnumRowPart "WhiteNonGrad" wnhNonGradCensus
 
-designMatrixRowElex :: DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
-designMatrixRowElex = DM.DesignMatrixRow "DM" [densRP, sexRP, eduRP, raceRP, wngRP]
+designMatrixRowElex :: DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR) -> DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
+designMatrixRowElex densRP = DM.DesignMatrixRow "DM" [densRP, sexRP, eduRP, raceRP, wngRP]
   where
 --    zeroDMRP t n = DM.DesignMatrixRowPart t n (const $ VU.replicate n 0.0)
     fracWhite r = F.rgetField @FracWhiteNonHispanic r + F.rgetField @FracWhiteHispanic r
@@ -1250,7 +1250,7 @@ designMatrixRowElex = DM.DesignMatrixRow "DM" [densRP, sexRP, eduRP, raceRP, wng
                                             , F.rgetField @FracAsian
                                             , F.rgetField @FracWhiteNonHispanic
                                             ]
-    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+--    densRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
     wngRP = DM.rowPartFromFunctions "WhiteNonGrad" [\r ->  (2 * fracWhiteNonGrad r) - 1] -- white non-grad is 1 since True in Bool, thus 2nd in enum
 
 race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
@@ -1283,72 +1283,77 @@ predictorFunctions rtt dmr suffixM dmColIndex dsIndexV = do
   return (pred, iPred)
 
 setupCCESTData :: (Typeable md, Typeable gq)
-                   => SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
-                                            , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-                                            , SB.StanVar, SB.StanVar, SB.StanVar)
-setupCCESTData = do
+               => DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
+                                        , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
+                                        , SB.StanVar, SB.StanVar, SB.StanVar)
+setupCCESTData densRP = do
   ccesTData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCEST"
-  dmCCES <- DM.addDesignMatrix ccesTData designMatrixRowCCES
+  dmCCES <- DM.addDesignMatrix ccesTData (designMatrixRowCCES densRP)
   cvapCCES <- SB.addCountData ccesTData "CVAP_CCES" (F.rgetField @Surveyed)
   votedCCES <- SB.addCountData ccesTData "Voted_CCES" (round . F.rgetField @AHVoted)
-  return (ccesTData, designMatrixRowCCES, cvapCCES, votedCCES, dmCCES)
+  return (ccesTData, designMatrixRowCCES densRP, cvapCCES, votedCCES, dmCCES)
 
 
 setupCPSData ::  (Typeable md, Typeable gq)
-             => SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
+             => DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM)
+             -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
                                       , DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
                                       , SB.StanVar, SB.StanVar, SB.StanVar)
-setupCPSData = do
+setupCPSData densRP = do
   cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
   cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
   votedCPS <- SB.addCountData cpsData "Voted_CPS"  (round . F.rgetField @AHSuccesses)
-  dmCPS <- DM.addDesignMatrix cpsData designMatrixRowCPS
-  return (cpsData, designMatrixRowCPS, cvapCPS, votedCPS, dmCPS)
+  dmCPS <- DM.addDesignMatrix cpsData (designMatrixRowCPS densRP)
+  return (cpsData, designMatrixRowCPS densRP, cvapCPS, votedCPS, dmCPS)
 
 
 setupElexTData :: (Typeable md, Typeable gq)
-               => SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+               => DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexTData = do
+setupElexTData densRP = do
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
 --  elexTIndex <- SB.indexedConstIntArray elexTData Nothing dsIndex
   cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
   votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
-  dmElexT <- DM.addDesignMatrix elexTData designMatrixRowElex
-  return (elexTData, designMatrixRowElex, cvapElex, votedElex, dmElexT)
+  dmElexT <- DM.addDesignMatrix elexTData (designMatrixRowElex densRP)
+  return (elexTData, designMatrixRowElex densRP, cvapElex, votedElex, dmElexT)
 
 
 setupCCESPData :: (Typeable md, Typeable gq)
-               => ET.OfficeT
+               => DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
+               -> ET.OfficeT
                -> ET.VoteShareType
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
                                         , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
                                         , SB.StanVar, SB.StanVar, SB.StanVar)
-setupCCESPData office vst = do
+setupCCESPData densRP office vst = do
   let (votesF, dVotesF) = getCCESVotes office vst
   ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData ("CCESP_" <> show office)
 --  ccesPIndex <- SB.indexedConstIntArray ccesPData (Just "P") n
-  dmCCESP <- DM.addDesignMatrix ccesPData designMatrixRowCCES
+  dmCCESP <- DM.addDesignMatrix ccesPData (designMatrixRowCCES densRP)
   raceVotesCCES <- SB.addCountData ccesPData ("VotesInRace_CCES_" <> show office) (round . votesF)
   dVotesInRaceCCES <- SB.addCountData ccesPData ("DVotesInRace_CCES_" <> show office) (round . dVotesF)
-  return (ccesPData, designMatrixRowCCES, raceVotesCCES, dVotesInRaceCCES, dmCCESP)
+  return (ccesPData, designMatrixRowCCES densRP, raceVotesCCES, dVotesInRaceCCES, dmCCESP)
 
 setupElexPData :: (Typeable md, Typeable gq)
-               => ET.VoteShareType
+               => DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
+               -> ET.VoteShareType
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , DM.DesignMatrixRow (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar, SB.StanVar, SB.StanVar)
-setupElexPData vst = do
+setupElexPData densRP vst = do
   elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
 --  elexPIndex <- SB.indexedConstIntArray elexPData Nothing dsIndex
-  dmElexP <- DM.addDesignMatrix elexPData designMatrixRowElex
+  dmElexP <- DM.addDesignMatrix elexPData (designMatrixRowElex densRP)
   raceVotesElex <- SB.addCountData elexPData "VotesInRace_Elections"
     $ case vst of
         ET.TwoPartyShare -> (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r)
         ET.FullShare -> F.rgetField @TVotes
   dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
-  return (elexPData, designMatrixRowElex, raceVotesElex, dVotesInRaceElex, dmElexP)
+  return (elexPData, designMatrixRowElex densRP, raceVotesElex, dVotesInRaceElex, dmElexP)
 
 
 electionModelDM :: forall rs ks r tr pr.
@@ -1400,7 +1405,9 @@ electionModelDM :: forall rs ks r tr pr.
 electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup, psDataSetName, psGroupSet) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   ccesDataRows <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
-  let reportZeroRows :: K.Sem r ()
+  let densityMatrixRowPart :: forall x. F.ElemOf x DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record x)
+      densityMatrixRowPart = densityMatrixRowPartFromData (densityTransform model) ccesDataRows
+      reportZeroRows :: K.Sem r ()
       reportZeroRows = do
         let numZeroHouseRows = countCCESZeroVoteRows ET.House (voteShareType model) ccesDataRows
             numZeroPresRows = countCCESZeroVoteRows ET.President (voteShareType model) ccesDataRows
@@ -1412,7 +1419,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
       psDataSetName' = psDataSetName
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
-        (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM) <- setupElexTData
+        (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM) <- setupElexTData densityMatrixRowPart
         dmColIndex <- case elexTDM of
           (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
           (SB.StanVar m _) -> SB.stanBuildError $ "electionModelDM: elexDM is not a matrix with named row index"
@@ -1450,7 +1457,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
             elexBetaBT <- vecElexBetaBT
             SB.sampleDistV elexTData distElexT (SB.var elexBetaAT, SB.var elexBetaBT) elexVoted
 
-        (cpsTData, cpsDesignMatrixRow, cpsCVAP, cpsVoted, cpsTDM) <- setupCPSData
+        (cpsTData, cpsDesignMatrixRow, cpsCVAP, cpsVoted, cpsTDM) <- setupCPSData densityMatrixRowPart
         cpsTDMC <- centerTF SC.ModelData cpsTDM (Just "T")
         invSamplesCPS <- SMP.addParameter "invSamplesCPS" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         ixCPS <- SMP.addParameter "ixCPS" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
@@ -1463,7 +1470,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
             cpsBetaBT <- vecCPSBetaBT
             SB.sampleDistV cpsTData distCPS (SB.var cpsBetaAT, SB.var cpsBetaBT) cpsVoted
 
-        (ccesTData, ccesDesignMatrixRow, ccesCVAP, ccesVoted, ccesTDM) <- setupCCESTData
+        (ccesTData, ccesDesignMatrixRow, ccesCVAP, ccesVoted, ccesTDM) <- setupCCESTData densityMatrixRowPart
         ccesTDMC <- centerTF SC.ModelData ccesTDM (Just "T")
         invSamplesCCEST <- SMP.addParameter "invSamplesCCEST" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         ixCCEST <- SMP.addParameter "ixCCEST" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
@@ -1476,7 +1483,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
             ccesBetaBT <- vecCCESBetaBT
             SB.sampleDistV ccesTData distCCEST (SB.var ccesBetaAT, SB.var ccesBetaBT) ccesVoted
 
-        (elexPData, _, elexVotesInRace, elexDVotesInRace, elexPDM) <- setupElexPData (voteShareType model)
+        (elexPData, _, elexVotesInRace, elexDVotesInRace, elexPDM) <- setupElexPData densityMatrixRowPart (voteShareType model)
         invSamplesElexP <- SMP.addParameter "invSamplesElexP" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
@@ -1508,7 +1515,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         ixCCESP <- SMP.addParameter "ixCCESP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
         invSamplesCCESP <- SMP.addParameter "invSamplesCCESP" SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
         let addCCESPref office = do
-              (ccesPData, _, ccesVotesInRace, ccesDVotesInRace, ccesPDM) <- setupCCESPData office (voteShareType model)
+              (ccesPData, _, ccesVotesInRace, ccesDVotesInRace, ccesPDM) <- setupCCESPData densityMatrixRowPart office (voteShareType model)
               ccesPDMC <- centerPF SC.ModelData ccesPDM (Just $ "P_" <> show office)
               let distCCESP = SB.betaBinomialDist True ccesVotesInRace
                   vecCCESBetaAP = SB.vectorizeExpr ("ccesDataBetaAP_" <> show office) (betaAP (Just ixCCESP) invSamplesCCESP ccesPDMC) (SB.dataSetName ccesPData)
@@ -1567,7 +1574,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         -- post-stratification for crosstabs
         -- NB: invSamples does not matter for expectations
         acsData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.GQData "ACS"
-        dmACS' <- DM.addDesignMatrix acsData designMatrixRowACS
+        dmACS' <- DM.addDesignMatrix acsData (designMatrixRowACS densityMatrixRowPart)
         dmACS_T <- SB.useDataSetForBindings acsData $ centerTF SC.GQData dmACS' (Just "T")
         dmACS_P <- SB.useDataSetForBindings acsData $ centerPF SC.GQData dmACS' (Just "P")
         let psTPrecompute = do
@@ -1624,7 +1631,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
 
         -- post-stratification for results
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "DistrictPS"
-        dmPS' <- DM.addDesignMatrix psData designMatrixRow
+        dmPS' <- DM.addDesignMatrix psData (designMatrixRow densityMatrixRowPart)
 
         let psPreCompute = do
               dmPS_T <- centerTF SC.GQData dmPS' (Just "T")
@@ -1926,16 +1933,16 @@ wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 
-densityMatrixRowFromData :: (F.ElemOf rs DT.PopPerSqMile)
+densityMatrixRowPartFromData :: forall rs rs'.(F.ElemOf rs DT.PopPerSqMile, F.ElemOf rs' DT.PopPerSqMile)
                          => DensityTransform
-                         -> F.FrameRec DistrictDemDataR
-                         -> SB.MatrixRowFromData (F.Record rs)
-densityMatrixRowFromData RawDensity _ = (SB.MatrixRowFromData "Density" 1 f)
+                         -> F.FrameRec rs'
+                         -> DM.DesignMatrixRowPart (F.Record rs)
+densityMatrixRowPartFromData RawDensity _ = (DM.DesignMatrixRowPart "Density" 1 f)
   where
    f = VU.fromList . pure . F.rgetField @DT.PopPerSqMile
-densityMatrixRowFromData LogDensity _ =
-  (SB.MatrixRowFromData "Density" 1 logDensityPredictor)
-densityMatrixRowFromData (QuantileDensity n) dat = SB.MatrixRowFromData "Density" 1 f where
+densityMatrixRowPartFromData LogDensity _ =
+  (DM.DesignMatrixRowPart "Density" 1 logDensityPredictor)
+densityMatrixRowPartFromData (QuantileDensity n) dat = DM.DesignMatrixRowPart "Density" 1 f where
   sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.list) dat
   quantileSize = List.length sortedData `div` n
   quantilesExtra = List.length sortedData `rem` n
@@ -1953,6 +1960,7 @@ densityMatrixRowFromData (QuantileDensity n) dat = SB.MatrixRowFromData "Density
 
 
 --densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
+logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
 logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
 safeLogV x =  VU.singleton $ if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
 

@@ -71,6 +71,9 @@ matrixFromRowData :: DesignMatrixRow r -> SB.MatrixRowFromData r
 matrixFromRowData (DesignMatrixRow name rowParts) = SB.MatrixRowFromData name length f
   where (length, f) = FL.fold ((,) <$> rowLengthF <*> rowFuncF) rowParts
 
+designMatrixRowPartFromMatrixRowData :: SB.MatrixRowFromData r -> DesignMatrixRowPart r
+designMatrixRowPartFromMatrixRowData (SB.MatrixRowFromData name n rowFunc) = DesignMatrixRowPart name n rowFunc
+
 {-
 combineRowFuncs :: Foldable f => f (Int, r -> V.Vector Double) -> (Int, r -> V.Vector Double)
 combineRowFuncs rFuncs =
