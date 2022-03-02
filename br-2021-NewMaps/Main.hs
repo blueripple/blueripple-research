@@ -149,7 +149,7 @@ main = do
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM4"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity -- (BRE.QuantileDensity 10)
+modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.QuantileDensity 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -366,7 +366,7 @@ newStateLegMapPosts cmdLine = do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/NC_SLDU_CD.csv" "NC" ET.StateUpper ET.Congressional
     ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis undefined -- (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
-    let postSpec = NewSLDMapsPostSpec "NC" ET.StateUpper ncPaths ncUpperDRA cdDRA overlaps
+    let postSpec = NewSLDMapsPostSpec "NC" ET.StateUpper ncPaths cdDRA ncUpperDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -379,7 +379,7 @@ newStateLegMapPosts cmdLine = do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/NC_SLDL_CD.csv" "NC" ET.StateLower ET.Congressional
     ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis undefined -- (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
-    let postSpec = NewSLDMapsPostSpec "NC" ET.StateLower ncPaths ncLowerDRA cdDRA overlaps
+    let postSpec = NewSLDMapsPostSpec "NC" ET.StateLower ncPaths cdDRA ncLowerDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -395,7 +395,7 @@ newStateLegMapPosts cmdLine = do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
     sldDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
-    let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths sldDRA cdDRA overlaps
+    let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths cdDRA sldDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -519,7 +519,6 @@ newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r
                        -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- proposed SLDs
                        -> K.Sem r ()
 newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C cdDemo_C sldDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
---  let (NewSLDMapsPostSpec stateAbbr postPaths sldDRA cdDRA overlaps) = postSpec
   K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr postSpec <> "( " <> show (districtType postSpec) <> ")"
   BR.brAddPostMarkDownFromFile (paths postSpec) "_intro"
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
@@ -528,17 +527,18 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
 
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      postStratInfo = (mapGroup
-                      , "DM" <> "_" <> stateAbbr postSpec <> "_SLD_" <> (BRE.printDensityTransform $ BRE.densityTransform modelVariant)
-                      , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
-                      )
-      modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      postStratInfo dt = (mapGroup
+                         , "DM" <> "_" <> stateAbbr postSpec <> "_" <> show dt <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform modelVariant)
+                         , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
+                         )
+      modelDM :: ET.DistrictType
+              -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM x = do
+      modelDM dt x = do
         let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
-  (_, modeledCDs) <- modelDM (fmap F.rcast <$> cdDemo_C)
-  (_, modeledSLDs) <- modelDM (fmap F.rcast <$> sldDemo_C)
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 (postStratInfo dt) ccesAndCPS2020_C gqDeps
+  (_, modeledCDs) <- modelDM ET.Congressional (fmap F.rcast <$> cdDemo_C)
+  (_, modeledSLDs) <- modelDM (districtType postSpec) (fmap F.rcast <$> sldDemo_C)
   sldDemo <- K.ignoreCacheTime sldDemo_C
 {-  let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]

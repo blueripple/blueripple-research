@@ -175,6 +175,7 @@ censusTablesForProposedCDs :: (K.KnitEffects r
 censusTablesForProposedCDs = censusTablesByDistrict fileByYear "proposedCDs" where
   fileByYear = [(BRC.TY2018, censusDataDir <> "/cd117_NC.csv")
                ,(BRC.TY2018, censusDataDir <> "/cd117_TX.csv")
+               ,(BRC.TY2018, censusDataDir <> "/cd117_AZ.csv")
                ]
 
 
