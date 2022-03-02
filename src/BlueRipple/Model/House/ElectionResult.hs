@@ -1408,9 +1408,8 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
           <> show numZeroPresRows <> " rows with no votes for president."
   reportZeroRows
   let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha"
-      jsonDataName = "DM_" <> dataLabel model
-                     <> "_NoDensity_" <> show datYear
-      psDataSetName' = psDataSetName -- <> "_NoDensity"
+      jsonDataName = "DM_" <> dataLabel model <> "_" <> show datYear
+      psDataSetName' = psDataSetName
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM) <- setupElexTData
@@ -1752,14 +1751,14 @@ type instance FI.VectorFor GroupModel = Vector.Vector
 data DensityTransform = RawDensity
                       | LogDensity
                       | QuantileDensity Int
-                      deriving (Show, Eq, Ord, Generic)
+                      deriving (Eq, Ord, Generic)
 instance Flat.Flat DensityTransform
 type instance FI.VectorFor DensityTransform = Vector.Vector
 
 printDensityTransform :: DensityTransform -> Text
-printDensityTransform RawDensity = "Raw"
-printDensityTransform LogDensity = "Log"
-printDensityTransform (QuantileDensity n) = "Quantile_" <> show n
+printDensityTransform RawDensity = "RawDensity"
+printDensityTransform LogDensity = "LogDensity"
+printDensityTransform (QuantileDensity n) = "QuantileDensity" <> show n
 
 data DensityModel = BaseD
                   | DMD
@@ -1830,7 +1829,7 @@ data Model = Model { voteShareType :: ET.VoteShareType
 --type instance FI.VectorFor (Model tr pr) = Vector.Vector
 
 modelLabel :: Model  -> Text
-modelLabel m = show (voteShareType m) <> "_" <> T.intercalate "+" (show <$> Set.toList (votesFrom m)) <> "_" <> show (densityTransform m)
+modelLabel m = show (voteShareType m) <> "_" <> T.intercalate "+" (show <$> Set.toList (votesFrom m)) <> "_" <> printDensityTransform (densityTransform m)
 
 dataLabel :: Model -> Text
 dataLabel = modelLabel
