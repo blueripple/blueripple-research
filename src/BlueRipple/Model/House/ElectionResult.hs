@@ -1416,7 +1416,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
   reportZeroRows
   let modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha"
       jsonDataName = "DM_" <> dataLabel model <> "_" <> show datYear
-      psDataSetName' = psDataSetName
+      psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model)
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         (elexTData, elexDesignMatrixRow, elexCVAP, elexVoted, elexTDM) <- setupElexTData densityMatrixRowPart
@@ -1757,7 +1757,7 @@ type instance FI.VectorFor GroupModel = Vector.Vector
 
 data DensityTransform = RawDensity
                       | LogDensity
-                      | QuantileDensity Int
+                      | BinDensity Int Int
                       deriving (Eq, Ord, Generic)
 instance Flat.Flat DensityTransform
 type instance FI.VectorFor DensityTransform = Vector.Vector
@@ -1765,7 +1765,7 @@ type instance FI.VectorFor DensityTransform = Vector.Vector
 printDensityTransform :: DensityTransform -> Text
 printDensityTransform RawDensity = "RawDensity"
 printDensityTransform LogDensity = "LogDensity"
-printDensityTransform (QuantileDensity n) = "QuantileDensity" <> show n
+printDensityTransform (BinDensity bins range) = "BinDensity_" <> show bins <> "_" <> show range
 
 data DensityModel = BaseD
                   | DMD
@@ -1942,14 +1942,14 @@ densityMatrixRowPartFromData RawDensity _ = (DM.DesignMatrixRowPart "Density" 1 
    f = VU.fromList . pure . F.rgetField @DT.PopPerSqMile
 densityMatrixRowPartFromData LogDensity _ =
   (DM.DesignMatrixRowPart "Density" 1 logDensityPredictor)
-densityMatrixRowPartFromData (QuantileDensity n) dat = DM.DesignMatrixRowPart "Density" 1 f where
+densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPart "Density" 1 f where
   sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.list) dat
-  quantileSize = List.length sortedData `div` n
-  quantilesExtra = List.length sortedData `rem` n
+  quantileSize = List.length sortedData `div` bins
+  quantilesExtra = List.length sortedData `rem` bins
   quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
-  quantileBreaks = fmap (\k -> sortedData List.!! quantileMaxIndex k) $ [1..n]
-  indexedBreaks = zip quantileBreaks $ fmap (\k -> (realToFrac k)/(realToFrac n)) [1..n] -- should this be 0 centered??
-  go x [] = 1.0
+  quantileBreaks = fmap (\k -> sortedData List.!! quantileMaxIndex k) $ [1..bins]
+  indexedBreaks = zip quantileBreaks $ fmap (\k -> (realToFrac $ k * range)/(realToFrac bins)) [1..bins] -- should this be 0 centered??
+  go x [] = realToFrac range
   go x ((y, k): xs) = if x < y then k else go x xs
   quantileF x = go x indexedBreaks
   g x = VU.fromList [quantileF x]

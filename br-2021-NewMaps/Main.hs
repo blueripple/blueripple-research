@@ -149,7 +149,7 @@ main = do
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM4"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.QuantileDensity 10)
+modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.BinDensity 5 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -278,7 +278,7 @@ modelDiagnostics cmdLine = do
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
       postStratInfo = (mapGroup
-                      , "DM_" <> BRE.printDensityTransform (BRE.densityTransform modelVariant) <> "Diagnostics_AllCDs"
+                      , "DM_Diagnostics_AllCDs"
                       , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                       )
       modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
@@ -530,7 +530,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo dt = (mapGroup
-                         , "DM" <> "_" <> stateAbbr postSpec <> "_" <> show dt <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform modelVariant)
+                         , "DM" <> "_" <> stateAbbr postSpec <> "_" <> show dt
                          , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                          )
       modelDM :: ET.DistrictType
@@ -653,7 +653,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
 --      modelDir =  "br-2021-NewMaps/stanAH"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup
-                      , "DM" <> "_" <> name <> "_" <> (BRE.printDensityTransform $ BRE.densityTransform modelVariant)
+                      , "DM" <> "_" <> name
                       , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing

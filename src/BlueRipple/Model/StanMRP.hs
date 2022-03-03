@@ -141,10 +141,19 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
     SM.deleteStaleFiles  @BR.SerializerC @BR.CacheData stanConfig [SM.StaleData]
     BR.clearIfPresentD resultCacheKey
   modelDep <- SM.modelDependency SC.MRFull runnerInputNames
+  modelJSONDep <- SM.modelDataDependency runnerInputNames
+  gqJSONDep <- fromMaybe (pure ()) <$> SM.gqDataDependency runnerInputNames
   K.logLE (K.Debug 1) $ "modelDep: " <> show (K.cacheTime modelDep)
+  K.logLE (K.Debug 1) $ "modelJSONDep: " <> show (K.cacheTime modelJSONDep)
+  K.logLE (K.Debug 1) $ "gqJSONDep: " <> show (K.cacheTime gqJSONDep)
   K.logLE (K.Debug 1) $ "modelDataDep: " <> show (K.cacheTime modelData_C)
   K.logLE (K.Debug 1) $ "generated quantities DataDep: " <> show (K.cacheTime gqData_C)
-  let dataModelDep = (,,) <$> modelDep <*> modelData_C <*> gqData_C
+  let dataModelDep = (,,,,)
+        <$> modelDep
+        <*> modelData_C
+        <*> modelJSONDep
+        <*> gqData_C
+        <*> gqJSONDep
       getResults s () inputAndIndex_C = return ()
 --      unwraps = [SR.UnwrapNamed ppName ppName]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \_ -> do
