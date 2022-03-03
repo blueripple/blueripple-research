@@ -116,6 +116,7 @@ pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic
 
 main :: IO ()
 main = do
+  cmdLine <- CmdArgs.cmdArgsRun BR.commandLine
   pandocWriterConfig <-
     K.mkPandocWriterConfig
       pandocTemplate
@@ -125,12 +126,11 @@ main = do
       knitConfig :: K.KnitConfig BR.SerializerC BR.CacheData Text =
         (K.defaultKnitConfig $ Just cacheDir)
           { K.outerLogPrefix = Just "2021-NewMaps"
-          , K.logIf = K.logDiagnostic
+          , K.logIf = BR.knitLogSeverity $ BR.logLevel cmdLine --K.logDiagnostic
           , K.pandocWriterConfig = pandocWriterConfig
           , K.serializeDict = BR.flatSerializeDict
           , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
-  cmdLine <- CmdArgs.cmdArgsRun BR.commandLine
   let stanParallelCfg = BR.clStanParallel cmdLine
       parallel =  case BR.cores stanParallelCfg of
         BR.MaxCores -> True
@@ -165,7 +165,7 @@ postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
           -> K.Sem r (BR.PostPaths BR.Abs)
 postPaths t cmdLine = do
   let mRelSubDir = case cmdLine of
-        BR.CLLocalDraft _ mS -> maybe Nothing BR.parseRelDir $ fmap toString mS
+        BR.CLLocalDraft _ _ mS -> maybe Nothing BR.parseRelDir $ fmap toString mS
         _ -> Nothing
   postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
   BR.postPaths
@@ -456,7 +456,7 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublsihed))
+  let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublished))
   txPaths <- postPaths "TX_Congressional" cmdLine
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewCDMapPostSpec "TX" txPaths

@@ -17,6 +17,7 @@ import           Path (Path, Abs, Rel, Dir, File, PathException, (</>), parseRel
 import qualified Data.Time.Calendar as Time
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Say
+import qualified Knit.Effect.Logger as K
 
 brReadMore :: T.Text
 brReadMore = [i|
@@ -72,23 +73,36 @@ brLocalRoot :: T.Text
 brLocalRoot = "posts/"
 
 -- command line
+data LogLevel = LogInfo | LogDiagnostic | LogDebugMinimal | LogDebugVerbose | LogDebugAll  deriving (Show, CmdArgs.Data, Typeable, Eq)
+
+knitLogSeverity :: LogLevel -> K.LogSeverity -> Bool
+knitLogSeverity LogInfo = K.nonDiagnostic
+knitLogSeverity LogDiagnostic = K.logDiagnostic
+knitLogSeverity LogDebugMinimal = K.logDebug 1
+knitLogSeverity LogDebugVerbose = K.logDebug 3
+knitLogSeverity LogDebugAll = K.logDebug 10
+
 data CommandLine =
-  CLLocalDraft { stanChains :: Int, subDir :: Maybe Text }
-  | CLOnlineDraft { stanChains :: Int }
-  | CLPublished {stanChains :: Int }
+  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, subDir :: Maybe Text }
+  | CLOnlineDraft { logLevel :: LogLevel, stanChains :: Int }
+  | CLPublished {logLevel :: LogLevel, stanChains :: Int }
   deriving (Show, CmdArgs.Data, Typeable, Eq)
 
 localDraft = CLLocalDraft
              {
-               stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+               logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
+             , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
              , subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
              } CmdArgs.&= CmdArgs.help "Build local drafts" CmdArgs.&= CmdArgs.auto
 
 onlineDraft = CLOnlineDraft
-              { stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+              { logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
+              , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
               } CmdArgs.&= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
+
 published = CLPublished {
-  stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+  logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
+  , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
   } CmdArgs.&= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
 
 
@@ -96,14 +110,12 @@ commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, publ
   CmdArgs.&= CmdArgs.help "Build Posts"
 
 postStage :: CommandLine -> PostStage
-postStage (CLLocalDraft _ _) = LocalDraft
-postStage (CLOnlineDraft _) = OnlineDraft
-postStage (CLPublished _) = OnlinePublished
+postStage (CLLocalDraft _ _ _) = LocalDraft
+postStage (CLOnlineDraft _ _) = OnlineDraft
+postStage (CLPublished _ _) = OnlinePublished
 
 clStanChains :: CommandLine -> Int
-clStanChains (CLLocalDraft n _) = n
-clStanChains (CLOnlineDraft n) = n
-clStanChains (CLPublished n ) = n
+clStanChains = stanChains
 
 clStanParallel :: CommandLine -> StanParallel
 clStanParallel cl = StanParallel (clStanChains cl) MaxCores

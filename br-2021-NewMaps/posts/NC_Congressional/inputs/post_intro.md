@@ -1,5 +1,10 @@
 # New Maps, New Dem Strategy: Our NC Analysis
 
+**This post has been updated to reflect the [new NC maps][NCRuling] as well
+as using a slightly newer version of our model.**
+
+[NCRuling]: https://www.nytimes.com/2022/02/23/us/politics/north-carolina-maps-democrats.html
+
 The 2022 Congressional elections will involve new district maps in
 all 50 states.
 Districts will be reshaped, created, and eliminated,
@@ -62,7 +67,7 @@ to vary from the nationwide ones.
 We’ve also introduced some ability for the distributions of coefficients to have
 correlation structure, meaning that, for example, if within the data it was more likely
 that in states with higher-than-average turnout of white voters there was also
-higher-than-average turnout of Hispanic voters, the fit adjusts accordingly. Right now,
-this is limited to the race category: we treat sex, education and density as if their
-effects on turnout and preference are uncorrelated to each other and race.  Fixing that
-is our next step.  Stay tuned!
+higher-than-average turnout of Hispanic voters, the fit adjusts accordingly.
+In addition we’ve replaced our use of the log of the population density with 10 quantiles
+of population density. This is very similar but tames some odd results for extremely sparse
+or dense districts, something we see more often at the State Legislative level.
