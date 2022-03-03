@@ -138,7 +138,7 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
---    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
     newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
@@ -149,7 +149,7 @@ main = do
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM4"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.BinDensity 5 5)
+modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.BinDensity 10 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -448,7 +448,7 @@ newCongressionalMapPosts cmdLine = do
   ncPaths <-  postPaths "NC_Congressional" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewCDMapPostSpec "NC" ncPaths
-              <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "CST-13" ET.Congressional))
+              <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional))
     newCongressionalMapAnalysis False cmdLine ncNMPS postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -456,7 +456,7 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) Nothing)
+  let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublsihed))
   txPaths <- postPaths "TX_Congressional" cmdLine
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewCDMapPostSpec "TX" txPaths
