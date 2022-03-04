@@ -63,7 +63,8 @@ in the data to inform the predictions in a particular state, instead pooling all
 the data for fitting.
 In the new version, we are using partial-pooling at the state level, allowing the
 fitting procedure itself to decide how much to allow the state-level probabilities
-to vary from the nationwide ones.
+to vary from the nationwide ones. We’ve switched from using a binomial model to
+a beta-binomial, which we think is a better match for the data.
 We’ve also introduced some ability for the distributions of coefficients to have
 correlation structure, meaning that, for example, if within the data it was more likely
 that in states with higher-than-average turnout of white voters there was also

@@ -66,7 +66,7 @@ The historical model is no help here since it does not attempt to figure out who
 or who they are voting for in a demographically specific way.
 
 [DavesR]: https://davesredistricting.org/maps#aboutus
-[methods]: https://blueripple.github.io/research/StateLeg/VA1/Notes/Model_Details.html
+[methods]: https://blueripple.github.io/explainer/model/ElectionModel/post.html
 [VASLModel]: https://blueripple.github.io/research/StateLeg/VA1/post.html
 [CES]: https://cces.gov.harvard.edu
 [ACS]: https://www.census.gov/programs-surveys/acs/

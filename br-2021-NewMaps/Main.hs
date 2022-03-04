@@ -137,9 +137,10 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
+    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
     newCongressionalMapPosts cmdLine --stanParallelCfg parallel
-    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+--    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -158,6 +159,7 @@ postLocalDraft p mRSD = case mRSD of
   Nothing -> postDir BR.</> p BR.</> [Path.reldir|draft|]
   Just rsd -> postDir BR.</> p BR.</> rsd
 postOnline p =  [Path.reldir|research/NewMaps|] BR.</> p
+postOnlineExp p = [Path.reldir|explainer/model|] BR.</> p
 
 postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
           => Text
@@ -173,6 +175,22 @@ postPaths t cmdLine = do
     (postInputs postSpecificP)
     (postLocalDraft postSpecificP mRelSubDir)
     (postOnline postSpecificP)
+
+explainerPostPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
+                   => Text
+                   -> BR.CommandLine
+                   -> K.Sem r (BR.PostPaths BR.Abs)
+explainerPostPaths t cmdLine = do
+  let mRelSubDir = case cmdLine of
+        BR.CLLocalDraft _ _ mS -> maybe Nothing BR.parseRelDir $ fmap toString mS
+        _ -> Nothing
+  postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
+  BR.postPaths
+    BR.defaultLocalRoot
+    (postInputs postSpecificP)
+    (postLocalDraft postSpecificP mRelSubDir)
+    (postOnlineExp postSpecificP)
+
 
 -- data
 type CCESVoted = "CCESVoters" F.:-> Int
@@ -263,6 +281,13 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
                                   $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
     return $ (F.rcast . addRace5 <$> cdDataSER)
+
+modelDetails ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
+modelDetails cmdLine = do
+  let postInfoDetails = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 9 23) (Just BR.Unpublished))
+  detailsPaths <- explainerPostPaths "ElectionModel" cmdLine
+  BR.brNewPost detailsPaths postInfoDetails "ElectionModel"
+    $ BR.brAddPostMarkDownFromFile detailsPaths "_intro"
 
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
@@ -860,7 +885,7 @@ distType :: Int -> Int -> Int -> DistType
 distType safeRUpper safeDLower x
   | x < safeRUpper = SafeR
   | x >= safeRUpper && x < 50 = LeanR
-  | x >= 50 && x < safeDLower = LeanD
+  | x >= 50 && x <= safeDLower = LeanD
   | otherwise = SafeD
 
 brDistrictFramework :: (Int, Int) -> (Int, Int) -> Int -> Int -> Text

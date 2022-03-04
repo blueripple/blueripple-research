@@ -3,7 +3,8 @@ Based on the results above, we think there are four good options
 for Dem donors in NC: NC-1, NC-9, NC-13, and perhaps NC-6:
 
 - We think NC-1 is closer than it appears to the pundits who rely on historical data.
-It’s a good Dem donor investment as a possible pick-up opportunity.
+We think it’s a good Dem donor investment since it might be closer than it looks
+historically, expecially if the Republicans field a good candidate.
 
 Our findings in NC-1 provide a good opportunity to discuss why these models may differ.
 NC-1 looks like a safe-D district
@@ -20,7 +21,8 @@ safe-D district like NC-1 might look like a toss-up in our model -- including, b
 but maybe we've missed key things that make voters in NC-1 different from superficially "similar" voters in other districts nationwide.
 
 - Location-specific factors may support Dem voting. E.g., perhaps the Democratic party or local
-organizations are particularly well-organized in NC-1.
+organizations are particularly well-organized in NC-1 and that is reflected in the historical
+model suing those voters.
 
 - Republicans may, in fact, have underperformed relative to their potential.
 It's possible that more effective candidate recruitment, campaigning, or organizing could, in fact,
@@ -36,7 +38,8 @@ Here’s where we’re planning to take these analyses over the next few months:
 
 - We’re going to do the same type analysis in many (all?) of the states,
 in order to identify the best options for Dem donors in 2022 on both
-offense and defense nationwide.
+offense and defense nationwide. See [here][TXPost] for our take on the new
+Texas map.
 - We’re going to continue to refine and improve our demographic model–we’ll
 update this post and others as we do so. Feel free to contact us if you want
 more details on the mechanics, or if you’d like to propose changes or improvements.
@@ -46,6 +49,8 @@ more details on the mechanics, or if you’d like to propose changes or improvem
 If you want to stay up-to-date, please sign up for our email updates!
 We’re also on Twitter, Facebook, and Github.
 
+[TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
+
 ## 4. Coda #1: Demographics of new vs. old NC districts
 One thing we haven’t seen discussed very much is how redistricting in NC
 has changed the demographics in each district. As a way of putting the
@@ -54,7 +59,8 @@ population two different ways:
 
 - The first chart below shows each of NC’s proposed 2022 districts,
 with the population broken down by race/ethnicity (Black, Hispanic, Asian,
-white-non-Hispanic and other) and education (College Grad and non-College Grad).
+White-non-Hispanic and other) and education (college graduate and
+non-college graduate).
 Each bar also has a dot representing the (logarithmic) population density[^popDens]
 of the district.
 The scale for that dot is on the right-side axis of the chart.
