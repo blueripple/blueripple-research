@@ -1,4 +1,4 @@
-# AZ New State-Legislative Map
+# Arizona’s New State-Legislative Map
 
 Like all states, Arizona is locking down new state-legislative maps,
 which affect Democrat’s odds in 2022 races.
@@ -7,8 +7,7 @@ how can donors focus their attention on races with the biggest “bang for buck�
 for flipping tenuous GOP seats or protecting vulnerable Dems?
 
 To help answer that question, we’ve continued to build and refine
-a demographic
-model that predicts Democratic lean in each district based on its
+a demographic model that predicts Democratic lean in each district based on its
 makeup in terms of race, sex, education, and population density.
 We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support, either
@@ -17,8 +16,6 @@ for “offense” or “defense”.
 This post focuses on the Arizona state-legislature districts.
 We’ve done a similar analyses for Congressional districts
 in [Texas][TXPost] and [North Carolina][NCPost]
-(though the NC map is in flux due to litigation and we
-will update that post once a new map seems clear)
 Here’s what we’ll cover:
 
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html

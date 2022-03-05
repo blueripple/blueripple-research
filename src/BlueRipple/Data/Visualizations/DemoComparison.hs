@@ -63,7 +63,7 @@ demoCompare (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (label
       stack = GV.transform
               . GV.stack "Count" [labelName] "stack" "stack_end" [GV.StSort stackSort, GV.StOffset GV.StNormalize]
       encLabel = GV.position GV.X ([GV.PName labelName, GV.PmType GV.Nominal] ++ maybe [] (\x -> [GV.PSort [GV.CustomSort $ GV.Strings x]]) mLabelSort)
-      encCount = GV.position GV.Y [GV.PName "stack", GV.PTitle "Pct", GV.PmType GV.Quantitative]
+      encCount = GV.position GV.Y [GV.PName "stack", GV.PTitle "Fraction", GV.PmType GV.Quantitative]
       encCountEnd = GV.position GV.Y2 [GV.PName "stack_end", GV.PmType GV.Quantitative]
       encToolTips = GV.tooltips [[GV.TName cat1Name, GV.TmType GV.Nominal], [GV.TName cat2Name, GV.TmType GV.Nominal]]
       barEncoding = GV.encoding . encCat1 . encCat2 . encLabel . encCount . encCountEnd . encToolTips

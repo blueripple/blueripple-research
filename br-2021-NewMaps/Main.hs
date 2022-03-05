@@ -137,10 +137,10 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    modelDetails cmdLine
+--    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
     newCongressionalMapPosts cmdLine --stanParallelCfg parallel
---    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -340,11 +340,45 @@ modelDiagnostics cmdLine = do
   diagnosticsPaths <- postPaths "Diagnostics" cmdLine
   BR.brNewPost diagnosticsPaths postInfoDiagnostics "Diagnostics" $ do
     BR.brAddRawHtmlTable
+      "By Race"
+      (BHA.class_ "brTable")
+      (byCategoryColonnade "Race" (show . F.rgetField @DT.Race5C) mempty)
+      (BRE.byRace crossTabs)
+    BR.brAddRawHtmlTable
+      "By Sex"
+      (BHA.class_ "brTable")
+      (byCategoryColonnade "Sex" (show . F.rgetField @DT.SexC) mempty)
+      (BRE.bySex crossTabs)
+    BR.brAddRawHtmlTable
+      "By Education"
+      (BHA.class_ "brTable")
+      (byCategoryColonnade "Education" (show . F.rgetField @DT.CollegeGradC) mempty)
+      (BRE.byEducation crossTabs)
+    BR.brAddRawHtmlTable
       "Diagnostics"
       (BHA.class_ "brTable")
       (diagTableColonnade mempty)
       diagTable2
     pure ()
+
+byCategoryColonnade :: (F.ElemOf rs BRE.ModeledTurnout
+                       , F.ElemOf rs BRE.ModeledPref
+                       , F.ElemOf rs BRE.ModeledShare
+                       )
+                    => Text
+                    -> (F.Record rs -> Text)
+                    -> BR.CellStyle (F.Record rs) K.Cell
+                    -> K.Colonnade K.Headed (F.Record rs) K.Cell
+byCategoryColonnade catName f cas =
+  let mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
+      mDiff r = let x = mShare r in (2 * x - 1)
+  in  C.headed (BR.textToCell catName) (BR.toCell cas (BR.textToCell catName) catName (BR.textToStyledHtml . f))
+      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
+      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 diagTableColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -422,7 +456,7 @@ newStateLegMapPosts cmdLine = do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
     sldDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
-    let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths cdDRA sldDRA overlaps
+    let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths sldDRA cdDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -492,6 +526,20 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime acs_C)
       (K.liftActionWithCacheTime $ fmap (fmap fixACS . onlyState "TX") acs_C)
       (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
+
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  azPaths <- postPaths "AZ_Congressional" cmdLine
+  BR.brNewPost azPaths postInfoAZ "AZ" $ do
+    azNMPS <- NewCDMapPostSpec "AZ" azPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional))
+    let (NewCDMapPostSpec _ _ dra) = azNMPS
+    newCongressionalMapAnalysis False cmdLine azNMPS postInfoAZ
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap fixACS . onlyState "AZ") acs_C)
+      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedCDs_C)
+
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation

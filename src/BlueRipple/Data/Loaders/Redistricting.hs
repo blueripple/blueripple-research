@@ -47,11 +47,13 @@ fixRow pi r = Just $ pi F.<+> r
 
 -- this will drop lines where district number doesn't parse as an Int
 loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
-                              =>  RedistrictingPlanId
+                              => RedistrictingPlanId
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
 loadRedistrictingPlanAnalysis pi = do
   let noPlanErr = "No plan found for info:" <> show pi
   RedistrictingPlanFiles _ aFP <- K.knitMaybe noPlanErr $ M.lookup pi plans
-  let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi <> "-" <> F.rgetField @PlanName pi <> ".bin"
+  let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi
+                 <> "_" <> show (F.rgetField @ET.DistrictTypeC pi)
+                 <> "_" <> F.rgetField @PlanName pi <> ".bin"
   fileDep <- K.fileDependency $ toString aFP
   BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi)
