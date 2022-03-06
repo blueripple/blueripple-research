@@ -1355,6 +1355,49 @@ setupElexPData densRP vst = do
   dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
   return (elexPData, designMatrixRowElex densRP, raceVotesElex, dVotesInRaceElex, dmElexP)
 
+data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
+
+addModelForData :: Text
+                -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
+                -> DataSetAlpha
+                -> SB.StanVar
+                -> SB.StanVar
+                -> SB.StanBuilderM md gq (SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
+                                         , (SB.RowTypeTag r, SB.LLDetails md gq r)
+                                         )
+addModelForData dataSetLabel dataSetupM dataSetAlpha alpha beta = do
+  let addLabel x = x <> "_" <> dataSetLabel
+  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
+  dmColIndex <- case dm of
+    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+    (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
+  invSamples <- SMP.addParameter (addLabel "invSamples") SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
+  dsIxM <-  case dataSetAlpha of
+              NoDataSetAlpha -> return Nothing
+              DataSetAlpha -> do
+                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+                return $ Just ix
+  (dmC, centerF) <- DM.centerDataMatrix dm Nothing
+  let dist = SB.betaBinomialDist True counts
+      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
+      muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
+      muT ixM dm = case ixM of
+        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
+        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
+      betaA ixM is dm = muT ixM dm `SB.divide` SB.var is
+      betaB ixM is dm = SB.paren (SB.scalar "1.0" `SB.minus` muT ixM dm) `SB.divide` SB.var is
+      vecBetaA = SB.vectorizeExpr (addLabel "betaA") (betaA dsIxM invSamples dmC) (SB.dataSetName rtt)
+      vecBetaB = SB.vectorizeExpr (addLabel "betaB") (betaB dsIxM invSamples dmC) (SB.dataSetName rtt)
+  SB.inBlock SB.SBModel $ do
+    SB.useDataSetForBindings rtt $ do
+      betaA <- vecBetaA
+      betaB <- vecBetaB
+      SB.sampleDistV rtt dist (SB.var betaA, SB.var betaB) counts
+  let pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
+  SB.useDataSetForBindings rtt
+    $ SB.generatePosteriorPrediction rtt pp dist (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)
+  let llInfo = (rtt, SB.LLDetails dist (pure (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)) successes)
+  return (centerF, llInfo)
 
 electionModelDM :: forall rs ks r tr pr.
                    (K.KnitEffects r
