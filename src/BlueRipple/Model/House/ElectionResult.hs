@@ -1469,11 +1469,11 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
       psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model)
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
-        let dmColIndex = DM.designMatrixColDimName $ designMatrixRowCCES densityMatrixRowPart
+        let (dmColIndex, dmColExpr) = DM.designMatrixColDimBinding $ designMatrixRowCCES densityMatrixRowPart
             meanTurnout = 0.6
             logit x = Numeric.log (x / (1 - x))
             logitMeanTurnout = logit meanTurnout
-        elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) "ElectionsT"
+        elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
         alphaT <- SB.useDataSetForBindings elexTData $ do
           muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ SB.normal (Just $ SB.scalar $ show logitMeanTurnout) (SB.scalar "1"))
           sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ SB.normal Nothing (SB.scalar "1"))
@@ -1481,13 +1481,15 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
           SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) SB.stdNormal
 --          pure muAlphaT
         betaT <- SB.useDataSetForBindings elexTData $ do
+          SB.addDeclBinding' dmColIndex dmColExpr
+          SB.addUseBinding' dmColIndex dmColExpr
           muBetaT <- SMP.addParameter "muBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
 --          tauBetaT <- SMP.addParameter "tauBetaT" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
 --          corrBetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndex 4
 --          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
 --          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
           pure muBetaT
-        elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) "ElectionsP"
+        elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ SB.normal Nothing (SB.scalar "1"))
@@ -1495,6 +1497,8 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
           SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) SB.stdNormal
 --          pure muAlphaP
         betaP <- SB.useDataSetForBindings elexPData $ do
+          SB.addDeclBinding' dmColIndex dmColExpr
+          SB.addUseBinding' dmColIndex dmColExpr
           muBetaP <- SMP.addParameter "muBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "" (SB.Vectorized (one dmColIndex) SB.stdNormal)
 --          tauBetaP <- SMP.addParameter "tauBetaP" (SB.StanVector $ SB.NamedDim dmColIndex) "<lower=0>" (SB.Vectorized (one dmColIndex) SB.stdNormal)
 --          corrBetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndex 4
@@ -1504,7 +1508,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         (centerTF, llSet1) <- addModelForDataSet "ElexT" (setupElexTData densityMatrixRowPart) NoDataSetAlpha Nothing alphaT betaT SB.emptyLLSet
         (_, llSet2) <- addModelForDataSet "CPST" (setupCPSData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet1
         (_, llSet3) <- addModelForDataSet "CCEST" (setupCCESTData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet2
-        (centerPF, llSet4) <- addModelForDataSet "ElexP" (setupElexPData densityMatrixRowPart) NoDataSetAlpha Nothing alphaP betaP llSet3
+        (centerPF, llSet4) <- addModelForDataSet "ElexP" (setupElexPData densityMatrixRowPart (voteShareType model)) NoDataSetAlpha Nothing alphaP betaP llSet3
         let ccesP llS office
               = fmap snd
                 $ addModelForDataSet
@@ -1535,22 +1539,22 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
               betaB <- SB.vectorizeExpr "acsBetaBT" (betaB alphaT dmACS_T betaT) (SB.dataSetName acsData)
               return (betaA, betaB)
             psTExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
-            psTExpr (bA, bB) =  pure $ SB.familyExp distElexT (SB.var bA, SB.var bB)
+            psTExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
             -- FIXME (T back to P)
             psPPrecompute = do
               betaA <- SB.vectorizeExpr "acsBetaAP" (betaA alphaP dmACS_P betaP) (SB.dataSetName acsData)
               betaB <- SB.vectorizeExpr "acsBetaBP" (betaB alphaP dmACS_P betaP) (SB.dataSetName acsData)
               return (betaA, betaB)
             psPExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
-            psPExpr (bA, bB) =  pure $ SB.familyExp distElexP (SB.var bA, SB.var bB)
+            psPExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
             psDVotePreCompute = do
               betaTs <- psTPrecompute
               betaPs <- psPPrecompute
               return (betaTs, betaPs)
             psDVoteExpr :: ((SB.StanVar, SB.StanVar), (SB.StanVar, SB.StanVar))  -> SB.StanBuilderM md gq SB.StanExpr
             psDVoteExpr ((bAT, bBT), (bAP, bBP)) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distElexT (SB.var bAT, SB.var bBT)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distElexP (SB.var bAP, SB.var bBP)
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.betaMu (SB.var bAT) (SB.var bBT)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.betaMu (SB.var bAP) (SB.var bBP)
               pure $ SB.var pT `SB.times` SB.var pD
 
             turnoutPS = ((psTPrecompute, psTExpr), Nothing)
@@ -1589,15 +1593,15 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         let psPreCompute = do
               dmPS_T <- centerTF SC.GQData dmPS' (Just "T")
               dmPS_P <- centerPF SC.GQData dmPS' (Just "P")
-              psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaAT Nothing invSamplesElexT dmPS_T) (SB.dataSetName psData)
-              psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaBT Nothing invSamplesElexT dmPS_T) (SB.dataSetName psData)
-              psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaAP Nothing invSamplesElexP dmPS_P) (SB.dataSetName psData)
-              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaBP Nothing invSamplesElexP dmPS_P) (SB.dataSetName psData)
+              psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaA alphaT dmPS_T betaT) (SB.dataSetName psData)
+              psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaB alphaT dmPS_T betaT) (SB.dataSetName psData)
+              psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaA alphaP dmPS_P betaP) (SB.dataSetName psData)
+              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaB alphaP dmPS_P alphaP) (SB.dataSetName psData)
               pure (psBetaAT, psBetaBT, psBetaAP, psBetaBP)
 
             psExprF (bAT, bBT, bAP, bBP) = do --(psT_v, psP_v) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.familyExp distElexT (SB.var bAT, SB.var bBT)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.familyExp distElexP (SB.var bAP, SB.var bBP)
+              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.betaMu (SB.var bAT) (SB.var bBT)
+              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.betaMu (SB.var bAP) (SB.var bBP)
               pure $ SB.var pT `SB.times` SB.var pD
 
         let postStrat =

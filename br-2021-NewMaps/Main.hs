@@ -148,7 +148,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stanDM4"
+modelDir = "br-2021-NewMaps/stanDM5"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
 modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.BinDensity 10 5)
 

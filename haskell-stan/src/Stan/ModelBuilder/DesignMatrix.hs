@@ -115,9 +115,9 @@ rowPartFromFunctions name fs = DesignMatrixRowPart name (length fs) toVec
 addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq SB.StanVar
 addDesignMatrix rtt dmr = SB.add2dMatrixJson rtt (matrixFromRowData dmr) ""  (SB.NamedDim (SB.dataSetName rtt))
 
-designMatrixColDimName ::  DesignMatrixRow r -> SB.IndexKey
-designMatrixColDimName dmr = dmName dmr <> "_Cols"
-{-# INLINEABLE designMatrixColDimName #-}
+designMatrixColDimBinding ::  DesignMatrixRow r -> (SB.IndexKey, SB.StanExpr)
+designMatrixColDimBinding dmr = (dmName dmr <> "_Cols", SB.name $ "K_" <> dmName dmr)
+{-# INLINEABLE designMatrixColDimBinding #-}
 
 designMatrixIndexes :: DesignMatrixRow r -> [(Text, Int, Int)]
 designMatrixIndexes (DesignMatrixRow _ dmps)= SL.scan rowPartScan dmps where
