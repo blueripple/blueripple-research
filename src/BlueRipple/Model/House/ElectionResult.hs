@@ -1398,8 +1398,8 @@ addModelForDataSet dataSetLabel dataSetupM dataSetAlpha centerM alpha beta llSet
     SB.useDataSetForBindings rtt $ do
       betaA <- vecBetaA
       betaB <- vecBetaB
-      SB.sampleDistV rtt dist (SB.var betaA, SB.var betaB) counts
-  let llDetails =  SB.LLDetails dist (pure (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)) counts
+      SB.sampleDistV rtt dist (SB.var betaA, SB.var betaB) successes
+  let llDetails =  SB.LLDetails dist (pure (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)) successes
       llSet' = SB.addToLLSet rtt llDetails llSet
       pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
   SB.useDataSetForBindings rtt
@@ -1489,6 +1489,12 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
 --          betaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaT tauBetaT corrBetaT
 --          SMP.addHierarchicalVector "betaT" dmColIndex stateGroup (SMP.NonCentered betaTNonCenteredF) SB.stdNormal
           pure muBetaT
+
+
+        (centerTF, llSet1) <- addModelForDataSet "ElexT" (setupElexTData densityMatrixRowPart) NoDataSetAlpha Nothing alphaT betaT SB.emptyLLSet
+        (_, llSet2) <- addModelForDataSet "CPST" (setupCPSData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet1
+        (_, llSet3) <- addModelForDataSet "CCEST" (setupCCESTData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet2
+
         elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized SB.stdNormal)
@@ -1505,9 +1511,6 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
 --          betaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muBetaP tauBetaP corrBetaP
 --          SMP.addHierarchicalVector "betaP" dmColIndex stateGroup (SMP.NonCentered betaPNonCenteredF) SB.stdNormal
           pure muBetaP
-        (centerTF, llSet1) <- addModelForDataSet "ElexT" (setupElexTData densityMatrixRowPart) NoDataSetAlpha Nothing alphaT betaT SB.emptyLLSet
-        (_, llSet2) <- addModelForDataSet "CPST" (setupCPSData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet1
-        (_, llSet3) <- addModelForDataSet "CCEST" (setupCCESTData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT betaT llSet2
         (centerPF, llSet4) <- addModelForDataSet "ElexP" (setupElexPData densityMatrixRowPart (voteShareType model)) NoDataSetAlpha Nothing alphaP betaP llSet3
         let ccesP llS office
               = fmap snd
