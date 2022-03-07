@@ -1382,7 +1382,7 @@ addModelForDataSet dataSetLabel dataSetupM dataSetAlpha centerM alpha beta llSet
   (dmC, centerF) <- case centerM of
     Nothing -> DM.centerDataMatrix dm Nothing
     Just f -> do
-      dmC' <- f SC.ModelData dm (Just dataSetLabel)
+      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
       return (dmC', f)
   let dist = SB.betaBinomialDist True counts
       dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
@@ -1524,13 +1524,13 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
                 llS
             llFoldM = FL.FoldM ccesP (return llSet4) return
         llSet <- FL.foldM llFoldM (votesFrom model)
-
+        SB.generateLogLikelihood' llSet
 
         -- post-stratification for crosstabs
         -- NB: invSamples does not matter for expectations
         let  dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
              muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
-             mu alpha dm beta =  muE (SB.var alpha) (SB.var dm) (SB.var betaT)
+             mu alpha dm beta =  muE (SB.var alpha) (SB.var dm) (SB.var beta)
              betaA alpha dm beta = mu alpha dm beta
              betaB alpha dm beta =  SB.paren (SB.scalar "1.0" `SB.minus` mu alpha dm beta)
         acsData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.GQData "ACS"
@@ -1538,16 +1538,15 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         dmACS_T <- SB.useDataSetForBindings acsData $ centerTF SC.GQData dmACS' (Just "T")
         dmACS_P <- SB.useDataSetForBindings acsData $ centerPF SC.GQData dmACS' (Just "P")
         let psTPrecompute = do
-              betaA <- SB.vectorizeExpr "acsBetaAT" (betaA alphaT dmACS_T betaT) (SB.dataSetName acsData)
-              betaB <- SB.vectorizeExpr "acsBetaBT" (betaB alphaT dmACS_T betaT) (SB.dataSetName acsData)
-              return (betaA, betaB)
+              betaA' <- SB.vectorizeExpr "acsBetaAT" (betaA alphaT dmACS_T betaT) (SB.dataSetName acsData)
+              betaB' <- SB.vectorizeExpr "acsBetaBT" (betaB alphaT dmACS_T betaT) (SB.dataSetName acsData)
+              return (betaA', betaB')
             psTExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psTExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
-            -- FIXME (T back to P)
             psPPrecompute = do
-              betaA <- SB.vectorizeExpr "acsBetaAP" (betaA alphaP dmACS_P betaP) (SB.dataSetName acsData)
-              betaB <- SB.vectorizeExpr "acsBetaBP" (betaB alphaP dmACS_P betaP) (SB.dataSetName acsData)
-              return (betaA, betaB)
+              betaA' <- SB.vectorizeExpr "acsBetaAP" (betaA alphaP dmACS_P betaP) (SB.dataSetName acsData)
+              betaB' <- SB.vectorizeExpr "acsBetaBP" (betaB alphaP dmACS_P betaP) (SB.dataSetName acsData)
+              return (betaA', betaB')
             psPExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psPExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
             psDVotePreCompute = do
@@ -1599,7 +1598,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
               psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaA alphaT dmPS_T betaT) (SB.dataSetName psData)
               psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaB alphaT dmPS_T betaT) (SB.dataSetName psData)
               psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaA alphaP dmPS_P betaP) (SB.dataSetName psData)
-              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaB alphaP dmPS_P alphaP) (SB.dataSetName psData)
+              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaB alphaP dmPS_P betaP) (SB.dataSetName psData)
               pure (psBetaAT, psBetaBT, psBetaAP, psBetaBP)
 
             psExprF (bAT, bBT, bAP, bBP) = do --(psT_v, psP_v) = do
