@@ -13,6 +13,8 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0 #-}
+{-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
+
 module BlueRipple.Data.CensusLoaders where
 
 import qualified BlueRipple.Data.DemographicTypes as DT

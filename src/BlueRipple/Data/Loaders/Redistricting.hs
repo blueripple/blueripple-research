@@ -13,7 +13,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-
+{-# OPTIONS_GHC -fsimpl-tick-factor=200 #-}
 module BlueRipple.Data.Loaders.Redistricting
   (
     module BlueRipple.Data.Loaders.Redistricting

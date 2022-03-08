@@ -1,49 +1,71 @@
-packages: ./ ../data-sets ~/DataScience/heidi ~/DataScience/Frames-streamly
+packages: ./ ../data-sets ~/DataScience/heidi ~/DataScience/Frames-streamly ~/DataScience/Frames-utils  ~/DataScience/Frames-hvega
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
-allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable, beam-migrate
+--allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable, beam-migrate
 --ghc 9.2
---allow-newer: base
---           , template-haskell
---           , ghc-prim
---           , ghc-bignum
---           , bytestring
---           , time
---           , hashable
---           , semirings
---           , glm-haskell:polysemy
---           , polysemy-RandomFu:polysemy
---           , polysemy-RandomFu:polysemy-plugin
---           , profunctors
---           , aeson
---           , lens
---allow-newer: polysemy
---          , relude
---           , base
---           , ghc-prim
---           , lens
---           , template-haskell
---           , polysemy-plugin:ghc
---           , cereal-time:time
---          , profunctors
---           , hvega
---           , hashable
---           , knit-haskell
---          , knit-haskell:doctemplates
---         , knit-haskell:pandoc
---           , beam-core:aeson
---           , beam-migrate:aeson
---           , beam-sqlite:aeson
---           , glm-haskell:extra
--- hashable because of foldl-statistics
-
+allow-newer: base, ghc-prim, bytestring, polysemy-zoo:constraints, template-haskell, random-fu, profunctors, time, hashable, integer-gmp, polysemy, lens, semirings, vinyl, aeson, hvega
 -- ghc 9.0 fixes not yet on hackage
 --source-repository-package
 --  type: git
 --  location: https://github.com/andrewthad/hs-memory
 --  tag: 683b402965e68800337af8f9b237d28be273c0d8
 --
+
+-- ghc 9.2
+source-repository-package
+  type: git
+  location: https://github.com/srid/validity
+  tag: f7982549b95d0ab727950dc876ca06b1862135ba
+  subdir: validity
+
+source-repository-package
+  type: git
+  location: https://github.com/tfausak/hs-memory
+  tag: 3cf661a8a9a8ac028df77daa88e8d65c55a3347a
+
+source-repository-package
+  type: git
+  location: https://github.com/sullyj3/relude
+  tag: 8f7e3a3be033fe11dbd00ebcf5cd7b00d1e459b6
+
+source-repository-package
+  type: git
+  location: https://github.com/josephcsible/cryptonite
+  tag: 0d04e90dc33b6aeaf8a5686921d6999599429fb0
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/polysemy-zoo
+  tag: 0e67a55971c74589319df3e23cb8ba9f07b33cef
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/random-fu
+  tag: a21105b269c77266bd74ec4a31e0924f7000e69a
+  subdir: random-source
+
+
+source-repository-package
+  type: git
+  location: https://github.com/L-as/flat
+  tag: 41a040c413351e021982bb78bd00f750628f8060
+
+
+-- for Frames-streamly
+source-repository-package
+  type: git
+  location:https://github.com/hasktorch/pipes-text
+  tag: d4805e84327e266daa730d23982db3172f226cac
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/composewell/fusion-plugin
+--  tag: 09f10b7f927c57f14187a978dbc0e531e5d32a21
+
+
+
+-- end ghc 9.2
 
 source-repository-package
   type: git
@@ -64,12 +86,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: 08a2fb7567844b9b948712cb53bd5cc6f6e1eb95
+  tag: fbe46c4d5bff1e539356d3dcf7ee92401f3311f1
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag: 4e762c9ff87d1e064912847c3591f75d0126a323
+  tag: 539696e16607c75a3cda7464d80f6c77d4ad2203
 
 source-repository-package
   type: git
@@ -82,35 +104,37 @@ source-repository-package
 --  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
 
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
 
 --source-repository-package
 --  type: git
 --  location: https://github.com/adamConnerSax/Frames-streamly
 --  tag: 0ff0622ddbe9487263873232f69843822deb13bf
 
-source-repository-package
-  type: git
-  location:  https://github.com/Quid2/flat
-  tag: 8a8baa4a0b762bd052218114830497ff8fbe008c
+--source-repository-package
+--  type: git
+--  location:  https://github.com/Quid2/flat
+--  tag: 8a8baa4a0b762bd052218114830497ff8fbe008c
+
+
 
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
   tag: 5b34afdc5ade9d09131db1e7a497b9fc37295ed8
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-hvega
-  tag: c512a6dcefba27943dd0f7ee7cfb942e4231f6e7
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-hvega
+--  tag: c512a6dcefba27943dd0f7ee7cfb942e4231f6e7
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
-  tag: 10c1d13a0edfad2ffe24731beaffaf2862e63944
+  tag: c10b6564524a83198389690f5c819e9405ba84f6
 
 source-repository-package
   type: git

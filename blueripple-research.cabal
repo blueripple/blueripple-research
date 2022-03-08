@@ -41,11 +41,11 @@ common deps
                , groups
                , heidi >= 0.1.0 && < 0.2
                , here
-               , hvega >= 0.7.0 && < 0.12
+               , hvega >= 0.7.0 && < 0.13
                , hvega-utils >= 0.3.0 && < 0.4
                , hmatrix
                , knit-haskell >= 0.8.0 && < 0.11
-               , lens
+               , lens >= 0.4 && < 0.6
                , lucid
                , massiv >= 1.0.0 && < 1.1
                , microlens-platform >= 0.4.0 && < 0.5
@@ -53,7 +53,7 @@ common deps
                , optics >= 0.3 && < 0.5
                , path >= 0.8 && < 0.9
                , pipes
-               , polysemy >= 1.6 && < 1.7
+               , polysemy >= 1.6 && < 1.8
                , polysemy-plugin
                , primitive >= 0.7.0.0
                , profunctors
@@ -70,7 +70,7 @@ common deps
                , tsne >= 1.2 && < 1.4
                , vector >= 0.11 && < 0.13
                , vector-builder >= 0.3.7 && < 0.4
-               , vinyl >= 0.13 && < 0.14
+               , vinyl >= 0.13 && < 0.15
 
 library  haskell-stan
   build-depends: base >= 4.13 && < 4.16
@@ -114,7 +114,7 @@ library  haskell-stan
                , transformers-compat >= 0.6 && < 0.7
                , vector
                , vector-builder >= 0.3.7 && < 0.4
-               , vinyl >= 0.13 && < 0.14
+               , vinyl >= 0.13 && < 0.15
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
          , Relude.Extra)
@@ -390,8 +390,8 @@ executable mrp-model
                , finite-typelits >= 0.1.4.2
                , grid >= 7.8 && < 7.10
                , hashable
-               , lens >= 4.16 && < 5
-               , log-domain < 0.13
+               , lens >= 4.16 && < 6
+               , log-domain >= 0.13.2 && < 0.14
                , mtl >= 2.1 && < 2.3.0
                , pandoc
                , polysemy-RandomFu

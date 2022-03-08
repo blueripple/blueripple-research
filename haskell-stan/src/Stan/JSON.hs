@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,6 +10,9 @@ import qualified Frames as F
 import qualified Control.Foldl as FL
 import qualified Control.Exception as X
 import qualified Data.Aeson as A
+#if MIN_VERSION_aeson(2,0,0)
+import qualified Data.Aeson.Key as A
+#endif
 import qualified Data.Aeson.Encoding as A
 import qualified Data.Array as Array
 import qualified Data.ByteString.Lazy as BL
@@ -145,12 +149,21 @@ vecEncoder textA encodeF toA = first stanF <$> FL.premap toA encodeF where
 jsonObjectF :: Foldable f => f (StanJSONF row A.Series) -> StanJSONF row A.Series
 jsonObjectF = fold
 
+#if MIN_VERSION_aeson(2,0,0)
+aesonKey :: T.Text -> A.Key
+aesonKey = A.fromText
+#else
+aesonKey :: T.Text -> T.Text
+aesonKey = id
+#endif
+{-# INLINE aesonKey #-}
+
 constDataF :: A.ToJSON a => T.Text -> a -> StanJSONF row A.Series
-constDataF name val = pure (name A..= val)
+constDataF name val = pure (aesonKey name A..= val) where
 
 namedF :: A.ToJSON a => T.Text -> FL.Fold row a -> StanJSONF row A.Series
 namedF name fld = FL.generalize seriesF where
-  seriesF = fmap (name A..=) fld
+  seriesF = fmap (aesonKey name A..=) fld
 
 jsonArrayF :: A.ToJSON a => (row -> a) -> StanJSONF row A.Value
 jsonArrayF toA = FL.generalize $ FL.Fold step init extract where
@@ -176,7 +189,7 @@ jsonArrayEF toMA = FL.FoldM step init extract where
 
 
 valueToPairF :: T.Text -> StanJSONF row A.Value -> StanJSONF row A.Series
-valueToPairF name = fmap (name A..=)
+valueToPairF name = fmap (aesonKey name A..=)
 
 enumerate :: Ord a => Int -> IntEncoderF a
 enumerate start = FL.Fold step init done where
