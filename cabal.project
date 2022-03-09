@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ~/DataScience/heidi ~/DataScience/Frames-streamly ~/DataScience/Frames-utils  ~/DataScience/Frames-hvega
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 -- ghc 8.10
@@ -98,21 +98,21 @@ source-repository-package
   location: https://github.com/adamConnerSax/map-reduce-folds
   tag: e8928f5db385fdf18bbe7c613ff572e284c7adf3
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/heidi
---  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/heidi
+  tag: 83e0f7e6ba80baaa18ab7daafe7083828fc74d60
 
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: 7a6d7cb069eedbe4a4f3a83730406f943576e2c0
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-streamly
---  tag: 0ff0622ddbe9487263873232f69843822deb13bf
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: be822885cf48595058295c1ad4a9849f7765649a
 
 --source-repository-package
 --  type: git
@@ -126,10 +126,10 @@ source-repository-package
   location: https://gitlab.com/adamCS/Frames-serialize
   tag: 5b34afdc5ade9d09131db1e7a497b9fc37295ed8
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-hvega
---  tag: c512a6dcefba27943dd0f7ee7cfb942e4231f6e7
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: 22a7be1d433ff88042b9a101868ccbbeac9136d0
 
 source-repository-package
   type: git
