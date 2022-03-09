@@ -1,0 +1,176 @@
+packages: ./ ../data-sets ~/DataScience/heidi ~/DataScience/Frames-streamly
+jobs: 4
+with-compiler: ghc
+-- ghc 8.10
+allow-newer: glm-haskell:polysemy, polysemy-RandomFu:polysemy, base, dlist, cereal-time:time, ghc-prim, pandoc:random, knit-haskell, relude, extra, map-reduce-folds, foldl-statistics:hashable, beam-migrate
+--ghc 9.2
+--allow-newer: base
+--           , template-haskell
+--           , ghc-prim
+--           , ghc-bignum
+--           , bytestring
+--           , time
+--           , hashable
+--           , semirings
+--           , glm-haskell:polysemy
+--           , polysemy-RandomFu:polysemy
+--           , polysemy-RandomFu:polysemy-plugin
+--           , profunctors
+--           , aeson
+--           , lens
+--allow-newer: polysemy
+--          , relude
+--           , base
+--           , ghc-prim
+--           , lens
+--           , template-haskell
+--           , polysemy-plugin:ghc
+--           , cereal-time:time
+--          , profunctors
+--           , hvega
+--           , hashable
+--           , knit-haskell
+--          , knit-haskell:doctemplates
+--         , knit-haskell:pandoc
+--           , beam-core:aeson
+--           , beam-migrate:aeson
+--           , beam-sqlite:aeson
+--           , glm-haskell:extra
+-- hashable because of foldl-statistics
+
+-- ghc 9.0 fixes not yet on hackage
+--source-repository-package
+--  type: git
+--  location: https://github.com/andrewthad/hs-memory
+--  tag: 683b402965e68800337af8f9b237d28be273c0d8
+--
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/hs-cmdstan
+  tag: 0cdb6d634faeedf8728a37b5ae4aecaf05022bb2
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/blueripple/data-sets
+--  tag: d7f3238eba6726c12ac89e0f6fd00fa2f4c1704c
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/FEC
+  subdir: OpenFEC-beam
+  tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: 08a2fb7567844b9b948712cb53bd5cc6f6e1eb95
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-map-reduce
+  tag: 4e762c9ff87d1e064912847c3591f75d0126a323
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/map-reduce-folds
+  tag: e8928f5db385fdf18bbe7c613ff572e284c7adf3
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/heidi
+--  tag: cd3112829c256b6ec81b5656bd4725e7403793e4
+
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: 3a22510326a741bebd1ea64ea021d3e4392e70e5
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-streamly
+--  tag: 0ff0622ddbe9487263873232f69843822deb13bf
+
+source-repository-package
+  type: git
+  location:  https://github.com/Quid2/flat
+  tag: 8a8baa4a0b762bd052218114830497ff8fbe008c
+
+source-repository-package
+  type: git
+  location: https://gitlab.com/adamCS/Frames-serialize
+  tag: 5b34afdc5ade9d09131db1e7a497b9fc37295ed8
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: c512a6dcefba27943dd0f7ee7cfb942e4231f6e7
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/hvega-utils
+  tag: 10c1d13a0edfad2ffe24731beaffaf2862e63944
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/data-science-utils
+  tag: af09df26bc9f64c5a95d9d0d4ed1830e1e8e59e2
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/hcholmod
+  tag: 176736ca6cb8af78996a061df09821b78677c519
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/glm-haskell
+  tag: 5b99cc78babc62f4581ef015e621e0ae1dc4eaa8
+
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/tsne
+  tag: 89c131b4ca5aa5250fae2cc8b11dbad6fb8079fe
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/polysemy-Extra
+--  subdir: polysemy-RandomFu
+--  tag: 1d40f687152e0c06c99efd6fe2c42e27aea6b76d
+
+-- Heidi
+--source-repository-package
+--  type: git
+--  location: https://github.com/ocramz/heidi
+--  tag: 172e4337a1f730c038ba10f48ea6bb3aa8acbf1f
+
+-- Beam
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-core
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-sqlite
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+
+--source-repository-package
+--    type: git
+--    location: https://github.com/haskell-beam/beam
+--    subdir: beam-migrate
+--    tag: 8049cbfa78ca6da12e19c66d81cf4cd9a87cbc65
+
+-- ghc 9.0
+--source-repository-package
+--    type: git
+--    location: https://github.com/LaurentRDC/foundation
+--    subdir: basement
+--    tag: d02ab182c977272ae4089ce20d15d82fc4fcd5e8
+
+--source-repository-package
+--    type: git
+--    location: https://github.com/galenhuntington/bytestring-strict-builder
+--    tag: 8a254ef1a42ec577f722e42f163d668d7fbcf0ad

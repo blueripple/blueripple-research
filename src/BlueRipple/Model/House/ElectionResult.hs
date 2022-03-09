@@ -1500,7 +1500,7 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
       officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
       modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_Inc_" <> officesNamePart
       jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
-      psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model)
+      psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model) <> "_" <> officesNamePart
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
         let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding $ designMatrixRowCCES densityMatrixRowPart DMTurnout (const 0)
