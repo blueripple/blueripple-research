@@ -1497,8 +1497,9 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
         _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
-      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_Inc"
-      jsonDataName = "DM_" <> dataLabel model <> "_" <> show datYear
+      officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
+      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_Inc_" <> officesNamePart
+      jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
       psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model)
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
       dataAndCodeBuilder = do
