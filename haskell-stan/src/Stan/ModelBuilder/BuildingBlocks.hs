@@ -150,6 +150,9 @@ emptyLLSet = DHash.empty
 
 addToLLSet :: SB.RowTypeTag r -> LLDetails md gq r -> LLSet md gq  -> LLSet md gq
 addToLLSet rtt d llSet = DHash.insertWith addDetailsLists rtt (LLDetailsList [d]) llSet
+
+mergeLLSets ::  LLSet md gq  -> LLSet md gq -> LLSet md gq
+mergeLLSets = DHash.unionWith addDetailsLists
 --data Res r = Res
 
 generateLogLikelihood' :: LLSet md gq -> SB.StanBuilderM md gq ()

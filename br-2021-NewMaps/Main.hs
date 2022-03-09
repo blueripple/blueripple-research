@@ -298,7 +298,7 @@ modelDiagnostics cmdLine = do
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
-      presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.electionRows) $ ccesAndCPSEM_C
+      presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.stateElectionRows) $ ccesAndCPSEM_C
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       name = "Diagnostic"
@@ -355,7 +355,7 @@ modelDiagnostics cmdLine = do
       (byCategoryColonnade "Education" (show . F.rgetField @DT.CollegeGradC) mempty)
       (BRE.byEducation crossTabs)
     BR.brAddRawHtmlTable
-      "Diagnostics"
+      "Diagnostics By State"
       (BHA.class_ "brTable")
       (diagTableColonnade mempty)
       diagTable2
@@ -377,14 +377,15 @@ byCategoryColonnade catName f cas =
   in  C.headed (BR.textToCell catName) (BR.toCell cas (BR.textToCell catName) catName (BR.textToStyledHtml . f))
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
-      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
-      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
+      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 diagTableColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
       mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
+      mDiff r = let x = mShare r in (2 * x - 1)
       cvap = F.rgetField @PUMS.Citizens
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
@@ -407,8 +408,9 @@ diagTableColonnade cas =
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw 2-party D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))
       <> C.headed "CCES (PS) 2-party D Share" (BR.toCell cas "CCES D Share" "CCES D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesDShare))
-      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
-      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 newStateLegMapPosts cmdLine = do
