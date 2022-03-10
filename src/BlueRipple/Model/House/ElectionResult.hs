@@ -1151,15 +1151,17 @@ groupBuilderDM model psGroup states psKeys = do
         cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
         SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       officeFilterF offices r = Set.member (F.rgetField @ET.Office r) offices
-      allElexRows :: CCESAndCPSEM -> F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
-      allElexRows x = stateElectionRows x <> (fmap F.rcast $ cdElectionRows x)
-      loadElexTurnoutData :: Set ET.OfficeT -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
-      loadElexTurnoutData offices = do
-        elexTurnoutData <- SB.addModelDataToGroupBuilder "ElectionsT" (SB.ToFoldable $ F.filterFrame (officeFilterF offices) . allElexRows)
+      elexRows :: CCESAndCPSEM -> F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
+      elexRows x = F.filterFrame ((>0) . F.rgetField @TVotes) -- filter out anything with no votes!
+                   $ F.filterFrame (officeFilterF $ votesFrom model)
+                   $ stateElectionRows x <> (fmap F.rcast $ cdElectionRows x)
+      loadElexTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
+      loadElexTurnoutData = do
+        elexTurnoutData <- SB.addModelDataToGroupBuilder "ElectionsT" (SB.ToFoldable elexRows)
         SB.addGroupIndexForData stateGroup elexTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-      loadElexPrefData :: Set ET.OfficeT -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
-      loadElexPrefData offices = do
-        elexPrefData <- SB.addModelDataToGroupBuilder "ElectionsP" (SB.ToFoldable $ F.filterFrame (officeFilterF offices) . allElexRows)
+      loadElexPrefData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) ()
+      loadElexPrefData = do
+        elexPrefData <- SB.addModelDataToGroupBuilder "ElectionsP" (SB.ToFoldable elexRows)
         SB.addGroupIndexForData stateGroup elexPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       loadCCESTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec PUMSWithDensityEM, F.FrameRec rs) () = do
         ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable ccesEMRows)
@@ -1169,10 +1171,10 @@ groupBuilderDM model psGroup states psKeys = do
         ccesPrefData <- SB.addModelDataToGroupBuilder ("CCESP_" <> show office)
                         (SB.ToFoldable $ F.filterFrame (not . zeroCCESVotes office vst) . ccesEMRows)
         SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  loadElexTurnoutData $ votesFrom model
+  loadElexTurnoutData
   loadCPSTurnoutData
   loadCCESTurnoutData
-  loadElexPrefData $ votesFrom model
+  loadElexPrefData
   when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
@@ -1511,19 +1513,19 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
             cauchy m s = SB.cauchy (Just $ SB.scalar $ show m) (SB.scalar $ show s)
         elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
         alphaT <- SB.useDataSetForBindings elexTData $ do
-          muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 3)
-          sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 3)
+          muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 1)
+          sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
           alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
-          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 3
+          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
 --          pure muAlphaT
         thetaT <- SB.useDataSetForBindings elexTData $ do
           SB.addDeclBinding' dmColIndexT dmColExprT
           SB.addUseBinding' dmColIndexT dmColExprT
-          muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 3))
---          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 3))
+          muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 1))
+--          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 1))
 --          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 4
 --          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
---          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 3)
+--          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 1)
           pure muThetaT
         (centerTF, llSetT1) <- addModelForDataSet "ElexT" (setupElexTData densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addModelForDataSet "CPST" (setupCPSData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT1
@@ -1532,19 +1534,19 @@ electionModelDM clearCaches cmdLine mStanParams modelDir model datYear (psGroup,
         elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES densityMatrixRowPart dmPrefType (const 0)
         alphaP <- SB.useDataSetForBindings elexPData $ do
-          muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 3)
-          sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 3)
+          muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
+          sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
           alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
-          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 3)
+          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 1)
 --          pure muAlphaP
         thetaP <- SB.useDataSetForBindings elexPData $ do
           SB.addDeclBinding' dmColIndexP dmColExprP
           SB.addUseBinding' dmColIndexP dmColExprP
-          muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 3))
---          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 3))
+          muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 1))
+  --          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 1))
 --          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 4
 --          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
---          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 3)
+--          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 1)
           pure muThetaP
         (centerPF, llSetP1) <- addModelForDataSet "ElexP" (setupElexPData densityMatrixRowPart dmPrefType (voteShareType model)) NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do

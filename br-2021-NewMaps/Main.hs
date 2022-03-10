@@ -150,7 +150,7 @@ main = do
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM5"
 --dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (one ET.President) (BRE.BinDensity 10 5)
+modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President, ET.House]) (BRE.BinDensity 10 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
