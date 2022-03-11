@@ -1980,5 +1980,5 @@ indexStanResults :: (Show k, Ord k)
 indexStanResults im v = do
   when (IM.size im /= Vector.length v)
     $ Left $
-    "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " result and IntMap = " <> show im
+    "Mismatched sizes in indexStanResults. Result vector has " <> show (Vector.length v) <> " results and IntMap = " <> show im
   return $ M.fromList $ zip (IM.elems im) (Vector.toList v)

@@ -32,14 +32,14 @@ data ModelRun = MRNoGQ | MROnlyLL | MRFull deriving (Show, Eq)
 llSuffix :: Text
 llSuffix = "_LL"
 
-modelSuffix :: ModelRun -> Text
-modelSuffix MRNoGQ = "_noGQ"
-modelSuffix MROnlyLL = "_onlyLL"
-modelSuffix MRFull = "_GQ"
+modelSuffix :: ModelRun -> RunnerInputNames -> Text
+modelSuffix MRNoGQ _ = "_noGQ"
+modelSuffix MROnlyLL _ = "_onlyLL"
+modelSuffix MRFull rin = "_" <> fromMaybe "GQ" (rinGQ rin)
 {-# INLINEABLE modelSuffix #-}
 
-unmergedSamplesSuffix :: ModelRun -> Text
-unmergedSamplesSuffix = modelSuffix
+unmergedSamplesSuffix :: ModelRun -> RunnerInputNames -> Text
+unmergedSamplesSuffix mr rin = modelSuffix mr rin
 {-# INLINEABLE unmergedSamplesSuffix #-}
 
 mergedSamplesSuffix :: ModelRun -> Text
@@ -49,7 +49,7 @@ mergedSamplesSuffix MRFull = ""
 {-# INLINEABLE mergedSamplesSuffix #-}
 
 modelName :: ModelRun -> RunnerInputNames -> Text
-modelName mr rin = rinModel rin <> modelSuffix mr
+modelName mr rin = rinModel rin <> modelSuffix mr rin
 {-# INLINEABLE modelName #-}
 
 modelDirPath :: RunnerInputNames -> Text -> FilePath
@@ -157,7 +157,7 @@ dataDependency rin = do
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r)
 
 outputPrefix :: ModelRun -> RunnerInputNames -> Text
-outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> unmergedSamplesSuffix mr where
+outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> unmergedSamplesSuffix mr rin where
   gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
 
 mergedPrefix :: ModelRun -> RunnerInputNames -> Text

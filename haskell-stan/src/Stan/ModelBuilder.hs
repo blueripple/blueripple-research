@@ -62,6 +62,7 @@ import Text.Printf (errorMissingArgument)
 import Stan.ModelConfig (InputDataType(..))
 import Knit.Report (crimson, getting)
 import qualified Data.Hashable.Lifted as Hashable
+import qualified Stan.ModelConfig as SC
 
 
 stanCodeToStanModel :: StanCode -> StanModel
@@ -344,7 +345,7 @@ buildRowJSONFolds ri = return $ JSONRowFold (toFoldable ri) jsonF where
 
 buildModelJSONFromDataM :: Typeable md => StanBuilderM md gq (md -> Either Text Aeson.Series)
 buildModelJSONFromDataM = do
-  (JSONSeriesFold constJSONFld) <- constJSON <$> get
+  (JSONSeriesFold constJSONFld) <- constModelJSON <$> get
   dataSetJSON <- buildModelJSONF
   return $ \d ->
     let c = Foldl.foldM constJSONFld (Just ())
@@ -353,8 +354,12 @@ buildModelJSONFromDataM = do
 
 buildGQJSONFromDataM :: Typeable gq => StanBuilderM md gq (gq -> Either Text Aeson.Series)
 buildGQJSONFromDataM = do
+  (JSONSeriesFold constJSONFld) <- constGQJSON <$> get
   dataSetJSON <- buildGQJSONF
-  return $ \d -> buildJSONFromRows dataSetJSON d
+  return $ \d ->
+    let c = Foldl.foldM constJSONFld (Just ())
+        ds =  buildJSONFromRows dataSetJSON d
+    in (<>) <$> c <*> ds
 
 data VariableScope = GlobalScope | ModelScope | GQScope deriving (Show, Eq, Ord)
 
@@ -484,7 +489,8 @@ data BuilderState md gq = BuilderState { declaredVars :: !ScopedDeclarations
                                        , indexBindings :: !SME.VarBindingStore
                                        , modelRowBuilders :: !(RowInfos md)
                                        , gqRowBuilders :: !(RowInfos gq)
-                                       , constJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
+                                       , constModelJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
+                                       , constGQJSON :: JSONSeriesFold ()
                                        , hasFunctions :: !(Set.Set Text)
                                        , code :: !StanCode
                                        }
@@ -621,12 +627,14 @@ modifyGQRowInfosA f bs = (\x -> bs {gqRowBuilders = x}) <$> f (gqRowBuilders bs)
 --(BuilderState dv vbs mrb gqrb cj hf c) = (\x -> BuilderState dv vbs mrb x cj hf c) <$> f gqrb
 
 
-modifyConstJson :: (JSONSeriesFold () -> JSONSeriesFold ()) -> BuilderState md gq -> BuilderState md gq
-modifyConstJson f bs = bs { constJSON = f (constJSON bs)}
+modifyConstJson :: SC.InputDataType -> (JSONSeriesFold () -> JSONSeriesFold ()) -> BuilderState md gq -> BuilderState md gq
+modifyConstJson idt f bs = case idt of
+  SC.ModelData -> bs { constModelJSON = f (constModelJSON bs)}
+  SC.GQData -> bs { constGQJSON = f (constGQJSON bs)}
 --(BuilderState dvs ibs mrbs gqrbs cj hfs c) = BuilderState dvs ibs mrbs gqrbs (f cj) hfs c
 
-addConstJson :: JSONSeriesFold () -> BuilderState md gq -> BuilderState md gq
-addConstJson jf = modifyConstJson (<> jf)
+addConstJson :: SC.InputDataType -> JSONSeriesFold () -> BuilderState md gq -> BuilderState md gq
+addConstJson idt jf = modifyConstJson idt (<> jf)
 
 modifyFunctionNames :: (Set Text -> Set Text) -> BuilderState md gq -> BuilderState md gq
 modifyFunctionNames f bs = bs { hasFunctions = f (hasFunctions bs)}
@@ -639,6 +647,7 @@ initialBuilderState modelRowInfos gqRowInfos =
   SME.noBindings
   modelRowInfos
   gqRowInfos
+  mempty
   mempty
   Set.empty
   emptyStanCode
@@ -1173,7 +1182,7 @@ addFixedIntJson idt name mLower n = do
   let sc = maybe "" (\l -> "<lower=" <> show l <> ">") $ mLower
       codeBlock = if idt == ModelData then SBData else SBDataGQ
   inBlock codeBlock $ stanDeclare name SME.StanInt sc -- this will error if we already declared
-  modify $ addConstJson (JSONSeriesFold $ Stan.constDataF name n)
+  modify $ addConstJson idt (JSONSeriesFold $ Stan.constDataF name n)
   return $ SME.StanVar name SME.StanInt
 
 addFixedIntJson' :: (Typeable md, Typeable gq) => InputDataType -> Text -> Maybe Int -> Int -> StanBuilderM md gq SME.StanVar

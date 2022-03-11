@@ -94,6 +94,7 @@ import qualified Data.Vinyl.Core as V
 import qualified Stan.ModelBuilder as SB
 import BlueRipple.Data.Loaders (stateAbbrCrosswalkLoader)
 import qualified BlueRipple.Data.DistrictOverlaps as DO
+import qualified Stan.JSON as DT
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -139,8 +140,9 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
-    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
-    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+    deepDiveTX24 cmdLine
+--    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+--    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -288,6 +290,72 @@ modelDetails cmdLine = do
   detailsPaths <- explainerPostPaths "ElectionModel" cmdLine
   BR.brNewPost detailsPaths postInfoDetails "ElectionModel"
     $ BR.brAddPostMarkDownFromFile detailsPaths "_intro"
+
+deepDiveTX24 :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+deepDiveTX24 cmdLine = do
+  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  let filter r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @ET.DistrictNumber r == 24
+  deepDive cmdLine "TX24" (fmap (fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+
+type FracPop = "FracPop" F.:-> Double
+
+type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+
+deepDive :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r ()
+deepDive cmdLine ddName psData_C = do
+--  ccesAndPums_C <- BRE.prepCCESAndPums False
+  ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
+  acs_C <- BRE.prepACS False
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+      demographicGroup :: SB.GroupTypeTag (F.Record DeepDiveR) = SB.GroupTypeTag "Demographics"
+      postStratInfo = (demographicGroup, "DeepDive_" <> ddName, SB.emptyGroupSet)
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
+      modelDM ::  K.ActionWithCacheTime r (F.FrameRec PostStratR)
+              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR DeepDiveR))
+      modelDM x = do
+        let gqDeps = (,) <$> acs2020_C <*> x
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
+      postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  (_, deepDiveModel) <- modelDM psData_C
+  psData <- K.ignoreCacheTime psData_C
+  let (deepDive, missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
+  when (not $ null missing) $ K.knitError $ "Missing keys in depDiveModel/psData join:" <> show missing
+  let totalCVAP = realToFrac $ FL.fold (FL.premap (F.rgetField @BRC.Count) FL.sum) deepDive
+      popFrac r = FT.recordSingleton @FracPop $ realToFrac (F.rgetField @BRC.Count r) / totalCVAP
+      deepDiveWFrac = fmap (FT.mutate popFrac) deepDive
+  BR.logFrame deepDiveWFrac
+  deepDivePaths <- postPaths "DeepDive" cmdLine
+  BR.brNewPost deepDivePaths postInfoDeepDive "DeepDive" $ do
+    BR.brAddRawHtmlTable
+      "Deep Dive"
+      (BHA.class_ "brTable")
+      (deepDiveColonnade mempty)
+      deepDiveWFrac
+
+deepDiveColonnade cas =
+  let state = F.rgetField @DT.StateAbbreviation
+--      mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+--      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
+      mDiff r = let x = mShare r in (2 * x - 1)
+      cvap = F.rgetField @BRC.Count
+      fracPop = F.rgetField @FracPop
+      ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
+      sex = F.rgetField @DT.SexC
+      education = F.rgetField @DT.CollegeGradC
+      race = F.rgetField @DT.Race5C
+      hisp = F.rgetField @DT.HispC
+  in C.headed "Sex" (BR.toCell cas "Sex" "Sex" (BR.textToStyledHtml . show . sex))
+     <> C.headed "Education" (BR.toCell cas "Edu" "Edu" (BR.textToStyledHtml . show . education))
+     <> C.headed "Race" (BR.toCell cas "Race" "Race" (BR.textToStyledHtml . show . race))
+     <> C.headed "Ethnicity" (BR.toCell cas "Eth" "Eth" (BR.textToStyledHtml . show . hisp))
+     <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
+     <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
+--     <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
+--     <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+     <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
+     <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
