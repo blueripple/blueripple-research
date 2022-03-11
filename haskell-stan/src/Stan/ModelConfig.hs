@@ -19,10 +19,12 @@ import qualified Data.Aeson.Encoding as A
 import qualified Data.Map as M
 import qualified Data.Text as T
 
+data GQNames = GQNames { gqModelName :: Text, gqDataName :: Text} deriving (Show, Eq, Ord)
+
 data RunnerInputNames = RunnerInputNames
   { rinModelDir :: Text
   , rinModel :: Text
-  , rinGQ :: Maybe Text
+  , rinGQ :: Maybe GQNames
   , rinData :: Text
   }  deriving (Show, Ord, Eq)
 
@@ -35,7 +37,7 @@ llSuffix = "_LL"
 modelSuffix :: ModelRun -> RunnerInputNames -> Text
 modelSuffix MRNoGQ _ = "_noGQ"
 modelSuffix MROnlyLL _ = "_onlyLL"
-modelSuffix MRFull rin = "_" <> fromMaybe "GQ" (rinGQ rin)
+modelSuffix MRFull rin = "_" <> fromMaybe "GQ" (gqModelName <$> rinGQ rin)
 {-# INLINEABLE modelSuffix #-}
 
 unmergedSamplesSuffix :: ModelRun -> RunnerInputNames -> Text
@@ -110,7 +112,7 @@ modelDataFileName :: RunnerInputNames -> Text
 modelDataFileName rin = rinData rin <> ".json"
 
 gqDataFileName :: RunnerInputNames -> Maybe Text
-gqDataFileName rin = fmap (<> ".json") $ rinGQ rin
+gqDataFileName rin = fmap (<> ".json") $ (gqDataName <$> rinGQ rin)
 
 modelDataDependency :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 modelDataDependency rin = K.fileDependency $ (toString $ addModelDirectory rin $ ("data/" <> modelDataFileName rin))
@@ -123,7 +125,7 @@ gqDataDependency rin = case gqDataFileName rin of
     return $ Just dep
 
 combinedDataFileName :: RunnerInputNames -> Text
-combinedDataFileName rin = rinData rin <> maybe "" ("_" <>) (rinGQ rin) <> ".json"
+combinedDataFileName rin = rinData rin <> maybe "" ("_" <>) (gqDataName <$> rinGQ rin) <> ".json"
 
 combineData :: K.KnitEffects r => RunnerInputNames -> K.Sem r (K.ActionWithCacheTime r ())
 combineData rin = do
@@ -157,12 +159,14 @@ dataDependency rin = do
 type KnitStan st cd r = (K.KnitEffects r, K.CacheEffects st cd Text r)
 
 outputPrefix :: ModelRun -> RunnerInputNames -> Text
-outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> unmergedSamplesSuffix mr rin where
-  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
+outputPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqPart <> unmergedSamplesSuffix mr rin where
+  gqName (GQNames mn dn) = mn <> "_" <> dn
+  gqPart = if mr == MRFull then maybe "" ("_" <>) $ (gqName <$> rinGQ rin) else ""
 
 mergedPrefix :: ModelRun -> RunnerInputNames -> Text
-mergedPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqDataPart <> mergedSamplesSuffix mr where
-  gqDataPart = if mr == MRFull then maybe "" ("_" <>) $ rinGQ rin else ""
+mergedPrefix mr rin = rinModel rin <> "_" <> rinData rin <> gqPart <> mergedSamplesSuffix mr where
+  gqName (GQNames mn dn) = mn <> "_" <> dn
+  gqPart = if mr == MRFull then maybe "" ("_" <>) $ (gqName <$> rinGQ rin) else ""
 
 samplesFileNames :: ModelRun -> ModelRunnerConfig -> [FilePath]
 samplesFileNames mr config =

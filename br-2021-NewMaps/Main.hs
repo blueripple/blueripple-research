@@ -309,15 +309,14 @@ deepDive cmdLine ddName psData_C = do
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       demographicGroup :: SB.GroupTypeTag (F.Record DeepDiveR) = SB.GroupTypeTag "Demographics"
-      postStratInfo = (demographicGroup, "DeepDive_" <> ddName, SB.emptyGroupSet)
+      postStratInfo = (demographicGroup, "DeepDive_" <> ddName)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      modelDM ::  K.ActionWithCacheTime r (F.FrameRec PostStratR)
-              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR DeepDiveR))
-      modelDM x = do
-        let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
+      modelDM ::  K.Sem r (F.FrameRec (BRE.ModelResultsR DeepDiveR))
+      modelDM = do
+        let gqDeps = fmap fixACS <$> acs2020_C
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
       postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
-  (_, deepDiveModel) <- modelDM psData_C
+  deepDiveModel <- modelDM
   psData <- K.ignoreCacheTime psData_C
   let (deepDive, missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
   when (not $ null missing) $ K.knitError $ "Missing keys in depDiveModel/psData join:" <> show missing
@@ -335,8 +334,8 @@ deepDive cmdLine ddName psData_C = do
 
 deepDiveColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
---      mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
---      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
       mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
       mDiff r = let x = mShare r in (2 * x - 1)
       cvap = F.rgetField @BRC.Count
@@ -352,8 +351,8 @@ deepDiveColonnade cas =
      <> C.headed "Ethnicity" (BR.toCell cas "Eth" "Eth" (BR.textToStyledHtml . show . hisp))
      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
      <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
---     <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
---     <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+     <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
+     <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
@@ -368,27 +367,44 @@ modelDiagnostics cmdLine = do
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.stateElectionRows) $ ccesAndCPSEM_C
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      name = "Diagnostic"
-      postStratInfo = (mapGroup
-                      , "DM_Diagnostics_AllCDs"
-                      , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
-                      )
-      modelDM :: K.ActionWithCacheTime r (F.FrameRec PostStratR)
-              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM x = do
-        let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
+--      stateGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      sexGroup :: SB.GroupTypeTag (F.Record '[DT.SexC]) = SB.GroupTypeTag "Sex"
+      educationGroup :: SB.GroupTypeTag (F.Record '[DT.CollegeGradC]) = SB.GroupTypeTag "Education"
+      raceGroup :: SB.GroupTypeTag (F.Record '[DT.Race5C]) = SB.GroupTypeTag "Race"
+      stateGroup :: SB.GroupTypeTag (F.Record '[BR.StateAbbreviation]) = SB.GroupTypeTag "State"
+      modelDM :: (BRE.ModelKeyC ks
+                 , ks F.⊆ PostStratR
+                 )
+              => Bool
+              -> SB.GroupTypeTag (F.Record ks)
+              -> K.Sem r (F.FrameRec (BRE.ModelResultsR ks))
+      modelDM includePP gtt  = do
+        let gqDeps = fmap fixACS <$> acs2020_C
+        K.ignoreCacheTimeM
+          $ BRE.electionModelDM
+          False
+          cmdLine
+          includePP
+          (Just stanParams)
+          modelDir
+          modelVariant
+          2020
+          (gtt, "Diagnostics_By" <> SB.taggedGroupName gtt)
+          ccesAndCPS2020_C
+          gqDeps
       postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
-  (crossTabs, _) <- modelDM (fmap fixACS <$> acs2020_C)
+  modelBySex  <- modelDM False sexGroup
+  modelByEducation  <- modelDM False educationGroup
+  modelByRace  <- modelDM False raceGroup
+  modelByState  <- modelDM True stateGroup
   K.logLE K.Info $ BRE.dataLabel modelVariant <> " :By State"
-  BR.logFrame $ BRE.byState crossTabs
+  BR.logFrame modelByState
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Race"
-  BR.logFrame $ BRE.byRace crossTabs
+  BR.logFrame modelByRace
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Sex"
-  BR.logFrame $ BRE.bySex crossTabs
+  BR.logFrame modelBySex
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Education"
-  BR.logFrame $ BRE.byEducation crossTabs
+  BR.logFrame modelByEducation
 
   diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
@@ -396,7 +412,7 @@ modelDiagnostics cmdLine = do
   ccesDiagByState <- K.ignoreCacheTime diag_C
 
   presElexByState <- K.ignoreCacheTime presElex2020_C
-  let (diagTable1 , missingCTElex, missingCCES) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateAbbreviation] (BRE.byState crossTabs) presElexByState ccesDiagByState
+  let (diagTable1 , missingCTElex, missingCCES) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateAbbreviation] modelByState presElexByState ccesDiagByState
   when (not $ null missingCTElex) $ K.logLE K.Diagnostic $ "Missing keys in state crossTabs/presElex join: " <> show missingCTElex
   when (not $ null missingCCES) $ K.logLE K.Diagnostic $ "Missing keys in state crossTabs/presElex -> cces join: " <> show missingCCES
   stateTurnout <- fmap (F.rcast @[BR.Year, BR.StateAbbreviation, BR.BallotsCountedVEP, BR.HighestOfficeVEP, BR.VEP]) <$> K.ignoreCacheTimeM BR.stateTurnoutLoader
@@ -411,17 +427,17 @@ modelDiagnostics cmdLine = do
       "By Race"
       (BHA.class_ "brTable")
       (byCategoryColonnade "Race" (show . F.rgetField @DT.Race5C) mempty)
-      (BRE.byRace crossTabs)
+      modelByRace
     BR.brAddRawHtmlTable
       "By Sex"
       (BHA.class_ "brTable")
       (byCategoryColonnade "Sex" (show . F.rgetField @DT.SexC) mempty)
-      (BRE.bySex crossTabs)
+      modelBySex
     BR.brAddRawHtmlTable
       "By Education"
       (BHA.class_ "brTable")
       (byCategoryColonnade "Education" (show . F.rgetField @DT.CollegeGradC) mempty)
-      (BRE.byEducation crossTabs)
+      modelByEducation
     BR.brAddRawHtmlTable
       "Diagnostics By State"
       (BHA.class_ "brTable")
@@ -674,16 +690,14 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       postStratInfo dt = (mapGroup
                          , "DM" <> "_" <> stateAbbr postSpec <> "_" <> show dt
-                         , SB.addGroupToSet BRE.stateGroup SB.emptyGroupSet
                          )
       modelDM :: ET.DistrictType
               -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
-              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+              -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM dt x = do
-        let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 (postStratInfo dt) ccesAndCPS2020_C gqDeps
-  (_, modeledCDs) <- modelDM ET.Congressional (fmap F.rcast <$> cdDemo_C)
-  (_, modeledSLDs) <- modelDM (districtType postSpec) (fmap F.rcast <$> sldDemo_C)
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (postStratInfo dt) ccesAndCPS2020_C x
+  modeledCDs <- modelDM ET.Congressional (fmap F.rcast <$> cdDemo_C)
+  modeledSLDs <- modelDM (districtType postSpec) (fmap F.rcast <$> sldDemo_C)
   sldDemo <- K.ignoreCacheTime sldDemo_C
 {-  let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
@@ -797,18 +811,16 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup
                       , "DM" <> "_" <> name
-                      , SB.addGroupToSet BRE.stateGroup (SB.emptyGroupSet)
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
 --      model = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
       modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
-              -> K.Sem r (BRE.ModelCrossTabs, F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+              -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM model name x = do
-        let gqDeps = (,) <$> acs2020_C <*> x
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C gqDeps
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C x
 
-  (_, proposedBaseHV) <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
-  (_, extantBaseHV) <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
+  extantBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
 
 --  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  (_, proposedBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)

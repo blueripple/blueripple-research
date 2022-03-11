@@ -119,7 +119,8 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
   K.wrapPrefix "StanMRP.runModel" $ do
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
-    <> maybe "" (" and GQ data=" <>) (SC.rinGQ runnerInputNames)
+    <> maybe "" (" and GQ model name: " <>) (SC.gqModelName <$> SC.rinGQ runnerInputNames)
+    <> maybe "" (" and GQ data name: " <>) (SC.gqDataName <$> SC.rinGQ runnerInputNames)
   let --outputLabel = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
       stancConfig =
         (SM.makeDefaultStancConfig (toString $ SC.rinModelDir runnerInputNames
