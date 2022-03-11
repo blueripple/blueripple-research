@@ -1179,14 +1179,6 @@ groupBuilderDM model psGroup states psKeys = do
   when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
-  -- GQ
-{-
-  acsData <- SB.addGQDataToGroupBuilder "ACS" (SB.ToFoldable fst)
-  SB.addGroupIndexForData stateGroup acsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
-  SB.addGroupIndexForData raceGroup acsData $ SB.makeIndexFromEnum race5Census
-  SB.addGroupIndexForData educationGroup acsData $ SB.makeIndexFromEnum (F.rgetField @DT.CollegeGradC)
-  SB.addGroupIndexForData sexGroup acsData $ SB.makeIndexFromEnum (F.rgetField @DT.SexC)
--}
   psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @Census.Count))
   SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
@@ -1582,13 +1574,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
              betaBT dm = betaB dmColIndexT alphaT dm thetaT
              betaAP dm = betaA dmColIndexP alphaP dm thetaP
              betaBP dm = betaB dmColIndexP alphaP dm thetaP
-{-
-        acsData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.GQData "ACS"
-        dmACS_T' <- DM.addDesignMatrix acsData (designMatrixRowACS densityMatrixRowPart DMTurnout)
-        dmACS_P' <- DM.addDesignMatrix acsData (designMatrixRowACS densityMatrixRowPart dmPrefType)
-        dmACS_T <- SB.useDataSetForBindings acsData $ centerTF SC.GQData dmACS_T' (Just "T")
-        dmACS_P <- SB.useDataSetForBindings acsData $ centerPF SC.GQData dmACS_P' (Just "P")
--}
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "PSData"
         dmPS_T' <- DM.addDesignMatrix psData (designMatrixRowPS densityMatrixRowPart DMTurnout)
         dmPS_P' <- DM.addDesignMatrix psData (designMatrixRowPS densityMatrixRowPart dmPrefType)
@@ -1636,52 +1621,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         postStratify "Pref" prefPS psGroup
         postStratify "DVote" dVotePS psGroup
         pure ()
-{-
-        psACS "Turnout" turnoutPS raceGroup
-        psACS "Turnout" turnoutPS educationGroup
-        psACS "Turnout" turnoutPS sexGroup
-        psACS "Turnout" turnoutPS stateGroup
-        psACS "Pref" prefPS raceGroup
-        psACS "Pref" prefPS educationGroup
-        psACS "Pref" prefPS sexGroup
-        psACS "Pref" prefPS stateGroup
-        psACS "DVote" dVotePS raceGroup
-        psACS "DVote" dVotePS educationGroup
-        psACS "DVote" dVotePS sexGroup
-        psACS "DVote" dVotePS stateGroup
 
-        -- post-stratification for results
-
-
-        let psPreCompute = do
-              dmPS_T <- centerTF SC.GQData dmPS_T' (Just "T")
-              dmPS_P <- centerPF SC.GQData dmPS_P' (Just "P")
-              psBetaAT <- SB.vectorizeExpr "psBetaAT" (betaAT dmPS_T) (SB.dataSetName psData)
-              psBetaBT <- SB.vectorizeExpr "psBetaBT" (betaBT dmPS_T) (SB.dataSetName psData)
-              psBetaAP <- SB.vectorizeExpr "psBetaAP" (betaAP dmPS_P) (SB.dataSetName psData)
-              psBetaBP <- SB.vectorizeExpr "psBetaBP" (betaBP dmPS_P) (SB.dataSetName psData)
-              pure (psBetaAT, psBetaBT, psBetaAP, psBetaBP)
-
-            psExprF (bAT, bBT, bAP, bBP) = do --(psT_v, psP_v) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.betaMu (SB.var bAT) (SB.var bBT)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.betaMu (SB.var bAP) (SB.var bBP)
-              pure $ SB.var pT `SB.times` SB.var pD
-
-        let postStrat =
-              MRP.addPostStratification -- @(CCESAndPUMS, F.FrameRec rs)
-              (psPreCompute, psExprF)
-              Nothing
-              elexTData
-              psData
-              (realToFrac . F.rgetField @Census.Count)
-              (MRP.PSShare $ Just $ SB.name "pT")
-              (Just psGroup)
-        postStrat
-        pure ()
--}
---      addModelIdAndYear :: F.Record (ks V.++ '[ModeledShare])
---                        -> F.Record (ModelResultsR ks)
---      addModelIdAndYear r = F.rcast $ FT.recordSingleton @BR.Year datYear F.<+> FT.recordSingleton @ModelDesc (modelLabel model) F.<+> r
       extractResults :: K.KnitEffects r
                      => SC.ResultAction r md gq SB.DataSetGroupIntMaps () (FS.SFrameRec (ModelResultsR ks))
       extractResults = SC.UseSummary f where
@@ -1696,12 +1636,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                       v <- SP.getVector . fmap CS.percents <$> SP.parse1D vn (CS.paramStats summary)
                       indexStanResults idx $ Vector.map g v
                 parseAndIndexPctsWith psIndexIM id $ psPrefix <> SB.taggedGroupName gtt
-{-
-          modelResultsMap <- resultsMap (SB.RowTypeTag @(F.Record rs) SC.GQData "PSData")  psGroup "PS_PSData_"
-          modelResultsFrame :: F.FrameRec (ks V.++ '[ModeledShare]) <- K.knitEither
-                                                                       $ MT.keyedCIsToFrame @ModeledShare id
-                                                                       $ M.toList modelResultsMap
--}
           let psRowTag = SB.RowTypeTag @(F.Record rs) SC.GQData "PSData"
               rmByGroup :: FI.RecVec (ks V.++ '[ModelDesc, ModeledTurnout, ModeledPref, ModeledShare])
                         => K.Sem r (ModelResults ks)
@@ -1719,11 +1653,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                       return $ (datYear F.&: k) F.<+> resRec
                 K.knitEither $ F.toFrame <$> (traverse g $ M.toList rmTPD)
 
---          ctBySex <- rmByGroup sexGroup
---          ctByEducation <- rmByGroup educationGroup
---          ctByRace <- rmByGroup raceGroup
---          ctByState <- rmByGroup stateGroup
---          let mct = ModelCrossTabs ctBySex ctByEducation ctByRace ctByState
           res <- rmByGroup
           return $ FS.SFrame res
       dataWranglerAndCode :: K.ActionWithCacheTime r CCESAndCPSEM

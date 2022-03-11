@@ -141,8 +141,8 @@ main = do
 --    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
     deepDiveTX24 cmdLine
---    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
---    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
@@ -295,7 +295,7 @@ deepDiveTX24 :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine ->
 deepDiveTX24 cmdLine = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   let filter r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @ET.DistrictNumber r == 24
-  deepDive cmdLine "TX24" (fmap (fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  deepDive cmdLine "TX24" (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
 type FracPop = "FracPop" F.:-> Double
 
@@ -311,10 +311,9 @@ deepDive cmdLine ddName psData_C = do
       demographicGroup :: SB.GroupTypeTag (F.Record DeepDiveR) = SB.GroupTypeTag "Demographics"
       postStratInfo = (demographicGroup, "DeepDive_" <> ddName)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
-      modelDM ::  K.Sem r (F.FrameRec (BRE.ModelResultsR DeepDiveR))
-      modelDM = do
-        let gqDeps = fmap fixACS <$> acs2020_C
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C gqDeps
+  let modelDM ::  K.Sem r (F.FrameRec (BRE.ModelResultsR DeepDiveR))
+      modelDM =
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C psData_C
       postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   deepDiveModel <- modelDM
   psData <- K.ignoreCacheTime psData_C
@@ -327,7 +326,7 @@ deepDive cmdLine ddName psData_C = do
   deepDivePaths <- postPaths "DeepDive" cmdLine
   BR.brNewPost deepDivePaths postInfoDeepDive "DeepDive" $ do
     BR.brAddRawHtmlTable
-      "Deep Dive"
+      ("Deep Dive: " <> ddName)
       (BHA.class_ "brTable")
       (deepDiveColonnade mempty)
       deepDiveWFrac
@@ -363,6 +362,7 @@ modelDiagnostics cmdLine = do
   acs_C <- BRE.prepACS False
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+      fixedACS_C =  FL.fold postStratRollupFld . fmap fixACS <$> acs2020_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.stateElectionRows) $ ccesAndCPSEM_C
@@ -378,8 +378,7 @@ modelDiagnostics cmdLine = do
               => Bool
               -> SB.GroupTypeTag (F.Record ks)
               -> K.Sem r (F.FrameRec (BRE.ModelResultsR ks))
-      modelDM includePP gtt  = do
-        let gqDeps = fmap fixACS <$> acs2020_C
+      modelDM includePP gtt  =
         K.ignoreCacheTimeM
           $ BRE.electionModelDM
           False
@@ -391,7 +390,7 @@ modelDiagnostics cmdLine = do
           2020
           (gtt, "Diagnostics_By" <> SB.taggedGroupName gtt)
           ccesAndCPS2020_C
-          gqDeps
+          fixedACS_C
       postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   modelBySex  <- modelDM False sexGroup
   modelByEducation  <- modelDM False educationGroup
@@ -518,8 +517,8 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyUpper . onlyState "NC") proposedCDs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyUpper . onlyState "NC") proposedSLDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld. fmap F.rcast . onlyUpper . onlyState "NC") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld .fmap F.rcast . onlyUpper . onlyState "NC") proposedSLDs_C)
 
   ncPaths <- postPaths "NC_StateLeg_Lower" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC_SLDL" $ do
@@ -531,8 +530,8 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyLower . onlyState "NC") proposedCDs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyLower . onlyState "NC") proposedSLDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld. fmap F.rcast . onlyLower . onlyState "NC") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyLower . onlyState "NC") proposedSLDs_C)
 -}
 
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
@@ -547,8 +546,8 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedCDs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedSLDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedSLDs_C)
 
 
 addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
@@ -562,6 +561,21 @@ addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDis
 
 fixACS :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
 fixACS = F.rcast . addRace5 . addDistrict . addCount
+
+postStratRollupFld :: FL.Fold (F.Record PostStratR) (F.FrameRec PostStratR)
+postStratRollupFld = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData
+                      @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber,DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+                      @[DT.PopPerSqMile, BRC.Count])
+                     (FMR.foldAndAddKey innerFld)
+  where
+    innerFld :: FL.Fold (F.Record [DT.PopPerSqMile, BRC.Count]) (F.Record [DT.PopPerSqMile, BRC.Count])
+    innerFld =
+      let dFold = fmap (fromMaybe 0) (FL.premap (F.rgetField @DT.PopPerSqMile) FL.last)
+          cFold = FL.premap (F.rgetField @BRC.Count) FL.sum
+      in (\d c -> d F.&: c F.&: V.RNil) <$> dFold <*> cFold
 
 peopleWeightedLogDensity :: (F.ElemOf rs DT.PopPerSqMile, Foldable f)
                          => (F.Record rs -> Int)
@@ -598,8 +612,8 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") drExtantCDs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "NC") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") drExtantCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") proposedCDs_C)
 
   let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublished))
   txPaths <- postPaths "TX_Congressional" cmdLine
@@ -610,8 +624,8 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap fixACS . onlyState "TX") acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "TX") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "TX") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "TX") proposedCDs_C)
 
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
   azPaths <- postPaths "AZ_Congressional" cmdLine
@@ -623,8 +637,8 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
       (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap fixACS . onlyState "AZ") acs_C)
-      (K.liftActionWithCacheTime $ fmap (fmap F.rcast . onlyState "AZ") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "AZ") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
 
 
 districtColonnade cas =
