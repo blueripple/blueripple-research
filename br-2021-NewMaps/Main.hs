@@ -298,6 +298,8 @@ deepDiveTX24 cmdLine = do
   deepDive cmdLine "TX24" (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
 type FracPop = "FracPop" F.:-> Double
+type DSDT = "dS_dT" F.:-> Double
+type DSDP =   "dS_dP" F.:-> Double
 
 type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
@@ -319,9 +321,19 @@ deepDive cmdLine ddName psData_C = do
   psData <- K.ignoreCacheTime psData_C
   let (deepDive, missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
   when (not $ null missing) $ K.knitError $ "Missing keys in depDiveModel/psData join:" <> show missing
-  let totalCVAP = realToFrac $ FL.fold (FL.premap (F.rgetField @BRC.Count) FL.sum) deepDive
+  let turnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      pref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      cvap = F.rgetField @BRC.Count
+      cvFld = fmap realToFrac $ FL.premap cvap FL.sum
+      tvF r = realToFrac (cvap r) * turnout r
+      tvFld = FL.premap tvF FL.sum
+      dvF r = realToFrac (cvap r) * turnout r * pref r
+      dvFld = FL.premap dvF FL.sum
+      (totalCVAP, totalVotes, totalDVotes) = FL.fold ((,,) <$> cvFld <*> tvFld <*> dvFld) deepDive
       popFrac r = FT.recordSingleton @FracPop $ realToFrac (F.rgetField @BRC.Count r) / totalCVAP
-      deepDiveWFrac = fmap (FT.mutate popFrac) deepDive
+      dSdP r = FT.recordSingleton @DSDP $ turnout r * (realToFrac $ cvap r) / totalVotes
+      dSdT r = FT.recordSingleton @DSDT $ (pref r - (realToFrac totalDVotes/realToFrac totalVotes)) * (realToFrac $ cvap r) / totalVotes
+      deepDiveWFrac = fmap (FT.mutate dSdP . FT.mutate dSdT . FT.mutate popFrac) deepDive
   BR.logFrame deepDiveWFrac
   deepDivePaths <- postPaths "DeepDive" cmdLine
   BR.brNewPost deepDivePaths postInfoDeepDive "DeepDive" $ do
@@ -344,6 +356,8 @@ deepDiveColonnade cas =
       education = F.rgetField @DT.CollegeGradC
       race = F.rgetField @DT.Race5C
       hisp = F.rgetField @DT.HispC
+      dSdT = F.rgetField @DSDT
+      dSdP = F.rgetField @DSDP
   in C.headed "Sex" (BR.toCell cas "Sex" "Sex" (BR.textToStyledHtml . show . sex))
      <> C.headed "Education" (BR.toCell cas "Edu" "Edu" (BR.textToStyledHtml . show . education))
      <> C.headed "Race" (BR.toCell cas "Race" "Race" (BR.textToStyledHtml . show . race))
@@ -354,6 +368,8 @@ deepDiveColonnade cas =
      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
      <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
+     <> C.headed "dS/dT" (BR.toCell cas "dS/dT" "dS/dT" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdT))
+     <> C.headed "dS/dP" (BR.toCell cas "dS/dP" "dS/dP" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdP))
 
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
