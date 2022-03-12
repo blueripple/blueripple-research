@@ -140,7 +140,8 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
-    deepDiveTX24 cmdLine
+    deepDiveCD cmdLine "TX" 24
+    deepDiveCD cmdLine "TX" 11
     newCongressionalMapPosts cmdLine --stanParallelCfg parallel
     newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
@@ -291,11 +292,11 @@ modelDetails cmdLine = do
   BR.brNewPost detailsPaths postInfoDetails "ElectionModel"
     $ BR.brAddPostMarkDownFromFile detailsPaths "_intro"
 
-deepDiveTX24 :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
-deepDiveTX24 cmdLine = do
+deepDiveCD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
+deepDiveCD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  let filter r = F.rgetField @BR.StateAbbreviation r == "TX" && F.rgetField @ET.DistrictNumber r == 24
-  deepDive cmdLine "TX24" (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictNumber r == dn
+  deepDive cmdLine (sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
 type FracPop = "FracPop" F.:-> Double
 type DSDT = "dS_dT" F.:-> Double
@@ -335,8 +336,8 @@ deepDive cmdLine ddName psData_C = do
       dSdT r = FT.recordSingleton @DSDT $ (pref r - (realToFrac totalDVotes/realToFrac totalVotes)) * (realToFrac $ cvap r) / totalVotes
       deepDiveWFrac = fmap (FT.mutate dSdP . FT.mutate dSdT . FT.mutate popFrac) deepDive
   BR.logFrame deepDiveWFrac
-  deepDivePaths <- postPaths "DeepDive" cmdLine
-  BR.brNewPost deepDivePaths postInfoDeepDive "DeepDive" $ do
+  deepDivePaths <- postPaths ("DeepDive_" <> ddName) cmdLine
+  BR.brNewPost deepDivePaths postInfoDeepDive ("DeepDive_" <> ddName) $ do
     BR.brAddRawHtmlTable
       ("Deep Dive: " <> ddName)
       (BHA.class_ "brTable")
