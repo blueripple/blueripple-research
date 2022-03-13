@@ -1600,10 +1600,12 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.betaMu (SB.var bAT) (SB.var bBT)
               pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.betaMu (SB.var bAP) (SB.var bBP)
               pure $ SB.var pT `SB.times` SB.var pD
-
+            psBetaATPreCompute dm dat = SB.vectorizeExpr "psBetaAT" (betaAT dm) (SB.dataSetName dat)
+            psBetaATExpr bA = pure $ SB.var bA
             turnoutPS = ((psTPrecompute dmPS_T psData, psTExpr), Nothing)
             prefPS = ((psPPrecompute dmPS_P psData, psPExpr), Nothing)
             dVotePS = ((psDVotePreCompute dmPS_T dmPS_P psData, psDVoteExpr), Just $ SB.name "pT")
+            betaATPS = ((psBetaATPreCompute dmPS_T psData, psBetaATExpr), Nothing)
             postStratify :: (Typeable md, Typeable gq, Ord k)
                          => Text
                          -> ((SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr), Maybe SB.StanExpr)
@@ -1617,6 +1619,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               (realToFrac . F.rgetField @Census.Count)
               (MRP.PSShare $ snd psCalcs)
               (Just grp)
+        postStratify "BetaAT" betaATPS psGroup
         postStratify "Turnout" turnoutPS psGroup
         postStratify "Pref" prefPS psGroup
         postStratify "DVote" dVotePS psGroup

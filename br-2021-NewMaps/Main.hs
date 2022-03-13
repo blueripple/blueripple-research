@@ -139,11 +139,11 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    modelDetails cmdLine
-    modelDiagnostics cmdLine --stanParallelCfg parallel
+--    modelDiagnostics cmdLine --stanParallelCfg parallel
     deepDiveCD cmdLine "TX" 24
     deepDiveCD cmdLine "TX" 11
-    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
-    newStateLegMapPosts cmdLine --stanParallelCfg parallel
+--    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+--    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
     Right namedDocs ->
