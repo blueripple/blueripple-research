@@ -142,7 +142,8 @@ main = do
 --    modelDiagnostics cmdLine --stanParallelCfg parallel
     deepDiveCD cmdLine "TX" 24
     deepDiveCD cmdLine "TX" 11
---    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+    deepDiveCD cmdLine "TX" 31
+    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
 --    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
   case resE of
