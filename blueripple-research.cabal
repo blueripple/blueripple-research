@@ -230,7 +230,8 @@ library
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.TSNE
-                 , BlueRipple.Model.House.ElectionResult
+                 , BlueRipple.Model.Election.DataPrep
+                 , BlueRipple.Model.Election.StanModel
                  , BlueRipple.Utilities.Heidi
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils

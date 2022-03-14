@@ -23,20 +23,18 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DistrictOverlaps as DO
---import qualified BlueRipple.Data.CCES as CCES
---import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
 import qualified BlueRipple.Data.Visualizations.DemoComparison as BRV
 import qualified BlueRipple.Utilities.KnitUtils as BR
---import qualified BlueRipple.Utilities.Heidi as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
-import qualified BlueRipple.Model.House.ElectionResult as BRE
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Model.StanMRP as MRP
 import qualified BlueRipple.Data.CountFolds as BRCF
---import qualified BlueRipple.Data.Keyed as BRK
+
+import qualified BlueRipple.Model.Election.DataPrep as BRE
+import qualified BlueRipple.Model.Election.StanModel as BRE
 
 import qualified Colonnade as C
 import qualified Text.Blaze.Colonnade as C
@@ -64,7 +62,6 @@ import qualified Frames.Streamly.InCore as FI
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Aggregation as FA
 import qualified Frames.Folds as FF
---import qualified Frames.Heidi as FH
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform  as FT
@@ -153,8 +150,8 @@ main = do
 
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM5"
---dmModel = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5)
+--modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5)
+modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.SigmoidDensity 400 1 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
