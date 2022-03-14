@@ -459,7 +459,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
       officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
-      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_Inc_" <> officesNamePart
+      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlphaBeta_Inc_" <> officesNamePart
       jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
       psDataSetName' = psDataSetName <> "_"  <> printDensityTransform (densityTransform model) <> "_" <> officesNamePart
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec rs) ()
@@ -481,11 +481,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           SB.addDeclBinding' dmColIndexT dmColExprT
           SB.addUseBinding' dmColIndexT dmColExprT
           muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 1))
---          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 1))
---          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 4
---          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
---          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 1)
-          pure muThetaT
+          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.1))
+          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 4
+          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
+          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.1)
+--          pure muThetaT
         (centerTF, llSetT1) <- addModelForDataSet "ElexT" includePP (setupElexTData densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addModelForDataSet "CPST" includePP (setupCPSData densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT1
         (_, llSetT) <- addModelForDataSet "CCEST" includePP (setupCCESTData densityMatrixRowPart) DataSetAlpha Nothing alphaT thetaT llSetT2
@@ -502,11 +502,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           SB.addDeclBinding' dmColIndexP dmColExprP
           SB.addUseBinding' dmColIndexP dmColExprP
           muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 1))
-  --          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 1))
---          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 4
---          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
---          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 1)
-          pure muThetaP
+          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.1))
+          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 4
+          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
+          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.1)
+--          pure muThetaP
         (centerPF, llSetP1) <- addModelForDataSet "ElexP" includePP (setupElexPData densityMatrixRowPart dmPrefType (voteShareType model)) NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addModelForDataSet
@@ -657,27 +657,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
     dat_C
     psDat_C
 
-{-
-data GroupModel = BaseG
-                | DMG
-                | PlusStateG
-                | PlusSexEduG
-                | PlusRaceEduG
-                | PlusStateRaceG
-                | PartiallyPooledStateG
-                | PlusInteractionsG
-                | PlusStateAndStateRaceG
-                | PlusStateAndStateInteractionsG
-                deriving (Show, Eq, Ord, Generic)
-
-instance Flat.Flat GroupModel
-type instance FI.VectorFor GroupModel = Vector.Vector
--}
-
 data DensityTransform = RawDensity
                       | LogDensity
                       | BinDensity { numBins :: Int,  modeledRange :: Int }
-                      | SigmoidDensity { sigmoidCenter :: Double, sigmoidSlope :: Double, modeledRange :: Int}
+                      | SigmoidDensity { sigmoidCenter :: Int, sigmoidSlope :: Int, modeledRange :: Int}
                       deriving (Eq, Ord, Generic)
 instance Flat.Flat DensityTransform
 type instance FI.VectorFor DensityTransform = Vector.Vector
@@ -686,7 +669,7 @@ printDensityTransform :: DensityTransform -> Text
 printDensityTransform RawDensity = "RawDensity"
 printDensityTransform LogDensity = "LogDensity"
 printDensityTransform (BinDensity bins range) = "BinDensity_" <> show bins <> "_" <> show range
-printDensityTransform (SigmoidDensity _ _ _) = "SigmoidDensity"
+printDensityTransform (SigmoidDensity c s r) = "SigmoidDensity_" <> show c <> "_" <> show s <> "_" <> show r
 
 
 getCCESVotes :: (F.ElemOf rs HouseVotes
@@ -730,9 +713,6 @@ data Model = Model { voteShareType :: ET.VoteShareType
                    , densityTransform :: DensityTransform
                    }  deriving (Generic)
 
---instance Flat.Flat (Model tr pr)
---type instance FI.VectorFor (Model tr pr) = Vector.Vector
-
 modelLabel :: Model  -> Text
 modelLabel m = show (voteShareType m) <> "_" <> T.intercalate "+" (show <$> Set.toList (votesFrom m)) <> "_" <> printDensityTransform (densityTransform m)
 
@@ -751,7 +731,6 @@ type ModelDesc = "ModelDescription" F.:-> Text
 
 type ModelResultsR ks  = '[BR.Year] V.++ ks V.++ '[ModelDesc, ModeledTurnout, ModeledPref, ModeledShare]
 type ModelResults ks = F.FrameRec (ModelResultsR ks)
---type CrossTabFrame k  = F.FrameRec [BR.Year, k, ModelDesc, ModeledTurnout, ModeledPref, ModeledShare]
 
 data ModelCrossTabs = ModelCrossTabs
   {
@@ -854,10 +833,9 @@ densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPar
   f = g . F.rgetField @DT.PopPerSqMile
 densityMatrixRowPartFromData (SigmoidDensity c s range) _ = DM.DesignMatrixRowPart "Density" 1 f where
   d = F.rgetField @DT.PopPerSqMile
-  y r = c / (d r)
-  yk r = (y r) ** s
+  y r = realToFrac c / (d r)
+  yk r = (y r) ** realToFrac s
   f r = VU.singleton $ (realToFrac range / 2) * (1 - yk r) / (1 + yk r)
---  SB.MatrixRowFromData "Density" 1
 
 
 --densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor

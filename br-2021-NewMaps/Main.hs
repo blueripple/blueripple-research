@@ -136,7 +136,7 @@ main = do
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    modelDetails cmdLine
---    modelDiagnostics cmdLine --stanParallelCfg parallel
+    modelDiagnostics cmdLine --stanParallelCfg parallel
     deepDiveCD cmdLine "TX" 24
     deepDiveCD cmdLine "TX" 11
     deepDiveCD cmdLine "TX" 31
@@ -150,8 +150,7 @@ main = do
 
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM5"
---modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5)
-modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.SigmoidDensity 400 1 5)
+modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5)
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]

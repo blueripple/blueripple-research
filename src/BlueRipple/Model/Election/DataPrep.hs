@@ -120,8 +120,8 @@ FS.declareColumn "FracOther" ''Double
 FS.declareColumn "FracWhiteGrad" ''Double
 FS.declareColumn "FracCitizen" ''Double
 
+-- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 FS.declareColumn "Incumbency" ''Int
-
 
 type StateKeyR = [BR.Year, BR.StateAbbreviation]
 type CDKeyR = StateKeyR V.++ '[BR.CongressionalDistrict]
@@ -142,18 +142,6 @@ type DemographicsR =
   , PUMS.Citizens
   ]
 
-{-
-type DVotesW = "DVotesW" F.:-> Double
-type RVotesW = "RVotesW" F.:-> Double
-type TVotesW = "TVotesW" F.:-> Double
-type VotedW = "VotedW" F.:-> Double
-type HouseVotesW = "HouseVotesW" F.:-> Double
-type HouseDVotesW = "HouseDVotesW" F.:-> Double
-type PresVotesW = "PresVotesW" F.:-> Double
-type PresDVotesW = "PresDVotesW" F.:-> Double
--}
-
--- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 
 type ElectionR = [Incumbency, DVotes, RVotes, TVotes]
 type ElectionPredictorR = [FracUnder45
