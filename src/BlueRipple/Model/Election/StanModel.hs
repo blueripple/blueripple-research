@@ -719,9 +719,9 @@ modelLabel m = show (voteShareType m) <> "_" <> T.intercalate "+" (show <$> Set.
 dataLabel :: Model -> Text
 dataLabel = modelLabel
 
-type SLDLocation = (Text, ET.DistrictType, Int)
+type SLDLocation = (Text, ET.DistrictType, Text)
 
-sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
 sldLocationToRec (sa, dt, dn) = sa F.&: dt F.&: dn F.&: V.RNil
 
 type ModeledShare = "ModeledShare" F.:-> MT.ConfidenceInterval
@@ -797,11 +797,11 @@ mergeRace5AndHispanic r =
 --sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
 sldKey :: (F.ElemOf rs BR.StateAbbreviation
           ,F.ElemOf rs ET.DistrictTypeC
-          ,F.ElemOf rs ET.DistrictNumber)
+          ,F.ElemOf rs ET.DistrictName)
        => F.Record rs -> SLDLocation
 sldKey r = (F.rgetField @BR.StateAbbreviation r
            , F.rgetField @ET.DistrictTypeC r
-           , F.rgetField @ET.DistrictNumber r
+           , F.rgetField @ET.DistrictName r
            )
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)

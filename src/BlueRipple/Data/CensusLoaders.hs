@@ -32,6 +32,8 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vec
 import qualified Data.Vector.Generic as GVec
 import qualified Data.Serialize as S
+import qualified Data.Text as T
+import qualified Data.Text.Read as TR
 import qualified Flat
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
@@ -169,6 +171,7 @@ censusTablesForDRACDs  :: (K.KnitEffects r
 censusTablesForDRACDs = censusTablesByDistrict fileByYear "DRA_CDs" where
   fileByYear = [ (BRC.TY2018, censusDataDir <> "/NC_DRA.csv")]
 
+noMaps = Set.fromList ["FL","LA","MO","NH","OH"]
 
 censusTablesForProposedCDs :: (K.KnitEffects r
                               , BR.CacheEffects r)
@@ -214,10 +217,13 @@ checkAllCongressionalAndConvert :: forall r a b.
                                 -> K.Sem r (F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b))
 checkAllCongressionalAndConvert rs = do
   let isCongressional r = F.rgetField @ET.DistrictTypeC r == ET.Congressional
-      cd r = FT.recordSingleton @BR.CongressionalDistrict $ F.rgetField @ET.DistrictNumber r
-      converted ::  F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b)
-      converted = fmap (F.rcast . FT.mutate cd) $ F.filterFrame isCongressional rs
+      asInteger t = first (("checkAllCongressionalAndConvert.isInteger: " <>) . toText)
+                    $ TR.decimal t >>= (\x -> if T.null (snd x) then Right (fst x) else Left "Text remaining after parsing integer")
+      cdE r = FT.recordSingleton @BR.CongressionalDistrict <$> (asInteger $ F.rgetField @ET.DistrictName r)
+      convertedE ::  Either Text (F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b))
+      convertedE = F.toFrame <$> (traverse (fmap F.rcast . FT.mutateM cdE) $ FL.fold FL.list $ F.filterFrame isCongressional rs)
       frameLength x = FL.fold FL.length x
+  converted <- K.knitEither $ convertedE
   when (frameLength rs /= frameLength converted) $ K.knitError "CensusLoaders.checkAllCongressionalAndConvert: Non-congressional districts"
   return converted
 

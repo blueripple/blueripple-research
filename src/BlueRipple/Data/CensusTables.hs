@@ -43,11 +43,8 @@ F.declareColumn "PWLogPopPerSqMile" ''Double
 F.declareColumn "PerCapitaIncome" ''Double
 F.declareColumn "TotalIncome" ''Double
 
---type CDPrefixR = [BR.StateFips, BR.CongressionalDistrict, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
---type CDPrefix2R = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, DT.PopPerSqMile, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
---type CDLocationR = [BR.StateFips, BR.CongressionalDistrict]
-type LDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber]
-type LDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictNumber, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type LDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictName]
+type LDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictName, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome, PWPopPerSqMile]
 
 {-
@@ -91,7 +88,7 @@ instance CSV.FromField ET.DistrictType where
 
 
 newtype LDPrefix = LDPrefix { unLDPrefix :: F.Record LDPrefixR } deriving (Show)
-toLDPrefix :: Int -> ET.DistrictType -> Int -> Int -> Double -> Double -> Double -> Double -> LDPrefix
+toLDPrefix :: Int -> ET.DistrictType -> Text -> Int -> Double -> Double -> Double -> Double -> LDPrefix
 toLDPrefix sf dt dn pop pwd inc sm sk
   = LDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
   where
@@ -101,7 +98,7 @@ instance CSV.FromNamedRecord LDPrefix where
   parseNamedRecord r = toLDPrefix
                        <$> r .: "StateFIPS"
                        <*> r .: "DistrictType"
-                       <*> r .: "DistrictNumber"
+                       <*> r .: "DistrictName"
                        <*> r .: "TotalPopulation"
                        <*> r .: "pwPopPerSqMile"
                        <*> r .: "PerCapitaIncome"

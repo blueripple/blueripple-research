@@ -200,7 +200,7 @@ type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
 
 type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR V.++ '[DT.Race5C]
-type CDLocWStAbbrR = '[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] -- V.++ BRC.LDLocationR
+type CDLocWStAbbrR = '[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] -- V.++ BRC.LDLocationR
 
 filterCcesAndPumsByYear :: (Int -> Bool) -> BRE.CCESAndPUMS -> BRE.CCESAndPUMS
 filterCcesAndPumsByYear f (BRE.CCESAndPUMS cces cps pums dd) = BRE.CCESAndPUMS (q cces) (q cps) (q pums) (q dd) where
@@ -289,10 +289,10 @@ modelDetails cmdLine = do
   BR.brNewPost detailsPaths postInfoDetails "ElectionModel"
     $ BR.brAddPostMarkDownFromFile detailsPaths "_intro"
 
-deepDiveCD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
+deepDiveCD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Text -> K.Sem r ()
 deepDiveCD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictNumber r == dn
+  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
   deepDive cmdLine (sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
 type FracPop = "FracPop" F.:-> Double
@@ -570,8 +570,8 @@ addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndH
 addCount :: (F.ElemOf rs PUMS.Citizens) => F.Record rs -> F.Record (rs V.++ '[BRC.Count])
 addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
 
-addDistrict :: (F.ElemOf rs ET.CongressionalDistrict) => F.Record rs -> F.Record (rs V.++ '[ET.DistrictTypeC, ET.DistrictNumber])
-addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+addDistrict :: (F.ElemOf rs ET.CongressionalDistrict) => F.Record rs -> F.Record (rs V.++ '[ET.DistrictTypeC, ET.DistrictName])
+addDistrict r = r F.<+> ((ET.Congressional F.&: toText (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
 
 fixACS :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
 fixACS = F.rcast . addRace5 . addDistrict . addCount
@@ -581,7 +581,7 @@ postStratRollupFld = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
                      (FMR.assignKeysAndData
-                      @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber,DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+                      @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName,DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
                       @[DT.PopPerSqMile, BRC.Count])
                      (FMR.foldAndAddKey innerFld)
   where
@@ -657,12 +657,12 @@ newCongressionalMapPosts cmdLine = do
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
-      dNum = F.rgetField @ET.DistrictNumber
+      dName = F.rgetField @ET.DistrictName
       share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
       share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
 --     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
@@ -675,7 +675,7 @@ modelCompColonnade states cas =
 
 
 type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.PopPerSqMile]
-type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber] V.++ ModelPredictorR V.++ '[BRC.Count]
+type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] V.++ ModelPredictorR V.++ '[BRC.Count]
 type ElexDShare = "ElexDShare" F.:-> Double
 type TwoPartyDShare = "2-Party DShare" F.:-> Double
 
@@ -728,13 +728,13 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
   modeledSLDs <- modelDM (districtType postSpec) (fmap F.rcast <$> sldDemo_C)
   sldDemo <- K.ignoreCacheTime sldDemo_C
 {-  let (modelDRA, modelDRAMissing)
-        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
         modeled
         (fmap addTwoPartyDShare dra)
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in demographics/model join. " <> show modelDRAMissing
 -}
   let (modelDRA, modelDRAMissing)
-        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
         modeledSLDs
         (fmap addTwoPartyDShare $ sldDRAnalysis postSpec)
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
@@ -742,19 +742,19 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
-  let dNum = F.rgetField @ET.DistrictNumber
+  let dName = F.rgetField @ET.DistrictName
       modMid r = round @_ @Int . (100*) $ MT.ciMid $ F.rgetField @BRE.ModeledShare r
       dra r =  round @_ @Int . (100*) $ F.rgetField @TwoPartyDShare r
-      cdModelMap = FL.fold (FL.premap (\r -> (dNum r, modMid r)) FL.map) modeledCDs
-      cdDRAMap = FL.fold (FL.premap (\r -> (dNum r, dra r)) FL.map) $ fmap addTwoPartyDShare $ cdDRAnalysis postSpec
+      cdModelMap = FL.fold (FL.premap (\r -> (dName r, modMid r)) FL.map) modeledCDs
+      cdDRAMap = FL.fold (FL.premap (\r -> (dName r, dra r)) FL.map) $ fmap addTwoPartyDShare $ cdDRAnalysis postSpec
       modelCompetitive n = brCompetitive || draCompetitive
         where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
-      tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictNumber) => BR.CellStyle (F.Record rs) String
+      tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName) => BR.CellStyle (F.Record rs) String
       tableCAS =  modelVsHistoricalTableCellStyle <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
         where
-          os r = fmap fst $ DO.overlapsOverThresholdForRow 0.25 (overlaps postSpec) (dNum r)
+          os r = fmap fst $ DO.overlapsOverThresholdForRow 0.25 (overlaps postSpec) (dName r)
           f r = Monoid.getAny $ mconcat $ fmap (Monoid.Any . modelCompetitive) (os r)
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg (" <> show (districtType postSpec) <> ") 2022: Demographic Model vs. Historical Model (DR)")
@@ -774,7 +774,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
        (FV.ViewConfig 600 600 5)
        sldDemo
 
-  let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+  let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
                                     modelDRA
                                     sldDemo
   when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
@@ -792,11 +792,11 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
 
 dmColonnadeOverlap x ols cas =
   let state = F.rgetField @DT.StateAbbreviation
-      dNum = F.rgetField @ET.DistrictNumber
+      dName = F.rgetField @ET.DistrictName
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
@@ -831,7 +831,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
   K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD
   --      ccesVoteSource = BRE.CCESComposite
-  let addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictNumber])
+  let addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
@@ -879,7 +879,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
          extantDemo
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsBar"
     let (demoElexModelExtant, missing1E, missing2E)
-          = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
             (onlyState stateAbbr extantDemo)
             flattenedElections
             extantBaseHV
@@ -901,7 +901,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
     BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsScatter"
 
     let (oldMapsCompare, missing)
-          = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+          = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
             flattenedElections
             extantForPost
     when (not $ null missing) $ K.knitError $ "Missing keys in join of election results and model:" <> show missing
@@ -921,7 +921,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   let oldDistrictsNoteRef = "[oldDistricts]:" <> oldDistrictsNoteUrl
   BR.brAddPostMarkDownFromFile postPaths "_intro"
   let (modelAndDR, missing)
-        = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
           proposedForPost
 --          proposedPlusStateAndStateRace_RaceDensityNC
           (fmap addTwoPartyDShare drAnalysis)
@@ -953,7 +953,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (FV.ViewConfig 600 600 5)
        proposedDemo
   let (demoModelAndDR, missing1P, missing2P)
-        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber]
+        = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
           (onlyState stateAbbr proposedDemo)
           proposedForPost
 --          proposedPlusStateAndStateRace_RaceDensityNC
@@ -978,7 +978,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
 safeLog x = if x < 1e-12 then 0 else Numeric.log x
 xyFold' = FMR.mapReduceFold
           FMR.noUnpack
-          (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictNumber, ET.DistrictTypeC] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
+          (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictName, ET.DistrictTypeC] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
           (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (distLabel k, x, y, c, s)))
         where
           allF = FL.premap (F.rgetField @BRC.Count) FL.sum
@@ -993,15 +993,16 @@ raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic,
 
 eduSort = Just $ show <$> [DT.NonGrad, DT.Grad]
 
-textDist :: F.ElemOf rs ET.DistrictNumber => F.Record rs -> Text
-textDist r = let x = F.rgetField @ET.DistrictNumber r in if x < 10 then "0" <> show x else show x
-
-distLabel :: (F.ElemOf rs ET.DistrictNumber, F.ElemOf rs BR.StateAbbreviation) => F.Record rs -> Text
-distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r
+{-
+textDist :: F.ElemOf rs ET.DistrictName => F.Record rs -> Text
+textDist r = let x = F.rgetField @ET.DistrictName r in if x < 10 then "0" <> show x else show x
+-}
+distLabel :: (F.ElemOf rs ET.DistrictName, F.ElemOf rs BR.StateAbbreviation) => F.Record rs -> Text
+distLabel r = F.rgetField @DT.StateAbbreviation r <> "-" <> F.rgetField @ET.DistrictName r  --textDist r
 
 modelShareSort :: (Foldable f
                   , F.ElemOf rs BRE.ModeledShare
-                  , F.ElemOf rs ET.DistrictNumber
+                  , F.ElemOf rs ET.DistrictName
                   , F.ElemOf rs BR.StateAbbreviation
                   ) => f (F.Record rs) -> [Text]
 modelShareSort = reverse . fmap fst . sortOn snd
@@ -1069,11 +1070,11 @@ brDistrictFramework brRange draRange brModel dra =
 
 daveModelColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
-      dNum = F.rgetField @ET.DistrictNumber
+      dName = F.rgetField @ET.DistrictName
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
@@ -1081,13 +1082,13 @@ daveModelColonnade cas =
 
 extantModeledColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
-      dNum = F.rgetField @ET.DistrictNumber
+      dName = F.rgetField @ET.DistrictName
       share50 = round @_ @Int . (100*) . MT.ciMid . F.rgetField @BRE.ModeledShare
       elexDVotes = F.rgetField @BRE.DVotes
       elexRVotes = F.rgetField @BRE.RVotes
       elexShare r = realToFrac @_ @Double (elexDVotes r)/realToFrac (elexDVotes r + elexRVotes r)
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.numberToStyledHtml "%d" . dNum))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "2020 Election" (BR.toCell cas "Election" "Election" (BR.numberToStyledHtml "%2.0f" . (100*) . elexShare))
 --
@@ -1115,11 +1116,11 @@ densityHistogram title vc g stepSize rows =
 modelAndElectionScatter :: Bool
                          -> Text
                          -> FV.ViewConfig
-                         -> F.FrameRec [DT.StateAbbreviation, ET.DistrictNumber, ElexDShare, BRE.ModelDesc, BRE.ModeledShare]
+                         -> F.FrameRec [DT.StateAbbreviation, ET.DistrictName, ElexDShare, BRE.ModelDesc, BRE.ModeledShare]
                          -> GV.VegaLite
 modelAndElectionScatter single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
-                    V.:& FVD.asVLData (GV.Number . realToFrac) "District"
+                    V.:& FVD.asVLData GV.Str  "District"
                     V.:& FVD.asVLData (GV.Number . (*100)) "Election Result"
                     V.:& FVD.asVLData (GV.Str . show) "Demographic Model Type"
                     V.:& FVD.asVLData' [("Demographic Model", GV.Number . (*100) . MT.ciMid)
@@ -1194,11 +1195,11 @@ modelAndElectionScatter single title vc rows =
 modelAndDaveScatterChart :: Bool
                          -> Text
                          -> FV.ViewConfig
-                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictNumber, BRE.ModelDesc, BRE.ModeledShare, TwoPartyDShare])
+                         -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModelDesc, BRE.ModeledShare, TwoPartyDShare])
                          -> GV.VegaLite
 modelAndDaveScatterChart single title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
-                    V.:& FVD.asVLData (GV.Number . realToFrac) "District"
+                    V.:& FVD.asVLData GV.Str "District"
                     V.:& FVD.asVLData GV.Str "Demographic Model Type"
                     V.:& FVD.asVLData' [("Demographic Model", GV.Number . (*100) . MT.ciMid)
                                        ,("Demographic Model (95% CI)", GV.Number . (*100) . MT.ciUpper)

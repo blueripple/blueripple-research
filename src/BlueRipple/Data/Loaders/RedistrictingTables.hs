@@ -67,7 +67,7 @@ redistrictingAnalysisCols :: Set FS.HeaderText
 redistrictingAnalysisCols = S.fromList $ FS.HeaderText <$> ["ID","Total Pop","Dem","Rep","Oth","Total VAP","White","Minority","Hispanic","Black","Asian"]
 
 redistrictingAnalysisRenames :: Map FS.HeaderText FS.ColTypeName
-redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "DistrictNumber")
+redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "DistrictName")
                                           ,(FS.HeaderText "Total Pop", FS.ColTypeName "Population")
                                           ,(FS.HeaderText "Total VAP", FS.ColTypeName "VAP")
                                           ,(FS.HeaderText "Dem", FS.ColTypeName "DemShare")

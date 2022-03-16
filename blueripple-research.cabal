@@ -274,6 +274,7 @@ library
                      , template-haskell
                      , time
                      , tuple
+                     , unordered-containers >= 0.2.15 && < 0.3
                      , vector-th-unbox >= 0.2.1.7
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude

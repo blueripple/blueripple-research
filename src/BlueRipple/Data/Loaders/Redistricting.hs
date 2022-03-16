@@ -36,7 +36,7 @@ import qualified Knit.Report as K
 
 -- so these are not re-declared and take on the correct types
 import BlueRipple.Data.DataFrames (Population)
-import BlueRipple.Data.ElectionTypes (DistrictNumber,VAP,DemShare,RepShare)
+import BlueRipple.Data.ElectionTypes (DistrictName,VAP,DemShare,RepShare)
 
 FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 

@@ -25,6 +25,7 @@ import qualified Data.Default as Def
 import Data.Discrimination (Grouping)
 import qualified Data.Serialize as S
 import qualified Data.Text as T
+import qualified Data.Text.Read as TR
 import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import qualified Data.Vinyl as V
@@ -37,6 +38,7 @@ import qualified Frames.ShowCSV as FCSV
 import qualified Frames.Visualization.VegaLite.Data as FV
 import GHC.Generics (Generic)
 import qualified Graphics.Vega.VegaLite as GV
+import GHC.Base (compareInt)
 
 -- Serialize for caching
 -- FI.VectorFor for frames
@@ -138,10 +140,20 @@ FS.declareColumn "DistrictTypeC" ''DistrictType
 instance FV.ToVLDataValue (F.ElField DistrictTypeC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-FS.declareColumn "DistrictNumber" ''Int
+--FS.declareColumn "DistrictNumber" ''Int
+FS.declareColumn "DistrictName" ''Text
 
-instance FV.ToVLDataValue (F.ElField DistrictNumber) where
-  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
+-- if integer part and text part, compare using integer part first, then text.  Else just use text.
+districtNameCompare :: Text -> Text -> Ordering
+districtNameCompare t1 t2 = --if compInt == EQ then compare tr1 tr2 else compInt where
+  let parsed1 = TR.decimal t1
+      parsed2 = TR.decimal t2
+  in case (parsed1, parsed2) of
+    (Right (n1, tr1), Right (n2, tr2)) -> if n1 == n2 then compare tr1 tr2 else compare n1 n2
+    _ -> compare t1 t2
+{-# INLINEABLE districtNameCompare #-}
+--instance FV.ToVLDataValue (F.ElField DistrictNumber) where
+--  toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
 FS.declareColumn "Votes" ''Int
 
