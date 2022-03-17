@@ -137,9 +137,9 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    modelDetails cmdLine
     modelDiagnostics cmdLine --stanParallelCfg parallel
-    deepDiveCD cmdLine "TX" 24
-    deepDiveCD cmdLine "TX" 11
-    deepDiveCD cmdLine "TX" 31
+    deepDiveCD cmdLine "TX" "24"
+    deepDiveCD cmdLine "TX" "11"
+    deepDiveCD cmdLine "TX" "31"
     newCongressionalMapPosts cmdLine --stanParallelCfg parallel
 --    newStateLegMapPosts cmdLine --stanParallelCfg parallel
 
@@ -571,7 +571,7 @@ addCount :: (F.ElemOf rs PUMS.Citizens) => F.Record rs -> F.Record (rs V.++ '[BR
 addCount r = r F.<+> (FT.recordSingleton @BRC.Count $ F.rgetField @PUMS.Citizens r)
 
 addDistrict :: (F.ElemOf rs ET.CongressionalDistrict) => F.Record rs -> F.Record (rs V.++ '[ET.DistrictTypeC, ET.DistrictName])
-addDistrict r = r F.<+> ((ET.Congressional F.&: toText (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
+addDistrict r = r F.<+> ((ET.Congressional F.&: show (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
 
 fixACS :: F.Record BRE.PUMSWithDensityEM -> F.Record PostStratR
 fixACS = F.rcast . addRace5 . addDistrict . addCount
@@ -742,20 +742,21 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       dra = round . (100*) . F.rgetField @TwoPartyDShare
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
-  let dName = F.rgetField @ET.DistrictName
-      modMid r = round @_ @Int . (100*) $ MT.ciMid $ F.rgetField @BRE.ModeledShare r
-      dra r =  round @_ @Int . (100*) $ F.rgetField @TwoPartyDShare r
+      dName = F.rgetField @ET.DistrictName
+--      modMid r = round @_ @Int . (100*) $ MT.ciMid $ F.rgetField @BRE.ModeledShare r
+--      dra r =  round @_ @Int . (100*) $ F.rgetField @TwoPartyDShare r
       cdModelMap = FL.fold (FL.premap (\r -> (dName r, modMid r)) FL.map) modeledCDs
       cdDRAMap = FL.fold (FL.premap (\r -> (dName r, dra r)) FL.map) $ fmap addTwoPartyDShare $ cdDRAnalysis postSpec
       modelCompetitive n = brCompetitive || draCompetitive
         where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
-      tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName) => BR.CellStyle (F.Record rs) String
+  let tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName) => BR.CellStyle (F.Record rs) String
       tableCAS =  modelVsHistoricalTableCellStyle <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
         where
-          os r = fmap fst $ DO.overlapsOverThresholdForRow 0.25 (overlaps postSpec) (dName r)
-          f r = Monoid.getAny $ mconcat $ fmap (Monoid.Any . modelCompetitive) (os r)
+          f r = Monoid.getAny $ mconcat
+                $ fmap (Monoid.Any . modelCompetitive . fst)
+                $ M.toList $ fromMaybe mempty $ DO.overlapsOverThresholdForRowByName 0.25 (overlaps postSpec) (dName r)
   BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg (" <> show (districtType postSpec) <> ") 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
@@ -768,7 +769,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
        ("Race", show . F.rgetField @DT.Race5C, raceSort)
        ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
        (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just sldByModelShare)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> dName r, Just sldByModelShare)
        (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
        (stateAbbr postSpec <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
@@ -800,7 +801,7 @@ dmColonnadeOverlap x ols cas =
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
-     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . DO.overlapsOverThresholdForRow x ols . dNum))
+     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . M.toList . fromMaybe mempty . DO.overlapsOverThresholdForRowByName x ols . dName))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
@@ -831,7 +832,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
   K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD
   --      ccesVoteSource = BRE.CCESComposite
-  let addDistrict r = r F.<+> ((ET.Congressional F.&: F.rgetField @ET.CongressionalDistrict r F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
+  let addDistrict r = r F.<+> ((ET.Congressional F.&: show (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
@@ -872,7 +873,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
          ("Race", show . F.rgetField @DT.Race5C, raceSort)
          ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
          (F.rgetField @BRC.Count)
-         ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just extantByModelShare)
+         ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> F.rgetField @ET.DistrictName r, Just extantByModelShare)
          (Just ("log(Density)", Numeric.log . F.rgetField @DT.PopPerSqMile))
          (stateAbbr <> " Old: By Race and Education")
          (FV.ViewConfig 600 600 5)
@@ -947,7 +948,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        ("Race", show . F.rgetField @DT.Race5C, raceSort)
        ("Education", show . F.rgetField @DT.CollegeGradC, eduSort)
        (F.rgetField @BRC.Count)
-       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> textDist r, Just proposedByModelShare)
+       ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> F.rgetField @ET.DistrictName r, Just proposedByModelShare)
        (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
        (stateAbbr <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
