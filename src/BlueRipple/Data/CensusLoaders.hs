@@ -180,7 +180,8 @@ censusTablesForProposedCDs :: (K.KnitEffects r
 censusTablesForProposedCDs = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
   let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
-               $ F.filterFrame (\r -> not (F.rgetField @BR.OneDistrict r)
+               $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
+                                 && not (F.rgetField @BR.OneDistrict r)
                                  && not (F.rgetField @BR.StateAbbreviation r `Set.member` noMaps)
                                ) stateInfo
       fileByYear = fmap (\sa -> (BRC.TY2018, censusDataDir <> "/cd117_" <> sa <> ".csv")) states
@@ -206,7 +207,8 @@ censusTablesFor2022SLDs ::  (K.KnitEffects r
 censusTablesFor2022SLDs = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
   let statesAnd = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.SLDUpperOnly r)) FL.list)
-                  $ F.filterFrame (\r -> not (F.rgetField @BR.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
+                  $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
+                                         && not (F.rgetField @BR.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
                                   ) stateInfo
       fileByYear = concat
                    $ fmap (\(sa, uo) -> [(BRC.TY2018, censusDataDir <> "/" <> sa <> "_2022_sldu.csv")] ++
