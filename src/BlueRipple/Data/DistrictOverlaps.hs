@@ -46,23 +46,21 @@ loadOverlapsFromCSV :: K.KnitEffects r => FilePath -> Text -> ET.DistrictType ->
 loadOverlapsFromCSV fp stateAbbr rowDType colDType = do
 --  let options = CSV.defaultDecodeOptions
   fileLBS <- K.liftKnit @IO (readFileLBS fp)
-  (header, rows) < - K.knitEither $ CSV.decodeByName fileLBS
+  (header, rows) <- K.knitEither $ first toText $ CSV.decodeByName fileLBS
   let populationsV = fmap pop rows
       overlapsV =  fmap overlapMap rows
       namesV = fmap rowName rows
-  let rowByName = Map.fromList $ zip [0..] (Vec.toList namesV)
+  let rowByName = Map.fromList $ zip (Vec.toList namesV) [0..]
   pure $ DistrictOverlaps stateAbbr rowDType colDType populationsV overlapsV rowByName
 
-
-overlapFractionsForRowByNumber :: DistrictOverlaps Int -> Int -> Vec.Vector Double
+overlapFractionsForRowByNumber :: DistrictOverlaps Int -> Int -> Map Text Double
 overlapFractionsForRowByNumber (DistrictOverlaps _ _ _ p ols _) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! (n - 1))) $ ols Vec.! (n - 1)
 
-overlapFractionsForRowByName :: DistrictOverlaps Int -> Text -> Maybe (Vec.Vector Double)
-overlapFractionsForRowByName  (DistrictOverlaps _ _ _ _ _ rm) t =
-  fmap (\(p, v) -> Vec.map (\x -> realToFrac x/realToFrac p) v) $ Map.lookup t rm
+overlapFractionsForRowByName :: DistrictOverlaps Int -> Text -> Maybe (Map Text Double)
+overlapFractionsForRowByName  x t = overlapFractionsForRowByNumber x <$> Map.lookup t (rowByName x)
 
-overlapsOverThresholdForRowByNumber :: Double -> DistrictOverlaps Int -> Int -> [(Int, Double)]
-overlapsOverThresholdForRowByNumber threshold x n = filter ((>= threshold) . snd) $ zip [1..] (Vec.toList (overlapFractionsForRowByNumber x n))
+overlapsOverThresholdForRowByNumber :: Double -> DistrictOverlaps Int -> Int -> Map Text Double
+overlapsOverThresholdForRowByNumber threshold x n = Map.filter (>= threshold) $ overlapFractionsForRowByNumber x n
 
-overlapsOverThresholdForRowByName :: Double -> DistrictOverlaps Int -> Text -> [(Text, Double)]
-overlapsOverThresholdForRowByName threshold x t = filter ((>= threshold) . snd) $ zip [1..] (Vec.toList (overlapFractionsForRowByName x t))
+overlapsOverThresholdForRowByName :: Double -> DistrictOverlaps Int -> Text -> Maybe (Map Text Double)
+overlapsOverThresholdForRowByName threshold x t = overlapsOverThresholdForRowByNumber threshold x <$>  Map.lookup t (rowByName x)
