@@ -307,7 +307,7 @@ rawStateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV)
 
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC]))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]))
 stateAbbrCrosswalkLoader = do
   statesRaw_C <- rawStateAbbrCrosswalkLoader
   BR.retrieveOrMakeFrame "data/stateAbbr.bin" statesRaw_C $ \fRaw ->
@@ -336,11 +336,12 @@ parseCensusDivision "OtherDivision" = Right DT.OtherDivision
 parseCensusDivision x = Left $ "Unparsed census division: " <> x
 
 
-parseCensusCols :: BR.States -> Either Text (F.Record [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC])
+parseCensusCols :: BR.States
+                -> Either Text (F.Record [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly])
 parseCensusCols r = do
   region <- parseCensusRegion $ F.rgetField @BR.Region r
   division <- parseCensusDivision $ F.rgetField @BR.Division r
-  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] r `V.rappend` (region F.&: division F.&: V.RNil)
+  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] r `V.rappend` (region F.&: division F.&: V.RNil) `V.rappend` F.rcast @[BR.OneDistrict, BR.SLDUpperOnly] r
 
 
 

@@ -135,14 +135,15 @@ main = do
         BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
---    modelDetails cmdLine
-    modelDiagnostics cmdLine --stanParallelCfg parallel
-    deepDiveCD cmdLine "TX" "24"
-    deepDiveCD cmdLine "TX" "11"
-    deepDiveCD cmdLine "TX" "31"
-    newCongressionalMapPosts cmdLine --stanParallelCfg parallel
---    newStateLegMapPosts cmdLine --stanParallelCfg parallel
-
+    let runAll = null $ BR.postNames cmdLine
+        runThis x = runAll || x `elem` BR.postNames cmdLine
+    when (runThis "modelDetails") $ modelDetails cmdLine
+    when (runThis "modelDiagnostics") $ modelDiagnostics cmdLine --stanParallelCfg parallel
+    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "24"
+    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "11"
+    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "31"
+    when (runThis "newCDs") $ newCongressionalMapPosts cmdLine --stanParallelCfg parallel
+    when (runThis "newSLDs") $ newStateLegMapPosts cmdLine --stanParallelCfg parallel
   case resE of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -167,7 +168,7 @@ postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
           -> K.Sem r (BR.PostPaths BR.Abs)
 postPaths t cmdLine = do
   let mRelSubDir = case cmdLine of
-        BR.CLLocalDraft _ _ mS -> maybe Nothing BR.parseRelDir $ fmap toString mS
+        BR.CLLocalDraft _ _ mS _ -> maybe Nothing BR.parseRelDir $ fmap toString mS
         _ -> Nothing
   postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
   BR.postPaths
@@ -182,7 +183,7 @@ explainerPostPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
                    -> K.Sem r (BR.PostPaths BR.Abs)
 explainerPostPaths t cmdLine = do
   let mRelSubDir = case cmdLine of
-        BR.CLLocalDraft _ _ mS -> maybe Nothing BR.parseRelDir $ fmap toString mS
+        BR.CLLocalDraft _ _ mS _ -> maybe Nothing BR.parseRelDir $ fmap toString mS
         _ -> Nothing
   postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
   BR.postPaths
@@ -293,7 +294,7 @@ deepDiveCD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> T
 deepDiveCD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
-  deepDive cmdLine (sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  deepDive cmdLine (sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
 type FracPop = "FracPop" F.:-> Double
 type DSDT = "dS_dT" F.:-> Double

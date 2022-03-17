@@ -83,9 +83,9 @@ knitLogSeverity LogDebugVerbose = K.logDebug 3
 knitLogSeverity LogDebugAll = K.logDebug 10
 
 data CommandLine =
-  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, subDir :: Maybe Text }
-  | CLOnlineDraft { logLevel :: LogLevel, stanChains :: Int }
-  | CLPublished {logLevel :: LogLevel, stanChains :: Int }
+  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, subDir :: Maybe Text, postNames :: [Text] }
+  | CLOnlineDraft { logLevel :: LogLevel, stanChains :: Int, postNames :: [Text]}
+  | CLPublished {logLevel :: LogLevel, stanChains :: Int, postNames :: [Text] }
   deriving (Show, CmdArgs.Data, Typeable, Eq)
 
 localDraft = CLLocalDraft
@@ -93,16 +93,19 @@ localDraft = CLLocalDraft
                logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
              , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
              , subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
+             , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
              } CmdArgs.&= CmdArgs.help "Build local drafts" CmdArgs.&= CmdArgs.auto
 
 onlineDraft = CLOnlineDraft
               { logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
               , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+              , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
               } CmdArgs.&= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
 
 published = CLPublished {
   logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
   , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
+  , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
   } CmdArgs.&= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
 
 
@@ -110,9 +113,9 @@ commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, publ
   CmdArgs.&= CmdArgs.help "Build Posts"
 
 postStage :: CommandLine -> PostStage
-postStage (CLLocalDraft _ _ _) = LocalDraft
-postStage (CLOnlineDraft _ _) = OnlineDraft
-postStage (CLPublished _ _) = OnlinePublished
+postStage (CLLocalDraft _ _ _ _) = LocalDraft
+postStage (CLOnlineDraft _ _ _) = OnlineDraft
+postStage (CLPublished _ _ _) = OnlinePublished
 
 clStanChains :: CommandLine -> Int
 clStanChains = stanChains

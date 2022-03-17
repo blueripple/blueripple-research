@@ -194,7 +194,7 @@ addStateAbbreviations :: forall qs rs r. (F.ElemOf rs BR.StateFIPS
                                          , rs F.⊆ (rs V.++ '[BR.StateAbbreviation])
                                          , qs F.⊆ (rs V.++ '[BR.StateAbbreviation])
                                          , K.KnitEffects r)
-                      => F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC]
+                      => F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]
                       -> F.FrameRec rs
                       -> K.Sem r (F.FrameRec qs)
 addStateAbbreviations stateXWalk allButStateAbbrevs = do
