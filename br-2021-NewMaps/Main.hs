@@ -517,6 +517,7 @@ newStateLegMapPosts cmdLine = do
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
   proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+
   let onlyUpper = F.filterFrame ((== ET.StateUpper) . F.rgetField @ET.DistrictTypeC)
       onlyLower = F.filterFrame ((== ET.StateLower) . F.rgetField @ET.DistrictTypeC)
 
@@ -553,9 +554,10 @@ newStateLegMapPosts cmdLine = do
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   azPaths <- postPaths "AZ_StateLeg" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ_SLD" $ do
-    overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLD_CD.csv" "AZ" ET.StateUpper ET.Congressional
+    overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLDU_CD.csv" "AZ" ET.StateUpper ET.Congressional
     sldDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
+
     let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths sldDRA cdDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
@@ -802,7 +804,7 @@ dmColonnadeOverlap x ols cas =
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
-     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap (show . fst) . M.toList . fromMaybe mempty . DO.overlapsOverThresholdForRowByName x ols . dName))
+     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . DO.overlapsOverThresholdForRowByName x ols . dName))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 

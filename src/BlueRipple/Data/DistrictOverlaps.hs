@@ -54,7 +54,7 @@ loadOverlapsFromCSV fp stateAbbr rowDType colDType = do
   pure $ DistrictOverlaps stateAbbr rowDType colDType populationsV overlapsV rowByName
 
 overlapFractionsForRowByNumber :: DistrictOverlaps Int -> Int -> Map Text Double
-overlapFractionsForRowByNumber (DistrictOverlaps _ _ _ p ols _) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! (n - 1))) $ ols Vec.! (n - 1)
+overlapFractionsForRowByNumber (DistrictOverlaps _ _ _ p ols _) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! n)) $ ols Vec.! n
 
 overlapFractionsForRowByName :: DistrictOverlaps Int -> Text -> Maybe (Map Text Double)
 overlapFractionsForRowByName  x t = overlapFractionsForRowByNumber x <$> Map.lookup t (rowByName x)
