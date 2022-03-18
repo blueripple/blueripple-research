@@ -1,22 +1,22 @@
 ## 2. Districts worthy of Dem donor support
 Based on the results above, we think there are five good options
 for Dem donors in TX:
-- TX-15 (R+5 in Blue Ripple Model): We think this current Dem seat needs resources
+- TX-15 (Toss-up in Blue Ripple Model): We think this current Dem seat needs resources
 for Team Blue to hold it, particularly since it became tighter after redistricting.
 The incumbent, Vincente Gonzalez, opted to run in TX-34, which looks nominally safer
 for Dems (see below). Six Dems and nine Republicans have filed to compete in the primary.
 
-- TX-28 (Toss-up) was won by 18 points by incumbent Dem Henry Cuellar in 2020,
+- TX-28 (D+4) was won by 18 points by incumbent Dem Henry Cuellar in 2020,
 but is now significantly more competitive and needs defensive support.
 Cuellar is being primaried from the left by Jessica Cisneros,
 who almost unseated him in 2020; seven Republicans have also thrown their hats in the ring.
 
-- TX-34 (Toss-up) is being viewed as relatively safe by Dems (see above),
+- TX-34 (D+2) is being viewed as relatively safe by Dems (see above),
 but we believe it may be tighter than pundits appreciate, and in need of support.
 Retiring Dem incumbent Filemon Vela has thrown his support behind Vincente Gonzalez
 in a race with multiple GOP hopefuls.
 
-TX-24 (Toss-up) and TX-38 (Toss-up) appear to be “plausible long-shots” in our demographic model.
+TX-24 (D+4) and TX-38 (D+4) appear to be “plausible long-shots” in our demographic model.
 Both are relatively dense, majority-white districts near cities.
 In TX-24, which contains parts of Dallas, GOP incumbent Beth Van Duyne eked out a
 1.5-point victory in 2020 under the old map, although the new lines should tilt

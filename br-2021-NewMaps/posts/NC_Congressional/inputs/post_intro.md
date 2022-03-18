@@ -1,7 +1,7 @@
 # New Maps, New Dem Strategy: Our NC Analysis
 
-**This post has been updated to reflect the [new NC maps][NCRuling] as well
-as using a slightly newer version of our model.**
+**Updates 3/4/2022:** This post has been updated to reflect the [new NC maps][NCRuling] as well
+as using a slightly newer version of our model.
 
 [NCRuling]: https://www.nytimes.com/2022/02/23/us/politics/north-carolina-maps-democrats.html
 

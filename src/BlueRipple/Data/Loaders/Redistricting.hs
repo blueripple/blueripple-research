@@ -45,15 +45,40 @@ type DRAnalysis = F.Record ([DT.StateAbbreviation, PlanName, ET.DistrictTypeC] V
 fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
 fixRow pi r = Just $ pi F.<+> r
 
--- this will drop lines where district number doesn't parse as an Int
+lookupAndLoadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
+                              => Map RedistrictingPlanId RedistrictingPlanFiles
+                              -> RedistrictingPlanId
+                              -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
+lookupAndLoadRedistrictingPlanAnalysis plans pi = do
+  let noPlanErr = "No plan found for info:" <> show pi
+  pf <- K.knitMaybe noPlanErr $ M.lookup pi plans
+  loadRedistrictingPlanAnalysis pi pf
+
 loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               => RedistrictingPlanId
+                              -> RedistrictingPlanFiles
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
-loadRedistrictingPlanAnalysis pi = do
-  let noPlanErr = "No plan found for info:" <> show pi
-  RedistrictingPlanFiles _ aFP <- K.knitMaybe noPlanErr $ M.lookup pi plans
+loadRedistrictingPlanAnalysis pi pf = do
+  let RedistrictingPlanFiles _ aFP = pf
   let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi
                  <> "_" <> show (F.rgetField @ET.DistrictTypeC pi)
                  <> "_" <> F.rgetField @PlanName pi <> ".bin"
   fileDep <- K.fileDependency $ toString aFP
   BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi)
+
+
+
+allPassedCongressional :: (K.KnitEffects r, BR.CacheEffects r)
+                       => K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
+allPassedCongressional = do
+  plans <- allPassedCongressionalPlans
+  deps <- sequenceA <$> (traverse (uncurry loadRedistrictingPlanAnalysis) $ M.toList plans)
+  BR.retrieveOrMakeFrame "data/redistricting/allPassedCongressional.bin" deps $ pure . mconcat
+
+
+allPassedSLD :: (K.KnitEffects r, BR.CacheEffects r)
+                       => K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
+allPassedSLD = do
+  plans <- allPassedSLDPlans
+  deps <- sequenceA <$> (traverse (uncurry loadRedistrictingPlanAnalysis) $ M.toList plans)
+  BR.retrieveOrMakeFrame "data/redistricting/allPassedSLD.bin" deps $ pure . mconcat

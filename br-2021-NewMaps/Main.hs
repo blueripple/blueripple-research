@@ -44,6 +44,7 @@ import qualified Control.Foldl.Statistics as FLS
 import qualified Data.List as List
 import qualified Data.IntMap as IM
 import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as M
 import qualified Data.Monoid as Monoid
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
@@ -60,6 +61,7 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.MapReduce as FMR
+import qualified Control.MapReduce.Simple as MR
 import qualified Frames.Aggregation as FA
 import qualified Frames.Folds as FF
 import qualified Frames.SimpleJoins as FJ
@@ -138,12 +140,13 @@ main = do
     let runAll = null $ BR.postNames cmdLine
         runThis x = runAll || x `elem` BR.postNames cmdLine
     when (runThis "modelDetails") $ modelDetails cmdLine
-    when (runThis "modelDiagnostics") $ modelDiagnostics cmdLine --stanParallelCfg parallel
+    when (runThis "modelDiagnostics") $ modelDiagnostics cmdLine
     when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "24"
     when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "11"
     when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "31"
-    when (runThis "newCDs") $ newCongressionalMapPosts cmdLine --stanParallelCfg parallel
-    when (runThis "newSLDs") $ newStateLegMapPosts cmdLine --stanParallelCfg parallel
+    when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
+    when (runThis "newSLDs") $ newStateLegMapPosts cmdLine
+    when (runThis "allCDs") $ allCDsPost cmdLine
   case resE of
     Right namedDocs ->
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -517,7 +520,8 @@ newStateLegMapPosts cmdLine = do
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
   proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-
+  drSLDPlans <- Redistrict.allPassedSLDPlans
+  drCDPlans <- Redistrict.allPassedCongressionalPlans
   let onlyUpper = F.filterFrame ((== ET.StateUpper) . F.rgetField @ET.DistrictTypeC)
       onlyLower = F.filterFrame ((== ET.StateLower) . F.rgetField @ET.DistrictTypeC)
 
@@ -526,8 +530,8 @@ newStateLegMapPosts cmdLine = do
   ncPaths <- postPaths "NC_StateLeg_Upper" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC_SLDU" $ do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/NC_SLDU_CD.csv" "NC" ET.StateUpper ET.Congressional
-    ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateUpper)
-    cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis undefined -- (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
+    ncUpperDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.StateUpper)
+    cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional)
     let postSpec = NewSLDMapsPostSpec "NC" ET.StateUpper ncPaths cdDRA ncUpperDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
@@ -539,8 +543,8 @@ newStateLegMapPosts cmdLine = do
   ncPaths <- postPaths "NC_StateLeg_Lower" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC_SLDL" $ do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/NC_SLDL_CD.csv" "NC" ET.StateLower ET.Congressional
-    ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed/InLitigation" ET.StateLower)
-    cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis undefined -- (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
+    ncLowerDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndloadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.StateLower)
+    cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndloadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional)
     let postSpec = NewSLDMapsPostSpec "NC" ET.StateLower ncPaths cdDRA ncLowerDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
@@ -555,8 +559,8 @@ newStateLegMapPosts cmdLine = do
   azPaths <- postPaths "AZ_StateLeg" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ_SLD" $ do
     overlaps <- DO.loadOverlapsFromCSV "data/districtOverlaps/AZ_SLDU_CD.csv" "AZ" ET.StateUpper ET.Congressional
-    sldDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
-    cdDRA <- K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
+    sldDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
+    cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
 
     let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths sldDRA cdDRA overlaps
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
@@ -594,15 +598,23 @@ postStratRollupFld = FMR.concatFold
           cFold = FL.premap (F.rgetField @BRC.Count) FL.sum
       in (\d c -> d F.&: c F.&: V.RNil) <$> dFold <*> cFold
 
-peopleWeightedLogDensity :: (F.ElemOf rs DT.PopPerSqMile, Foldable f)
-                         => (F.Record rs -> Int)
-                         -> f (F.Record rs)
-                         -> Double
-peopleWeightedLogDensity ppl rows =
+peopleWeightedLogDensityFld :: (F.ElemOf rs DT.PopPerSqMile)
+                            => (F.Record rs -> Int)
+                            -> FL.Fold (F.Record rs) Double
+peopleWeightedLogDensityFld ppl =
   let dens = F.rgetField @DT.PopPerSqMile
       x r = if dens r >= 1 then realToFrac (ppl r) * Numeric.log (dens r) else 0
       fld = (/) <$> FL.premap x FL.sum <*> fmap realToFrac (FL.premap ppl FL.sum)
-  in FL.fold fld rows
+  in fld
+
+pwldByStateFld :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs DT.PopPerSqMile)
+               => (F.Record rs -> Int)
+               -> FL.Fold (F.Record rs) (Map Text Double)
+pwldByStateFld ppl = fmap M.fromList
+                  $ MR.mapReduceFold
+                  MR.noUnpack
+                  (MR.assign (F.rgetField @BR.StateAbbreviation) id)
+                  (MR.foldAndLabel (peopleWeightedLogDensityFld ppl) (,))
 
 rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
                => Double
@@ -612,6 +624,50 @@ rescaleDensity s = fmap g
   where
     g = FT.fieldEndo @DT.PopPerSqMile (*s)
 
+
+allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
+  K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
+  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  allCDsPaths <- postPaths "All_CDs" cmdLine
+  ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
+  acs_C <- BRE.prepACS False
+  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+      rescaleDeps = (,) <$> acs2020_C <*> proposedCDs_C
+  rescaledProposed_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/rescaledProposed.bin" rescaleDeps $ \(acs, proposed) -> do
+    let proposedPWLD = FL.fold (pwldByStateFld (F.rgetField @BRC.Count)) proposed
+        acsPWLD = FL.fold (pwldByStateFld (F.rgetField @PUMS.Citizens)) acs
+        whenMissing _ _ = Nothing
+        whenMatched _ acsPWLD xPWLD = Numeric.exp (acsPWLD - xPWLD)
+        rescaleMap = M.merge M.dropMissing M.dropMissing (M.zipWithMatched whenMatched) acsPWLD proposedPWLD
+        rescaleRow r = fmap (\s -> FT.fieldEndo @DT.PopPerSqMile (*s) r) $ M.lookup (F.rgetField @BR.StateAbbreviation r) rescaleMap
+    F.toFrame <$> (K.knitMaybe "allCDsPost: missing key in traversal of proposed for desnity rescaling" $ traverse rescaleRow $ FL.fold FL.list proposed)
+  let mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      psInfoDM name = (mapGroup, name)
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
+
+      modelDM :: BRE.Model -> Text -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      modelDM model name = K.ignoreCacheTimeM
+        $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
+  modeled <- modelDM modelVariant ("All_New_CD")
+  drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
+  let (modelAndDR, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] modeled (fmap addTwoPartyDShare drAnalysis)
+  when (not $ null missing) $ K.knitError $ "allCDsPost: Missing keys in model/DR join=" <> show missing
+  let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+      brDF r = brDistrictFramework brShareRange draShareRange (share50 r) (dave r)
+      sortedModelAndDRA = sortOn brDF $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF) $ FL.fold FL.list modelAndDR
+  BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
+    BR.brAddRawHtmlTable
+      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
+      (BHA.class_ "brTable")
+      (daveModelColonnade modelVsHistoricalTableCellStyle)
+      sortedModelAndDRA
+  pure ()
+
+
 newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 newCongressionalMapPosts cmdLine = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
@@ -619,12 +675,16 @@ newCongressionalMapPosts cmdLine = do
   let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
-
-  let postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished))
+  drCDPlans <- Redistrict.allPassedCongressionalPlans
+  let postInfoNC = BR.PostInfo
+                   (BR.postStage cmdLine)
+                   (BR.PubTimes
+                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just $ BR.Published $ Time.fromGregorian 2022 3 4)
+                   )
   ncPaths <-  postPaths "NC_Congressional" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC" $ do
     ncNMPS <- NewCDMapPostSpec "NC" ncPaths
-              <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional))
+              <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional))
     newCongressionalMapAnalysis False cmdLine ncNMPS postInfoNC
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -632,11 +692,15 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") drExtantCDs_C)
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") proposedCDs_C)
 
-  let postInfoTX = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublished))
+  let postInfoTX = BR.PostInfo
+                   (BR.postStage cmdLine)
+                   (BR.PubTimes
+                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just $ BR.Published $ Time.fromGregorian 2022 3 18)
+                   )
   txPaths <- postPaths "TX_Congressional" cmdLine
   BR.brNewPost txPaths postInfoTX "TX" $ do
     txNMPS <- NewCDMapPostSpec "TX" txPaths
-            <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "TX" "Passed" ET.Congressional))
     newCongressionalMapAnalysis False cmdLine txNMPS postInfoTX
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -648,7 +712,7 @@ newCongressionalMapPosts cmdLine = do
   azPaths <- postPaths "AZ_Congressional" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ" $ do
     azNMPS <- NewCDMapPostSpec "AZ" azPaths
-            <$> (K.ignoreCacheTimeM $ Redistrict.loadRedistrictingPlanAnalysis (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional))
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional))
     let (NewCDMapPostSpec _ _ dra) = azNMPS
     newCongressionalMapAnalysis False cmdLine azNMPS postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
@@ -828,9 +892,9 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   extant <- K.ignoreCacheTime extantDemo_C
   proposed <- K.ignoreCacheTime proposedDemo_C
   acsForState <- fmap (F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)) $ K.ignoreCacheTime acs2020_C
-  let extantPWLD = peopleWeightedLogDensity (F.rgetField @BRC.Count) extant
-      proposedPWLD = peopleWeightedLogDensity (F.rgetField @BRC.Count) proposed
-      acs2020PWLD = peopleWeightedLogDensity (F.rgetField @PUMS.Citizens) acsForState
+  let extantPWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @BRC.Count)) extant
+      proposedPWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @BRC.Count)) proposed
+      acs2020PWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @PUMS.Citizens)) acsForState
       rescaleExtant = rescaleDensity $ Numeric.exp (acs2020PWLD - extantPWLD)
       rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
   K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD

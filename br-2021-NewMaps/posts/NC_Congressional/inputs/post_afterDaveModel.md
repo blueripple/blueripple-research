@@ -3,7 +3,11 @@ in our demographic model and 47-53% in the historical model.
 That’s because we think a 3-point gap is one
 that either party could potentially close with some focused energy,
 resources, and strategic thinking. Our demographic model carries some
-additional uncertainties, so we expand the range a bit there.
+additional uncertainties, so we expand the range a bit there.  Our methodology for
+using our model and the historical data to classify districts is explained
+[in this post][BRMethodology].
+
+[BRMethodology]: https://blueripplepolitics.org/blog/high-yield-donation-opportunities
 
 With that in mind,  here are a few observations on the new NC districts:
 

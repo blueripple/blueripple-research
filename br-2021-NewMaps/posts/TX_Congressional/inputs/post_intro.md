@@ -1,5 +1,8 @@
 # New Congressional Maps, New Dem Strategy: Our TX Analysis
 
+**Updates 3/18/2022:** We’ve refined our model some, and this has shifted the numbers
+in Texas enough that we’ve updated this post.
+
 Like all states, Texas is locking down new district maps, which affect
 Democrat’s odds in 2022 Congressional races. In this reshaped landscape,
 how can donors focus their attention on races with the biggest “bang for buck”
@@ -13,10 +16,8 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-This post focuses on Texas. (We’ve done a similar
-[analysis for NC][NCPost],
-but that map is changing due to litigation. Updates to come there soon!)
-Here’s what we’ll cover:
+This post focuses on Texas. See [here][NCPost] for a similar
+analysis for NC.
 
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
 
