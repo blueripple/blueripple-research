@@ -660,6 +660,8 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       brDF r = brDistrictFramework brShareRange draShareRange (share50 r) (dave r)
       sortedModelAndDRA = sortOn brDF $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF) $ FL.fold FL.list modelAndDR
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
+    _ <- K.addHvega Nothing Nothing
+         $ diffVsChart "Model Delta vs Frac Hispanic" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDR)
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
@@ -667,6 +669,46 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       sortedModelAndDRA
   pure ()
 
+
+--
+diffVsChart :: Text
+            -> FV.ViewConfig
+            -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModeledShare, TwoPartyDShare, Redistrict.HispanicFrac])
+            -> GV.VegaLite
+diffVsChart title vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData GV.Str "District"
+                    V.:& FVD.asVLData (GV.Number . (*100) . MT.ciMid) "Modeled_Share"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Historical_Share"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Fraction_Hispanic"
+                    V.:& V.RNil
+      vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
+      makeShareDiff = GV.transform . GV.calculateAs "datum.Modeled_Share - datum.Historical_Share" "Delta"
+--      xScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
+--      yScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
+      xScale = GV.PScale [GV.SZero False]
+      yScale = GV.PScale [GV.SZero False]
+      encDiff = GV.position GV.Y ([GV.PName "Delta"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Delta"]
+--                                     , GV.PScale [GV.SZero False]
+--                                     , yScale
+                                  ]
+
+--                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
+                                 )
+      encFracHisp = GV.position GV.X ([GV.PName "Fraction_Hispanic"
+                                      , GV.PmType GV.Quantitative
+                                      , GV.PAxis [GV.AxTitle "% Hispanic"]
+                                      ]
+                                     )
+
+      ptEnc = GV.encoding . encFracHisp . encDiff
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
+      finalSpec = [FV.title title, GV.layer [ptSpec], makeShareDiff [], vlData]
+  in FV.configuredVegaLite vc finalSpec --
+--
 
 newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 newCongressionalMapPosts cmdLine = do
