@@ -208,8 +208,6 @@ postPath pp (PostInfo ps _) = case ps of
   OnlineDraft -> onlineDraftDir pp </>  [Path.relfile|post|]
   OnlinePublished -> onlinePubDir pp </> [Path.relfile|post|]
 
-
-
 -- Unused do not get put on github pages
 notePath :: PostPaths a -> PostInfo -> NoteName -> Either Text (Path a File)
 notePath pp (PostInfo ps _) nn = do

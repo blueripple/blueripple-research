@@ -34,6 +34,7 @@ import qualified Data.Text.Lazy as TL
 import qualified Data.Time.Calendar as Time
 import qualified Data.Time.Clock as Time
 import qualified Data.Time.Format as Time
+import qualified Data.Time.LocalTime as Time
 import qualified Data.Vector as Vector
 import qualified Data.Vinyl as V
 import qualified Flat
@@ -196,12 +197,14 @@ brAddNoteRSTFromFile  pp nn noteFileEnd = brAddNoteRSTFromFileWith pp nn noteFil
 
 brDatesFromPostInfo :: K.KnitEffects r => BRC.PostInfo -> K.Sem r (M.Map String String)
 brDatesFromPostInfo (BRC.PostInfo _ (BRC.PubTimes ppt mUpt)) = do
-  let formatTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
-      getCurrentDay :: K.KnitEffects r => K.Sem r Time.Day
-      getCurrentDay = (\(Time.UTCTime d _) -> d) <$> K.getCurrentTime
+  tz <- liftIO $ Time.getCurrentTimeZone
+  let formatPTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
+      formatUPTime t = formatPTime t <> Time.formatTime Time.defaultTimeLocale " (%H:%M:%S)" t
+--      getCurrentDay :: K.KnitEffects r => K.Sem r Time.Day
+--      getCurrentDay = K.getCurrentTime
       dayFromPT = \case
-        BRC.Unpublished -> formatTime <$> getCurrentDay
-        BRC.Published d -> return $ formatTime d
+        BRC.Unpublished -> formatUPTime . Time.utcToLocalTime tz <$> K.getCurrentTime
+        BRC.Published d -> return $ formatPTime d
   pt <- dayFromPT ppt
   let mp = one ("published", pt)
   case mUpt of
