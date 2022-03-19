@@ -616,6 +616,19 @@ pwldByStateFld ppl = fmap M.fromList
                   (MR.assign (F.rgetField @BR.StateAbbreviation) id)
                   (MR.foldAndLabel (peopleWeightedLogDensityFld ppl) (,))
 
+pwldByCDFld :: forall rs. (F.ElemOf rs BR.StateAbbreviation
+                         , F.ElemOf rs ET.DistrictName
+                         , F.ElemOf rs DT.PopPerSqMile
+                         , rs F.⊆ rs
+                         )
+            => (F.Record rs -> Int)
+            -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, DT.PopPerSqMile])
+pwldByCDFld ppl = FMR.concatFold
+                  $ FMR.mapReduceFold
+                  FMR.noUnpack
+                  (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
+                  (FMR.foldAndAddKey (fmap (FT.recordSingleton @DT.PopPerSqMile) $ peopleWeightedLogDensityFld ppl))
+
 rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
                => Double
                -> f (F.Record rs)
@@ -648,20 +661,29 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       psInfoDM name = (mapGroup, name)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
 
-      modelDM :: BRE.Model -> Text -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM model name = K.ignoreCacheTimeM
-        $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
-  modeled <- modelDM modelVariant ("All_New_CD")
+      modelDM :: BRE.Model -> Text -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR)))
+      modelDM model name =
+        BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
+  modeled_C <- modelDM modelVariant ("All_New_CD")
   drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
-  let (modelAndDR, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] modeled (fmap addTwoPartyDShare drAnalysis)
-  when (not $ null missing) $ K.knitError $ "allCDsPost: Missing keys in model/DR join=" <> show missing
+  let deps = (,) <$> modeled_C <*> proposedCDs_C
+  modelAndDRWithDensity_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWithDensity.bin" deps $ \(modeled, prop) -> do
+    let (modelAndDR, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] modeled (fmap addTwoPartyDShare drAnalysis)
+    when (not $ null missing) $ K.knitError $ "allCDsPost: Missing keys in model/DR join=" <> show missing
+    let pwldByCD = FL.fold (pwldByCDFld (F.rgetField @BRC.Count)) prop
+        (withDensity, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] modelAndDR pwldByCD
+    when (not $ null missing) $ K.knitError $ "allCDsPost: missing keys in modelAndDra/density join=" <> show missing
+    return withDensity
+  modelAndDRWithDensity <- K.ignoreCacheTime modelAndDRWithDensity_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
       brDF r = brDistrictFramework brShareRange draShareRange (share50 r) (dave r)
-      sortedModelAndDRA = sortOn brDF $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF) $ FL.fold FL.list modelAndDR
+      sortedModelAndDRA = F.toFrame $ sortOn brDF $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF) $ FL.fold FL.list modelAndDRWithDensity
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
     _ <- K.addHvega Nothing Nothing
-         $ diffVsChart "Model Delta vs Frac Hispanic" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDR)
+         $ diffVsHispChart "Model Delta vs Frac Hispanic" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWithDensity)
+    _ <- K.addHvega Nothing Nothing
+         $ diffVsLogDensityChart "Model Delta vs Density" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWithDensity)
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
@@ -671,11 +693,11 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 
 
 --
-diffVsChart :: Text
-            -> FV.ViewConfig
-            -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModeledShare, TwoPartyDShare, Redistrict.HispanicFrac])
-            -> GV.VegaLite
-diffVsChart title vc rows =
+diffVsHispChart :: Text
+                -> FV.ViewConfig
+                -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModeledShare, TwoPartyDShare, Redistrict.HispanicFrac])
+                -> GV.VegaLite
+diffVsHispChart title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData GV.Str "District"
                     V.:& FVD.asVLData (GV.Number . (*100) . MT.ciMid) "Modeled_Share"
@@ -685,18 +707,10 @@ diffVsChart title vc rows =
       vlData = FVD.recordsToData toVLDataRec rows
       makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
       makeShareDiff = GV.transform . GV.calculateAs "datum.Modeled_Share - datum.Historical_Share" "Delta"
---      xScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
---      yScale = GV.PScale [GV.SDomain (GV.DNumbers [35, 75])]
-      xScale = GV.PScale [GV.SZero False]
-      yScale = GV.PScale [GV.SZero False]
       encDiff = GV.position GV.Y ([GV.PName "Delta"
                                   , GV.PmType GV.Quantitative
                                   , GV.PAxis [GV.AxTitle "Delta"]
---                                     , GV.PScale [GV.SZero False]
---                                     , yScale
                                   ]
-
---                                     ++ [GV.PScale [if single then GV.SZero False else GV.SDomain (GV.DNumbers [0, 100])]]
                                  )
       encFracHisp = GV.position GV.X ([GV.PName "Fraction_Hispanic"
                                       , GV.PmType GV.Quantitative
@@ -707,7 +721,38 @@ diffVsChart title vc rows =
       ptEnc = GV.encoding . encFracHisp . encDiff
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
       finalSpec = [FV.title title, GV.layer [ptSpec], makeShareDiff [], vlData]
-  in FV.configuredVegaLite vc finalSpec --
+  in FV.configuredVegaLite vc finalSpec
+
+diffVsLogDensityChart :: Text
+                      -> FV.ViewConfig
+                      -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModeledShare, TwoPartyDShare, DT.PopPerSqMile])
+                      -> GV.VegaLite
+diffVsLogDensityChart title vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData GV.Str "District"
+                    V.:& FVD.asVLData (GV.Number . (*100) . MT.ciMid) "Modeled_Share"
+                    V.:& FVD.asVLData (GV.Number . (*100)) "Historical_Share"
+                    V.:& FVD.asVLData GV.Number "Log_Density"
+                    V.:& V.RNil
+      vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
+      makeShareDiff = GV.transform . GV.calculateAs "datum.Modeled_Share - datum.Historical_Share" "Delta"
+      encDiff = GV.position GV.Y ([GV.PName "Delta"
+                                  , GV.PmType GV.Quantitative
+                                  , GV.PAxis [GV.AxTitle "Delta"]
+                                  ]
+                                 )
+      encLogDensity = GV.position GV.X ([GV.PName "Log_Density"
+                                      , GV.PmType GV.Quantitative
+                                      , GV.PAxis [GV.AxTitle "Log Density"]
+                                      , GV.PScale [GV.SZero False]
+                                      ]
+                                     )
+
+      ptEnc = GV.encoding . encLogDensity . encDiff
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
+      finalSpec = [FV.title title, GV.layer [ptSpec], makeShareDiff [], vlData]
+  in FV.configuredVegaLite vc finalSpec
 --
 
 newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
