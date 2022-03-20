@@ -686,16 +686,18 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   modeled_C <- modelDM modelVariant ("All_New_CD")
   drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
   let deps = (,) <$> modeled_C <*> proposedCDs_C
-  modelAndDRWith_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWithDensity.bin" deps $ \(modeled, prop) -> do
+  modelAndDRWith_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWith.bin" deps $ \(modeled, prop) -> do
     let (modelAndDR, missingDR) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] modeled (fmap addTwoPartyDShare drAnalysis)
     when (not $ null missingDR) $ K.knitError $ "allCDsPost: Missing keys in model/DR join=" <> show missingDR
     let pwldByCD = FL.fold (pwldByDistrictFld (F.rgetField @BRC.Count)) prop
         (withDensity, missingDensity) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] modelAndDR pwldByCD
-    when (not $ null missingDensity) $ K.knitError $ "allCDsPost: missing keys in modelAndDra/density join=" <> show missingDensity
+    when (not $ null missingDensity) $ K.knitError $ "allCDsPost: missing keys in modelAndDR/density join=" <> show missingDensity
     let gradFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) then 1 else 0
-        gradByDistrict = FL.fold (gradByDistrictFld (F.rgetField @BRC.Count) gradFrac) (F.rcast <$> prop)
+        gradByDistrict = FL.fold
+                         (gradByDistrictFld (F.rgetField @BRC.Count) gradFrac)
+                         (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC] <$> prop)
         (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradByDistrict
-    when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelAndDra/density join=" <> show missingGrad
+    when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingGrad
     return withGrad
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
