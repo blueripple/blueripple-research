@@ -657,6 +657,8 @@ rescaleDensity s = fmap g
     g = FT.fieldEndo @DT.PopPerSqMile (*s)
 
 
+type OldCDOverlap = "OldCDOverlap" F.:-> Text
+
 allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
@@ -665,6 +667,17 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  overlaps <- DO.oldCDOverlapCollection
+  let state = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+  let oldCDOverlapsE :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs ET.DistrictName) => F.Record rs -> Either Text Text
+      oldCDOverlapsE r = do
+        stateOverlaps <- maybe (Left $ "Failed to find stateAbbreviation=" <> state r <> " in " <> show overlaps) Right
+                         $ M.lookup (state r) overlaps
+        cdOverlaps <- maybe (Left $ "Failed to find dist=" <> distr r <> " in " <> state r <> " in " <> show overlaps) Right
+                      $ DO.overlapsOverThresholdForRowByName 0.5 stateOverlaps (distr r)
+        return $ T.intercalate "," . fmap (\(dn, fo) -> dn <> " (" <> show (round (100 * fo)) <> "%)") . M.toList $ cdOverlaps
+
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       rescaleDeps = (,) <$> acs2020_C <*> proposedCDs_C
@@ -699,11 +712,18 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradByDistrict
     when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingGrad
     return withGrad
+
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
       brDF r = brDistrictFramework brShareRange draShareRange (share50 r) (dave r)
-      sortedModelAndDRA = F.toFrame $ sortOn brDF $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF) $ FL.fold FL.list modelAndDRWith
+  sortedFilteredModelAndDRA <- K.knitEither
+                               $ F.toFrame
+                               <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
+                                     $ sortOn brDF
+                                     $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF)
+                                     $ FL.fold FL.list modelAndDRWith
+                                   )
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
     _ <- K.addHvega Nothing Nothing
          $ diffVsChart @BRE.FracGrad "Model Delta vs Frac Grad" ("Frac Grad", (100*)) (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
@@ -714,10 +734,22 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
-      (daveModelColonnade modelVsHistoricalTableCellStyle)
-      sortedModelAndDRA
+      (allCDsColonnade modelVsHistoricalTableCellStyle)
+      sortedFilteredModelAndDRA
   pure ()
 
+allCDsColonnade cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      dName = F.rgetField @ET.DistrictName
+      was = F.rgetField @OldCDOverlap
+      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
+     <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
 
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)

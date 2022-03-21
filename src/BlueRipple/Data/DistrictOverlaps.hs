@@ -9,12 +9,18 @@
 
 module BlueRipple.Data.DistrictOverlaps where
 
+import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Utilities.KnitUtils as BR
+import BlueRipple.Data.CensusLoaders (noMaps)
+import qualified Control.Foldl as FL
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Read as T
-
+import qualified Frames as F
 import qualified Data.Vector as Vec
 import qualified Data.Csv as CSV hiding (header)
 import qualified Data.Csv.Parser as CSV
@@ -36,7 +42,7 @@ data OverlapCSVRow = OverlapCSVRow { rowName :: Text,  pop :: Int,  overlapMap :
 
 instance CSV.FromNamedRecord OverlapCSVRow where
   parseNamedRecord m =
-    let overlapHM =  HM.delete "Name" $ HM.delete "TotalPopulation" m
+    let overlapHM =  HM.delete "NAME" $ HM.delete "TotalPopulation" m
     in  OverlapCSVRow
         <$> m CSV..: "NAME"
         <*> m CSV..: "TotalPopulation"
@@ -64,3 +70,19 @@ overlapsOverThresholdForRowByNumber threshold x n = Map.filter (>= threshold) $ 
 
 overlapsOverThresholdForRowByName :: Double -> DistrictOverlaps Int -> Text -> Maybe (Map Text Double)
 overlapsOverThresholdForRowByName threshold x t = overlapsOverThresholdForRowByNumber threshold x <$>  Map.lookup t (rowByName x)
+
+
+overlapCollection :: K.KnitEffects r => Set Text -> (Text -> FilePath) -> ET.DistrictType -> ET.DistrictType -> K.Sem r (Map Text (DistrictOverlaps Int))
+overlapCollection stateAbbreviations abbrToOverlapFile rowDType colDType = do
+  let loadOne sa = loadOverlapsFromCSV  (abbrToOverlapFile sa) sa rowDType colDType >>= return . (sa,)
+  fmap Map.fromList $ traverse loadOne $ Set.toList stateAbbreviations
+
+oldCDOverlapCollection :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Text (DistrictOverlaps Int))
+oldCDOverlapCollection = do
+  stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
+  let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.set)
+               $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
+                                 && not (F.rgetField @BR.OneDistrict r)
+                                 && not (F.rgetField @BR.StateAbbreviation r `Set.member` noMaps)
+                               ) stateInfo
+  overlapCollection states (\sa -> toString $ "data/cdOverlaps/" <> sa <> ".csv") ET.Congressional ET.Congressional
