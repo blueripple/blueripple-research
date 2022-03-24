@@ -19,7 +19,11 @@ import qualified Control.Foldl as FL
 import qualified Control.Scanl as SL
 import Data.Functor.Contravariant (Contravariant(..))
 import qualified Data.Array as Array
+import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Massiv.Array as MA
+import qualified Data.Massiv.Vector as MV
+import qualified Data.Massiv.Array.Numeric as MN
 import qualified Data.Set as Set
 import qualified Data.Vector.Unboxed as V
 import qualified CmdStan as SB
@@ -59,7 +63,6 @@ dmColIndexName dmr = dmName dmr <> "_Cols"
 instance Contravariant DesignMatrixRow where
   contramap g (DesignMatrixRow n dmrps) = DesignMatrixRow n $ fmap (contramap g) dmrps
 
-
 rowLengthF :: FL.Fold (DesignMatrixRowPart r) Int
 rowLengthF = FL.premap dmrpLength FL.sum
 
@@ -82,26 +85,52 @@ combineRowFuncs rFuncs =
   in FL.fold ((,) <$> nF <*> fF) rFuncs
 -}
 
-boundedEnumRowFunc :: forall r k.(Enum k, Bounded k, Eq k) => (r -> k) -> (Int, r -> V.Vector Double)
-boundedEnumRowFunc rToKey = case numKeys of
+-- first argument, if set, will encode as that is all zeroes.
+boundedEnumRowFunc :: forall r k.(Enum k, Bounded k, Eq k) => Maybe k -> (r -> k) -> (Int, r -> V.Vector Double)
+boundedEnumRowFunc encodeAsZerosM rToKey = case numKeys of
   1 -> error "Single element enum given to boundedEnumRowFunc"
   2 -> binary
   _ -> nonBinary
   where
-    keys :: [k] = universe
-    numKeys = length keys
     binary = (1, \r -> V.singleton $ realToFrac $ if rToKey r == minBound then -1 else 1)
+    keys :: [k] = maybe id List.delete encodeAsZerosM universe
+    numKeys = length (oneHotKeys encodeAsZerosM)
     oneZero r x = if rToKey r == x then 1 else 0
-    nonBinary = (numKeys, \r -> V.fromList $ fmap (oneZero r) keys)
+    nonBinary = (numKeys, oneHotVector encodeAsZerosM . rToKey)
 
-boundedEnumRowPart :: (Enum k, Bounded k, Eq k) => Text -> (r -> k) -> DesignMatrixRowPart r
-boundedEnumRowPart name f = DesignMatrixRowPart name n vf
-  where (n, vf) = boundedEnumRowFunc f
+oneHotKeys :: (Enum k, Bounded k, Eq k) => Maybe k -> [k]
+oneHotKeys encodeAsZerosM =  maybe id List.delete encodeAsZerosM universe
+{-# INLINEABLE oneHotKeys #-}
+
+oneHotVector :: forall k.(Enum k, Bounded k, Eq k) => Maybe k -> k -> V.Vector Double
+oneHotVector encodeAsZerosM k = V.fromList $ fmap (oneZero k) $ oneHotKeys encodeAsZerosM
+  where
+    oneZero k k' = if k == k' then 1 else 0
+{-# INLINEABLE oneHotVector #-}
+
+oneHotVectorMassiv :: forall k.(Enum k, Bounded k, Eq k) => Maybe k -> k -> MV.Vector MV.U Double
+oneHotVectorMassiv encodeAsZerosM k = MA.compute $ MV.sfromList $ fmap (oneZero k) $ oneHotKeys encodeAsZerosM
+  where
+    oneZero k k' = if k == k' then 1 else 0
+{-# INLINEABLE oneHotVectorMassiv #-}
+
+
+boundedEnumRowPart :: (Enum k, Bounded k, Eq k) => Maybe k -> Text -> (r -> k) -> DesignMatrixRowPart r
+boundedEnumRowPart encodeAsZerosM name f = DesignMatrixRowPart name n vf
+  where (n, vf) = boundedEnumRowFunc encodeAsZerosM f
 
 rowPartFromFunctions :: Text -> [r -> Double] -> DesignMatrixRowPart r
 rowPartFromFunctions name fs = DesignMatrixRowPart name (length fs) toVec
   where
     toVec r = V.fromList $ fmap ($r) fs
+
+rowPartFromBoundedEnumFunctions :: forall k r.(Enum k, Bounded k, Eq k) => Maybe k -> Text -> (k -> r -> Double) -> DesignMatrixRowPart r
+rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name vecSize (V.fromList . MV.stoList . sumScaledVecs)
+  where keys :: [k] = universe
+        vecSize :: Int = length keys - maybe 0 (const 1) encodeAsZerosM
+        keyedVecs = zip keys $ fmap (oneHotVectorMassiv encodeAsZerosM) keys
+        scaledVecs r = fmap (\(k, v) -> v MN..* f k r) keyedVecs
+        sumScaledVecs r = FL.fold (FL.Fold (MN.!+!) (MA.compute $ MV.sreplicate (MA.Sz vecSize) 0) id) $ scaledVecs r
 
 -- adds matrix (name_dataSetName)
 -- adds K_name for col dimension (also <NamedDim name_Cols>)

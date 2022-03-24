@@ -116,11 +116,12 @@ stdNormal :: SME.StanExpr
 stdNormal = normal Nothing (SME.scalar "1")
 
 normalDist :: StanDist (SME.StanExpr, SME.StanExpr)
-normalDist = StanDist Continuous sample lpdf lupdf rng where
-  sample (mean, sigma) yV = SME.var yV `SME.vectorSample` normal (Just mean) sigma
-  lpdf (mean, sigma) yV = SME.functionWithGivens "normal_lpdf" (one $ SME.var yV) (mean :| [sigma])
-  lupdf (mean, sigma) yV = SME.functionWithGivens "normal_lupdf" (one $ SME.var yV) (mean :| [sigma])
-  rng (mean, sigma) = SME.function "normal_rng" (mean :| [sigma])
+normalDist = StanDist Continuous sample lpdf lupdf rng
+  where
+    sample (mean, sigma) yV = SME.target `plusEq` SME.functionWithGivens "normal_lupdf" (one $ SME.var yV) (mean :| [sigma])
+    lpdf (mean, sigma) yV = SME.functionWithGivens "normal_lpdf" (one $ SME.var yV) (mean :| [sigma])
+    lupdf (mean, sigma) yV = SME.functionWithGivens "normal_lupdf" (one $ SME.var yV) (mean :| [sigma])
+    rng (mean, sigma) = SME.function "normal_rng" (mean :| [sigma])
 --  expectation (mean, _) = mean
 
 cauchy :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr

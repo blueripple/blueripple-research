@@ -145,6 +145,7 @@ main = do
     when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "11"
     when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "31"
     when (runThis "deepDive") $ deepDiveCD cmdLine "CA" "2"
+    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
     when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
     when (runThis "newSLDs") $ newStateLegMapPosts cmdLine
     when (runThis "allCDs") $ allCDsPost cmdLine
@@ -154,8 +155,8 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stanDM5"
-modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5)
+modelDir = "br-2021-NewMaps/stanDM7"
+modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5) mempty --(Set.fromList [BRE.DMEduc])
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -300,6 +301,13 @@ deepDiveCD cmdLine sa dn = do
   let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
   deepDive cmdLine (sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
 
+deepDiveState :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.Sem r ()
+deepDiveState cmdLine sa = do
+  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  let filter r = F.rgetField @BR.StateAbbreviation r == sa
+  deepDive cmdLine sa (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+
+
 type FracPop = "FracPop" F.:-> Double
 type DSDT = "dS_dT" F.:-> Double
 type DSDP =   "dS_dP" F.:-> Double
@@ -374,13 +382,20 @@ deepDiveColonnade cas =
      <> C.headed "dS/dT" (BR.toCell cas "dS/dT" "dS/dT" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdT))
      <> C.headed "dS/dP" (BR.toCell cas "dS/dP" "dS/dP" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdP))
 
+ccesAndCPSForStates :: [Text] -> BRE.CCESAndCPSEM -> BRE.CCESAndCPSEM
+ccesAndCPSForStates sas (BRE.CCESAndCPSEM cces cpsV stElex cdElex) =
+  let f :: (FI.RecVec rs, F.ElemOf rs BR.StateAbbreviation) => F.FrameRec rs -> F.FrameRec rs
+      f = F.filterFrame ((`elem` sas) . F.rgetField @BR.StateAbbreviation)
+  in BRE.CCESAndCPSEM (f cces) (f cpsV) (f stElex) (f cdElex)
+
+
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
-  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
-      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+  let ccesAndCPS2020_C = fmap (ccesAndCPSForStates ["CA"] . BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      acs2020_C = fmap (F.filterFrame ((== "CA") . F.rgetField @BR.StateAbbreviation) . BRE.acsForYears [2020]) acs_C
       fixedACS_C =  FL.fold postStratRollupFld . fmap fixACS <$> acs2020_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
@@ -410,7 +425,9 @@ modelDiagnostics cmdLine = do
           (gtt, "Diagnostics_By" <> SB.taggedGroupName gtt)
           ccesAndCPS2020_C
           fixedACS_C
-      postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+      postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+--  K.logLE K.Info "CA CCES Rows"
+--  K.ignoreCacheTime ccesWD_C >>= BR.logFrame . F.filterFrame ((== "CA") . F.rgetField @BR.StateAbbreviation)
   modelBySex  <- modelDM False sexGroup
   modelByEducation  <- modelDM False educationGroup
   modelByRace  <- modelDM False raceGroup
@@ -424,10 +441,12 @@ modelDiagnostics cmdLine = do
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Education"
   BR.logFrame modelByEducation
 
-  diag_C <- BRE.ccesDiagnostics False "DiagPost"
+  diag_C <- BRE.ccesDiagnostics True "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   ccesDiagByState <- K.ignoreCacheTime diag_C
+  K.logLE K.Info "CCES Diag By State"
+  BR.logFrame ccesDiagByState
 
   presElexByState <- K.ignoreCacheTime presElex2020_C
   let (diagTable1 , missingCTElex, missingCCES) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateAbbreviation] modelByState presElexByState ccesDiagByState
@@ -495,6 +514,7 @@ diagTableColonnade cas =
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
       rawTurnout r = ratio (voters r) (cvap r)
       ahTurnoutTarget = F.rgetField @BR.BallotsCountedVEP
+      ccesRawTurnout r = realToFrac @_ @Double (F.rgetField @BRE.Voted r) / realToFrac @_ @Double (F.rgetField @BRE.Surveyed r)
       ccesTurnout  r = F.rgetField @BRE.AHVoted r / realToFrac (F.rgetField @ET.CVAP r)
       cpsTurnout r = ratio (F.rgetField @BRE.AHSuccesses r) (F.rgetField @BRCF.Count r)
       rawDShare r = ratio (demVoters r) (demVoters r + repVoters r)
@@ -506,6 +526,7 @@ diagTableColonnade cas =
       <> C.headed "Elex Turnout" (BR.toCell cas "Elex Turnout" "Elex Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . rawTurnout))
       <> C.headed "AH Turnout Target" (BR.toCell cas "AH T Tgt" "AH T Tgt" (BR.numberToStyledHtml "%2.1f" . (100*) . ahTurnoutTarget))
       <> C.headed "CPS (PS) Turnout" (BR.toCell cas "CPS Turnout" "CPS Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . cpsTurnout))
+      <> C.headed "CCES Raw Turnout" (BR.toCell cas "CCES Raw Turnout" "CCES Raw Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesRawTurnout))
       <> C.headed "CCES (PS) Turnout" (BR.toCell cas "CCES Turnout" "CCES Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . ccesTurnout))
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
       <> C.headed "Raw 2-party D Share" (BR.toCell cas "Raw D Share" "Raw D Share" (BR.numberToStyledHtml "%2.1f" . (100*) . rawDShare))

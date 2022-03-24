@@ -88,6 +88,8 @@ import qualified Frames.Folds as FF
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Control.MapReduce as FMR
+import qualified Frames.Folds as FF
 
 
 FS.declareColumn "Surveyed" ''Int
@@ -972,6 +974,8 @@ addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC)
          => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
 addRace5 r = r V.<+> FT.recordSingleton @DT.Race5C (race5FromRace4AAndHisp r)
 
+--replaceRace
+
 psFldCPS :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
 psFldCPS = FF.foldAllConstrained @Num FL.sum
 
@@ -1022,11 +1026,11 @@ type DemVoters = "DemVoters" F.:-> Double
 --type CVAP = "CVAP" F.:-> Double
 type Turnout = "Turnout" F.:-> Double
 
-type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
 --psFldCCES :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
 --psFldCCES = FF.foldAllConstrained @Num FL.sum
-
+type WSurveyed = "WSurveyed" F.:-> Double
 
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 => Bool
@@ -1034,13 +1038,14 @@ ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
 --                -> CCESVoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
                 -> K.ActionWithCacheTime r (F.FrameRec CCESByCDAH)
-                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year,BR.StateAbbreviation, CVAP, Surveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]))
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, WSurveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]))
 ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyed =  F.rgetField @Surveyed
-      voted = F.rgetField @AHVoted
+      voted = F.rgetField @Voted
+      ahvoted = F.rgetField @AHVoted
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
-      pT r = ratio (voted r) (surveyed r)
+      pT r = ratio (round $ ahvoted r) (surveyed r)
 --      (votesInRace, dVotesInRace) = getVotes vs
       presVotes = F.rgetField @PresVotes
       presDVotes = F.rgetField @AHPresDVotes
@@ -1055,20 +1060,26 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
       cvap = F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                          wSurveyed = round $ realToFrac (cvap rc) * realToFrac (surveyed rw)
+                          wSurveyed = realToFrac (cvap rc) * realToFrac (surveyed rw)
                           presVotesInRace = realToFrac (cvap rc) * ratio (presVotes rw) (surveyed rw)
                           houseVotesInRace = realToFrac (cvap rc) * ratio (houseVotes rw) (surveyed rw)
                           dVotesP =  realToFrac (cvap rc) * pDP rw
                           rVotesP =  realToFrac (cvap rc) * pRP rw
-                          dVotesH =   realToFrac (cvap rc) * pDH rw
-                          rVotesH =   realToFrac (cvap rc) * pRH rw
-                      in (cvap rc F.&: wSurveyed F.&: voters F.&: round presVotesInRace F.&: dVotesP F.&: rVotesP F.&: round houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]
+                          dVotesH =  realToFrac (cvap rc) * pDH rw
+                          rVotesH =  realToFrac (cvap rc) * pRH rw
+                      in (cvap rc F.&: surveyed rw F.&:  voted rw F.&: wSurveyed F.&: voters F.&: round presVotesInRace F.&: dVotesP F.&: rVotesP F.&: round houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, Voted, WSurveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]
       deps = (,) <$> acs_C <*> cces_C
   let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
   when clearCaches $ BR.clearIfPresentD statesCK
   BR.retrieveOrMakeFrame statesCK deps $ \(acs, cces) -> do
-    let acsFixed =  addRace5 <$> (F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acs)
-        (psByState, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CCESBucketR @[Surveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes] @'[PUMS.Citizens]
+    let acsFixFld =  FMR.concatFold $
+                     FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @([BR.Year,BR.StateAbbreviation] V.++ CCESBucketR) @'[PUMS.Citizens])
+                     (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        acsFixed = FL.fold acsFixFld $ (fmap addRace5 $ F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acs)
+    BR.logFrame acsFixed
+    let (psByState, missing) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CCESBucketR @[Surveyed, Voted, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes] @'[PUMS.Citizens]
                                compute
                                (FF.foldAllConstrained @Num FL.sum)
                                (F.rcast <$> cces)
