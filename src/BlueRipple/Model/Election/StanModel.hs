@@ -674,10 +674,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       cdIncPair r =  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
       presIncMap = FL.fold (FL.premap stIncPair FL.map) $ F.filterFrame ((== ET.President) . F.rgetField @ET.Office) stElexRows
       houseIncMap = FL.fold (FL.premap cdIncPair FL.map) $ F.filterFrame ((== ET.House) . F.rgetField @ET.Office) cdElexRows
-      ccesIncF o r = case o of
-        ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
-        ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
-        _ -> 0
+--      ccesIncF o r = case o of
+--        ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
+--        ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
+--        _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
       officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
       modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_" <> officesNamePart
@@ -715,11 +715,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
-{-
-        (centerTF, llSetT1) <- addBBModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
-        (_, llSetT2) <- addBBModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT1
-        (_, llSetT) <- addBBModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha Nothing alphaT thetaT llSetT2
--}
         elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
         alphaP <- SB.useDataSetForBindings elexPData $ do
@@ -737,17 +732,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 --          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
 --          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
           pure muThetaP
-        (centerPF, llSetP) <- addBLModelForDataSet "CCESP" includePP
-                              (setupCCESPData compInclude densityMatrixRowPart dmPrefType ccesIncF ET.President (voteShareType model))
-                              NoDataSetAlpha
-                              Nothing
-                              alphaP
-                              thetaP
-                              llSet0
-{-
-        (centerPF, llSetP1) <- addBBModelForDataSet "ElexP" includePP (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model)) NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
-        let ccesP (centerFM, llS) office = do
-              (centerF, llS) <- addBBModelForDataSet
+        (centerPF, llSetP) <- addBBModelForDataSet'' "ElexP" includePP
+                               (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
+                               NoDataSetAlpha Nothing (0.0001) alphaP thetaP SB.emptyLLSet
+{-        let ccesP (centerFM, llS) office = do
+              (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)
                                 includePP
                                 (setupCCESPData compInclude densityMatrixRowPart dmPrefType ccesIncF office (voteShareType model))
@@ -757,8 +746,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                 thetaP
                                 llS
               return (Just centerF, llS)
-            llFoldM = FL.FoldM ccesP (return (Nothing, llSet0)) return
-        (centerPF, llSetP) <- FL.foldM llFoldM (votesFrom model)
+            llFoldM = FL.FoldM ccesP (return (Just centerPF, llSetP1)) return
+        (_, llSetP) <- FL.foldM llFoldM (votesFrom model)
 -}
         SB.generateLogLikelihood' $ SB.mergeLLSets llSetT llSetP
 
