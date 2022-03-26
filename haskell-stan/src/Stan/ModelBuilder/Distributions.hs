@@ -105,6 +105,22 @@ betaBinomialDist sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rn
     lpmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
     lupmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lupmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
     rng (aE, bE) = SME.function "beta_binomial_rng" (SME.var tV :| [aE, bE])
+
+countScaledBetaBinomialDist :: Bool -> SME.StanVar -> StanDist (SME.StanExpr, SME.StanExpr)
+countScaledBetaBinomialDist sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng
+  where
+    plusEq = SME.binOp "+="
+    f x = SME.binOp ".*" (SME.vectorFunction "to_vector" (SME.var tV) []) x
+    sample (aE, bE) sv = if sampleWithConstants
+                         then SME.target `plusEq` SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
+                         else SME.var sv `SME.vectorSample` SME.function "beta_binomial" (SME.var tV :| [f aE, f bE])
+    lpmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
+    lupmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lupmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
+    rng (aE, bE) = SME.function "beta_binomial_rng" (SME.var tV :| [f aE, f bE])
+
+
+
+
 --    expectation (aE, bE) = aE `SME.divide` (SME.paren $ aE `SME.plus` bE)
 
 -- for priors

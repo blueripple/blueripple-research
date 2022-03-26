@@ -99,17 +99,20 @@ joinAndPostStratify
   -> FL.Fold (F.Record ds) (F.Record es)
   -> F.FrameRec ((ks V.++ pks) V.++ ws)
   -> F.FrameRec ((ks V.++ pks) V.++ cs)
-  -> (F.FrameRec (ks V.++ es), [F.Record (ks V.++ pks)])
-joinAndPostStratify compute psFld wgts cnts = (FL.fold fld computed, missing) where
-  (joined, missing) = FJ.leftJoinWithMissing @(ks V.++ pks) wgts cnts
-  computeRow r = F.rcast @(ks V.++ pks) r F.<+> compute (F.rcast @ws r) (F.rcast @cs r)
-  computed = fmap computeRow joined
-  fld :: FL.Fold (F.Record ((ks V.++ pks) V.++ ds)) (F.FrameRec (ks V.++es))
-  fld = FMR.concatFold
-        $ FMR.mapReduceFold
-        FMR.noUnpack
-        (FMR.assignKeysAndData @ks @ds)
-        (FMR.foldAndAddKey psFld)
+  -> (F.FrameRec (ks V.++ es), [F.Record (ks V.++ pks)], Int)
+joinAndPostStratify compute psFld wgts cnts = (FL.fold fld computed, missing, length joined - length wgts)
+  where
+    length = FL.fold FL.length
+    (joined, missing) = FJ.leftJoinWithMissing @(ks V.++ pks) wgts cnts
+    computeRow r = F.rcast @(ks V.++ pks) r F.<+> compute (F.rcast @ws r) (F.rcast @cs r)
+    computed = fmap computeRow joined
+    fld :: FL.Fold (F.Record ((ks V.++ pks) V.++ ds)) (F.FrameRec (ks V.++es))
+    fld = FMR.concatFold
+          $ FMR.mapReduceFold
+          FMR.noUnpack
+          (FMR.assignKeysAndData @ks @ds)
+          (FMR.foldAndAddKey psFld)
+
 {-
 weightedSumFold :: FL.Fold (F.Record (w ': rs)) (F.Record (w ': rs))
 weightedSumFold

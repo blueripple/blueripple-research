@@ -169,7 +169,6 @@ dmSubset' dmType include all = case dmType of
 designMatrixRowPS :: forall rs.(F.ElemOf rs DT.CollegeGradC
                              , F.ElemOf rs DT.SexC
                              , F.ElemOf rs DT.Race5C
-                             , F.ElemOf rs DT.HispC
                              , F.ElemOf rs DT.PopPerSqMile
                              )
                   => Set DMComponents
@@ -181,7 +180,7 @@ designMatrixRowPS include densRP dmType = DM.DesignMatrixRow (show dmType) (dmSu
     incRP = DM.DesignMatrixRowPart "Incumbency" 1 (const $ VU.replicate 1 0) -- we set incumbency to 0 for PS
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" mergeRace5AndHispanic
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCCES
     all = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
 
@@ -195,7 +194,7 @@ designMatrixRowCCES include densRP dmType incF = DM.DesignMatrixRow (show dmType
     incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" mergeRace5AndHispanic
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCCES
     all = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
 
@@ -292,7 +291,7 @@ setupCPSData ::  (Typeable md, Typeable gq)
 setupCPSData include densRP = do
   cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
   cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
-  votedCPS <- SB.addCountData cpsData "Voted_CPS"  (round . F.rgetField @AHSuccesses)
+  votedCPS <- SB.addCountData cpsData "Voted_CPS"  (F.rgetField @BRCF.Successes)
   dmCPS <- DM.addDesignMatrix cpsData (designMatrixRowCPS include densRP)
   return (cpsData, designMatrixRowCPS include densRP, cvapCPS, votedCPS, dmCPS)
 
@@ -408,20 +407,21 @@ addBBModelForDataSet' :: (Typeable md, Typeable gq)
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
                      -> DataSetAlpha
                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                     -> Maybe SB.StanVar
+                     -> Int
                      -> SB.StanVar
                      -> SB.StanVar
                      -> SB.LLSet md gq
                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
-addBBModelForDataSet' dataSetLabel includePP dataSetupM dataSetAlpha centerM kappaM alpha beta llSet = do
+addBBModelForDataSet' dataSetLabel includePP dataSetupM dataSetAlpha centerM minKappa alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   dmColIndex <- case dm of
     (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
     (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
-  kappa <- case kappaM of
-    Just k -> return k
-    Nothing -> SMP.addParameter (addLabel "kappa") SB.StanReal "<lower=0>" (SB.UnVectorized $ SB.function "lognormal" $ (SB.scalar "1" :| [SB.scalar "5"]))
+  let minKappaConstraint = "<lower=" <> show minKappa <> ">"
+      kappaPrior = let lmk = round $ Numeric.log $ realToFrac minKappa
+                   in SB.function "lognormal" $ (SB.scalar (show $ lmk + 1) :| [SB.scalar (show $ lmk + 3)])
+  kappa <- SMP.addParameter (addLabel "kappa") SB.StanReal minKappaConstraint (SB.UnVectorized kappaPrior)
   dsIxM <-  case dataSetAlpha of
               NoDataSetAlpha -> return Nothing
               DataSetAlpha -> do
@@ -433,6 +433,61 @@ addBBModelForDataSet' dataSetLabel includePP dataSetupM dataSetAlpha centerM kap
       dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
       return (dmC', f)
   let dist = SB.betaBinomialDist True counts
+      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
+      muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
+      muT ixM dm = case ixM of
+        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
+        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
+      betaA ixM k dm = SB.var k `SB.times` muT ixM dm
+      betaB ixM k dm = SB.var k `SB.times` SB.paren (SB.scalar "1.0" `SB.minus` muT ixM dm)
+      vecBetaA = SB.vectorizeExpr (addLabel "betaA") (betaA dsIxM kappa dmC) (SB.dataSetName rtt)
+      vecBetaB = SB.vectorizeExpr (addLabel "betaB") (betaB dsIxM kappa dmC) (SB.dataSetName rtt)
+  SB.inBlock SB.SBModel $ do
+    SB.useDataSetForBindings rtt $ do
+      betaA <- vecBetaA
+      betaB <- vecBetaB
+      SB.sampleDistV rtt dist (SB.var betaA, SB.var betaB) successes
+  let llDetails =  SB.LLDetails dist (pure (betaA dsIxM kappa dmC, betaB dsIxM kappa dmC)) successes
+      llSet' = SB.addToLLSet rtt llDetails llSet
+      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
+  when includePP $ do
+    SB.useDataSetForBindings rtt
+      $ SB.generatePosteriorPrediction rtt pp dist (betaA dsIxM kappa dmC, betaB dsIxM kappa dmC)
+    pure ()
+  return (centerF, llSet')
+
+
+addBBModelForDataSet'' :: (Typeable md, Typeable gq)
+                       => Text
+                       -> Bool
+                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
+                       -> DataSetAlpha
+                       -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                       -> Double
+                       -> SB.StanVar
+                       -> SB.StanVar
+                       -> SB.LLSet md gq
+                       -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+addBBModelForDataSet'' dataSetLabel includePP dataSetupM dataSetAlpha centerM minKappa alpha beta llSet = do
+  let addLabel x = x <> "_" <> dataSetLabel
+  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
+  dmColIndex <- case dm of
+    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+    (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
+  let minKappaConstraint = "<lower=" <> show minKappa <> ", upper=1>"
+      kappaPrior = SB.function "lognormal" $ (SB.scalar "-5" :| [SB.scalar "5"])
+  kappa <- SMP.addParameter (addLabel "kappa") SB.StanReal minKappaConstraint (SB.UnVectorized kappaPrior)
+  dsIxM <-  case dataSetAlpha of
+              NoDataSetAlpha -> return Nothing
+              DataSetAlpha -> do
+                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+                return $ Just ix
+  (dmC, centerF) <- case centerM of
+    Nothing -> DM.centerDataMatrix dm Nothing
+    Just f -> do
+      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
+      return (dmC', f)
+  let dist = SB.countScaledBetaBinomialDist True counts
       dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
       muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
       muT ixM dm = case ixM of
@@ -553,59 +608,6 @@ addNormalModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM 
     pure ()
   return (centerF, llSet')
 
-{-
-addBPModelForDataSet :: (Typeable md, Typeable gq)
-                     => Text
-                     -> Bool
-                     -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
-                     -> DataSetAlpha
-                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.LLSet md gq
-                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
-addBPModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
-  let addLabel x = x <> "_" <> dataSetLabel
-  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  dmColIndex <- case dm of
-    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
-    (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
-  invSamples <- SMP.addParameter (addLabel "invSamples") SB.StanReal "<lower=0>" (SB.UnVectorized SB.stdNormal)
-  dsIxM <-  case dataSetAlpha of
-              NoDataSetAlpha -> return Nothing
-              DataSetAlpha -> do
-                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
-                return $ Just ix
-  (dmC, centerF) <- case centerM of
-    Nothing -> DM.centerDataMatrix dm Nothing
-    Just f -> do
-      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
-      return (dmC', f)
-  let dist = SB.betaBinomialDist True counts
-      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
-      muE aE dmE betaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmBetaE dmE betaE
-      muT ixM dm = case ixM of
-        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
-        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
-      betaA ixM is dm = muT ixM dm `SB.divide` SB.var is
-      betaB ixM is dm = SB.paren (SB.scalar "1.0" `SB.minus` muT ixM dm) `SB.divide` SB.var is
-      vecBetaA = SB.vectorizeExpr (addLabel "betaA") (betaA dsIxM invSamples dmC) (SB.dataSetName rtt)
-      vecBetaB = SB.vectorizeExpr (addLabel "betaB") (betaB dsIxM invSamples dmC) (SB.dataSetName rtt)
-  SB.inBlock SB.SBModel $ do
-    SB.useDataSetForBindings rtt $ do
-      betaA <- vecBetaA
-      betaB <- vecBetaB
-      SB.sampleDistV rtt dist (SB.var betaA, SB.var betaB) successes
-  let llDetails =  SB.LLDetails dist (pure (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)) successes
-      llSet' = SB.addToLLSet rtt llDetails llSet
-      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
-  when includePP $ do
-    SB.useDataSetForBindings rtt
-      $ SB.generatePosteriorPrediction rtt pp dist (betaA dsIxM invSamples dmC, betaB dsIxM invSamples dmC)
-    pure ()
-  return (centerF, llSet')
-
--}
 
 type ModelKeyC ks = (V.ReifyConstraint Show F.ElField ks
                     , V.RecordToList ks
@@ -636,7 +638,6 @@ electionModelDM :: forall rs ks r tr pr.
                    , F.ElemOf rs DT.CollegeGradC
                    , F.ElemOf rs DT.SexC
                    , F.ElemOf rs DT.Race5C
-                   , F.ElemOf rs DT.HispC
                    , F.ElemOf rs DT.PopPerSqMile
                    , F.ElemOf rs Census.Count
                    , FI.RecVec rs
@@ -696,10 +697,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
         alphaT <- SB.useDataSetForBindings elexTData $ do
           muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 1)
---          sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
---          alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
---          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
-          pure muAlphaT
+          sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
+          alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
+          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
+--          pure muAlphaT
         thetaT <- SB.useDataSetForBindings elexTData $ do
           SB.addDeclBinding' dmColIndexT dmColExprT
           SB.addUseBinding' dmColIndexT dmColExprT
@@ -710,7 +711,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 --          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
           pure muThetaT
         let llSet0 = SB.emptyLLSet
-        (centerTF, llSetT) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing  alphaT thetaT llSet0
+        (centerTF, llSetT1) <- addBBModelForDataSet'' "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing (0.005) alphaT thetaT SB.emptyLLSet
+        (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
+        (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
+
 {-
         (centerTF, llSetT1) <- addBBModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBBModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT1
@@ -1045,7 +1049,7 @@ sldKey r = (F.rgetField @BR.StateAbbreviation r
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic)
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 

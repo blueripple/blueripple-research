@@ -203,7 +203,7 @@ type CCESVoted = "CCESVoters" F.:-> Int
 type CCESHouseVotes = "CCESHouseVotes" F.:-> Int
 type CCESHouseDVotes = "CCESHouseDVotes" F.:-> Int
 
-type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+type PredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
 type CDDemographicsR = '[BR.StateAbbreviation] V.++ BRC.CensusRecodedR V.++ '[DT.Race5C]
 type CDLocWStAbbrR = '[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] -- V.++ BRC.LDLocationR
@@ -312,7 +312,7 @@ type FracPop = "FracPop" F.:-> Double
 type DSDT = "dS_dT" F.:-> Double
 type DSDP =   "dS_dP" F.:-> Double
 
-type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C]
 
 deepDive :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r ()
 deepDive cmdLine ddName psData_C = do
@@ -366,13 +366,11 @@ deepDiveColonnade cas =
       sex = F.rgetField @DT.SexC
       education = F.rgetField @DT.CollegeGradC
       race = F.rgetField @DT.Race5C
-      hisp = F.rgetField @DT.HispC
       dSdT = F.rgetField @DSDT
       dSdP = F.rgetField @DSDP
   in C.headed "Sex" (BR.toCell cas "Sex" "Sex" (BR.textToStyledHtml . show . sex))
      <> C.headed "Education" (BR.toCell cas "Edu" "Edu" (BR.textToStyledHtml . show . education))
      <> C.headed "Race" (BR.toCell cas "Race" "Race" (BR.textToStyledHtml . show . race))
-     <> C.headed "Ethnicity" (BR.toCell cas "Eth" "Eth" (BR.textToStyledHtml . show . hisp))
      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
      <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
@@ -394,8 +392,8 @@ modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
-  let ccesAndCPS2020_C = fmap (ccesAndCPSForStates ["CA"] . BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
-      acs2020_C = fmap (F.filterFrame ((== "CA") . F.rgetField @BR.StateAbbreviation) . BRE.acsForYears [2020]) acs_C
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       fixedACS_C =  FL.fold postStratRollupFld . fmap fixACS <$> acs2020_C
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
@@ -441,7 +439,7 @@ modelDiagnostics cmdLine = do
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Education"
   BR.logFrame modelByEducation
 
-  diag_C <- BRE.ccesDiagnostics True "DiagPost"
+  diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   ccesDiagByState <- K.ignoreCacheTime diag_C
@@ -507,7 +505,7 @@ diagTableColonnade cas =
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
       mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
       mDiff r = let x = mShare r in (2 * x - 1)
-      cvap = F.rgetField @PUMS.Citizens
+      cvap = F.rgetField @ET.CVAP
       voters = F.rgetField @BRE.TVotes
       demVoters = F.rgetField @BRE.DVotes
       repVoters = F.rgetField @BRE.RVotes
@@ -610,7 +608,7 @@ postStratRollupFld = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
                      (FMR.assignKeysAndData
-                      @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName,DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC]
+                      @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName,DT.SexC, DT.CollegeGradC, DT.Race5C]
                       @[DT.PopPerSqMile, BRC.Count])
                      (FMR.foldAndAddKey innerFld)
   where
@@ -893,7 +891,7 @@ modelCompColonnade states cas =
 
 
 
-type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC, DT.PopPerSqMile]
+type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopPerSqMile]
 type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] V.++ ModelPredictorR V.++ '[BRC.Count]
 type ElexDShare = "ElexDShare" F.:-> Double
 type TwoPartyDShare = "2-Party DShare" F.:-> Double
