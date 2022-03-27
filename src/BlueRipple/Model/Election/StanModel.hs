@@ -721,7 +721,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
           alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
-          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 1)
+          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (cauchy 0 4)
 --          pure muAlphaP
         thetaP <- SB.useDataSetForBindings elexPData $ do
           SB.addDeclBinding' dmColIndexP dmColExprP
@@ -732,9 +732,12 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 --          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
 --          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
           pure muThetaP
-        (centerPF, llSetP) <- addBBModelForDataSet'' "ElexP" includePP
+{-        (centerPF, llSetP) <- addBBModelForDataSet'' "ElexP" includePP
                                (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
-                               NoDataSetAlpha Nothing (0.0001) alphaP thetaP SB.emptyLLSet
+                               NoDataSetAlpha Nothing (0.0001) alphaP thetaP SB.emptyLLSet -}
+        (centerPF, llSetP) <- addBLModelForDataSet "ElexP" includePP
+                               (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
+                               NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
 {-        let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)
