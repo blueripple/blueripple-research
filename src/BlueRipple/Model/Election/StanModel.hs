@@ -325,8 +325,8 @@ setupCCESPData include densRP dmPrefType incF office vst = do
   ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData ("CCESP_" <> show office)
 --  ccesPIndex <- SB.indexedConstIntArray ccesPData (Just "P") n
   dmCCESP <- DM.addDesignMatrix ccesPData (designMatrixRowCCES include densRP dmPrefType (incF office))
-  raceVotesCCES <- SB.addCountData ccesPData ("VotesInRace_CCES_" <> show office) (round . votesF)
-  dVotesInRaceCCES <- SB.addCountData ccesPData ("DVotesInRace_CCES_" <> show office) (round . dVotesF)
+  raceVotesCCES <- SB.addCountData ccesPData ("VotesInRace_CCES_" <> show office) votesF
+  dVotesInRaceCCES <- SB.addCountData ccesPData ("DVotesInRace_CCES_" <> show office) dVotesF
   return (ccesPData, designMatrixRowCCES include densRP DMPref (incF office), raceVotesCCES, dVotesInRaceCCES, dmCCESP)
 
 setupElexPData :: (Typeable md, Typeable gq)
@@ -674,13 +674,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       cdIncPair r =  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
       presIncMap = FL.fold (FL.premap stIncPair FL.map) $ F.filterFrame ((== ET.President) . F.rgetField @ET.Office) stElexRows
       houseIncMap = FL.fold (FL.premap cdIncPair FL.map) $ F.filterFrame ((== ET.House) . F.rgetField @ET.Office) cdElexRows
---      ccesIncF o r = case o of
---        ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
---        ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
---        _ -> 0
+      ccesIncF o r = case o of
+        ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
+        ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
+        _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
       officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
-      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlpha_" <> officesNamePart
+      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlphaBeta_" <> officesNamePart
       jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
       psDataSetName' = psDataSetName
                        <> "_"  <> printDensityTransform (densityTransform model)
@@ -698,20 +698,23 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         alphaT <- SB.useDataSetForBindings elexTData $ do
           muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 1)
           sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
-          alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
-          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
+--          alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
+--          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
+          SMP.addHierarchicalScalar "alphaT" stateGroup SMP.Centered $ SB.normal (Just $ SB.var muAlphaT)  (SB.var sigmaAlphaT)
+
 --          pure muAlphaT
         thetaT <- SB.useDataSetForBindings elexTData $ do
           SB.addDeclBinding' dmColIndexT dmColExprT
           SB.addUseBinding' dmColIndexT dmColExprT
           muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 1))
---          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
---          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 4
---          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
---          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
-          pure muThetaT
+          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
+          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 1
+          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
+          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
+--          pure muThetaT
         let llSet0 = SB.emptyLLSet
-        (centerTF, llSetT1) <- addBBModelForDataSet'' "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing (0.005) alphaT thetaT SB.emptyLLSet
+--        (centerTF, llSetT1) <- addBBModelForDataSet'' "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing (0.005) alphaT thetaT SB.emptyLLSet
+        (centerTF, llSetT1) <- addBLModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
@@ -720,25 +723,26 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 1)
-          alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
-          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (cauchy 0 4)
+--          alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
+--          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 4)
+          SMP.addHierarchicalScalar "alphaP" stateGroup SMP.Centered $ SB.normal (Just $ SB.var muAlphaP)  (SB.var sigmaAlphaP)
 --          pure muAlphaP
         thetaP <- SB.useDataSetForBindings elexPData $ do
           SB.addDeclBinding' dmColIndexP dmColExprP
           SB.addUseBinding' dmColIndexP dmColExprP
           muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 1))
---          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
---          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 4
---          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
---          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
-          pure muThetaP
+          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
+          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 1
+          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
+          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
+--          pure muThetaP
 {-        (centerPF, llSetP) <- addBBModelForDataSet'' "ElexP" includePP
                                (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
                                NoDataSetAlpha Nothing (0.0001) alphaP thetaP SB.emptyLLSet -}
-        (centerPF, llSetP) <- addBLModelForDataSet "ElexP" includePP
+        (centerPF, llSetP1) <- addBLModelForDataSet "ElexP" includePP
                                (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
                                NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
-{-        let ccesP (centerFM, llS) office = do
+        let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)
                                 includePP
@@ -751,7 +755,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               return (Just centerF, llS)
             llFoldM = FL.FoldM ccesP (return (Just centerPF, llSetP1)) return
         (_, llSetP) <- FL.foldM llFoldM (votesFrom model)
--}
+
         SB.generateLogLikelihood' $ SB.mergeLLSets llSetT llSetP
 
         -- post-stratification for crosstabs
@@ -902,14 +906,16 @@ printDensityTransform LogDensity = "LogDensity"
 printDensityTransform (BinDensity bins range) = "BinDensity_" <> show bins <> "_" <> show range
 printDensityTransform (SigmoidDensity c s r) = "SigmoidDensity_" <> show c <> "_" <> show s <> "_" <> show r
 
+{-
+type GetCCESVotesC rs = (F.ElemOf rs HouseVotes
+                        , F.ElemOf rs AHHouseDVotes
+                        , F.ElemOf rs AHHouseRVotes
+                        , F.ElemOf rs PresVotes
+                        , F.ElemOf rs AHPresDVotes
+                        , F.ElemOf rs AHPresRVotes
+                        )
 
-getCCESVotes :: (F.ElemOf rs HouseVotes
-                , F.ElemOf rs AHHouseDVotes
-                , F.ElemOf rs AHHouseRVotes
-                , F.ElemOf rs PresVotes
-                , F.ElemOf rs AHPresDVotes
-                , F.ElemOf rs AHPresRVotes
-                )
+getCCESVotes :: GetCCCESVotesC rs
              => ET.OfficeT -> ET.VoteShareType -> (F.Record rs -> Double, F.Record rs -> Double)
 getCCESVotes ET.House ET.FullShare = (realToFrac . F.rgetField @HouseVotes, F.rgetField @AHHouseDVotes)
 getCCESVotes ET.House ET.TwoPartyShare = (\r -> F.rgetField @AHHouseDVotes r + F.rgetField @AHHouseRVotes r, F.rgetField @AHHouseDVotes)
@@ -917,23 +923,30 @@ getCCESVotes ET.President ET.FullShare = (realToFrac . F.rgetField @PresVotes, F
 getCCESVotes ET.President ET.TwoPartyShare = (\r ->  F.rgetField @AHPresDVotes r + F.rgetField @AHPresRVotes r, F.rgetField @AHPresDVotes)
 getCCESVotes _ _ = (const 0, const 0) -- we shouldn't call this
 
-zeroCCESVotes ::  (F.ElemOf rs HouseVotes
-                  , F.ElemOf rs PresVotes
-                  , F.ElemOf rs AHHouseDVotes
-                  , F.ElemOf rs AHHouseRVotes
-                  , F.ElemOf rs AHPresDVotes
-                  , F.ElemOf rs AHPresRVotes
-                  )
+-}
+type GetCCESVotesC rs = (F.ElemOf rs HouseVotes
+                        , F.ElemOf rs HouseDVotes
+                        , F.ElemOf rs HouseRVotes
+                        , F.ElemOf rs PresVotes
+                        , F.ElemOf rs PresDVotes
+                        , F.ElemOf rs PresRVotes
+                        )
+
+
+getCCESVotes :: GetCCESVotesC rs
+             => ET.OfficeT -> ET.VoteShareType -> (F.Record rs -> Int, F.Record rs -> Int)
+getCCESVotes ET.House ET.FullShare = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
+getCCESVotes ET.House ET.TwoPartyShare = (\r -> F.rgetField @HouseDVotes r + F.rgetField @HouseRVotes r, F.rgetField @HouseDVotes)
+getCCESVotes ET.President ET.FullShare = (F.rgetField @PresVotes, F.rgetField @PresDVotes)
+getCCESVotes ET.President ET.TwoPartyShare = (\r ->  F.rgetField @PresDVotes r + F.rgetField @PresRVotes r, F.rgetField @PresDVotes)
+getCCESVotes _ _ = (const 0, const 0) -- we shouldn't call this
+
+zeroCCESVotes :: GetCCESVotesC rs
               => ET.OfficeT -> ET.VoteShareType -> F.Record rs -> Bool
 zeroCCESVotes office vst r = votesInRace r == 0 where
   (votesInRace, _) = getCCESVotes office vst
 
-countCCESZeroVoteRows :: (F.ElemOf rs HouseVotes
-                         , F.ElemOf rs PresVotes
-                         , F.ElemOf rs AHHouseDVotes
-                         , F.ElemOf rs AHHouseRVotes
-                         , F.ElemOf rs AHPresDVotes
-                         , F.ElemOf rs AHPresRVotes
+countCCESZeroVoteRows :: (GetCCESVotesC rs
                          , Foldable f
                          )
                       => ET.OfficeT -> ET.VoteShareType -> f (F.Record rs) -> Int
