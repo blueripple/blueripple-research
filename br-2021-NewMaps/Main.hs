@@ -156,7 +156,12 @@ main = do
 
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stanDM7"
-modelVariant = BRE.Model ET.TwoPartyShare (Set.fromList [ET.President]) (BRE.BinDensity 10 5) (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
+modelVariant = BRE.Model
+               ET.TwoPartyShare
+               (Set.fromList [ET.President])
+               (BRE.BinDensity 10 5)
+               (Set.fromList [BRE.DMRace])
+               BRE.SingleBeta
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -387,6 +392,56 @@ ccesAndCPSForStates sas (BRE.CCESAndCPSEM cces cpsV stElex cdElex) =
   in BRE.CCESAndCPSEM (f cces) (f cpsV) (f stElex) (f cdElex)
 
 
+type SimpleDR = [BRE.FracFemale
+                , BRE.FracGrad
+                , BRE.FracWhiteNonHispanic
+                , BRE.FracOther
+                , BRE.FracBlack
+                , BRE.FracHispanic
+                , BRE.FracAsian
+                , BRE.FracWhiteNonGrad
+                , DT.PopPerSqMile
+                ]
+
+
+psDemographicsInnerFld :: FL.Fold (F.Record (ModelPredictorR V.++ '[BRC.Count])) (F.Record SimpleDR)
+psDemographicsInnerFld =
+  let cnt = F.rgetField @BRC.Count
+      sex = F.rgetField @DT.SexC
+      grad = F.rgetField @DT.CollegeGradC
+      race = F.rgetField @DT.Race5C
+      density = F.rgetField @DT.PopPerSqMile
+      logDensity = Numeric.log . density
+      intRatio x y = realToFrac x / realToFrac y
+      cntF = FL.premap cnt FL.sum
+      fracF f = intRatio <$> FL.prefilter f cntF <*> cntF
+      cntWgtdSumF f = FL.premap (\r -> realToFrac (cnt r) * f r) FL.sum
+      cntWgtdF f = (/) <$> cntWgtdSumF f <*> fmap realToFrac cntF
+  in FF.sequenceRecFold $
+     FF.toFoldRecord (fracF ((== DT.Female) . sex))
+     V.:& FF.toFoldRecord (fracF ((== DT.Grad) . grad))
+     V.:& FF.toFoldRecord (fracF ((== DT.R5_WhiteNonHispanic) . race))
+     V.:& FF.toFoldRecord (fracF ((== DT.R5_Other) . race))
+     V.:& FF.toFoldRecord (fracF ((== DT.R5_Black) . race))
+     V.:& FF.toFoldRecord (fracF ((== DT.R5_Hispanic) . race))
+     V.:& FF.toFoldRecord (fracF ((== DT.R5_Asian) . race))
+     V.:& FF.toFoldRecord (fracF (\r -> race r == DT.R5_WhiteNonHispanic && grad r == DT.NonGrad))
+     V.:& FF.toFoldRecord (fmap Numeric.exp $ cntWgtdSumF logDensity)
+     V.:& V.RNil
+
+psDemographicsFld :: (Ord (F.Record ks)
+                     , FI.RecVec (ks V.++ SimpleDR)
+                     )
+                  => (F.Record PostStratR -> F.Record ks)
+                  -> FL.Fold (F.Record PostStratR) (F.FrameRec (ks V.++ SimpleDR))
+psDemographicsFld f = FMR.concatFold
+                      $ FMR.mapReduceFold
+                      FMR.noUnpack
+                      (FMR.Assign $ \r -> (f r, F.rcast r))
+                      (FMR.foldAndAddKey psDemographicsInnerFld)
+
+
+
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
@@ -426,10 +481,15 @@ modelDiagnostics cmdLine = do
       postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --  K.logLE K.Info "CA CCES Rows"
 --  K.ignoreCacheTime ccesWD_C >>= BR.logFrame . F.filterFrame ((== "CA") . F.rgetField @BR.StateAbbreviation)
+  fixedACS <- K.ignoreCacheTime fixedACS_C
+  K.logLE K.Info "Demographics By State"
+  BR.logFrame $ FL.fold (psDemographicsFld (F.rcast @'[BR.StateAbbreviation])) fixedACS
+
   modelBySex  <- modelDM False sexGroup
   modelByEducation  <- modelDM False educationGroup
   modelByRace  <- modelDM False raceGroup
   modelByState  <- modelDM True stateGroup
+{-
   K.logLE K.Info $ BRE.dataLabel modelVariant <> " :By State"
   BR.logFrame modelByState
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Race"
@@ -438,7 +498,7 @@ modelDiagnostics cmdLine = do
   BR.logFrame modelBySex
   K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Education"
   BR.logFrame modelByEducation
-
+-}
   diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)

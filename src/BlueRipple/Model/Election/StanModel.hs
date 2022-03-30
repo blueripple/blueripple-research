@@ -680,7 +680,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
       officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
-      modelName = "LegDistricts_" <> modelLabel model <> "_HierAlphaBeta_" <> officesNamePart
+      modelName = "LegDistricts_" <> modelLabel model <> "_" <> officesNamePart
       jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
       psDataSetName' = psDataSetName
                        <> "_"  <> printDensityTransform (densityTransform model)
@@ -689,6 +689,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart DMTurnout (const 0)
+            centerMatrices = False
+            initialCenterFM = if centerMatrices then Nothing else (Just $ \_ v _ -> pure v)
             meanTurnout = 0.6
             logit x = Numeric.log (x / (1 - x))
             logitMeanTurnout = logit meanTurnout
@@ -707,14 +709,16 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           SB.addDeclBinding' dmColIndexT dmColExprT
           SB.addUseBinding' dmColIndexT dmColExprT
           muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 1))
-          tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
-          corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 1
-          thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
-          SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
---          pure muThetaT
+          case betaType model of
+            HierarchicalBeta -> do
+              tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
+              corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 1
+              thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
+              SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
+            SingleBeta -> pure muThetaT
         let llSet0 = SB.emptyLLSet
 --        (centerTF, llSetT1) <- addBBModelForDataSet'' "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing (0.005) alphaT thetaT SB.emptyLLSet
-        (centerTF, llSetT1) <- addBLModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing alphaT thetaT SB.emptyLLSet
+        (centerTF, llSetT1) <- addBLModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha initialCenterFM alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
@@ -731,17 +735,16 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           SB.addDeclBinding' dmColIndexP dmColExprP
           SB.addUseBinding' dmColIndexP dmColExprP
           muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 1))
-          tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
-          corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 1
-          thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
-          SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
---          pure muThetaP
-{-        (centerPF, llSetP) <- addBBModelForDataSet'' "ElexP" includePP
-                               (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
-                               NoDataSetAlpha Nothing (0.0001) alphaP thetaP SB.emptyLLSet -}
+          case betaType model of
+            HierarchicalBeta -> do
+              tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
+              corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 1
+              thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
+              SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
+            SingleBeta -> pure muThetaP
         (centerPF, llSetP1) <- addBLModelForDataSet "ElexP" includePP
                                (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
-                               NoDataSetAlpha Nothing alphaP thetaP SB.emptyLLSet
+                               NoDataSetAlpha initialCenterFM alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)
@@ -758,52 +761,31 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 
         SB.generateLogLikelihood' $ SB.mergeLLSets llSetT llSetP
 
-        -- post-stratification for crosstabs
-        -- NB: invSamples does not matter for expectations
         let  dmThetaE ci dmE thetaE = SB.vectorizedOne ci $ SB.function "dot_product" (dmE :| [thetaE])
-             muE ci aE dmE thetaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmThetaE ci dmE thetaE
-             mu ci alpha dm theta =  muE ci (SB.var alpha) (SB.var dm) (SB.var theta)
-             betaA ci alpha dm theta = mu ci alpha dm theta
-             betaB ci alpha dm theta =  SB.paren (SB.scalar "1.0" `SB.minus` mu ci alpha dm theta)
-             betaAT dm = betaA dmColIndexT alphaT dm thetaT
-             betaBT dm = betaB dmColIndexT alphaT dm thetaT
-             betaAP dm = betaA dmColIndexP alphaP dm thetaP
-             betaBP dm = betaB dmColIndexP alphaP dm thetaP
+             probE ci aE dmE thetaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmThetaE ci dmE thetaE
+             prob ci alpha dm theta =  probE ci (SB.var alpha) (SB.var dm) (SB.var theta)
+             probT dm = prob dmColIndexT alphaT dm thetaT
+             probP dm = prob dmColIndexP alphaP dm thetaP
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "PSData"
         dmPS_T' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart DMTurnout)
         dmPS_P' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart dmPrefType)
         dmPS_T <- centerTF SC.GQData dmPS_T' (Just "T")
         dmPS_P <- centerPF SC.GQData dmPS_P' (Just "P")
-        let psTPrecompute dm dat  = do
-              betaA' <- SB.vectorizeExpr "psBetaAT" (betaAT dm) (SB.dataSetName dat)
-              betaB' <- SB.vectorizeExpr "psBetaBT" (betaBT dm) (SB.dataSetName dat)
-              return (betaA', betaB')
-            psTExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
-            psTExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
-            psPPrecompute dm dat = do
-              betaA' <- SB.vectorizeExpr "psBetaAP" (betaAP dm) (SB.dataSetName dat)
-              betaB' <- SB.vectorizeExpr "psBetaBP" (betaBP dm) (SB.dataSetName dat)
-              return (betaA', betaB')
-            psPExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
-            psPExpr (bA, bB) =  pure $ SB.betaMu (SB.var bA) (SB.var bB)
-            psDVotePreCompute dmT dmP dat = do
-              betaTs <- psTPrecompute dmT dat
-              betaPs <- psPPrecompute dmP dat
-              return (betaTs, betaPs)
-            psDVoteExpr :: ((SB.StanVar, SB.StanVar), (SB.StanVar, SB.StanVar))  -> SB.StanBuilderM md gq SB.StanExpr
-            psDVoteExpr ((bAT, bBT), (bAP, bBP)) = do
-              pT <- SB.stanDeclareRHS "pT" SB.StanReal "" $ SB.betaMu (SB.var bAT) (SB.var bBT)
-              pD <- SB.stanDeclareRHS "pD" SB.StanReal "" $ SB.betaMu (SB.var bAP) (SB.var bBP)
-              pure $ SB.var pT `SB.times` SB.var pD
-            psBetaATPreCompute dm dat = SB.vectorizeExpr "psBetaAT" (betaAT dm) (SB.dataSetName dat)
-            psBetaATExpr bA = pure $ SB.var bA
+        let psTPrecompute dm dat  = SB.vectorizeExpr "pT" (probT dm) (SB.dataSetName dat)
+            psTExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+            psTExpr p =  pure $ SB.var p
+            psPPrecompute dm dat = SB.vectorizeExpr "pD" (probP dm) (SB.dataSetName dat)
+            psPExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+            psPExpr p =  pure $ SB.var p
+            psDVotePreCompute dmT dmP dat = (,) <$> psTPrecompute dmT dat <*> psPPrecompute dmP dat
+            psDVoteExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
+            psDVoteExpr (pT, pD) = pure $ SB.var pT `SB.times` SB.var pD
             turnoutPS = ((psTPrecompute dmPS_T psData, psTExpr), Nothing)
             prefPS = ((psPPrecompute dmPS_P psData, psPExpr), Nothing)
-            dVotePS = ((psDVotePreCompute dmPS_T dmPS_P psData, psDVoteExpr), Just $ SB.name "pT")
-            betaATPS = ((psBetaATPreCompute dmPS_T psData, psBetaATExpr), Nothing)
+            dVotePS = ((psDVotePreCompute dmPS_T dmPS_P psData, psDVoteExpr), Just $ SB.var . fst)
             postStratify :: (Typeable md, Typeable gq, Ord k)
                          => Text
-                         -> ((SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr), Maybe SB.StanExpr)
+                         -> ((SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr), Maybe (x -> SB.StanExpr))
                          -> SB.GroupTypeTag k -> SB.StanBuilderM md gq SB.StanVar
             postStratify name psCalcs grp =
               MRP.addPostStratification
@@ -814,10 +796,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               (realToFrac . F.rgetField @Census.Count)
               (MRP.PSShare $ snd psCalcs)
               (Just grp)
-        postStratify "BetaAT" betaATPS psGroup
         postStratify "Turnout" turnoutPS psGroup
         postStratify "Pref" prefPS psGroup
         postStratify "DVote" dVotePS psGroup
+
         pure ()
 
       extractResults :: K.KnitEffects r
@@ -952,10 +934,13 @@ countCCESZeroVoteRows :: (GetCCESVotesC rs
                       => ET.OfficeT -> ET.VoteShareType -> f (F.Record rs) -> Int
 countCCESZeroVoteRows office vst = FL.fold (FL.prefilter (zeroCCESVotes office vst) FL.length)
 
+data BetaType = HierarchicalBeta | SingleBeta deriving (Show,Eq)
+
 data Model = Model { voteShareType :: ET.VoteShareType
                    , votesFrom :: Set ET.OfficeT
                    , densityTransform :: DensityTransform
                    , modelComponents :: Set DMComponents
+                   , betaType :: BetaType
                    }  deriving (Generic)
 
 modelLabel :: Model  -> Text
@@ -963,6 +948,7 @@ modelLabel m = show (voteShareType m)
                <> "_" <> T.intercalate "_" (show <$> Set.toList (votesFrom m))
                <> "_" <> printDensityTransform (densityTransform m)
                <> "_" <> printComponents (modelComponents m)
+               <> "_HierAlpha" <> if betaType m == HierarchicalBeta then "Beta" else ""
 
 dataLabel :: Model -> Text
 dataLabel = modelLabel

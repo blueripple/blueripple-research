@@ -108,10 +108,12 @@ FS.declareColumn "FracGrad" ''Double
 FS.declareColumn "FracWhiteNonHispanic" ''Double
 FS.declareColumn "FracWhiteHispanic" ''Double
 FS.declareColumn "FracNonWhiteHispanic" ''Double
+FS.declareColumn "FracHispanic" ''Double
 FS.declareColumn "FracBlack" ''Double
 FS.declareColumn "FracAsian" ''Double
 FS.declareColumn "FracOther" ''Double
 FS.declareColumn "FracWhiteGrad" ''Double
+FS.declareColumn "FracWhiteNonGrad" ''Double
 FS.declareColumn "FracCitizen" ''Double
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent

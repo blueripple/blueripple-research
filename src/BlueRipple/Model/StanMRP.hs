@@ -338,7 +338,7 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
     Left msg -> Left $ "Indexing error when trying to build IntMap index: " <> msg
     Right n -> Right $ IM.insert n (keyF r) im
 
-data PostStratificationType = PSRaw | PSShare (Maybe SB.StanExpr) deriving (Eq, Show)
+data PostStratificationType a = PSRaw | PSShare (Maybe (a -> SB.StanExpr))
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
@@ -347,7 +347,7 @@ addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typea
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
                       -> (rPS -> Double) -- PS weight
-                      -> PostStratificationType -- raw or share
+                      -> PostStratificationType a -- raw or share
                       -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
                       -> BuilderM md gq SB.StanVar
 addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF psType mPSGroup = do
@@ -432,7 +432,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
               SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
                 PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
-                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.var wgtsV)
+                PSShare (Just f) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (f preComputed `SB.times` SB.var wgtsV)
                 _ -> return ()
             case psType of
               PSShare _ -> SB.addExprLine errCtxt $ SB.var psV `divEq` wgtSumE
@@ -456,7 +456,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
               SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
               case psType of
                 PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
-                PSShare (Just e) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (e `SB.times` SB.var wgtsV)
+                PSShare (Just f) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (f preComputed `SB.times` SB.var wgtsV)
                 _ -> return ()
             case psType of
               PSShare _ -> SB.stanForLoopB "n" Nothing indexName $ do
