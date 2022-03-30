@@ -166,23 +166,36 @@ dmSubset' dmType include all = case dmType of
                                  DMPref -> dmSubset include all
                                  DMPresOnlyPref -> dmSubset (Set.delete DMInc include) all
 
-designMatrixRowPS :: forall rs.(F.ElemOf rs DT.CollegeGradC
-                             , F.ElemOf rs DT.SexC
-                             , F.ElemOf rs DT.Race5C
-                             , F.ElemOf rs DT.PopPerSqMile
-                             )
-                  => Set DMComponents
-                  -> DM.DesignMatrixRowPart (F.Record rs)
-                  -> DMType
-                  -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRowPS include densRP dmType = DM.DesignMatrixRow (show dmType) (dmSubset' dmType include all)
+designMatrixRowPS' :: forall rs.(F.ElemOf rs DT.CollegeGradC
+                                , F.ElemOf rs DT.SexC
+                                , F.ElemOf rs DT.Race5C
+                                , F.ElemOf rs DT.PopPerSqMile
+                                )
+                   => Set DMComponents
+                   -> DM.DesignMatrixRowPart (F.Record rs)
+                   -> DMType
+                   -> (F.Record rs -> Double)
+                   -> DM.DesignMatrixRow (F.Record rs)
+designMatrixRowPS' include densRP dmType incF = DM.DesignMatrixRow (show dmType) (dmSubset' dmType include all)
   where
-    incRP = DM.DesignMatrixRowPart "Incumbency" 1 (const $ VU.replicate 1 0) -- we set incumbency to 0 for PS
+    incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCCES
     all = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
+
+designMatrixRowPS :: forall rs.(F.ElemOf rs DT.CollegeGradC
+                                , F.ElemOf rs DT.SexC
+                                , F.ElemOf rs DT.Race5C
+                                , F.ElemOf rs DT.PopPerSqMile
+                                )
+                   => Set DMComponents
+                   -> DM.DesignMatrixRowPart (F.Record rs)
+                   -> DMType
+                   -> DM.DesignMatrixRow (F.Record rs)
+designMatrixRowPS include densRP dmType = designMatrixRowsPS' include densRP dmType (const 0)
+
 
 designMatrixRowCCES :: Set DMComponents
                     -> DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
@@ -295,7 +308,7 @@ setupCPSData include densRP = do
   dmCPS <- DM.addDesignMatrix cpsData (designMatrixRowCPS include densRP)
   return (cpsData, designMatrixRowCPS include densRP, cvapCPS, votedCPS, dmCPS)
 
-
+{-
 setupElexTData :: (Typeable md, Typeable gq)
                => Set DMComponents
                -> DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
@@ -308,7 +321,29 @@ setupElexTData include densRP = do
   votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
   dmElexT <- DM.addDesignMatrix elexTData (designMatrixRowElex include densRP DMTurnout)
   return (elexTData, designMatrixRowElex include densRP DMTurnout, cvapElex, votedElex, dmElexT)
+-}
 
+setupElexTData :: (Typeable md, Typeable gq)
+               => SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+                                        , SB.StanVar
+                                        , SB.StanVar)
+setupElexTData = do
+  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
+  cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
+  votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
+  return (elexTData, cvapElex, votedElex)
+
+
+setupACSPSRowsT :: (Typeable md, Typeable gq)
+                => Set DMComponents
+                -> DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
+                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+                                         , SB.StanVar
+                                         , SB.StanVar)
+setupACSPSRowsT include densRP = do
+  acsPSData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.ModelData "ACS"
+  acsWgts <- SB.addCountData elexTData "ACS_CVAP" (F.rgetField @PUMS.Citizens)
+  dmACS <- DM.addDesignMatrix elexTData (designMatrixRowPS include densRP DMTurnout)
 
 setupCCESPData :: (Typeable md, Typeable gq)
                => Set DMComponents
@@ -557,6 +592,77 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alph
       $ SB.generatePosteriorPrediction rtt pp dist (muT dsIxM dmC)
     pure ()
   return (centerF, llSet')
+
+addBLModelForDataSetPS :: (Typeable md, Typeable gq)
+                       => Text
+                       -> Bool
+                       -> (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar) --, SB.StanVar, SB.StanVar)
+                       -> SB.StanBuilderM md gq (SB.RowTypeTag r', SB.StanVar, SB.StanVar)
+                       -> DataSetAlpha
+                       -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                       -> SB.GroupTypeTag k
+                       -> SB.StanVar
+                       -> SB.StanVar
+                       -> SB.LLSet md gq
+                       -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+addBLModelForDataSetPS dataSetLabel includePP psRowsSetup targetsSetupM dataSetAlpha centerM groupByGTT alpha beta llSet = do
+  let addLabel x = x <> "_" <> dataSetLabel
+  let (rttPS, designMatrixRow, psCounts, dm) = psRowsSetup
+  (rttTarget, tgtCounts, tgtSuccesses) <- targetsSetupM
+  dmColIndex <- case dm of
+    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+    (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
+  dsIxM <-  case dataSetAlpha of
+              NoDataSetAlpha -> return Nothing
+              DataSetAlpha -> do
+                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+                return $ Just ix
+  (dmC, centerF) <- case centerM of
+    Nothing -> DM.centerDataMatrix dm Nothing
+    Just f -> do
+      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
+      return (dmC', f)
+  let
+      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
+      muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
+      muT ixM dm = case ixM of
+        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
+        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
+--      vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM dmC) (SB.dataSetName rttPS)
+  gP <- SB.inBlock SB.SBTransformedParameters $ SB.useDataSetForBindings rttPS $ do
+--    mu <- vecMu
+    gProb <- SB.stanDeclareRHS
+      (dataSetLabel <> "_By_" <> SB.taggedGroupName groupByGTT)
+      (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
+      ""
+      (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize $ SB.dataSetName rttTarget]))
+    SB.bracketed 2 $ do
+      gWeight <- SB.stanDeclareRHS
+        (dataSetLabel <> "_By_" <> SB.taggedGroupName groupByGTT <> "_wgts")
+        (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
+        "<lower=0>"
+        (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize $ SB.dataSetName rttTarget]))
+      SB.stanForLoopB "k" Nothing (SB.dataSetName rttPS) $ do
+        SB.addExprLines "addBLModelForDataSetPS"
+          [SB.indexBy (SB.var gProb) (SB.taggedGroupName groupByGTT) `SB.plusEq` (SB.paren $ SB.var psCounts `SB.times` muT dsIxM dmC)
+          , SB.indexBy (SB.var gWeight) (SB.taggedGroupName groupByGTT) `SB.plusEq` SB.var psCounts
+          ]
+      SB.stanForLoopB "k" Nothing (SB.dataSetName rttTarget) $ do
+        SB.addExprLine "addBLModelForDataSetPS" $ SB.binOp "/=" (SB.var gProb) (SB.var gWeight)
+      return gProb
+  let dist = SB.binomialLogitDist' True tgtCounts
+  SB.inBlock SB.SBModel $ SB.sampleDistV rttTarget dist (SB.var gP) tgtSuccesses
+
+  let llDetails =  SB.LLDetails dist (pure $ SB.var gP) tgtSuccesses
+      llSet' = SB.addToLLSet rttTarget llDetails llSet
+      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
+  when includePP $ do
+    SB.useDataSetForBindings rttTarget
+      $ SB.generatePosteriorPrediction rttTarget pp dist (SB.var gP)
+    pure ()
+  return (centerF, llSet')
+
+
 
 
 addNormalModelForDataSet :: (Typeable md, Typeable gq)

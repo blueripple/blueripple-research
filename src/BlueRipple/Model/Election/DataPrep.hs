@@ -256,20 +256,21 @@ instance Flat.Flat CCESAndPUMS where
 
 data CCESAndCPSEM = CCESAndCPSEM { ccesEMRows :: F.FrameRec CCESWithDensityEM
                                  , cpsVEMRows :: F.FrameRec CPSVWithDensityEM
+                                 , acsRows ::  F.FrameRec PUMSWithDensityEM
                                  , stateElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
                                  , cdElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                                  } deriving (Generic)
 
 instance Flat.Flat CCESAndCPSEM where
-  size (CCESAndCPSEM cces cpsV stElex cdElex) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame stElex, FS.SFrame cdElex) n
-  encode (CCESAndCPSEM cces cpsV stElex cdElex) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame stElex, FS.SFrame cdElex)
-  decode = (\(cces, cpsV, stElex, cdElex) -> CCESAndCPSEM (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame stElex) (FS.unSFrame cdElex)) <$> Flat.decode
+  size (CCESAndCPSEM cces cpsV acs stElex cdElex) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame acs, FS.SFrame stElex, FS.SFrame cdElex) n
+  encode (CCESAndCPSEM cces cpsV acs stElex cdElex) = Flat.encode (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame acs, FS.SFrame stElex, FS.SFrame cdElex)
+  decode = (\(cces, cpsV, acs, stElex, cdElex) -> CCESAndCPSEM (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame acs) (FS.unSFrame stElex) (FS.unSFrame cdElex)) <$> Flat.decode
 
 ccesAndCPSForYears :: [Int] -> CCESAndCPSEM -> CCESAndCPSEM
-ccesAndCPSForYears ys (CCESAndCPSEM cces cpsV stElex cdElex) =
+ccesAndCPSForYears ys (CCESAndCPSEM cces cpsV acs stElex cdElex) =
   let f :: (FI.RecVec rs, F.ElemOf rs BR.Year) => F.FrameRec rs -> F.FrameRec rs
       f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-  in CCESAndCPSEM (f cces) (f cpsV) (f stElex) (f cdElex)
+  in CCESAndCPSEM (f cces) (f cpsV) (f acs) (f stElex) (f cdElex)
 
 
 prepCCESAndCPSEM :: (K.KnitEffects r, BR.CacheEffects r)
@@ -287,7 +288,8 @@ prepCCESAndCPSEM clearCache = do
   BR.retrieveOrMakeD cacheKey deps $ \(ccesAndPums, pElex, sElex, hElex) -> do
     let ccesEM = FL.fold fldAgeInCCES $ ccesRows ccesAndPums
         cpsVEM = FL.fold fldAgeInCPS $ cpsVRows ccesAndPums
-    return $ CCESAndCPSEM ccesEM cpsVEM (pElex <> sElex) hElex
+        acsEM = FL.fold fldAgeInACS $ pumsRows ccesAndPums
+    return $ CCESAndCPSEM ccesEM cpsVEM acsEM (pElex <> sElex) hElex
 
 prepACS :: (K.KnitEffects r, BR.CacheEffects r)
         => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSWithDensityEM))
