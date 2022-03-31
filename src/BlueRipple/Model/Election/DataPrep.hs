@@ -82,6 +82,8 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 
 import qualified Control.MapReduce as FMR
 import qualified Frames.Folds as FF
+import qualified Control.MapReduce as FMR
+import qualified Control.MapReduce as FMR
 
 
 FS.declareColumn "Surveyed" ''Int
@@ -256,7 +258,7 @@ instance Flat.Flat CCESAndPUMS where
 
 data CCESAndCPSEM = CCESAndCPSEM { ccesEMRows :: F.FrameRec CCESWithDensityEM
                                  , cpsVEMRows :: F.FrameRec CPSVWithDensityEM
-                                 , acsRows ::  F.FrameRec PUMSWithDensityEM
+                                 , acsRows ::  F.FrameRec ACSWithDensityEM
                                  , stateElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
                                  , cdElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                                  } deriving (Generic)
@@ -288,7 +290,7 @@ prepCCESAndCPSEM clearCache = do
   BR.retrieveOrMakeD cacheKey deps $ \(ccesAndPums, pElex, sElex, hElex) -> do
     let ccesEM = FL.fold fldAgeInCCES $ ccesRows ccesAndPums
         cpsVEM = FL.fold fldAgeInCPS $ cpsVRows ccesAndPums
-        acsEM = FL.fold fldAgeInACS $ pumsRows ccesAndPums
+        acsEM = FL.fold fixACSFld $ pumsRows ccesAndPums
     return $ CCESAndCPSEM ccesEM cpsVEM acsEM (pElex <> sElex) hElex
 
 prepACS :: (K.KnitEffects r, BR.CacheEffects r)
@@ -966,9 +968,25 @@ fldAgeInCCES = FMR.concatFold
 
 type PUMSWithDensity = PUMSByCDR V.++ '[DT.PopPerSqMile]
 type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
+type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, PUMS.Citizens]
 
 type CPSVWithDensity = CPSVByStateAH V.++ '[DT.PopPerSqMile]
 type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
+
+fixACSFld :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec ACSWithDensityEM)
+fixACSFld =
+  let safeLog x = if x < 1e-12 then 0 else Numeric.log x
+      density = F.rgetField @DT.PopPerSqMile
+      cit = F.rgetField @PUMS.Citizens
+      citFld = FL.premap cit FL.sum
+      citWgtdDensityFld = fmap Numeric.exp ((/) <$> FL.premap (\r -> realToFrac (cit r) * safeLog (density r)) FL.sum <*> fmap realToFrac citFld)
+      dataFld :: FL.Fold (F.Record [DT.PopPerSqMile, PUMS.Citizens]) (F.Record [DT.PopPerSqMile, PUMS.Citizens])
+      dataFld = (\d c -> d F.&: c F.&: V.RNil) <$> citWgtdDensityFld <*> citFld
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     (FMR.simpleUnpack $ addRace5)
+     (FMR.assignKeysAndData @(CDKeyR V.++ CCESPredictorEMR))
+     (FMR.foldAndAddKey dataFld)
 
 race5FromRace4AAndHisp :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> DT.Race5
 race5FromRace4AAndHisp r =

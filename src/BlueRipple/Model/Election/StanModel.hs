@@ -194,7 +194,7 @@ designMatrixRowPS :: forall rs.(F.ElemOf rs DT.CollegeGradC
                    -> DM.DesignMatrixRowPart (F.Record rs)
                    -> DMType
                    -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRowPS include densRP dmType = designMatrixRowsPS' include densRP dmType (const 0)
+designMatrixRowPS include densRP dmType = designMatrixRowPS' include densRP dmType (const 0)
 
 
 designMatrixRowCCES :: Set DMComponents
@@ -328,22 +328,43 @@ setupElexTData :: (Typeable md, Typeable gq)
                                         , SB.StanVar
                                         , SB.StanVar)
 setupElexTData = do
-  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
+  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "Elections"
   cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
   votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
   return (elexTData, cvapElex, votedElex)
 
+setupElexPData :: (Typeable md, Typeable gq)
+               => ET.VoteShareType
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+                                        , SB.StanVar
+                                        , SB.StanVar)
+setupElexPData vst = do
+  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "Elections"
+  votesInRace <- SB.addCountData elexPData "VotesInRace_Elections"
+                 $ case vst of
+                     ET.TwoPartyShare -> (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r)
+                     ET.FullShare -> F.rgetField @TVotes
+  dVotesInRace <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
+  return (elexPData, votesInRace, dVotesInRace)
 
-setupACSPSRowsT :: (Typeable md, Typeable gq)
-                => Set DMComponents
-                -> DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
-                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
+
+setupACSPSRows :: (Typeable md, Typeable gq)
+               => Set DMComponents
+               -> DM.DesignMatrixRowPart (F.Record PUMSWithDensityEM)
+               -> DMType
+               -> (F.Record PUMSWithDensityEM -> Double)
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record PUMSWithDensityEM)
+                                         , SB.StanVar
                                          , SB.StanVar
                                          , SB.StanVar)
-setupACSPSRowsT include densRP = do
+setupACSPSRows include densRP dmType incF = do
+  let dmRowT = designMatrixRowPS include densRP DMTurnout
+      dmRowP = designMatrixRowPS' include densRP dmType incF
   acsPSData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.ModelData "ACS"
-  acsWgts <- SB.addCountData elexTData "ACS_CVAP" (F.rgetField @PUMS.Citizens)
-  dmACS <- DM.addDesignMatrix elexTData (designMatrixRowPS include densRP DMTurnout)
+  acsWgts <- SB.addCountData acsPSData "ACS_CVAP_WGT" (F.rgetField @PUMS.Citizens)
+  dmACST <- DM.addDesignMatrix acsPSData dmRowT
+  dmACSP <- DM.addDesignMatrix acsPSData dmRowP
+  return (acsPSData, acsWgts, dmACST, dmACSP)
 
 setupCCESPData :: (Typeable md, Typeable gq)
                => Set DMComponents
@@ -364,6 +385,7 @@ setupCCESPData include densRP dmPrefType incF office vst = do
   dVotesInRaceCCES <- SB.addCountData ccesPData ("DVotesInRace_CCES_" <> show office) dVotesF
   return (ccesPData, designMatrixRowCCES include densRP DMPref (incF office), raceVotesCCES, dVotesInRaceCCES, dmCCESP)
 
+{-
 setupElexPData :: (Typeable md, Typeable gq)
                => Set DMComponents
                -> DM.DesignMatrixRowPart (F.Record ElectionWithDemographicsR)
@@ -382,7 +404,7 @@ setupElexPData include densRP dmPrefType vst = do
         ET.FullShare -> F.rgetField @TVotes
   dVotesInRaceElex <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
   return (elexPData, designMatrixRowElex include densRP DMPref, raceVotesElex, dVotesInRaceElex, dmElexP)
-
+-}
 data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
 
 addBBModelForDataSet :: (Typeable md, Typeable gq)
@@ -596,7 +618,7 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alph
 addBLModelForDataSetPS :: (Typeable md, Typeable gq)
                        => Text
                        -> Bool
-                       -> (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar) --, SB.StanVar, SB.StanVar)
+                       -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar) --, SB.StanVar, SB.StanVar)
                        -> SB.StanBuilderM md gq (SB.RowTypeTag r', SB.StanVar, SB.StanVar)
                        -> DataSetAlpha
                        -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
@@ -607,7 +629,7 @@ addBLModelForDataSetPS :: (Typeable md, Typeable gq)
                        -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
 addBLModelForDataSetPS dataSetLabel includePP psRowsSetup targetsSetupM dataSetAlpha centerM groupByGTT alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
-  let (rttPS, designMatrixRow, psCounts, dm) = psRowsSetup
+  let (rttPS, psCounts, dm) = psRowsSetup
   (rttTarget, tgtCounts, tgtSuccesses) <- targetsSetupM
   dmColIndex <- case dm of
     (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
@@ -677,7 +699,7 @@ addNormalModelForDataSet :: (Typeable md, Typeable gq)
                          -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
 addNormalModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
-  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
+  (rtt, _, counts, successes, dm) <- dataSetupM
   dmColIndex <- case dm of
     (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
     (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
@@ -780,7 +802,9 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       cdIncPair r =  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
       presIncMap = FL.fold (FL.premap stIncPair FL.map) $ F.filterFrame ((== ET.President) . F.rgetField @ET.Office) stElexRows
       houseIncMap = FL.fold (FL.premap cdIncPair FL.map) $ F.filterFrame ((== ET.House) . F.rgetField @ET.Office) cdElexRows
-      ccesIncF o r = case o of
+      incF :: ([BR.Year, BR.StateAbbreviation] F.⊆ rs, [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ rs)
+           => ET.OfficeT -> F.Record rs -> Double
+      incF o r = case o of
         ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
         ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
         _ -> 0
@@ -822,9 +846,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
               SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaT
-        let llSet0 = SB.emptyLLSet
---        (centerTF, llSetT1) <- addBBModelForDataSet'' "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha Nothing (0.005) alphaT thetaT SB.emptyLLSet
-        (centerTF, llSetT1) <- addBLModelForDataSet "ElexT" includePP (setupElexTData compInclude densityMatrixRowPart) NoDataSetAlpha initialCenterFM alphaT thetaT SB.emptyLLSet
+        (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
+        (centerTF, llSetT1) <- addBLModelForDataSetPS "ElexT" includePP (acsRowTag, acsPSWgts, acsDMT) setupElexTData NoDataSetAlpha initialCenterFM stateGroup alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
@@ -848,14 +871,12 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
               SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaP
-        (centerPF, llSetP1) <- addBLModelForDataSet "ElexP" includePP
-                               (setupElexPData compInclude densityMatrixRowPart dmPrefType (voteShareType model))
-                               NoDataSetAlpha initialCenterFM alphaP thetaP SB.emptyLLSet
+        (centerPF, llSetP1) <- addBLModelForDataSetPS "ElexP" includePP (acsRowTag, acsPSWgts, acsDMP) (setupElexPData (voteShareType model)) NoDataSetAlpha initialCenterFM stateGroup alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)
                                 includePP
-                                (setupCCESPData compInclude densityMatrixRowPart dmPrefType ccesIncF office (voteShareType model))
+                                (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
                                 DataSetAlpha
                                 centerFM
                                 alphaP
