@@ -155,7 +155,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stanDM7"
+modelDir = "br-2021-NewMaps/stanDM8"
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President])
@@ -386,10 +386,10 @@ deepDiveColonnade cas =
      <> C.headed "dS/dP" (BR.toCell cas "dS/dP" "dS/dP" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdP))
 
 ccesAndCPSForStates :: [Text] -> BRE.CCESAndCPSEM -> BRE.CCESAndCPSEM
-ccesAndCPSForStates sas (BRE.CCESAndCPSEM cces cpsV stElex cdElex) =
+ccesAndCPSForStates sas (BRE.CCESAndCPSEM cces cpsV acs stElex cdElex) =
   let f :: (FI.RecVec rs, F.ElemOf rs BR.StateAbbreviation) => F.FrameRec rs -> F.FrameRec rs
       f = F.filterFrame ((`elem` sas) . F.rgetField @BR.StateAbbreviation)
-  in BRE.CCESAndCPSEM (f cces) (f cpsV) (f stElex) (f cdElex)
+  in BRE.CCESAndCPSEM (f cces) (f cpsV) (f acs) (f stElex) (f cdElex)
 
 
 type SimpleDR = [BRE.FracFemale

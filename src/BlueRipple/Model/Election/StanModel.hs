@@ -132,6 +132,10 @@ groupBuilderDM model psGroup states psKeys = do
         ccesPrefData <- SB.addModelDataToGroupBuilder ("CCESP_" <> show office)
                         (SB.ToFoldable $ F.filterFrame (not . zeroCCESVotes office vst) . ccesEMRows)
         SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+      loadACSData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
+        acsData <- SB.addModelDataToGroupBuilder "ACS" (SB.ToFoldable $ acsRows)
+        SB.addGroupIndexForData stateGroup acsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  loadACSData
   loadElexTurnoutData
   loadCPSTurnoutData
   loadCCESTurnoutData
@@ -328,7 +332,7 @@ setupElexTData :: (Typeable md, Typeable gq)
                                         , SB.StanVar
                                         , SB.StanVar)
 setupElexTData = do
-  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "Elections"
+  elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
   cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
   votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
   return (elexTData, cvapElex, votedElex)
@@ -339,7 +343,7 @@ setupElexPData :: (Typeable md, Typeable gq)
                                         , SB.StanVar
                                         , SB.StanVar)
 setupElexPData vst = do
-  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "Elections"
+  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
   votesInRace <- SB.addCountData elexPData "VotesInRace_Elections"
                  $ case vst of
                      ET.TwoPartyShare -> (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r)
@@ -350,17 +354,17 @@ setupElexPData vst = do
 
 setupACSPSRows :: (Typeable md, Typeable gq)
                => Set DMComponents
-               -> DM.DesignMatrixRowPart (F.Record PUMSWithDensityEM)
+               -> DM.DesignMatrixRowPart (F.Record ACSWithDensityEM)
                -> DMType
-               -> (F.Record PUMSWithDensityEM -> Double)
-               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record PUMSWithDensityEM)
+               -> (F.Record ACSWithDensityEM -> Double)
+               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ACSWithDensityEM)
                                          , SB.StanVar
                                          , SB.StanVar
                                          , SB.StanVar)
 setupACSPSRows include densRP dmType incF = do
   let dmRowT = designMatrixRowPS include densRP DMTurnout
       dmRowP = designMatrixRowPS' include densRP dmType incF
-  acsPSData <- SB.dataSetTag @(F.Record PUMSWithDensityEM) SC.ModelData "ACS"
+  acsPSData <- SB.dataSetTag @(F.Record ACSWithDensityEM) SC.ModelData "ACS"
   acsWgts <- SB.addCountData acsPSData "ACS_CVAP_WGT" (F.rgetField @PUMS.Citizens)
   dmACST <- DM.addDesignMatrix acsPSData dmRowT
   dmACSP <- DM.addDesignMatrix acsPSData dmRowP
@@ -618,18 +622,17 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alph
 addBLModelForDataSetPS :: (Typeable md, Typeable gq)
                        => Text
                        -> Bool
-                       -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar) --, SB.StanVar, SB.StanVar)
                        -> SB.StanBuilderM md gq (SB.RowTypeTag r', SB.StanVar, SB.StanVar)
                        -> DataSetAlpha
                        -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                        -> SB.GroupTypeTag k
+                       -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrix
                        -> SB.StanVar
                        -> SB.StanVar
                        -> SB.LLSet md gq
                        -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
-addBLModelForDataSetPS dataSetLabel includePP psRowsSetup targetsSetupM dataSetAlpha centerM groupByGTT alpha beta llSet = do
+addBLModelForDataSetPS dataSetLabel includePP targetsSetupM dataSetAlpha centerM groupByGTT (rttPS, wgtsV, dm) alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
-  let (rttPS, psCounts, dm) = psRowsSetup
   (rttTarget, tgtCounts, tgtSuccesses) <- targetsSetupM
   dmColIndex <- case dm of
     (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
@@ -650,29 +653,8 @@ addBLModelForDataSetPS dataSetLabel includePP psRowsSetup targetsSetupM dataSetA
       muT ixM dm = case ixM of
         Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
         Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
---      vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM dmC) (SB.dataSetName rttPS)
-  gP <- SB.inBlock SB.SBTransformedParameters $ SB.useDataSetForBindings rttPS $ do
---    mu <- vecMu
-    gProb <- SB.stanDeclareRHS
-      (dataSetLabel <> "_By_" <> SB.taggedGroupName groupByGTT)
-      (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
-      ""
-      (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize $ SB.dataSetName rttTarget]))
-    SB.bracketed 2 $ do
-      gWeight <- SB.stanDeclareRHS
-        (dataSetLabel <> "_By_" <> SB.taggedGroupName groupByGTT <> "_wgts")
-        (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
-        "<lower=0>"
-        (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize $ SB.dataSetName rttTarget]))
-      SB.stanForLoopB "k" Nothing (SB.dataSetName rttPS) $ do
-        SB.addExprLines "addBLModelForDataSetPS"
-          [SB.indexBy (SB.var gProb) (SB.taggedGroupName groupByGTT) `SB.plusEq` (SB.paren $ SB.var psCounts `SB.times` muT dsIxM dmC)
-          , SB.indexBy (SB.var gWeight) (SB.taggedGroupName groupByGTT) `SB.plusEq` SB.var psCounts
-          ]
-      SB.stanForLoopB "k" Nothing (SB.dataSetName rttTarget) $ do
-        SB.addExprLine "addBLModelForDataSetPS" $ SB.binOp "/=" (SB.var gProb) (SB.var gWeight)
-      return gProb
-  let dist = SB.binomialLogitDist' True tgtCounts
+  gP <- postStratifiedParameter (Just $ dataSetLabel <> "_ps") rttPS groupByGTT (SB.var wgtsV) (SB.function "inv_logit" (one $ muT dsIxM dmC)) (Just rttTarget)
+  let dist = SB.binomialDist' True tgtCounts
   SB.inBlock SB.SBModel $ SB.sampleDistV rttTarget dist (SB.var gP) tgtSuccesses
 
   let llDetails =  SB.LLDetails dist (pure $ SB.var gP) tgtSuccesses
@@ -684,8 +666,53 @@ addBLModelForDataSetPS dataSetLabel includePP psRowsSetup targetsSetupM dataSetA
     pure ()
   return (centerF, llSet')
 
-
-
+postStratifiedParameter :: (Typeable md, Typeable gq)
+                        => Maybe Text
+                        -> SB.RowTypeTag r -- data set to post-stratify
+                        -> SB.GroupTypeTag k -- group by
+                        -> SB.StanExpr -- weight
+                        -> SB.StanExpr -- expression of parameters to post-stratify
+                        -> Maybe (SB.RowTypeTag r') -- re-index?
+                        -> SB.StanBuilderM md gq SB.StanVar
+postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
+  let dsName = SB.dataSetName rtt
+      gName = SB.taggedGroupName gtt
+      psDataByGroupName = dsName <> "_By_" <> gName
+      varName = case reIndexRttM of
+        Nothing -> fromMaybe psDataByGroupName varNameM
+        Just reIndexRtt -> fromMaybe (SB.dataSetName rtt <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
+      zeroVec indexKey varName = SB.stanDeclareRHS
+                                 varName
+                                 (SB.StanVector $ SB.NamedDim indexKey)
+                                 ""
+                                 (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey]))
+      psLoops pV wV = do
+        SB.stanForLoopB "k" Nothing dsName
+          $ SB.addExprLines "postStratifiedParameter"
+          [SB.var pV `SB.plusEq` (SB.paren wgtE `SB.times` SB.paren pE)
+          ,SB.var wV `SB.plusEq` SB.paren wgtE
+          ]
+        SB.stanForLoopB "k" Nothing gName $ do
+          SB.addExprLine "postStratifiedParameter" $ SB.binOp "/=" (SB.var pV) (SB.var wV)
+  SB.inBlock SB.SBTransformedParameters $ case reIndexRttM of
+    Nothing -> do
+      gProb <- zeroVec gName varName
+      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+        gWeight <- zeroVec gName (varName <> "_wgts")
+        psLoops gProb gWeight
+        return gProb
+    Just reIndexRtt -> do
+      let reIndexKey = SB.dataSetName reIndexRtt
+      riProb <- zeroVec reIndexKey varName
+      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+        gProb <- zeroVec gName psDataByGroupName
+        gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")
+        psLoops gProb gWeight
+        SB.useDataSetForBindings reIndexRtt
+          $ SB.stanForLoopB "k" Nothing reIndexKey
+          $ SB.addExprLine "postStratifiedParameter"
+          $ SB.var riProb `SB.eq` SB.var gProb
+      return riProb
 
 addNormalModelForDataSet :: (Typeable md, Typeable gq)
                          => Text
@@ -802,8 +829,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       cdIncPair r =  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
       presIncMap = FL.fold (FL.premap stIncPair FL.map) $ F.filterFrame ((== ET.President) . F.rgetField @ET.Office) stElexRows
       houseIncMap = FL.fold (FL.premap cdIncPair FL.map) $ F.filterFrame ((== ET.House) . F.rgetField @ET.Office) cdElexRows
-      incF :: ([BR.Year, BR.StateAbbreviation] F.⊆ rs, [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ rs)
-           => ET.OfficeT -> F.Record rs -> Double
+      incF :: forall as.([BR.Year, BR.StateAbbreviation] F.⊆ as, [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ as)
+           => ET.OfficeT -> F.Record as -> Double
       incF o r = case o of
         ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
         ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
@@ -847,7 +874,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaT
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
-        (centerTF, llSetT1) <- addBLModelForDataSetPS "ElexT" includePP (acsRowTag, acsPSWgts, acsDMT) setupElexTData NoDataSetAlpha initialCenterFM stateGroup alphaT thetaT SB.emptyLLSet
+        (centerTF, llSetT1) <- addBLModelForDataSetPS "ElexT" includePP setupElexTData NoDataSetAlpha initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMT) alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
@@ -871,7 +898,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
               SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaP
-        (centerPF, llSetP1) <- addBLModelForDataSetPS "ElexP" includePP (acsRowTag, acsPSWgts, acsDMP) (setupElexPData (voteShareType model)) NoDataSetAlpha initialCenterFM stateGroup alphaP thetaP SB.emptyLLSet
+        (centerPF, llSetP1) <- addBLModelForDataSetPS "ElexP" includePP (setupElexPData (voteShareType model)) NoDataSetAlpha initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMP) alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)

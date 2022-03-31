@@ -53,6 +53,21 @@ familyExp (StanDist _ _ _ _ _ e) = e
 --vec :: SME.IndexKey -> SME.StanVar -> SME.StanExpr
 --vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
 
+
+binomialDist' :: Bool -> SME.StanVar -> StanDist SME.StanExpr
+binomialDist' sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng
+  where
+    plusEq = SME.binOp "+="
+    sample pE sV = if sampleWithConstants
+                    then SME.target `plusEq` SME.functionWithGivens "binomial_lpmf" (one $ SME.var sV) (SME.var tV :| [pE])
+                    else SME.var sV `SME.vectorSample` SME.function "binomial" (SME.var tV :| [pE])
+    lpmf pE sV = SME.functionWithGivens "binomial_lpmf" (one $ SME.var sV) (SME.var tV :| [pE])
+    lupmf pE sV = SME.functionWithGivens "binomial_lupmf" (one $ SME.var sV) (SME.var tV :| [pE])
+    rng pE = SME.function "binomial_rng" (SME.var tV :| [pE])
+
+binomialDist :: SME.StanVar -> StanDist SME.StanExpr
+binomialDist = binomialDist' False
+
 binomialLogitDist' :: Bool -> SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDist' sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng
   where
