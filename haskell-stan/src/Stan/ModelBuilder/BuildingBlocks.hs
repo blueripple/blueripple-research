@@ -255,6 +255,53 @@ indexedConstIntArray rtt mSuffix n =
      $ SB.stanDeclareRHS ("constIndex_" <> dsName <> maybe "" ("_" <>) mSuffix) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
      $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
+
+postStratifiedParameter :: (Typeable md, Typeable gq)
+                        => Maybe Text
+                        -> SB.RowTypeTag r -- data set to post-stratify
+                        -> SB.GroupTypeTag k -- group by
+                        -> SB.StanExpr -- weight
+                        -> SB.StanExpr -- expression of parameters to post-stratify
+                        -> Maybe (SB.RowTypeTag r') -- re-index?
+                        -> SB.StanBuilderM md gq SB.StanVar
+postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
+  let dsName = SB.dataSetName rtt
+      gName = SB.taggedGroupName gtt
+      psDataByGroupName = dsName <> "_By_" <> gName
+      varName = case reIndexRttM of
+        Nothing -> fromMaybe psDataByGroupName varNameM
+        Just reIndexRtt -> fromMaybe (SB.dataSetName rtt <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
+      zeroVec indexKey varName = SB.stanDeclareRHS
+                                 varName
+                                 (SB.StanVector $ SB.NamedDim indexKey)
+                                 ""
+                                 (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey]))
+      psLoops pV wV = do
+        SB.stanForLoopB "k" Nothing dsName
+          $ SB.addExprLines "postStratifiedParameter"
+          [SB.var pV `SB.plusEq` (SB.paren wgtE `SB.times` SB.paren pE)
+          , SB.var wV `SB.plusEq` SB.paren wgtE]
+        SB.addExprLine "postStratifiedParameter" $ SB.vectorizedOne gName $ SB.binOp "./=" (SB.var pV) (SB.var wV)
+  SB.inBlock SB.SBTransformedParameters $ case reIndexRttM of
+    Nothing -> do
+      gProb <- zeroVec gName varName
+      gWeight <- zeroVec gName (varName <> "_wgts")
+      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+        psLoops gProb gWeight
+        return gProb
+    Just reIndexRtt -> do
+      let reIndexKey = SB.dataSetName reIndexRtt
+      riProb <- zeroVec reIndexKey varName
+      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+        gProb <- zeroVec gName psDataByGroupName
+        gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")
+        psLoops gProb gWeight
+        SB.useDataSetForBindings reIndexRtt
+          $ SB.stanForLoopB "k" Nothing reIndexKey
+          $ SB.addExprLine "postStratifiedParameter"
+          $ SB.var riProb `SB.eq` SB.var gProb
+      return riProb
+
 stackDataSets :: forall md gq r1 r2. (Typeable r1, Typeable r2)
                        => Text
                        -> SB.RowTypeTag r1

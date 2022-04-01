@@ -122,7 +122,7 @@ groupBuilderDM model psGroup states psKeys = do
         SB.addGroupIndexForData stateGroup elexTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       loadElexPrefData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) ()
       loadElexPrefData = do
-        elexPrefData <- SB.addModelDataToGroupBuilder "ElectionsP" (SB.ToFoldable elexRows)
+        elexPrefData <- SB.addModelDataToGroupBuilder "ElectionsS" (SB.ToFoldable elexRows)
         SB.addGroupIndexForData stateGroup elexPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       loadCCESTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
         ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @Surveyed) . ccesEMRows)
@@ -337,13 +337,13 @@ setupElexTData = do
   votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
   return (elexTData, cvapElex, votedElex)
 
-setupElexPData :: (Typeable md, Typeable gq)
+setupElexSData :: (Typeable md, Typeable gq)
                => ET.VoteShareType
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ElectionWithDemographicsR)
                                         , SB.StanVar
                                         , SB.StanVar)
-setupElexPData vst = do
-  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
+setupElexSData vst = do
+  elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsS"
   votesInRace <- SB.addCountData elexPData "VotesInRace_Elections"
                  $ case vst of
                      ET.TwoPartyShare -> (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r)
@@ -619,100 +619,88 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alph
     pure ()
   return (centerF, llSet')
 
-addBLModelForDataSetPS :: (Typeable md, Typeable gq)
-                       => Text
-                       -> Bool
-                       -> SB.StanBuilderM md gq (SB.RowTypeTag r', SB.StanVar, SB.StanVar)
-                       -> DataSetAlpha
-                       -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                       -> SB.GroupTypeTag k
-                       -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrix
-                       -> SB.StanVar
-                       -> SB.StanVar
-                       -> SB.LLSet md gq
-                       -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
-addBLModelForDataSetPS dataSetLabel includePP targetsSetupM dataSetAlpha centerM groupByGTT (rttPS, wgtsV, dm) alpha beta llSet = do
-  let addLabel x = x <> "_" <> dataSetLabel
-  (rttTarget, tgtCounts, tgtSuccesses) <- targetsSetupM
-  dmColIndex <- case dm of
+
+addBLModelForElexT :: (Typeable md, Typeable gq)
+                   => Bool
+                   -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                   -> SB.GroupTypeTag k
+                   -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrix
+                   -> SB.StanVar
+                   -> SB.StanVar
+                   -> SB.LLSet md gq
+                   -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+addBLModelForElexT includePP centerM groupByGTT (rttPS, wgtsV, dmPS) alphaT betaT llSet = do
+  let addLabel x = x <> "_ElexT"
+  (rttElexT, cvap, votes) <- setupElexTData
+  dmColIndex <- case dmPS of
     (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
     (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
-  dsIxM <-  case dataSetAlpha of
-              NoDataSetAlpha -> return Nothing
-              DataSetAlpha -> do
-                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
-                return $ Just ix
   (dmC, centerF) <- case centerM of
-    Nothing -> DM.centerDataMatrix dm Nothing
+    Nothing -> DM.centerDataMatrix dmPS Nothing
     Just f -> do
-      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
+      dmC' <- f SC.ModelData dmPS Nothing --(Just dataSetLabel)
       return (dmC', f)
-  let
-      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
+  let dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
       muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
-      muT ixM dm = case ixM of
-        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
-        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
-  gP <- postStratifiedParameter (Just $ dataSetLabel <> "_ps") rttPS groupByGTT (SB.var wgtsV) (SB.function "inv_logit" (one $ muT dsIxM dmC)) (Just rttTarget)
-  let dist = SB.binomialDist' True tgtCounts
-  SB.inBlock SB.SBModel $ SB.sampleDistV rttTarget dist (SB.var gP) tgtSuccesses
-
-  let llDetails =  SB.LLDetails dist (pure $ SB.var gP) tgtSuccesses
-      llSet' = SB.addToLLSet rttTarget llDetails llSet
-      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttTarget)
+      ptE = SB.function "inv_logit" (one $ muE (SB.var alphaT) (SB.var dmC) (SB.var betaT))
+      wgtsE = SB.var wgtsV
+  pTByElex <- SB.postStratifiedParameter (Just "ElexT_ps") rttPS groupByGTT wgtsE ptE (Just rttElexT)
+  let dist = SB.binomialDist' True cvap
+  SB.inBlock SB.SBModel $ SB.sampleDistV rttElexT dist (SB.var pTByElex) votes
+  let llDetails =  SB.LLDetails dist (pure $ SB.var pTByElex) votes
+      llSet' = SB.addToLLSet rttElexT llDetails llSet
+      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttElexT)
   when includePP $ do
-    SB.useDataSetForBindings rttTarget
-      $ SB.generatePosteriorPrediction rttTarget pp dist (SB.var gP)
+    SB.useDataSetForBindings rttElexT
+      $ SB.generatePosteriorPrediction rttElexT pp dist (SB.var pTByElex)
     pure ()
   return (centerF, llSet')
 
-postStratifiedParameter :: (Typeable md, Typeable gq)
-                        => Maybe Text
-                        -> SB.RowTypeTag r -- data set to post-stratify
-                        -> SB.GroupTypeTag k -- group by
-                        -> SB.StanExpr -- weight
-                        -> SB.StanExpr -- expression of parameters to post-stratify
-                        -> Maybe (SB.RowTypeTag r') -- re-index?
-                        -> SB.StanBuilderM md gq SB.StanVar
-postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
-  let dsName = SB.dataSetName rtt
-      gName = SB.taggedGroupName gtt
-      psDataByGroupName = dsName <> "_By_" <> gName
-      varName = case reIndexRttM of
-        Nothing -> fromMaybe psDataByGroupName varNameM
-        Just reIndexRtt -> fromMaybe (SB.dataSetName rtt <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
-      zeroVec indexKey varName = SB.stanDeclareRHS
-                                 varName
-                                 (SB.StanVector $ SB.NamedDim indexKey)
-                                 ""
-                                 (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey]))
-      psLoops pV wV = do
-        SB.stanForLoopB "k" Nothing dsName
-          $ SB.addExprLines "postStratifiedParameter"
-          [SB.var pV `SB.plusEq` (SB.paren wgtE `SB.times` SB.paren pE)
-          ,SB.var wV `SB.plusEq` SB.paren wgtE
-          ]
-        SB.stanForLoopB "k" Nothing gName $ do
-          SB.addExprLine "postStratifiedParameter" $ SB.binOp "/=" (SB.var pV) (SB.var wV)
-  SB.inBlock SB.SBTransformedParameters $ case reIndexRttM of
-    Nothing -> do
-      gProb <- zeroVec gName varName
-      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
-        gWeight <- zeroVec gName (varName <> "_wgts")
-        psLoops gProb gWeight
-        return gProb
-    Just reIndexRtt -> do
-      let reIndexKey = SB.dataSetName reIndexRtt
-      riProb <- zeroVec reIndexKey varName
-      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
-        gProb <- zeroVec gName psDataByGroupName
-        gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")
-        psLoops gProb gWeight
-        SB.useDataSetForBindings reIndexRtt
-          $ SB.stanForLoopB "k" Nothing reIndexKey
-          $ SB.addExprLine "postStratifiedParameter"
-          $ SB.var riProb `SB.eq` SB.var gProb
-      return riProb
+
+addBLModelForElexS :: (Typeable md, Typeable gq)
+                   => Bool
+                   -> ET.VoteShareType
+                   -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                   -> SB.GroupTypeTag k
+                   -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, SB.StanVar)
+                   -> SB.StanVar
+                   -> SB.StanVar
+                   -> SB.StanVar
+                   -> SB.StanVar
+                   -> SB.LLSet md gq
+                   -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+addBLModelForElexS includePP vst centerM groupByGTT (rttPS, wgtsV, dmTC, dmS) alphaT betaT alphaP betaP llSet = do
+  let addLabel x = x <> "_ElexS"
+  (rttElexS, votesInRace, dVotesInRace) <- setupElexSData vst
+  dmTColIndex <- case dmTC of
+    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+    (SB.StanVar m _) -> SB.stanBuildError $ "addBLModelForElexS: dmPST is not a matrix with named row index"
+  dmSColIndex <- case dmS of
+    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+    (SB.StanVar m _) -> SB.stanBuildError $ "addBLModelForElexS: dmPSS is not a matrix with named row index"
+  (dmSC, centerF) <- case centerM of
+    Nothing -> DM.centerDataMatrix dmS Nothing
+    Just f -> do
+      dmC' <- f SC.ModelData dmS Nothing --(Just dataSetLabel)
+      return (dmC', f)
+  let
+      dmBetaE dmE betaE = SB.function "dot_product" (dmE :| [betaE])
+      muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
+      ptE = SB.vectorizedOne dmTColIndex $ SB.function "inv_logit" (one $ muE (SB.var alphaT) (SB.var dmTC) (SB.var betaT))
+      ppE = SB.vectorizedOne dmSColIndex $ SB.function "inv_logit" (one $ muE (SB.var alphaP) (SB.var dmSC) (SB.var betaP))
+      wgtsE = SB.var wgtsV `SB.times` ptE
+  pSByElex <- SB.postStratifiedParameter (Just "ElexS_ps") rttPS groupByGTT wgtsE ppE (Just rttElexS)
+  let dist = SB.binomialDist' True votesInRace
+  SB.inBlock SB.SBModel $ SB.sampleDistV rttElexS dist (SB.var pSByElex) dVotesInRace
+  let llDetails =  SB.LLDetails dist (pure $ SB.var pSByElex) dVotesInRace
+      llSet' = SB.addToLLSet rttElexS llDetails llSet
+      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rttElexS)
+  when includePP $ do
+    SB.useDataSetForBindings rttElexS
+      $ SB.generatePosteriorPrediction rttElexS pp dist (SB.var pSByElex)
+    pure ()
+  return (centerF, llSet')
+
 
 addNormalModelForDataSet :: (Typeable md, Typeable gq)
                          => Text
@@ -874,11 +862,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaT
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
-        (centerTF, llSetT1) <- addBLModelForDataSetPS "ElexT" includePP setupElexTData NoDataSetAlpha initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMT) alphaT thetaT SB.emptyLLSet
+        (centerTF, llSetT1) <- addBLModelForElexT includePP initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMT) alphaT thetaT SB.emptyLLSet
         (_, llSetT2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSetT1
         (_, llSetT) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSetT2
 
-        elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsP"
+        elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsS"
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
         alphaP <- SB.useDataSetForBindings elexPData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
@@ -898,7 +886,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
               SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaP
-        (centerPF, llSetP1) <- addBLModelForDataSetPS "ElexP" includePP (setupElexPData (voteShareType model)) NoDataSetAlpha initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMP) alphaP thetaP SB.emptyLLSet
+        acsDMTC <- centerTF SC.ModelData acsDMT (Just "T")
+        (centerPF, llSetP1) <- addBLModelForElexS includePP (voteShareType model) initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMTC, acsDMP) alphaT thetaT alphaP thetaP SB.emptyLLSet
         let ccesP (centerFM, llS) office = do
               (centerF, llS) <- addBLModelForDataSet
                                 ("CCESP" <> show office)

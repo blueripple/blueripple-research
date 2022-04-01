@@ -160,7 +160,7 @@ modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President])
                (BRE.BinDensity 10 5)
-               (Set.fromList [BRE.DMRace])
+               (Set.fromList [])
                BRE.SingleBeta
 
 --emptyRel = [Path.reldir||]
