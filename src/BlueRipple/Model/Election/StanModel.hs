@@ -332,9 +332,10 @@ setupElexTData :: (Typeable md, Typeable gq)
                                         , SB.StanVar
                                         , SB.StanVar)
 setupElexTData = do
+  let rescale x = x `div` 100
   elexTData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsT"
-  cvapElex <- SB.addCountData elexTData "CVAP_Elections" (F.rgetField @PUMS.Citizens)
-  votedElex <- SB.addCountData elexTData "Voted_Elections" (F.rgetField @TVotes)
+  cvapElex <- SB.addCountData elexTData "CVAP_Elections" (rescale . F.rgetField @PUMS.Citizens)
+  votedElex <- SB.addCountData elexTData "Voted_Elections" (rescale . F.rgetField @TVotes)
   return (elexTData, cvapElex, votedElex)
 
 setupElexSData :: (Typeable md, Typeable gq)
@@ -343,12 +344,13 @@ setupElexSData :: (Typeable md, Typeable gq)
                                         , SB.StanVar
                                         , SB.StanVar)
 setupElexSData vst = do
+  let rescale x = x `div` 100
   elexPData <- SB.dataSetTag @(F.Record ElectionWithDemographicsR) SC.ModelData "ElectionsS"
   votesInRace <- SB.addCountData elexPData "VotesInRace_Elections"
                  $ case vst of
-                     ET.TwoPartyShare -> (\r -> F.rgetField @DVotes r + F.rgetField @RVotes r)
-                     ET.FullShare -> F.rgetField @TVotes
-  dVotesInRace <- SB.addCountData elexPData "DVotesInRace_Elections" (F.rgetField @DVotes)
+                     ET.TwoPartyShare -> (\r -> rescale $ F.rgetField @DVotes r + F.rgetField @RVotes r)
+                     ET.FullShare -> rescale . F.rgetField @TVotes
+  dVotesInRace <- SB.addCountData elexPData "DVotesInRace_Elections" (rescale . F.rgetField @DVotes)
   return (elexPData, votesInRace, dVotesInRace)
 
 

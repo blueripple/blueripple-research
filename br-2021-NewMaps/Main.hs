@@ -160,7 +160,7 @@ modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President])
                (BRE.BinDensity 10 5)
-               (Set.fromList [])
+               (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
                BRE.SingleBeta
 
 --emptyRel = [Path.reldir||]
@@ -453,7 +453,7 @@ modelDiagnostics cmdLine = do
       ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       elexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame elexRowsFilter . BRE.stateElectionRows) $ ccesAndCPSEM_C
-      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 13) Nothing
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
 --      stateGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       sexGroup :: SB.GroupTypeTag (F.Record '[DT.SexC]) = SB.GroupTypeTag "Sex"
       educationGroup :: SB.GroupTypeTag (F.Record '[DT.CollegeGradC]) = SB.GroupTypeTag "Education"
