@@ -15,7 +15,7 @@ for “offense” or “defense”.
 
 This post focuses on the Arizona state-legislature districts.
 We’ve done a similar analyses for Congressional districts
-in [Texas][TXPost] and [North Carolina][NCPost]
+in [Texas][TXPost] and [North Carolina][NCPost].
 Here’s what we’ll cover:
 
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
@@ -60,17 +60,23 @@ and where we differ strongly from the historical model,
 the historical model is likely more accurate.
 We hope to unearth districts where the demographics tell
 us that a different outcome is more likely than we might think.  This can cut both
-ways: In AZ-27 our model sees D+6 in a place that is historically R+5. We think that makes
+ways: In AZ-27 our model sees D+7 in a place that is historically R+5. We think that makes
 that district worth a longer look, especially if a strong candidate is running and/or there is
-strong local organizing.  Conversely, in AZ-23, we see R+3 where the historical model sees D+8.
+strong local organizing.  Conversely, in AZ-23, we see R+4 where the historical model sees D+8.
 There, we think it might be important to make sure the D candidate is well supported because the
-demographics might support an R win.
+demographics might support a stronger than expected R performance.
 
 Some quick observations before we look at the table:
 
 - Our model is more “optimistic” than the historical model, seeing more D leaning
-districts (18 vs 13)
+districts (17 vs 13)
 
-- Our result in AZ-6 is obviously wrong. We use population density as one
-of our predictors and AZ-6, with 20 people/sq mile, is a very extreme outlier,
-one which our model cannot handle. We’re working on it!
+- Our result in AZ-6 is obviously wrong. AZ-6 is (according to DRA) 60% Native American.
+Our model, which doesn’t have
+a specific race/ethnicity category for Native Americans,
+is very wrong about their likely voter preference. Also,
+we use population density as one
+of our predictors and AZ-6, with the extraordinarily low density of
+20 people/sq mile, is an outlier
+and that may be making the results lean more R than is correct. We’re working
+on it!  In the meantime, we would ignore that model result.

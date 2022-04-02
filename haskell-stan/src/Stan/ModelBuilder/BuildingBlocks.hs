@@ -291,7 +291,7 @@ postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
         return gProb
     Just reIndexRtt -> do
       let reIndexKey = SB.dataSetName reIndexRtt
-      riProb <- zeroVec reIndexKey varName
+      riProb <-  SB.stanDeclare varName(SB.StanVector $ SB.NamedDim reIndexKey) ""
       SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
         gProb <- zeroVec gName psDataByGroupName
         gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")

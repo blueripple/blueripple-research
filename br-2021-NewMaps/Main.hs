@@ -161,7 +161,7 @@ modelVariant = BRE.Model
                (Set.fromList [ET.President])
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
-               BRE.SingleBeta
+               BRE.HierarchicalBeta
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -332,7 +332,7 @@ deepDive cmdLine ddName psData_C = do
   let modelDM ::  K.Sem r (F.FrameRec (BRE.ModelResultsR DeepDiveR))
       modelDM =
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C psData_C
-      postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+      postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   deepDiveModel <- modelDM
   psData <- K.ignoreCacheTime psData_C
   let (deepDive, missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
@@ -889,7 +889,7 @@ newCongressionalMapPosts cmdLine = do
   let postInfoNC = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just $ BR.Published $ Time.fromGregorian 2022 3 4)
+                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished)
                    )
   ncPaths <-  postPaths "NC_Congressional" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC" $ do
@@ -905,7 +905,7 @@ newCongressionalMapPosts cmdLine = do
   let postInfoTX = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just $ BR.Published $ Time.fromGregorian 2022 3 18)
+                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublished)
                    )
   txPaths <- postPaths "TX_Congressional" cmdLine
   BR.brNewPost txPaths postInfoTX "TX" $ do
@@ -918,7 +918,7 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "TX") acs_C)
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "TX") proposedCDs_C)
 
-  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   azPaths <- postPaths "AZ_Congressional" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ" $ do
     azNMPS <- NewCDMapPostSpec "AZ" azPaths

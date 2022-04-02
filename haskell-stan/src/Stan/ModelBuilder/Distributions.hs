@@ -144,7 +144,7 @@ normal mMean sigma = SME.function "normal" (mean :| [sigma]) where
   mean = fromMaybe (SME.scalar "0") mMean
 
 stdNormal :: SME.StanExpr
-stdNormal = normal Nothing (SME.scalar "1")
+stdNormal = SME.function "std_normal" (one $ SME.nullE) --normal Nothing (SME.scalar "1")
 
 normalDist :: StanDist (SME.StanExpr, SME.StanExpr)
 normalDist = StanDist Continuous sample lpdf lupdf rng
