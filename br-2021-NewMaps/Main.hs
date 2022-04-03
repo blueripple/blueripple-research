@@ -479,8 +479,6 @@ modelDiagnostics cmdLine = do
           ccesAndCPS2020_C
           fixedACS_C
       postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
---  K.logLE K.Info "CA CCES Rows"
---  K.ignoreCacheTime ccesWD_C >>= BR.logFrame . F.filterFrame ((== "CA") . F.rgetField @BR.StateAbbreviation)
   fixedACS <- K.ignoreCacheTime fixedACS_C
   K.logLE K.Info "Demographics By State"
   BR.logFrame $ FL.fold (psDemographicsFld (F.rcast @'[BR.StateAbbreviation])) fixedACS
@@ -489,16 +487,6 @@ modelDiagnostics cmdLine = do
   modelByEducation  <- modelDM False educationGroup
   modelByRace  <- modelDM False raceGroup
   modelByState  <- modelDM True stateGroup
-{-
-  K.logLE K.Info $ BRE.dataLabel modelVariant <> " :By State"
-  BR.logFrame modelByState
-  K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Race"
-  BR.logFrame modelByRace
-  K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Sex"
-  BR.logFrame modelBySex
-  K.logLE K.Info $ BRE.dataLabel modelVariant <> ": By Education"
-  BR.logFrame modelByEducation
--}
   diag_C <- BRE.ccesDiagnostics False "DiagPost"
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
@@ -550,12 +538,20 @@ byCategoryColonnade :: (F.ElemOf rs BRE.ModeledTurnout
                     -> K.Colonnade K.Headed (F.Record rs) K.Cell
 byCategoryColonnade catName f cas =
   let mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      mTurnoutL = MT.ciLower . F.rgetField @BRE.ModeledTurnout
+      mTurnoutU = MT.ciUpper . F.rgetField @BRE.ModeledTurnout
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
+      mPrefL = MT.ciLower . F.rgetField @BRE.ModeledPref
+      mPrefU = MT.ciUpper . F.rgetField @BRE.ModeledPref
       mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
       mDiff r = let x = mShare r in (2 * x - 1)
   in  C.headed (BR.textToCell catName) (BR.toCell cas (BR.textToCell catName) catName (BR.textToStyledHtml . f))
+      <> C.headed "Modeled Turnout (5%)" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnoutL))
       <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
+      <> C.headed "Modeled Turnout (95%)" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnoutU))
+      <> C.headed "Modeled 2-party D Pref (5%)" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPrefL))
       <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
+      <> C.headed "Modeled 2-party D Pref (95%)" (BR.toCell cas "M Share" "M Pref" (BR.numberToStyledHtml "%2.1f" . (100*) . mPrefU))
       <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
       <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
