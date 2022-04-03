@@ -419,7 +419,7 @@ addBLModelForElexT includePP centerM groupByGTT (rttPS, wgtsV, dmPS) alphaT beta
       muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
       ptE = SB.function "inv_logit" (one $ muE (SB.var alphaT) (SB.var dmC) (SB.var betaT))
       wgtsE = SB.var wgtsV
-  pTByElex <- SB.postStratifiedParameter (Just "ElexT_ps") rttPS groupByGTT wgtsE ptE (Just rttElexT)
+  pTByElex <- SB.postStratifiedParameter False (Just "ElexT_ps") rttPS groupByGTT wgtsE ptE (Just rttElexT)
   let dist = SB.binomialDist' True cvap
   SB.inBlock SB.SBModel $ SB.sampleDistV rttElexT dist (SB.var pTByElex) votes
   let llDetails =  SB.LLDetails dist (pure $ SB.var pTByElex) votes
@@ -464,7 +464,7 @@ addBLModelForElexS includePP vst centerM groupByGTT (rttPS, wgtsV, dmTC, dmS) al
       ptE = SB.vectorizedOne dmTColIndex $ SB.function "inv_logit" (one $ muE (SB.var alphaT) (SB.var dmTC) (SB.var betaT))
       ppE = SB.vectorizedOne dmSColIndex $ SB.function "inv_logit" (one $ muE (SB.var alphaP) (SB.var dmSC) (SB.var betaP))
       wgtsE = SB.var wgtsV `SB.times` ptE
-  pSByElex <- SB.postStratifiedParameter (Just "ElexS_ps") rttPS groupByGTT wgtsE ppE (Just rttElexS)
+  pSByElex <- SB.postStratifiedParameter False (Just "ElexS_ps") rttPS groupByGTT wgtsE ppE (Just rttElexS)
   let dist = SB.binomialDist' True votesInRace
   SB.inBlock SB.SBModel $ SB.sampleDistV rttElexS dist (SB.var pSByElex) dVotesInRace
   let llDetails =  SB.LLDetails dist (pure $ SB.var pSByElex) dVotesInRace
@@ -646,7 +646,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
           alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
-          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 4)
+          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 1)
 --          SMP.addHierarchicalScalar "alphaP" stateGroup SMP.Centered $ SB.normal (Just $ SB.var muAlphaP)  (SB.var sigmaAlphaP)
 --          pure muAlphaP
         thetaP <- SB.useDataSetForBindings elexPData $ do

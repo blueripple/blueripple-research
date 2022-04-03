@@ -54,9 +54,7 @@ import qualified Data.Hashable.Lifted as Hashable
 
 type FunctionsBlock = T.Text
 type DataBlock = T.Text
---type DataBlockGQ = T.Text
 type TransformedDataBlock = T.Text
---type TransformedDataBlockGQ = T.Text
 type ParametersBlock = T.Text
 type TransformedParametersBlock = T.Text
 type ModelBlock = T.Text

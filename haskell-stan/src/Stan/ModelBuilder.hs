@@ -1351,6 +1351,36 @@ bracketed n m = do
   addLine "}\n"
   return x
 
+profileStmt :: Text -> Text
+profileStmt tag = "profile (\"" <>  tag <> "\")"
+
+profile :: Text -> StanBuilderM md gq a -> StanBuilderM md gq a
+profile tag x = do
+  b <- getBlock
+  addLine $ profileStmt (stanProfileName b <> ": " <> tag)
+  bracketed 2 x
+
+profileStanBlock :: StanBlock -> (WithIndent -> WithIndent) -> StanBuilderM md gq ()
+profileStanBlock b f = modifyCode g where
+  g :: StanCode -> StanCode
+  g (StanCode curBlock blocks) = StanCode curBlock blocks' where
+    blocks' = blocks Array.// [(b, newBlock)] --profileStmt (show b) <> ";\n" <> blocks Array.! b)]
+    (WithIndent c i) = blocks Array.! b
+    c' = profileStmt (stanProfileName b) <> ";\n" <> c
+    newBlock = WithIndent c' i
+
+stanProfileName :: StanBlock -> Text
+stanProfileName SBFunctions = "functions"
+stanProfileName SBData = "data"
+stanProfileName SBDataGQ = "data (GQ)"
+stanProfileName SBTransformedData = "transformed data"
+stanProfileName SBTransformedDataGQ = "transformed data (GQ)"
+stanProfileName SBParameters = "parameters"
+stanProfileName SBTransformedParameters = "transformed data"
+stanProfileName SBModel = "model"
+stanProfileName SBGeneratedQuantities = "generated quantities"
+stanProfileName SBLogLikelihood = "generated quantities (LL)"
+
 stanForLoop :: Text -- counter
             -> Maybe Text -- start, if not 1
             -> Text -- end, if

@@ -30,6 +30,7 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Stan.ModelConfig as SB
+import Streamly.Data.Array.Foreign (getIndex)
 
 addIntData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
@@ -255,27 +256,35 @@ indexedConstIntArray rtt mSuffix n =
      $ SB.stanDeclareRHS ("constIndex_" <> dsName <> maybe "" ("_" <>) mSuffix) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
      $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
 
+zeroVectorE :: SME.IndexKey -> SB.StanExpr
+zeroVectorE indexKey = SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey])
+
+zeroMatrixE :: SME.IndexKey -> SB.IndexKey -> SB.StanExpr
+zeroMatrixE rowIndex colIndex = SB.function "rep_matrix" ((SB.scalar $ show 0) :| [SB.indexSize rowIndex, SB.indexSize colIndex])
 
 postStratifiedParameter :: (Typeable md, Typeable gq)
-                        => Maybe Text
+                        => Bool
+                        -> Maybe Text
                         -> SB.RowTypeTag r -- data set to post-stratify
                         -> SB.GroupTypeTag k -- group by
                         -> SB.StanExpr -- weight
                         -> SB.StanExpr -- expression of parameters to post-stratify
                         -> Maybe (SB.RowTypeTag r') -- re-index?
                         -> SB.StanBuilderM md gq SB.StanVar
-postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
+postStratifiedParameter prof varNameM rtt gtt wgtE pE reIndexRttM = do
   let dsName = SB.dataSetName rtt
       gName = SB.taggedGroupName gtt
       psDataByGroupName = dsName <> "_By_" <> gName
       varName = case reIndexRttM of
         Nothing -> fromMaybe psDataByGroupName varNameM
         Just reIndexRtt -> fromMaybe (SB.dataSetName rtt <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
+      profF :: SB.StanBuilderM md gq a -> SB.StanBuilderM md gq a
+      profF = if prof then SB.profile varName else SB.bracketed 2
       zeroVec indexKey varName = SB.stanDeclareRHS
                                  varName
                                  (SB.StanVector $ SB.NamedDim indexKey)
                                  ""
-                                 (SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey]))
+                                 (zeroVectorE indexKey)
       psLoops pV wV = do
         SB.stanForLoopB "k" Nothing dsName
           $ SB.addExprLines "postStratifiedParameter"
@@ -286,13 +295,13 @@ postStratifiedParameter varNameM rtt gtt wgtE pE reIndexRttM = do
     Nothing -> do
       gProb <- zeroVec gName varName
       gWeight <- zeroVec gName (varName <> "_wgts")
-      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+      profF $ SB.useDataSetForBindings rtt $ do
         psLoops gProb gWeight
         return gProb
     Just reIndexRtt -> do
       let reIndexKey = SB.dataSetName reIndexRtt
       riProb <-  SB.stanDeclare varName(SB.StanVector $ SB.NamedDim reIndexKey) ""
-      SB.bracketed 2 $ SB.useDataSetForBindings rtt $ do
+      profF $ SB.useDataSetForBindings rtt $ do
         gProb <- zeroVec gName psDataByGroupName
         gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")
         psLoops gProb gWeight
