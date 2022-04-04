@@ -59,17 +59,28 @@ One crucial note before we dive into the findings.  Our model is not meant to be
 and where we differ strongly from the historical model,
 the historical model is likely more accurate.
 We hope to unearth districts where the demographics tell
-us that a different outcome is more likely than we might think.  This can cut both
+us that a different outcome is more likely than we might otherwisw think.
+This can cut both
 ways: In AZ-27 our model sees D+7 in a place that is historically R+5. We think that makes
 that district worth a longer look, especially if a strong candidate is running and/or there is
-strong local organizing.  Conversely, in AZ-23, we see R+4 where the historical model sees D+8.
+strong local organizing.  Conversely, in AZ-23, we see R+2 where the historical model sees D+8.
 There, we think it might be important to make sure the D candidate is well supported because the
 demographics might support a stronger than expected R performance.
 
 Some quick observations before we look at the table:
 
 - Our model is more “optimistic” than the historical model, seeing more D leaning
-districts (17 vs 13)
+districts (18 vs 13)
+
+- One notable difference is that our model is somewhat more pessimistic than the historical
+in heavily Hispanic districts. We’re using just 2020 election results rather
+than some mix of 2020, 2018 and 2016. And Hispanic voters shifted toward republicans in 2020.
+Trends like this are always a puzzle: was the Republican
+shift of Hispanic voters in 2020 a one-time thing? A reflection of the new normal? Or a snapshot
+in time of a trend which will get worse for Ds?
+Lacking any specific knowledge here,
+we’ve chosen the middle path of treating 2020 as the best reflection of what might happen going
+forward.
 
 - Our result in AZ-6 is obviously wrong. AZ-6 is (according to DRA) 60% Native American.
 Our model, which doesn’t have
