@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
@@ -440,7 +441,18 @@ psDemographicsFld f = FMR.concatFold
                       (FMR.Assign $ \r -> (f r, F.rcast r))
                       (FMR.foldAndAddKey psDemographicsInnerFld)
 
-
+ccesCounts :: forall ks.(Ord (F.Record ks)
+                        , FI.RecVec (ks V.++ [BRE.Surveyed, BRE.Voted, BRE.HouseVotes, BRE.HouseDVotes, BRE.PresVotes, BRE.PresDVotes])
+                        , ks F.⊆ BRE.CCESWithDensity
+                        )
+           => FL.Fold
+           (F.Record BRE.CCESWithDensity)
+           (F.FrameRec (ks V.++ [BRE.Surveyed, BRE.Voted, BRE.HouseVotes, BRE.HouseDVotes, BRE.PresVotes, BRE.PresDVotes]))
+ccesCounts = FMR.concatFold
+             $ FMR.mapReduceFold
+             FMR.noUnpack
+             (FMR.assignKeysAndData @ks @[BRE.Surveyed, BRE.Voted, BRE.HouseVotes, BRE.HouseDVotes, BRE.PresVotes, BRE.PresDVotes])
+             (FMR.foldAndAddKey $ (FF.foldAllConstrained @Num FL.sum))
 
 modelDiagnostics ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDiagnostics cmdLine = do
@@ -491,8 +503,11 @@ modelDiagnostics cmdLine = do
             (fmap (fmap F.rcast . BRE.pumsRows) ccesAndPums_C)
             (fmap (fmap F.rcast . BRE.ccesRows) ccesAndPums_C)
   ccesDiagByState <- K.ignoreCacheTime diag_C
-  K.logLE K.Info "CCES Diag By State"
-  BR.logFrame ccesDiagByState
+--  K.logLE K.Info "CCES Diag By State"
+--  BR.logFrame ccesDiagByState
+  ccesRows <- K.ignoreCacheTime $ fmap BRE.ccesRows ccesAndPums_C
+  let ccesCountsByRace = FL.fold (ccesCounts @'[DT.Race5C]) ccesRows
+  BR.logFrame ccesCountsByRace
 
   presElexByState <- K.ignoreCacheTime presElex2020_C
   let (diagTable1 , missingCTElex, missingCCES) = FJ.leftJoin3WithMissing @[BR.Year, BR.StateAbbreviation] modelByState presElexByState ccesDiagByState
