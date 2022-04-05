@@ -437,7 +437,7 @@ aggregatePartiesF =
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
 type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
-type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR
+type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ '[PUMS.Citizens]
 
 {-
 addUnopposed :: (F.ElemOf rs DVotes, F.ElemOf rs RVotes) => F.Record rs -> F.Record (rs V.++ '[ET.Unopposed])
@@ -445,17 +445,23 @@ addUnopposed = FT.mutate (FT.recordSingleton @ET.Unopposed . unopposed) where
   unopposed r = F.rgetField @DVotes r == 0 || F.rgetField @RVotes r == 0
 -}
 
-makeStateElexDataFrame ::  (K.KnitEffects r)
+makeStateElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
 makeStateElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
+            length = FL.fold FL.length
+        acs_C <- PUMS.pumsLoaderAdults
+        acsByState <- K.ignoreCacheTimeM $ cachedPumsByState acs_C
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        return $ fmap (F.rcast . addOffice) flattenedElex
+        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex acsByState
+        when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in elex/ACS join=" <> show missing
+        when (length elexWithCVAP /= length flattenedElex) $ K.knitError "makeStateElexDataFrame: added rows in elex/ACS join"
+        return $ fmap (F.rcast . addOffice) elexWithCVAP
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
@@ -487,10 +493,17 @@ makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
 makeCDElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
+            length = FL.fold FL.length
+        acs_C <- PUMS.pumsLoaderAdults
+        cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+        acsByCD <- K.ignoreCacheTimeM $ cachedPumsByCD acs_C cdFromPUMA_C
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        return $ fmap (F.rcast . addOffice) flattenedElex
+        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] flattenedElex acsByCD
+        when (not $ null missing) $ K.knitError $ "makeCDElexDataFrame: missing keys in elex/ACS join=" <> show missing
+        when (length elexWithCVAP /= length flattenedElex) $ K.knitError "makeCDElexDataFrame: added rows in elex/ACS join"
+        return $ fmap (F.rcast . addOffice) elexWithCVAP
 
 
 prepHouseElectionData :: (K.KnitEffects r, BR.CacheEffects r)

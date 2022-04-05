@@ -289,6 +289,19 @@ setupElexData vst eScale office = do
   dVotesInRace <- SB.addCountData elexData ("DVotesInRace_Elex_" <> officeText office) (rescale . F.rgetField @DVotes)
   return (elexData, cvapElex, votedElex, votesInRace, dVotesInRace)
 
+getElexData :: forall rs md gq. (Typeable md
+                                , Typeable gq
+                                , Typeable rs
+                                , F.ElemOf rs PUMS.Citizens
+                                , F.ElemOf rs TVotes
+                                , F.ElemOf rs DVotes
+                                , F.ElemOf rs RVotes)
+            => ElectionRow rs
+            -> ET.VoteShareType
+            -> Int
+            -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record rs), SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+getElexData x vst eScale = setupElexData @rs vst eScale $ officeFromElectionRow x
+
 setupACSPSRows :: (Typeable md, Typeable gq)
                => Set DMComponents
                -> DM.DesignMatrixRowPart (F.Record ACSWithDensityEM)
@@ -413,11 +426,26 @@ officeText office = case office of
   ET.Senate -> "Se"
   ET.House -> "Ho"
 
-addBLModelsForElex :: (Typeable md, Typeable gq)
+type ElectionC rs = (F.ElemOf rs PUMS.Citizens
+                   , F.ElemOf rs TVotes
+                   , F.ElemOf rs DVotes
+                   , F.ElemOf rs RVotes)
+
+data ElectionRow rs where
+  PresidentRow :: ElectionRow StateElectionR
+  SenateRow :: ElectionRow StateElectionR
+  HouseRow :: ElectionRow CDElectionR
+
+officeFromElectionRow :: ElectionRow x -> ET.OfficeT
+officeFromElectionRow PresidentRow = ET.President
+officeFromElectionRow SenateRow = ET.Senate
+officeFromElectionRow HouseRow = ET.House
+
+addBLModelsForElex :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                    => Bool
                    -> ET.VoteShareType
                    -> Int
-                   -> ET.OfficeT
+                   -> ElectionRow rs
                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                    -> DataSetAlpha
@@ -431,13 +459,10 @@ addBLModelsForElex :: (Typeable md, Typeable gq)
                                              , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , SB.LLSet md gq
                                              )
-addBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
+addBLModelsForElex includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
+  let office = officeFromElectionRow officeRow
   let addLabel x = x <> "_Elex_" <> officeText office
-  (rttElex, cvap, votes, votesInRace, dVotesInRace) <- case office of
-    ET.President -> setupElexData @StateElectionR vst eScale ET.President
-    ET.Senate -> setupElexData @StateElectionR vst eScale ET.Senate
-    ET.House -> setupElexData @CDElectionR vst eScale ET.House
-
+  (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
   shareIx <- ixM (addLabel "ixS") shareAlpha
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
@@ -689,7 +714,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
         (centerTF, centerPF, llSet1) <- addBLModelsForElex includePP (voteShareType model) (electionScale model)
-                                        ET.President initialCenterFM initialCenterFM NoDataSetAlpha (acsRowTag, acsPSWgts, acsDMT, acsDMP)
+                                        PresidentRow initialCenterFM initialCenterFM NoDataSetAlpha (acsRowTag, acsPSWgts, acsDMT, acsDMP)
                                         alphaT thetaT alphaP thetaP SB.emptyLLSet
 --          addBLModelForElexT includePP ET.President initialCenterFM stateGroup (acsRowTag, acsPSWgts, acsDMT) alphaT thetaT SB.emptyLLSet
         (_, llSet2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSet1
