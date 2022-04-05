@@ -85,7 +85,6 @@ import qualified Frames.Folds as FF
 import qualified Control.MapReduce as FMR
 import qualified Control.MapReduce as FMR
 
-
 FS.declareColumn "Surveyed" ''Int
 FS.declareColumn "AHVoted" ''Double
 FS.declareColumn "AHHouseDVotes" ''Double
@@ -141,7 +140,7 @@ type DemographicsR =
   ]
 
 
-type ElectionR = [Incumbency, Unopposed, DVotes, RVotes, TVotes]
+type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 type ElectionPredictorR = [FracUnder45
                           , FracFemale
                           , FracGrad
@@ -258,8 +257,8 @@ instance Flat.Flat CCESAndPUMS where
 data CCESAndCPSEM = CCESAndCPSEM { ccesEMRows :: F.FrameRec CCESWithDensityEM
                                  , cpsVEMRows :: F.FrameRec CPSVWithDensityEM
                                  , acsRows ::  F.FrameRec ACSWithDensityEM
-                                 , stateElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
-                                 , cdElectionRows :: F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+                                 , stateElectionRows :: F.FrameRec StateElectionR
+                                 , cdElectionRows :: F.FrameRec CDElectionR
                                  } deriving (Generic)
 
 instance Flat.Flat CCESAndCPSEM where
@@ -409,8 +408,8 @@ flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
     totalVotes =  FL.premap votes FL.sum
     demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ totalVotes
     repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ totalVotes
-    unopposedF = FL.generalise $ (\x y -> x == 0 || y == 0) <$> demVotesF <*> repVotesF
-    flattenF = (\ii dv rv tv -> ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
+    unopposedF = (\x y -> x == 0 || y == 0) <$> demVotesF <*> repVotesF
+    flattenF = (\ii uo dv rv tv -> ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
 
 aggregatePartiesF ::
   FL.FoldM
@@ -451,7 +450,7 @@ makeStateElexDataFrame ::  (K.KnitEffects r)
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
-makeStateElexDataFrame office earliestYear elex acs = do
+makeStateElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
@@ -486,7 +485,7 @@ makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
-makeCDElexDataFrame office earliestYear elex acsByCD = do
+makeCDElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
@@ -851,7 +850,7 @@ prepCCESAndPums clearCache = do
     return $ CCESAndPUMS (fmap F.rcast ccesWD) cpsVWD acsWD diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
 
-type CCESWithDensity = CCESByCD V.++ '[DT.PopPerSqMile]
+type CCESWithDensity = CCESByCDR V.++ '[DT.PopPerSqMile]
 type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PopPerSqMile]
 
 addPopDensByDistrict :: forall rs.(FJ.CanLeftJoinM
@@ -909,7 +908,7 @@ fldAgeInCPS = FMR.concatFold
               $ FMR.mapReduceFold
               FMR.noUnpack
               (FMR.assignKeysAndData @(StateKeyR V.++ CensusPredictorEMR))
-              (FMR.foldAndAddKey $ sumButLeaveDensity @'[BRCF.CountCols])
+              (FMR.foldAndAddKey $ sumButLeaveDensity @BRCF.CountCols)
 
 fldAgeInACS :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec PUMSWithDensityEM)
 fldAgeInACS = FMR.concatFold
@@ -923,7 +922,7 @@ sumButLeaveDensityCCES :: FL.Fold (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSq
 sumButLeaveDensityCCES =
   let sumF f = FL.premap f FL.sum
       densF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.last
-  in (\f1 f2 f3 f4 f5 f6 f7 f8 f9 f10 f11 f12 f13 f14 -> f1 F.&: f2 F.&: f3 F.&: f4 F.&: f5 F.&: f6 F.&: f7 F.&: f8 F.&: f9 F.&: f10 F.&: f11 F.&: f12 F.&: f13 F.&: f14 F.&: V.RNil)
+  in (\f1 f2 f3 f4 f5 f6 f7 f8 f9 -> f1 F.&: f2 F.&: f3 F.&: f4 F.&: f5 F.&: f6 F.&: f7 F.&: f8 F.&: f9 F.&: V.RNil)
      <$> sumF (F.rgetField @Surveyed)
      <*> sumF (F.rgetField @Voted)
      <*> sumF (F.rgetField @HouseVotes)
@@ -947,7 +946,7 @@ type PUMSWithDensity = PUMSByCDR V.++ '[DT.PopPerSqMile]
 type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
 type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, PUMS.Citizens]
 
-type CPSVWithDensity = CPSVByState V.++ '[DT.PopPerSqMile]
+type CPSVWithDensity = CPSVByStateR V.++ '[DT.PopPerSqMile]
 type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
 
 fixACSFld :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec ACSWithDensityEM)
@@ -982,9 +981,9 @@ psFldCPS = FF.foldAllConstrained @Num FL.sum
 
 cpsDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                => Text
-               -> K.ActionWithCacheTime r (F.FrameRec CPSVByState)
-               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count]
-                                                   , F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count]
+               -> K.ActionWithCacheTime r (F.FrameRec CPSVByStateR)
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, BRCF.Successes]
+                                                   , F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, BRCF.Successes]
                                                    )
                           )
 cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
@@ -997,9 +996,9 @@ cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
       voted = F.rgetField @BRCF.Successes
       cvap = F.rgetField @PUMS.Citizens
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
-      pT r = ratio (voted r) (surveyed r)
+      pT r = if surveyed r == 0 then 0.6 else ratio (voted r) (surveyed r)
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                      in (cvap rc F.&: voted F.&: V.RNil ) :: F.Record [BRCF.Count, BRCF.Successes]
+                      in (cvap rc F.&: voted rw F.&: V.RNil) :: F.Record [BRCF.Count, BRCF.Successes]
       addTurnout r = let cv = realToFrac (F.rgetField @CVAP r)
                      in r F.<+> (FT.recordSingleton @Turnout
                                   $ if cv < 1 then 0 else F.rgetField @Voters r / cv)
@@ -1035,22 +1034,20 @@ ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 -> Text
 --                -> CCESVoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
-                -> K.ActionWithCacheTime r (F.FrameRec CCESByCDAH)
-                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, WSurveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]))
+                -> K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, WSurveyed, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]))
 ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyed =  F.rgetField @Surveyed
       voted = F.rgetField @Voted
-      ahvoted = F.rgetField @AHVoted
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
-      pT r = if surveyed r == 0 then 0.6 else ratio (round $ ahvoted r) (surveyed r)
---      (votesInRace, dVotesInRace) = getVotes vs
+      pT r = if surveyed r == 0 then 0.6 else ratio (voted r) (surveyed r)
       presVotes = F.rgetField @PresVotes
-      presDVotes = F.rgetField @AHPresDVotes
-      presRVotes = F.rgetField @AHPresRVotes
+      presDVotes = F.rgetField @PresDVotes
+      presRVotes = F.rgetField @PresRVotes
       houseVotes = F.rgetField @HouseVotes
-      houseDVotes = F.rgetField @AHHouseDVotes
-      houseRVotes = F.rgetField @AHHouseRVotes
+      houseDVotes = F.rgetField @HouseDVotes
+      houseRVotes = F.rgetField @HouseRVotes
       pDP r = if presVotes r == 0 then 0.5 else ratio (presDVotes r) (presVotes r)
       pRP r = if presVotes r == 0 then 0.5 else ratio (presRVotes r) (presVotes r)
       pDH r = if houseVotes r == 0 then 0.5 else ratio (houseDVotes r) (houseVotes r)
@@ -1059,13 +1056,13 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
                           wSurveyed = realToFrac (cvap rc) * realToFrac (surveyed rw)
-                          presVotesInRace = realToFrac (cvap rc) * ratio (presVotes rw) (surveyed rw)
-                          houseVotesInRace = realToFrac (cvap rc) * ratio (houseVotes rw) (surveyed rw)
-                          dVotesP =  realToFrac (cvap rc) * pDP rw
-                          rVotesP =  realToFrac (cvap rc) * pRP rw
-                          dVotesH =  realToFrac (cvap rc) * pDH rw
-                          rVotesH =  realToFrac (cvap rc) * pRH rw
-                      in (cvap rc F.&: surveyed rw F.&:  voted rw F.&: wSurveyed F.&: voters F.&: round presVotesInRace F.&: dVotesP F.&: rVotesP F.&: round houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, Voted, WSurveyed, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]
+                          presVotesInRace = round $ realToFrac (cvap rc) * ratio (presVotes rw) (surveyed rw)
+                          houseVotesInRace = round $ realToFrac (cvap rc) * ratio (houseVotes rw) (surveyed rw)
+                          dVotesP = round $ realToFrac (cvap rc) * pDP rw
+                          rVotesP = round $ realToFrac (cvap rc) * pRP rw
+                          dVotesH = round $ realToFrac (cvap rc) * pDH rw
+                          rVotesH = round $ realToFrac (cvap rc) * pRH rw
+                      in (cvap rc F.&: surveyed rw F.&:  voted rw F.&: wSurveyed F.&: presVotesInRace F.&: dVotesP F.&: rVotesP F.&: houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, Voted, WSurveyed, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
       deps = (,) <$> acs_C <*> cces_C
   let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
   when clearCaches $ BR.clearIfPresentD statesCK
@@ -1076,8 +1073,8 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
                      (FMR.assignKeysAndData @([BR.Year,BR.StateAbbreviation,BR.CongressionalDistrict] V.++ CCESBucketR) @'[PUMS.Citizens])
                      (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         acsFixed = FL.fold acsFixFld $ (fmap addRace5 $ F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acs)
-        ccesZero :: F.Record [Surveyed, Voted, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes]
-        ccesZero = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
+        ccesZero :: F.Record [Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
+        ccesZero = 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: 0 F.&: V.RNil
         addZeroFld = FMR.concatFold
                      $ FMR.mapReduceFold
                      FMR.noUnpack
@@ -1088,10 +1085,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
                       $ BRK.addDefaultRec @CCESBucketR ccesZero
                      )
         ccesWithZeros = FL.fold addZeroFld cces
---        caFilter r = F.rgetField @BR.StateAbbreviation r q== "CA"
---    BR.logFrame $ caFilter acsFixed
---    BR.logFrame $ caFilter cces
-    let (psByState, missing, rowDiff) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @(BR.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, AHVoted, PresVotes, AHPresDVotes, AHPresRVotes, HouseVotes, AHHouseDVotes, AHHouseRVotes] @'[PUMS.Citizens]
+    let (psByState, missing, rowDiff) = BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @(BR.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes] @'[PUMS.Citizens]
                                compute
                                (FF.foldAllConstrained @Num FL.sum)
                                (F.rcast <$> ccesWithZeros)
@@ -1101,7 +1095,8 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
     pure psByState
 
 
-type ElectionWithDemographicsR = ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation]
+type StateElectionR = ElectionResultR '[BR.Year, BR.StateAbbreviation]
+type CDElectionR = ElectionResultR '[BR.Year, BR.StateAbbreviation, ET.CongressionalDistrict]
 
 {-
 -- many many people who identify as hispanic also identify as white. So we need to choose.
