@@ -384,6 +384,23 @@ centerIf m centerM =  case centerM of
     mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
     return (mC, f)
 
+mBetaE :: SB.StanVar -> SB.StanBuilder md gq (SB.StanExpr -> SB.StanExpr)
+mBetaE dm = do
+  dmColIndex <- colIndex dm
+  return $ \betaE -> SB.vectorizedOne dmColIndex $ SB.function "dot_product" (SB.var dm :| [betaE])
+
+muE :: SB.StanVar -> SB.StanBuilder md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
+muE dm = do
+  dmBetaE <- mBetaE dm
+  return $ \aE betaE -> aE `SB.plus` dmBetaE betaE
+
+indexedMuE :: SB.StanVar -> SB.StanBuilder md gq (Maybe SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
+indexedMuE dm =
+  muE' <- muE dm
+  return $ \ixM alpha beta -> case ixM of
+                                Nothing -> muE' (SB.var alpha) (SB.var beta)
+                                Just ixV -> muE' (SB.var ixV `SB.plus` SB.var alpha) (SB.var beta)
+
 addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
                      -> Bool
@@ -397,26 +414,22 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
 addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  dmColIndex <- colIndex dm
+--  dmColIndex <- colIndex dm
   dsIxM <- ixM (addLabel "ix") dataSetAlpha
-  centerIf dm centerM
+  (dmC, centerF) <- centerIf dm centerM
+  muT <- indexedMuE dmC
   let dist = SB.binomialLogitDist counts
-      dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
-      muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
-      muT ixM dm = case ixM of
-        Nothing -> muE (SB.var alpha) (SB.var dm) (SB.var beta)
-        Just ixV -> muE (SB.var ixV `SB.plus` SB.var alpha) (SB.var dm) (SB.var beta)
-      vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM dmC) (SB.dataSetName rtt)
+      vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM alpha beta) (SB.dataSetName rtt)
   SB.inBlock SB.SBModel $ do
     SB.useDataSetForBindings rtt $ do
       mu <- vecMu
       SB.sampleDistV rtt dist (SB.var mu) successes
-  let llDetails =  SB.LLDetails dist (pure $ muT dsIxM dmC) successes
+  let llDetails =  SB.LLDetails dist (pure $ muT dsIxM alpha beta) successes
       llSet' = SB.addToLLSet rtt llDetails llSet
       pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
   when includePP $ do
     SB.useDataSetForBindings rtt
-      $ SB.generatePosteriorPrediction rtt pp dist (muT dsIxM dmC)
+      $ SB.generatePosteriorPrediction rtt pp dist (muT dsIxM alpha beta)
     pure ()
   return (centerF, llSet')
 
