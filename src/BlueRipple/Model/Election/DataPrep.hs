@@ -468,7 +468,7 @@ prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              -> Int
                              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year,BR.StateAbbreviation])))
 prepPresidentialElectionData clearCache earliestYear = do
-  let cacheKey = "model/house/presElexWithDemographics.bin"
+  let cacheKey = "model/house/presElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   presElex_C <- BR.presidentialElectionsWithIncumbency
   let deps = (,) <$> presElex_C
@@ -480,7 +480,7 @@ prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        -> Int
                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation])))
 prepSenateElectionData clearCache earliestYear = do
-  let cacheKey = "model/house/senateElexWithDemographics.bin"
+  let cacheKey = "model/house/senateElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   senateElex_C <- BR.senateElectionsWithIncumbency
   BR.retrieveOrMakeFrame cacheKey senateElex_C
@@ -511,7 +511,7 @@ prepHouseElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        -> Int
                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])))
 prepHouseElectionData clearCache earliestYear = do
-  let cacheKey = "model/house/houseElexWithDemographics.bin"
+  let cacheKey = "model/house/houseElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   houseElex_C <- BR.houseElectionsWithIncumbency
   BR.retrieveOrMakeFrame cacheKey houseElex_C
