@@ -366,6 +366,24 @@ setupCCESPData include densRP dmPrefType incF office vst = do
 
 data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
 
+colIndex :: SB.StanVar -> SB.StanBuilder md gq SB.StanIndex
+colIndex m =  case m of
+  (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
+  (SB.StanVar x _) -> SB.stanBuildError $ "colIndex: " <> x <> " is not a matrix with named column index"
+
+ixM :: SB.StanName -> DataSetAlpha -> SB.StanBuilder md gq (Maybe SB.StanVar)
+ixM varName ds = case dataSetAlpha of
+  NoDataSetAlpha -> return Nothing
+  DataSetAlpha -> Just <$> SMP.addParameter varName SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+
+centerIf :: SB.StanVar -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+         -> SB.StanBuilderM md gq (SB.StanVar, SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+centerIf m centerM =  case centerM of
+  Nothing -> DM.centerDataMatrix m Nothing
+  Just f -> do
+    mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
+    return (mC, f)
+
 addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
                      -> Bool
@@ -379,19 +397,9 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
 addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  dmColIndex <- case dm of
-    (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
-    (SB.StanVar m _) -> SB.stanBuildError $ "addModelForData: dm is not a matrix with named row index"
-  dsIxM <-  case dataSetAlpha of
-              NoDataSetAlpha -> return Nothing
-              DataSetAlpha -> do
-                ix <- SMP.addParameter (addLabel "ix") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
-                return $ Just ix
-  (dmC, centerF) <- case centerM of
-    Nothing -> DM.centerDataMatrix dm Nothing
-    Just f -> do
-      dmC' <- f SC.ModelData dm Nothing --(Just dataSetLabel)
-      return (dmC', f)
+  dmColIndex <- colIndex dm
+  dsIxM <- ixM (addLabel "ix") dataSetAlpha
+  centerIf dm centerM
   let dist = SB.binomialLogitDist counts
       dmBetaE dmE betaE = SB.vectorizedOne dmColIndex $ SB.function "dot_product" (dmE :| [betaE])
       muE aE dmE betaE = aE `SB.plus` dmBetaE dmE betaE
