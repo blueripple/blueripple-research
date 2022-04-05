@@ -113,32 +113,21 @@ groupBuilderDM model psGroup states cds psKeys = do
         cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
         SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       officeFilterF x r = F.rgetField @ET.Office r == x
-      zeroVoteFilterF r = F.rgetField @TVotes r /= 0 -- filter out anything with no votes
-      elexFilter x =  F.filterFrame (\r -> officeFilterF x r && zeroVoteFilter r)
-{-      elexRows :: CCESAndCPSEM -> F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])
-      elexRows x = F.filterFrame ((>0) . F.rgetField @TVotes) -- filter out anything with no votes!
-                   $ F.filterFrame (officeFilterF $ votesFrom model)
-                   $ stateElectionRows x <> (fmap F.rcast $ cdElectionRows x)
--}
+      -- filter out anything with no votes at all or where someone was running unopposed
+      zeroVoteFilterF r = F.rgetField @TVotes r /= 0 && F.rgetField @DVotes r /= 0 && F.rgetField @RVotes r /= 0
+      elexFilter x =  F.filterFrame (\r -> officeFilterF x r && zeroVoteFilterF r)
       loadElexData :: ET.OfficeT -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) ()
       loadElexData office = case office of
           ET.President -> do
-            elexData <- SB.addModelDataToGroupBuilder ("Elections_" <> show office) (SB.ToFoldable $ elexFilter ET.President . stateElectionRows)
+            elexData <- SB.addModelDataToGroupBuilder "Elections_Pres" (SB.ToFoldable $ elexFilter ET.President . stateElectionRows)
             SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
           ET.Senate -> do
-            elexData <- SB.addModelDataToGroupBuilder ("Elections_" <> show office) (SB.ToFoldable $ elexFilter ET.Senate . stateElectionRows)
+            elexData <- SB.addModelDataToGroupBuilder "Elections_Senate" (SB.ToFoldable $ elexFilter ET.Senate . stateElectionRows)
             SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
           ET.House -> do
-            elexTurnoutData <- SB.addModelDataToGroupBuilder ("Elections_" <> show office) (SB.ToFoldable $ elexFilter ET.House. cdElectionRows)
+            elexData <- SB.addModelDataToGroupBuilder "Elections_House" (SB.ToFoldable $ elexFilter ET.House. cdElectionRows)
             SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
             SB.addGroupIndexForData cdGroup elexData $ SB.makeIndexFromFoldable show districtKey cds
-{-
-      loadElexPrefData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) ()
-      loadElexPrefData = case office of
-        ET.President -> do
-          elexPrefData <- SB.addModelDataToGroupBuilder ("ElectionsS" (SB.ToFoldable $ elexFilter ET.President . stateElectionRows)
-          SB.addGroupIndexForData stateGroup elexPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
--}
       loadCCESTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
         ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @Surveyed) . ccesEMRows)
         SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
@@ -154,7 +143,6 @@ groupBuilderDM model psGroup states cds psKeys = do
   traverse_ loadElexData $ Set.toList $ votesFrom model
   loadCPSTurnoutData
   loadCCESTurnoutData
-  loadElexPrefData
   when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
@@ -366,13 +354,13 @@ setupCCESPData include densRP dmPrefType incF office vst = do
 
 data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
 
-colIndex :: SB.StanVar -> SB.StanBuilder md gq SB.StanIndex
+colIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
 colIndex m =  case m of
   (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
   (SB.StanVar x _) -> SB.stanBuildError $ "colIndex: " <> x <> " is not a matrix with named column index"
 
-ixM :: SB.StanName -> DataSetAlpha -> SB.StanBuilder md gq (Maybe SB.StanVar)
-ixM varName ds = case dataSetAlpha of
+ixM :: SB.StanName -> DataSetAlpha -> SB.StanBuilderM md gq (Maybe SB.StanVar)
+ixM varName ds = case ds of
   NoDataSetAlpha -> return Nothing
   DataSetAlpha -> Just <$> SMP.addParameter varName SB.StanReal "" (SB.UnVectorized SB.stdNormal)
 
@@ -384,22 +372,42 @@ centerIf m centerM =  case centerM of
     mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
     return (mC, f)
 
-mBetaE :: SB.StanVar -> SB.StanBuilder md gq (SB.StanExpr -> SB.StanExpr)
+mBetaE :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr)
 mBetaE dm = do
   dmColIndex <- colIndex dm
   return $ \betaE -> SB.vectorizedOne dmColIndex $ SB.function "dot_product" (SB.var dm :| [betaE])
 
-muE :: SB.StanVar -> SB.StanBuilder md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
+muE :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
 muE dm = do
   dmBetaE <- mBetaE dm
   return $ \aE betaE -> aE `SB.plus` dmBetaE betaE
 
-indexedMuE :: SB.StanVar -> SB.StanBuilder md gq (Maybe SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
-indexedMuE dm =
+indexedMuE :: SB.StanVar -> SB.StanBuilderM md gq (Maybe SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
+indexedMuE dm = do
   muE' <- muE dm
-  return $ \ixM alpha beta -> case ixM of
-                                Nothing -> muE' (SB.var alpha) (SB.var beta)
-                                Just ixV -> muE' (SB.var ixV `SB.plus` SB.var alpha) (SB.var beta)
+  let f ixM alpha beta = case ixM of
+        Nothing -> muE' (SB.var alpha) (SB.var beta)
+        Just ixV -> muE' (SB.var ixV `SB.plus` SB.var alpha) (SB.var beta)
+  return f
+
+modelVar :: SB.RowTypeTag r -> SB.StanDist SB.StanExpr -> SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr -> SB.StanBuilderM md gq ()
+modelVar rtt dist y eM = do
+  let f e = SB.sampleDistV rtt dist e y
+  SB.inBlock SB.SBModel
+    $ SB.useDataSetForBindings rtt
+    $ (eM >>= f)
+
+updateLLSet ::  SB.RowTypeTag r -> SB.StanDist SB.StanExpr -> SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr -> SB.LLSet md gq -> SB.LLSet md gq
+updateLLSet rtt dist y eM llSet =  SB.addToLLSet rtt llDetails llSet where
+  llDetails = SB.LLDetails dist eM y
+
+
+addPosteriorPredictiveCheck :: Text -> SB.RowTypeTag r -> SB.StanDist SB.StanExpr -> SB.StanBuilderM md gq SB.StanExpr ->  SB.StanBuilderM md gq ()
+addPosteriorPredictiveCheck ppVarName rtt dist eM = do
+  let pp = SB.StanVar ppVarName (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
+  eM >>= SB.useDataSetForBindings rtt
+    . SB.generatePosteriorPrediction rtt pp dist
+  pure ()
 
 addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
@@ -414,23 +422,14 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
 addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
---  dmColIndex <- colIndex dm
   dsIxM <- ixM (addLabel "ix") dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
   muT <- indexedMuE dmC
   let dist = SB.binomialLogitDist counts
       vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM alpha beta) (SB.dataSetName rtt)
-  SB.inBlock SB.SBModel $ do
-    SB.useDataSetForBindings rtt $ do
-      mu <- vecMu
-      SB.sampleDistV rtt dist (SB.var mu) successes
-  let llDetails =  SB.LLDetails dist (pure $ muT dsIxM alpha beta) successes
-      llSet' = SB.addToLLSet rtt llDetails llSet
-      pp = SB.StanVar (addLabel "PP") (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
-  when includePP $ do
-    SB.useDataSetForBindings rtt
-      $ SB.generatePosteriorPrediction rtt pp dist (muT dsIxM alpha beta)
-    pure ()
+  modelVar rtt dist successes (SB.var <$> vecMu)
+  let llSet' = updateLLSet rtt dist successes (pure $ muT dsIxM alpha beta) llSet
+  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure $ muT dsIxM alpha beta)
   return (centerF, llSet')
 
 

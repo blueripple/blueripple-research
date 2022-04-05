@@ -141,7 +141,7 @@ type DemographicsR =
   ]
 
 
-type ElectionR = [Incumbency, DVotes, RVotes, TVotes]
+type ElectionR = [Incumbency, Unopposed, DVotes, RVotes, TVotes]
 type ElectionPredictorR = [FracUnder45
                           , FracFemale
                           , FracGrad
@@ -166,14 +166,14 @@ type PresidentialElectionData  = F.FrameRec PresidentialElectionDataR
 -- CCES data
 
 --type AHPresDVotes = "AHPresDVotes" F.:-> Double
-type CCESAH = [AHVoted, AHHouseDVotes, AHHouseRVotes, AHPresDVotes, AHPresRVotes]
+--type CCESAH = [AHVoted, AHHouseDVotes, AHHouseRVotes, AHPresDVotes, AHPresRVotes]
 type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
 type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR
-type CCESByCDAH = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR V.++ CCESAH
+--type CCESByCDAH = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR V.++ CCESAH
 type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] --, DT.AvgIncome, DT.PopPerSqMile]
 type CCESPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.Race5C] --, DT.AvgIncome, DT.PopPerSqMile]
-type CCESByCDEMR = CDKeyR V.++ [DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR V.++ CCESAH
+type CCESByCDEMR = CDKeyR V.++ [DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR --V.++ CCESAH
 type CCESData = F.FrameRec CCESDataR
 
 data DemographicSource = DS_1YRACSPUMS | DS_5YRACSTracts deriving (Show, Eq, Ord)
@@ -215,14 +215,14 @@ type PUMSByCD = F.FrameRec PUMSByCDR
 type PUMSByStateR = StateKeyR V.++ PUMSDataR
 type PUMSByState = F.FrameRec PUMSByStateR
 -- unweighted, which we address via post-stratification
-type AHSuccesses = "AHSucceses" F.:-> Double
+--type AHSuccesses = "AHSucceses" F.:-> Double
 type CensusPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CensusPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR  = CensusPredictorR V.++ BRCF.CountCols
-type CPSVDataEMR  = CensusPredictorEMR V.++ BRCF.CountCols V.++ '[AHSuccesses]
+type CPSVDataEMR  = CensusPredictorEMR V.++ BRCF.CountCols -- V.++ '[AHSuccesses]
 type CPSVByStateR = StateKeyR V.++ CPSVDataR
 type CPSVByStateEMR = StateKeyR V.++ CPSVDataEMR
-type CPSVByStateAH = CPSVByStateR V.++ '[AHSuccesses]
+type CPSVByStateAH = CPSVByStateR -- V.++ '[AHSuccesses]
 
 --type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
@@ -234,7 +234,6 @@ data CCESAndPUMS = CCESAndPUMS { ccesRows :: F.FrameRec CCESWithDensity
                                , cpsVRows :: F.FrameRec CPSVWithDensity
                                , pumsRows :: F.FrameRec PUMSWithDensity
                                , districtRows :: F.FrameRec DistrictDemDataR
---                               , allCategoriesRows :: F.FrameRec AllCatR
                                } deriving (Generic)
 
 ccesAndPUMSForYear :: Int -> CCESAndPUMS -> CCESAndPUMS
@@ -410,7 +409,8 @@ flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
     totalVotes =  FL.premap votes FL.sum
     demVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Democratic) $ totalVotes
     repVotesF = FL.generalize $ FL.prefilter (\r -> party r == ET.Republican) $ totalVotes
-    flattenF = (\ii dv rv tv -> ii F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
+    unopposedF = FL.generalise $ (\x y -> x == 0 || y == 0) <$> demVotesF <*> repVotesF
+    flattenF = (\ii dv rv tv -> ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
 
 aggregatePartiesF ::
   FL.FoldM
@@ -438,91 +438,72 @@ aggregatePartiesF =
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
 
 type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
+type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR
+
+{-
+addUnopposed :: (F.ElemOf rs DVotes, F.ElemOf rs RVotes) => F.Record rs -> F.Record (rs V.++ '[ET.Unopposed])
+addUnopposed = FT.mutate (FT.recordSingleton @ET.Unopposed . unopposed) where
+  unopposed r = F.rgetField @DVotes r == 0 || F.rgetField @RVotes r == 0
+-}
 
 makeStateElexDataFrame ::  (K.KnitEffects r)
                        => ET.OfficeT
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
-                       -> F.FrameRec PUMS.PUMS
-                       -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR [BR.Year, BR.StateAbbreviation]))
+                       -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
 makeStateElexDataFrame office earliestYear elex acs = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        let demographics = pumsMR @[BR.Year, BR.StateAbbreviation] $ pumsByState $ copy2019to2020 acs
-            (elexWithDemo, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex demographics
-        when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in flattenedElex/acs join=" <> show missing
-        return $ fmap (F.rcast . addOffice) elexWithDemo
+        return $ fmap (F.rcast . addOffice) flattenedElex
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
                              -> Int
-                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year,BR.StateAbbreviation])))
+                             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year,BR.StateAbbreviation])))
 prepPresidentialElectionData clearCache earliestYear = do
   let cacheKey = "model/house/presElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   presElex_C <- BR.presidentialElectionsWithIncumbency
-  acs_C <- PUMS.pumsLoaderAdults
---  acsByState_C <- cachedPumsByState acs_C
-  let deps = (,) <$> presElex_C <*> acs_C
-  BR.retrieveOrMakeFrame cacheKey deps
-    $ \(pElex, acs) -> makeStateElexDataFrame ET.President earliestYear (fmap F.rcast pElex) (fmap F.rcast acs)
-
+  let deps = (,) <$> presElex_C
+  BR.retrieveOrMakeFrame cacheKey presElex_C
+    $ \pElex -> makeStateElexDataFrame ET.President earliestYear (fmap F.rcast pElex)
 
 prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool
                        -> Int
-                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation])))
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation])))
 prepSenateElectionData clearCache earliestYear = do
   let cacheKey = "model/house/senateElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   senateElex_C <- BR.senateElectionsWithIncumbency
-  acs_C <- PUMS.pumsLoaderAdults
---  acsByState_C <- cachedPumsByState acs_C
-  let deps = (,) <$> senateElex_C <*> acs_C
-  BR.retrieveOrMakeFrame cacheKey deps
-    $ \(senateElex, acs) -> makeStateElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex) (fmap F.rcast acs)
-
+  BR.retrieveOrMakeFrame cacheKey senateElex_C
+    $ \senateElex -> makeStateElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex)
 
 makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
-                       -> F.FrameRec PUMSByCDR
-                       -> K.Sem r (F.FrameRec (ElectionResultWithDemographicsR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
+                       -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
 makeCDElexDataFrame office earliestYear elex acsByCD = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
-            fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
-                         then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
-                         else r
-
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        let demographics = fmap fixDC_CD $ pumsMR @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] acsByCD
-            (elexWithDemo, missing)
-              = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
-                (fmap fixDC_CD flattenedElex)
-                demographics
-        when (not $ null missing) $ K.knitError $ "makeCDElexDataFrame: missing keys in flattenedElex/acs join=" <> show missing
-        return $ fmap (F.rcast . addOffice) elexWithDemo
+        return $ fmap (F.rcast . addOffice) flattenedElex
 
 
 prepHouseElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool
                        -> Int
-                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultWithDemographicsR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])))
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])))
 prepHouseElectionData clearCache earliestYear = do
   let cacheKey = "model/house/houseElexWithDemographics.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   houseElex_C <- BR.houseElectionsWithIncumbency
-  acs_C <- PUMS.pumsLoaderAdults
-  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  acsByCD_C <- cachedPumsByCD acs_C cdFromPUMA_C
-  let deps = (,) <$> houseElex_C <*> acsByCD_C
-  BR.retrieveOrMakeFrame cacheKey deps
-    $ \(houseElex, acsByCD) -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex) acsByCD
+  BR.retrieveOrMakeFrame cacheKey houseElex_C
+    $ \houseElex -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex)
 
 
 -- TODO:  Use weights?  Design effect?
@@ -689,7 +670,7 @@ cachedPumsByState pums_C = do
     $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
     $ pure . FL.fold addZeroF . pumsByState
 
-
+{-
 adjUsing :: forall x n d rs a.(V.KnownField x
                               , F.ElemOf rs x
                               , V.Snd x ~ Double
@@ -727,8 +708,8 @@ addAHColToCCES wgtF ahFld rows = do
       adjResult = F.rcast . adjUsing @AchenHurWeight @ahc @ahd realToFrac
       res = fmap adjResult adjProb
   return res
-
-caFilter = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "CA")
+-}
+--caFilter = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "CA")
 
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
@@ -745,6 +726,7 @@ prepCCESAndPums clearCache = do
   pumsByState_C <- cachedPumsByState pums_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
+  {-
   -- Do the turnout corrections, CPS first
   stateTurnout_C <- BR.stateTurnoutLoader
   let cpsAchenHurDeps = (,,) <$> cpsVByState_C <*> pumsByState_C <*> stateTurnout_C
@@ -768,9 +750,10 @@ prepCCESAndPums clearCache = do
     K.logLE K.Diagnostic $ "Post Achen-Hur: CPS (by state) rows per year:"
     K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
     return res
-
+-}
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
+{-
 --  K.ignoreCacheTime (fmap caFilter pumsByCD_C) >>= BR.logFrame
 --  K.ignoreCacheTime (fmap caFilter countedCCES_C) >>= BR.logFrame
   let ccesWithACSDeps = (,) <$> countedCCES_C <*> pumsByCD_C
@@ -817,8 +800,9 @@ prepCCESAndPums clearCache = do
         elexRShare r = realToFrac (F.rgetField @RVotes r) / realToFrac (F.rgetField @TVotes r)
         ahRFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexRShare presElex
     addAHColToCCES @AHPresRVotes @PresVotes @'[AHVoted, AHPresDVotes] wgtR ahRFld ccesWithPD
-
+-}
   houseElectionResults_C <- prepHouseElectionData clearCache earliestYear
+ {-
   let ccesHVAchenHurDeps = (,) <$> ccesPVAchenHur_C <*> houseElectionResults_C
       ccesHVAchenHurCacheKey = cacheKey testRun "model/house/CCESHV_AchenHur"
   when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
@@ -831,9 +815,8 @@ prepCCESAndPums clearCache = do
         elexRShare r = realToFrac (F.rgetField @RVotes r) / realToFrac (F.rgetField @TVotes r)
         ahRFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexRShare houseElex
     addAHColToCCES @AHHouseRVotes @HouseVotes @'[AHVoted, AHPresDVotes, AHPresRVotes, AHHouseDVotes] wgtR ahRFld ccesWithHD
-
-
-  let deps = (,,) <$> ccesHVAchenHur_C <*> cpsV_AchenHur_C <*> pumsByCD_C
+-}
+  let deps = (,,) <$> countedCCES_C <*> cpsVByState_C <*> pumsByCD_C
       allCacheKey = cacheKey testRun "model/house/CCESAndPUMS"
   when clearCache $ BR.clearIfPresentD allCacheKey
   BR.retrieveOrMakeD allCacheKey deps $ \(ccesByCD, cpsVByState, acsByCD) -> do
@@ -868,7 +851,7 @@ prepCCESAndPums clearCache = do
     return $ CCESAndPUMS (fmap F.rcast ccesWD) cpsVWD acsWD diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
 
-type CCESWithDensity = CCESByCDAH V.++ '[DT.PopPerSqMile]
+type CCESWithDensity = CCESByCD V.++ '[DT.PopPerSqMile]
 type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PopPerSqMile]
 
 addPopDensByDistrict :: forall rs.(FJ.CanLeftJoinM
@@ -926,7 +909,7 @@ fldAgeInCPS = FMR.concatFold
               $ FMR.mapReduceFold
               FMR.noUnpack
               (FMR.assignKeysAndData @(StateKeyR V.++ CensusPredictorEMR))
-              (FMR.foldAndAddKey $ sumButLeaveDensity @(BRCF.CountCols V.++ '[AHSuccesses]))
+              (FMR.foldAndAddKey $ sumButLeaveDensity @'[BRCF.CountCols])
 
 fldAgeInACS :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec PUMSWithDensityEM)
 fldAgeInACS = FMR.concatFold
@@ -936,7 +919,7 @@ fldAgeInACS = FMR.concatFold
                (FMR.foldAndAddKey $ sumButLeaveDensity @'[PUMS.Citizens, PUMS.NonCitizens])
 
 
-sumButLeaveDensityCCES :: FL.Fold (F.Record ((CCESVotingDataR V.++ CCESAH V.++ '[DT.PopPerSqMile]))) (F.Record ((CCESVotingDataR V.++ CCESAH V.++ '[DT.PopPerSqMile])))
+sumButLeaveDensityCCES :: FL.Fold (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile]))) (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile])))
 sumButLeaveDensityCCES =
   let sumF f = FL.premap f FL.sum
       densF = fmap (fromMaybe 0) $ FL.premap (F.rgetField @DT.PopPerSqMile) FL.last
@@ -949,13 +932,7 @@ sumButLeaveDensityCCES =
      <*> sumF (F.rgetField @PresVotes)
      <*> sumF (F.rgetField @PresDVotes)
      <*> sumF (F.rgetField @PresRVotes)
-     <*> sumF (F.rgetField @AHVoted)
-     <*> sumF (F.rgetField @AHHouseDVotes)
-     <*> sumF (F.rgetField @AHHouseRVotes)
-     <*> sumF (F.rgetField @AHPresDVotes)
-     <*> sumF (F.rgetField @AHPresRVotes)
      <*> densF
-
 
 -- NB : the polymorphic sumButLeaveDensity caused some sort of memory blowup compiling this one.
 fldAgeInCCES :: FL.Fold (F.Record CCESWithDensity) (F.FrameRec CCESWithDensityEM)
@@ -970,7 +947,7 @@ type PUMSWithDensity = PUMSByCDR V.++ '[DT.PopPerSqMile]
 type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
 type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, PUMS.Citizens]
 
-type CPSVWithDensity = CPSVByStateAH V.++ '[DT.PopPerSqMile]
+type CPSVWithDensity = CPSVByState V.++ '[DT.PopPerSqMile]
 type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
 
 fixACSFld :: FL.Fold (F.Record PUMSWithDensity) (F.FrameRec ACSWithDensityEM)
@@ -1005,25 +982,24 @@ psFldCPS = FF.foldAllConstrained @Num FL.sum
 
 cpsDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                => Text
-               -> K.ActionWithCacheTime r (F.FrameRec CPSVByStateAH)
-               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, AHSuccesses]
-                                                   , F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, AHSuccesses]
+               -> K.ActionWithCacheTime r (F.FrameRec CPSVByState)
+               -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count]
+                                                   , F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count]
                                                    )
                           )
 cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
   let cpsCountsByYearAndStateFld = FMR.concatFold
                                    $ FMR.mapReduceFold
                                    FMR.noUnpack
-                                   (FMR.assignKeysAndData @'[BR.Year, BR.StateAbbreviation] @[BRCF.Count, AHSuccesses])
+                                   (FMR.assignKeysAndData @'[BR.Year, BR.StateAbbreviation] @[BRCF.Count, BRCF.Successes])
                                    (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       surveyed = F.rgetField @BRCF.Count
       voted = F.rgetField @BRCF.Successes
-      ahVoted = F.rgetField @AHSuccesses
       cvap = F.rgetField @PUMS.Citizens
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
-      pT r = ratio (ahVoted r) (surveyed r)
+      pT r = ratio (voted r) (surveyed r)
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                      in (cvap rc F.&: voters F.&: V.RNil ) :: F.Record [BRCF.Count, AHSuccesses]
+                      in (cvap rc F.&: voted F.&: V.RNil ) :: F.Record [BRCF.Count, BRCF.Successes]
       addTurnout r = let cv = realToFrac (F.rgetField @CVAP r)
                      in r F.<+> (FT.recordSingleton @Turnout
                                   $ if cv < 1 then 0 else F.rgetField @Voters r / cv)
@@ -1035,7 +1011,7 @@ cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
   psCPS_C <- BR.retrieveOrMakeFrame psCK psDeps $ \(acsByState, cpsByState) -> do
     let acsFixed = F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) acsByState
         cpsFixed = F.filterFrame (\r -> F.rgetField @BR.Year r >= 2016) cpsByState
-        (psByState, missing, rowDiff) =  BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CensusPredictorR @[BRCF.Count, AHSuccesses] @'[PUMS.Citizens]
+        (psByState, missing, rowDiff) =  BRPS.joinAndPostStratify @'[BR.Year,BR.StateAbbreviation] @CensusPredictorR @[BRCF.Count, BRCF.Successes] @'[PUMS.Citizens]
                                 compute
                                 (FF.foldAllConstrained @Num FL.sum)
                                 (F.rcast <$> cpsFixed)
@@ -1048,13 +1024,10 @@ cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
 -- CCES diagnostics
 type Voters = "Voters" F.:-> Double
 type DemVoters = "DemVoters" F.:-> Double
---type CVAP = "CVAP" F.:-> Double
 type Turnout = "Turnout" F.:-> Double
 
 type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
---psFldCCES :: FL.Fold (F.Record [CVAP, Voters, DemVoters]) (F.Record [CVAP, Voters, DemVoters])
---psFldCCES = FF.foldAllConstrained @Num FL.sum
 type WSurveyed = "WSurveyed" F.:-> Double
 
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)

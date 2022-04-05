@@ -432,3 +432,4 @@ FS.declareColumn "DemShare" ''Double
 FS.declareColumn "RepShare" ''Double
 FS.declareColumn "DemVPV" ''Double
 FS.declareColumn "Incumbent" ''Bool
+FS.declareColumn "Unopposed" ''Bool
