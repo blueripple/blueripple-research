@@ -449,7 +449,7 @@ addUnopposed = FT.mutate (FT.recordSingleton @ET.Unopposed . unopposed) where
 makeStateElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
-                       -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
+                       -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, BR.Special]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
 makeStateElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
@@ -463,12 +463,15 @@ makeStateElexDataFrame office earliestYear elex = do
                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             cvapByState = FL.fold cvapFld acsByState
         flattenedElex <- K.knitEither
-                         $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
+                         $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.Special])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
         let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex cvapByState
         when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in elex/ACS join=" <> show missing
         when (length elexWithCVAP /= length flattenedElex) $ K.knitError "makeStateElexDataFrame: added rows in elex/ACS join"
         return $ fmap (F.rcast . addOffice) elexWithCVAP
+
+addSpecial :: F.Record rs -> F.Record (rs V.++ '[BR.Special])
+addSpecial = FT.mutate (const $ FT.recordSingleton @BR.Special False)
 
 prepPresidentialElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                              => Bool
@@ -480,7 +483,7 @@ prepPresidentialElectionData clearCache earliestYear = do
   presElex_C <- BR.presidentialElectionsWithIncumbency
   let deps = (,) <$> presElex_C
   BR.retrieveOrMakeFrame cacheKey presElex_C
-    $ \pElex -> makeStateElexDataFrame ET.President earliestYear (fmap F.rcast pElex)
+    $ \pElex -> makeStateElexDataFrame ET.President earliestYear (fmap (F.rcast . addSpecial) $ pElex)
 
 prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool

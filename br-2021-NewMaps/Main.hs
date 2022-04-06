@@ -159,7 +159,7 @@ modelDir :: Text
 modelDir = "br-2021-NewMaps/stan"
 modelVariant = BRE.Model
                ET.TwoPartyShare
-               (Set.fromList [ET.President])
+               (Set.fromList [ET.President, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
                BRE.HierarchicalBeta
