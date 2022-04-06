@@ -1058,7 +1058,7 @@ type Turnout = "Turnout" F.:-> Double
 
 type CCESBucketR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
 
-type WSurveyed = "WSurveyed" F.:-> Double
+type PSVoted = "PSVoted" F.:-> Double
 
 ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
                 => Bool
@@ -1066,7 +1066,7 @@ ccesDiagnostics :: (K.KnitEffects r, BR.CacheEffects r)
 --                -> CCESVoteSource
                 -> K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
                 -> K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
-                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, WSurveyed, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]))
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, PSVoted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]))
 ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyed =  F.rgetField @Surveyed
@@ -1085,15 +1085,14 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
       pRH r = if houseVotes r == 0 then 0.5 else ratio (houseRVotes r) (houseVotes r)
       cvap = F.rgetField @PUMS.Citizens
       addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
-      compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                          wSurveyed = realToFrac (cvap rc) * realToFrac (surveyed rw)
+      compute rw rc = let psVoted = pT rw * realToFrac (cvap rc)
                           presVotesInRace = round $ realToFrac (cvap rc) * ratio (presVotes rw) (surveyed rw)
                           houseVotesInRace = round $ realToFrac (cvap rc) * ratio (houseVotes rw) (surveyed rw)
                           dVotesP = round $ realToFrac (cvap rc) * pDP rw
                           rVotesP = round $ realToFrac (cvap rc) * pRP rw
                           dVotesH = round $ realToFrac (cvap rc) * pDH rw
                           rVotesH = round $ realToFrac (cvap rc) * pRH rw
-                      in (cvap rc F.&: surveyed rw F.&:  voted rw F.&: wSurveyed F.&: presVotesInRace F.&: dVotesP F.&: rVotesP F.&: houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, Voted, WSurveyed, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
+                      in (cvap rc F.&: surveyed rw F.&: voted rw F.&: psVoted F.&: presVotesInRace F.&: dVotesP F.&: rVotesP F.&: houseVotesInRace F.&: dVotesH F.&: rVotesH F.&: V.RNil ) :: F.Record [CVAP, Surveyed, Voted, PSVoted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
       deps = (,) <$> acs_C <*> cces_C
   let statesCK = "diagnostics/ccesPSByPumsStates" <> cacheSuffix <> ".bin"
   when clearCaches $ BR.clearIfPresentD statesCK
