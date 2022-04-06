@@ -1029,7 +1029,7 @@ cpsDiagnostics t cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
       pT r = if surveyed r == 0 then 0.6 else ratio (voted r) (surveyed r)
       compute rw rc = let voters = pT rw * realToFrac (cvap rc)
-                      in (cvap rc F.&: voted rw F.&: V.RNil) :: F.Record [BRCF.Count, BRCF.Successes]
+                      in (cvap rc F.&: round voters F.&: V.RNil) :: F.Record [BRCF.Count, BRCF.Successes]
       addTurnout r = let cv = realToFrac (F.rgetField @CVAP r)
                      in r F.<+> (FT.recordSingleton @Turnout
                                   $ if cv < 1 then 0 else F.rgetField @Voters r / cv)
