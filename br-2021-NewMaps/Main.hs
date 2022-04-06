@@ -163,7 +163,7 @@ modelVariant = BRE.Model
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
                BRE.HierarchicalBeta
-               1000
+               100
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -585,10 +585,10 @@ diagTableColonnade cas =
       rawTurnout r = ratio (voters r) (cvap r)
       ahTurnoutTarget = F.rgetField @BR.BallotsCountedVEP
       ccesRawTurnout r = realToFrac @_ @Double (F.rgetField @BRE.Voted r) / realToFrac @_ @Double (F.rgetField @BRE.Surveyed r)
-      ccesTurnout  r = F.rgetField @BRE.AHVoted r / realToFrac (F.rgetField @ET.CVAP r)
-      cpsTurnout r = ratio (F.rgetField @BRE.AHSuccesses r) (F.rgetField @BRCF.Count r)
+      ccesTurnout  r = ratio (F.rgetField @BRE.Voted r) (F.rgetField @ET.CVAP r)
+      cpsTurnout r = ratio (F.rgetField @BRCF.Successes r) (F.rgetField @BRCF.Count r)
       rawDShare r = ratio (demVoters r) (demVoters r + repVoters r)
-      ccesDShare r = F.rgetField @BRE.AHPresDVotes r / realToFrac (F.rgetField @BRE.AHPresDVotes r + F.rgetField @BRE.AHPresRVotes r)
+      ccesDShare r = ratio (F.rgetField @BRE.PresDVotes r) (F.rgetField @BRE.PresDVotes r + F.rgetField @BRE.PresRVotes r)
   in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
       <> C.headed "ACS CVAP" (BR.toCell cas "ACS CVAP" "ACS CVAP" (BR.numberToStyledHtml "%d" . cvap))
       <> C.headed "Elex Votes" (BR.toCell cas "Elex Votes" "Votes" (BR.numberToStyledHtml "%d" . voters))

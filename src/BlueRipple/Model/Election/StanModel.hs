@@ -674,7 +674,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             logitMeanTurnout = logit meanTurnout
             normal m sd = SB.normal (Just $ SB.scalar $ show m) (SB.scalar $ show sd)
             cauchy m s = SB.cauchy (Just $ SB.scalar $ show m) (SB.scalar $ show s)
-        elexData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "Elections_Predsident"
+        elexData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "Elections_President"
         alphaT <- SB.useDataSetForBindings elexData $ do
           muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 1)
           sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
@@ -720,7 +720,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         (_, llSet2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSet1
         (_, llSet3) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSet2
 
-        elexPData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "ElectionsS"
+--        elexPData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "ElectionsS"
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
 
 --        acsDMTC <- centerTF SC.ModelData acsDMT (Just "T")
@@ -933,7 +933,7 @@ modelLabel m = show (voteShareType m)
                <> "_" <> T.intercalate "_" (officeText <$> Set.toList (votesFrom m))
                <> "_" <> printDensityTransform (densityTransform m)
                <> "_" <> printComponents (modelComponents m)
-               <> "_HierAlpha" <> if betaType m == HierarchicalBeta then "Beta" else ""
+               <> "_HierAlpha" <> (if betaType m == HierarchicalBeta then "Beta" else "")
                <> "_EScale" <> show (electionScale m)
 
 dataLabel :: Model -> Text

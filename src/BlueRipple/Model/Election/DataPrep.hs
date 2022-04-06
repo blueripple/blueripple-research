@@ -445,6 +445,7 @@ addUnopposed = FT.mutate (FT.recordSingleton @ET.Unopposed . unopposed) where
   unopposed r = F.rgetField @DVotes r == 0 || F.rgetField @RVotes r == 0
 -}
 
+
 makeStateElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
@@ -455,10 +456,16 @@ makeStateElexDataFrame office earliestYear elex = do
             length = FL.fold FL.length
         acs_C <- PUMS.pumsLoaderAdults
         acsByState <- K.ignoreCacheTimeM $ cachedPumsByState acs_C
+        let cvapFld = FMR.concatFold
+                      $ FMR.mapReduceFold
+                      FMR.noUnpack
+                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @'[PUMS.Citizens])
+                      (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+            cvapByState = FL.fold cvapFld acsByState
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex acsByState
+        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex cvapByState
         when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in elex/ACS join=" <> show missing
         when (length elexWithCVAP /= length flattenedElex) $ K.knitError "makeStateElexDataFrame: added rows in elex/ACS join"
         return $ fmap (F.rcast . addOffice) elexWithCVAP
@@ -494,13 +501,24 @@ makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
 makeCDElexDataFrame office earliestYear elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
             length = FL.fold FL.length
+            fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
+                         then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+                         else r
         acs_C <- PUMS.pumsLoaderAdults
         cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
         acsByCD <- K.ignoreCacheTimeM $ cachedPumsByCD acs_C cdFromPUMA_C
+        let cvapFld = FMR.concatFold
+                      $ FMR.mapReduceFold
+                      FMR.noUnpack
+                      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] @'[PUMS.Citizens])
+                      (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+            cvapByCD = FL.fold cvapFld acsByCD
         flattenedElex <- K.knitEither
                          $ FL.foldM (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
                          (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] flattenedElex acsByCD
+        let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+                                      (fmap fixDC_CD flattenedElex)
+                                      (fmap fixDC_CD cvapByCD)
         when (not $ null missing) $ K.knitError $ "makeCDElexDataFrame: missing keys in elex/ACS join=" <> show missing
         when (length elexWithCVAP /= length flattenedElex) $ K.knitError "makeCDElexDataFrame: added rows in elex/ACS join"
         return $ fmap (F.rcast . addOffice) elexWithCVAP
