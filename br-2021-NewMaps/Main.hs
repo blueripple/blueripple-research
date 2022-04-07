@@ -168,6 +168,7 @@ modelVariant = BRE.Model
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
 postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
+sharedInputs = postDir BR.</> [Path.reldir|Shared|] BR.</> [Path.reldir|inputs|]
 postLocalDraft p mRSD = case mRSD of
   Nothing -> postDir BR.</> p BR.</> [Path.reldir|draft|]
   Just rsd -> postDir BR.</> p BR.</> rsd
@@ -185,6 +186,7 @@ postPaths t cmdLine = do
   postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
   BR.postPaths
     BR.defaultLocalRoot
+    sharedInputs
     (postInputs postSpecificP)
     (postLocalDraft postSpecificP mRelSubDir)
     (postOnline postSpecificP)
@@ -200,6 +202,7 @@ explainerPostPaths t cmdLine = do
   postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
   BR.postPaths
     BR.defaultLocalRoot
+    sharedInputs
     (postInputs postSpecificP)
     (postLocalDraft postSpecificP mRelSubDir)
     (postOnlineExp postSpecificP)
@@ -1078,6 +1081,8 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       (stateAbbr postSpec <> " demographic scatter")
       (FV.ViewConfig 600 600 5)
       (FL.fold xyFold' modelDRADemo)
+  BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
+  BR.brAddSharedMarkDownFromFile (paths postSpec) "modelExplainer"
   pure ()
 
 dmColonnadeOverlap x ols cas =
@@ -1262,7 +1267,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
     (FV.ViewConfig 600 600 5)
     (FL.fold xyFold' demoModelAndDR)
   BR.brAddPostMarkDownFromFileWith postPaths "_afterNewDemographics" (Just oldDistrictsNoteRef)
-
+  BR.brAddSharedMarkDownFromFile postPaths "modelExplainer"
   return ()
 
 safeLog x = if x < 1e-12 then 0 else Numeric.log x

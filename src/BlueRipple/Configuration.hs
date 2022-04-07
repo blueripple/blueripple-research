@@ -148,7 +148,8 @@ data PubTimes =  PubTimes { initialPT :: PubTime
 
 data PostInfo = PostInfo PostStage PubTimes
 
-data PostPaths a = PostPaths { inputsDir :: Path a Dir -- place to put inputs (markDown, etc.)
+data PostPaths a = PostPaths { sharedInputsDir :: Path a Dir -- inputs shared among various posts
+                             , inputsDir :: Path a Dir -- place to put inputs (markDown, etc.)
                              , localDraftDir :: Path a Dir
                              , onlineDraftDir :: Path a Dir
                              , onlinePubDir :: Path a Dir -- local html location, to be pushed to github pages
@@ -157,7 +158,7 @@ data PostPaths a = PostPaths { inputsDir :: Path a Dir -- place to put inputs (m
                              } deriving (Show)
 
 absPostPaths :: Path Abs Dir -> PostPaths Rel -> PostPaths Abs
-absPostPaths s (PostPaths i ld pd pp dr pr) = PostPaths (s </> i) (s </> ld) (s </> pd) (s </> pp) dr pr
+absPostPaths s (PostPaths si i ld pd pp dr pr) = PostPaths (s </> si) (s </> i) (s </> ld) (s </> pd) (s </> pp) dr pr
 
 defaultLocalRoot :: Path Abs Dir
 defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
@@ -168,11 +169,12 @@ noteRelDir = [Path.reldir|Notes|]
 unusedRelDir :: Path Rel Dir
 unusedRelDir = [Path.reldir|Unused|]
 
-postPaths :: MonadIO m => Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> m (PostPaths Abs)
-postPaths localRoot iP ldP postRel = do
+postPaths :: MonadIO m => Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> m (PostPaths Abs)
+postPaths localRoot siP iP ldP postRel = do
   let pp = absPostPaths
            localRoot
            $ PostPaths
+           ([Path.reldir|research|] </> siP)
            ([Path.reldir|research|] </> iP)
            ([Path.reldir|research|] </> ldP)
            ([Path.reldir|blueripple.github.io/Draft|] </> postRel)
@@ -180,8 +182,11 @@ postPaths localRoot iP ldP postRel = do
            ([Path.absdir|/blueripple.github.io/Draft|] </> postRel)
            ([Path.absdir|/blueripple.github.io|] </> postRel)
   Say.say "If necessary, creating post input directories"
-  let iNotesP = inputsDir pp </> noteRelDir
+  let sharedINotesP = sharedInputsDir pp </> noteRelDir
+      iNotesP = inputsDir pp </> noteRelDir
       iUnusedP =   inputsDir pp </> unusedRelDir
+  Say.say $ toText $ Path.toFilePath sharedINotesP
+  Path.ensureDir sharedINotesP
   Say.say $ toText $ Path.toFilePath iNotesP
   Path.ensureDir iNotesP
   Say.say $ toText $ Path.toFilePath iUnusedP
@@ -193,6 +198,12 @@ postInputPath :: PostPaths a -> Text -> Either Text (Path a File)
 postInputPath pp postFileEnd = do
   pTail <- first show $ Path.parseRelFile $ toString $ "post" <> postFileEnd
   return $ inputsDir pp </> pTail
+
+sharedInputPath :: PostPaths a -> Text -> Either Text (Path a File)
+sharedInputPath pp fileName = do
+  pTail <- first show $ Path.parseRelFile $ toString fileName
+  return $ sharedInputsDir pp </> pTail
+
 
 noteInputPath ::  PostPaths a -> NoteName -> Text -> Either Text (Path a File)
 noteInputPath pp noteName noteFileEnd = do

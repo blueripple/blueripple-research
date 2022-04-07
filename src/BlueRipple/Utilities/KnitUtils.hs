@@ -175,8 +175,17 @@ brAddPostMarkDownFromFileWith pp postFileEnd mRefs = do
   postInputPath <- K.knitEither $ BRC.postInputPath pp (postFileEnd <> ".md")
   brAddToPostFromFileWith K.addMarkDown False postInputPath mRefs
 
+brAddSharedMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> Maybe Text -> K.Sem r ()
+brAddSharedMarkDownFromFileWith pp postFileEnd mRefs = do
+  postInputPath <- K.knitEither $ BRC.sharedInputPath pp (postFileEnd <> ".md")
+  brAddToPostFromFileWith K.addMarkDown False postInputPath mRefs
+
 brAddPostMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> K.Sem r ()
 brAddPostMarkDownFromFile pp postFileEnd = brAddPostMarkDownFromFileWith pp postFileEnd Nothing
+
+brAddSharedMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> K.Sem r ()
+brAddSharedMarkDownFromFile pp postFileEnd = brAddSharedMarkDownFromFileWith pp postFileEnd Nothing
+
 
 brAddNoteMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do

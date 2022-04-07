@@ -664,9 +664,9 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                 llS
               return (Just centerF, llS)
             llFoldM = FL.FoldM ccesP (return (Just centerPF, llSet3)) return
-        (_, llSetP) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
+        (_, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
 
-        SB.generateLogLikelihood' $ llSet3 --SB.mergeLLSets llSetT llSetP
+        SB.generateLogLikelihood' $ llSet4 --SB.mergeLLSets llSetT llSetP
 
         let  dmThetaE ci dmE thetaE = SB.vectorizedOne ci $ SB.function "dot_product" (dmE :| [thetaE])
              probE ci aE dmE thetaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmThetaE ci dmE thetaE
@@ -762,10 +762,17 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             groups = groupBuilderDM model psGroup states cds psKeys
         K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
-  let unwrapVoted = [SR.UnwrapNamed "Voted_Elections" "yElectionsVotes", SR.UnwrapNamed "Voted_CPS" "yCPSVotes", SR.UnwrapNamed "Voted_CCES" "yCCESVotes"]
-  let unwrapDVotes = [SR.UnwrapNamed "DVotesInRace_Elections" "yElectionsDVotes"]
-                     ++ if (Set.member ET.President $ votesFrom model) then [SR.UnwrapNamed "DVotesInRace_CCES_President" "yCCESDVotesPresident"] else []
-                     ++ if (Set.member ET.House $ votesFrom model) then [SR.UnwrapNamed "DVotesInRace_CCES_House" "yCCESDVotesHouse"] else []
+  let addUnwrapIf o varName unwrapName = if (Set.member o $ votesFrom model) then [SR.UnwrapNamed varName unwrapName] else []
+  let unwrapVoted = [SR.UnwrapNamed "Voted_CPS" "yCPSVotes", SR.UnwrapNamed "Voted_CCES" "yCCESVotes"]
+                    ++ addUnwrapIf ET.President "Voted_ElexPr" "yVoted_Elections_Pr"
+                    ++ addUnwrapIf ET.Senate "Voted_ElexSe" "yVoted_Elections_Se"
+                    ++ addUnwrapIf ET.House "Voted_ElexHo" "yVoted_Elections_Ho"
+  let unwrapDVotes = []
+                     ++ addUnwrapIf ET.President "DVotesInRace_CCES_President" "yCCESDVotesPresident"
+                     ++ addUnwrapIf ET.House "DVotesInRace_CCES_House" "yCCESDVotesHouse"
+                     ++ addUnwrapIf ET.President "DVotesInRace_Elex_Pr" "yElectionDVotes_Pr"
+                     ++ addUnwrapIf ET.Senate "DVotesInRace_Elex_Se" "yElectionsDVotes_Se"
+                     ++ addUnwrapIf ET.House "DVotesInRace_Elex_Ho" "yElectionsDVotes_Ho"
 
       gqNames = SC.GQNames ("By" <> SB.taggedGroupName psGroup) (psDataLabel model psDataSetName)
   (dw, stanCode) <- dataWranglerAndCode dat_C psDat_C
