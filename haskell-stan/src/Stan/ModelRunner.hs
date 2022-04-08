@@ -346,6 +346,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
     mGQRes_C <- case SC.rinGQ runnerInputNames of
       Nothing -> pure Nothing
       Just _ -> do
+        K.logLE K.Diagnostic "Checking if GQs are up to date"
         let runGQDeps = (,,) <$> modelIndices_C <*> gqIndices_C <*> curModel_C
         gqSamplesFileDep <- K.oldestUnit <$> traverse K.fileDependency (SC.samplesFileNames SC.MRFull config)
         res_C <- K.updateIf gqSamplesFileDep runGQDeps $ const $ do
