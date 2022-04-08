@@ -86,30 +86,28 @@ Some important labels:
 And quantities:
 
  Name   Description
-------  ---------------------------------------------------------
+------  ------------------------------------------------------------------------
  $N$    Citizen Voting Age Population (CVAP)
  $V$    Number of votes cast (for either Democrat or Republican)
- $t$    Turnout ($t=V/N$)
+ $t$    Turnout ($t=\textrm{Pr{Voting age citizen votes in the election}}=V/N$)
  $D$    Number of votes cast for the Democratic candidate
- $p$    Democratic voter preference
- $f$    Democratic vote share ($f=D/V$)
+ $p$    Democratic voter preference ($p=\textrm{Pr{Votes for the Democrat|Voted}}=D/V$)
 
 A couple of things are worth pointing out here:
 
 - We've chosen to ignore third-party candidates and compute two-party preference (the probability that
   a voting age citizen who chooses either the Democrat or Republican chooses the Democrat) and
   two-party share (the probability that a voter who chooses either the Democrat or Republican chooses the
-  Democrat).
+  Democrat). This is simpler and almost always what we care most about.
 
-- Share and preference are not the same thing! This is sometimes a point of confusion. Preference, which is usually
-  what we model, is measurable in a survey but not
-  -
+- We model the voter preference of *people who vote*. We are interested in election outcomes
+  and those are driven by voters.  But there are certainly interesting questions to address about
+  whether voters and non-voters have the same preferences.
 
+Some useful relations among these quantities:
 
-So, for instance,
-
-
-$t^{}
+- $N^{(s)}=\sum_g N_g^{(s)}$
+-
 
 
 
