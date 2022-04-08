@@ -1081,7 +1081,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       (stateAbbr postSpec <> " demographic scatter")
       (FV.ViewConfig 600 600 5)
       (FL.fold xyFold' modelDRADemo)
-  BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
+  BR.brAddMarkDown "## Methods (for non-experts)"
   BR.brAddSharedMarkDownFromFile (paths postSpec) "modelExplainer"
   pure ()
 
@@ -1214,7 +1214,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       oldMapsCompare
   oldDistrictsNoteUrl <- K.knitMaybe "extant districts Note Url is Nothing" $ mOldDistrictsUrl
   let oldDistrictsNoteRef = "[oldDistricts]:" <> oldDistrictsNoteUrl
-  BR.brAddPostMarkDownFromFile postPaths "_intro"
+  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just oldDistrictsNoteRef)
   let (modelAndDR, missing)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
           proposedForPost

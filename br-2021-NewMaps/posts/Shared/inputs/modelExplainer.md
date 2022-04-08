@@ -1,4 +1,3 @@
-## Brief intro to our methods (for non-experts)
 This part of the post contains a general summary of the math behind what we’re
 doing here intended for non-experts. If you want even more technical details,
 check out the links at the end of this section,
@@ -71,4 +70,5 @@ more accurate and have more information about uncertainties.
 [methods]: https://blueripple.github.io/research/StateLeg/VA1/Notes/Model_Details.html
 [VASLModel]: https://blueripple.github.io/research/StateLeg/VA1/post.html
 [CES]: https://cces.gov.harvard.edu
+[CPS]: https://catalog.data.gov/dataset/current-population-survey-voting-and-registration-supplement
 [ACS]: https://www.census.gov/programs-surveys/acs/

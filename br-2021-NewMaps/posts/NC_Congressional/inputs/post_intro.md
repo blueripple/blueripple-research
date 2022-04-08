@@ -42,7 +42,10 @@ The axes show the projected 2-party Dem vote share with each model.
 The diagonal line represents where districts would fall on this scatter-plot
 if the two models agreed precisely. In districts to the left of the line,
 our demographic model thinks the D vote share is higher than historical results,
-and to the right of the line, we think it’s lower than the historical model predicts.
+and to the right of the line, we think it’s lower than the historical model predicts[^old].
+
+[^old]: We’ve also done this modeling for the old districts and compared that
+result to the actual 2020 election results. See [here][oldDistricts].
 
 NB: For this and all scatter charts to follow, you
 can pan & zoom by dragging with the mouse or moving the scroll wheel.  To reset the chart,
