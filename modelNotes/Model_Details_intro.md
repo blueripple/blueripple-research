@@ -1,4 +1,7 @@
-### Modeling State Legislative Elections
+### Blue Ripple’s Demographic Election Model
+
+## Introduction
+
 We want to build a reasonable but simple demographic model of
 voter turnout and party preference which we
 can use to predict the outcome of an election
@@ -10,7 +13,7 @@ districts as well as existing ones.
 
 When we say “predict” above we don’t mean in the sense
 of actually trying to handicap the outcome. Instead we intend
-to estimate the outcome based only on our demographic variables.
+to estimate the outcome based only on geographic and demographic variables.
 So we ignore things like current national sentiment toward either
 party, whether or not the candidate is an incumbent, etc. Our goal
 is to isolate something like an intrinsic partisan lean, though we
@@ -31,20 +34,19 @@ the demographic expectation and historical results don’t line up,
 and to do so well in advance of any polling or in places where polls
 don’t exist, like state-legislative races.
 
-One possibility is that we work bottom-up, using voting precincts as building blocks:
+We could work bottom-up, using voting precincts as building blocks:
 
 1. Get the geographic boundary and election results for each precinct,
 e.g., from [openprecincts](https://openprecincts.org).
 2. Build a demographic profile of the precinct using overlaps[^arealInterpolation]
-of census “blocks” or “block
-groups”[^censusGeographies].
+of the precinct and census “blocks” or “block groups”[^censusGeographies].
 3. Use the total number of votes and votes cast for the Democratic candidate
-in each precinct to *infer* a demographic model of turnout and voter preference in the
+in each precinct to *infer* a demographic and geographic model of turnout and voter preference in the
 entire set of precincts.
-4. Apply that model to the demographics of a SLD to generate a rough
+4. Apply that model to the demographics of a district to generate a rough
 estimate of the likely election result.
 
-For a given SLD (or set of SLD’s), what precincts do we include in the model?
+For a given district (or set of districts), what precincts do we include in the model?
 In order to keep
 things simple we want a model that covers multiple districts. We
 could model using every precinct in the country or at least the state.
@@ -66,23 +68,22 @@ Cooperative Election Survey
 formerly the CCES) and a national survey
 of voter preference, like the CES, to build demographically stratified turnout
 and preference data at the state or congressional-district (CD) level.
-We add election result data at the congressional district and state level.
-2. Use that data to infer a demographic model of turnout and voter preference,
-possibly with state or CD-level effects.
+We add federal election result data at the Congressional-district and state-wide level.
+2. Use that data to *infer* a demographic model of turnout and voter preference,
+with state-level effects.
 3. Apply[^postStratify] that model to the demographics of a given district to generate
 a rough estimate of the likely election result.
 
-This approach might be too general: voters in different regions might not
-be well described by a national model. The data we use is organized by CD,
-so we can add some geographic specificity to the model. Even better, we can
-compare the quality of models with different levels of geographic detail.
+# Definitions and Notation
+Some important labels:
 
-This data is considerably simpler
-to work with and more comprehensive precinct-level data is not available for all states
-and all election years.  But we remain interested in the bottom-up approach as well,
-and we might implement some version of it for comparison.
+| Name | Description                                                 |
+| ____ | ___________________________________________________________ |
+| $g$  | A specific combination of sex, education and race/ethnicity |
+| $s$  | A specific state                                            |
+| $d$  | A specific district                                         |
 
-Some details:
+
 
 1. For turnout, we have the CPSVRS, the CES and the elections themselves.
 The CPSVRS is self-reported whereas the
