@@ -182,11 +182,11 @@ Modeling proceeds as follows:
     sum of the parameters to a probability.
 
     $\begin{equation}
-    \t_{(d,g)} = \textrm{logit}\big(\alpha_T^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_T\big)
+    t_{(d,g)} = \textrm{logit}\big(\alpha_T^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_T\big)
     \end{equation}$
 
     $\begin{equation}
-    \p_{(d,g)} = \textrm{logit}\big(\alpha_P^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_P\big)
+    p_{(d,g)} = \textrm{logit}\big(\alpha_P^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_P\big)
     \end{equation}$
 
     where $S(d)$ is the state in which the district $d$ is located and
