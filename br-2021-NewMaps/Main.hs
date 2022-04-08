@@ -122,7 +122,7 @@ main = do
     K.mkPandocWriterConfig
       pandocTemplate
       templateVars
-      K.mindocOptionsF
+      (BR.brWriterOptionsF . K.mindocOptionsF)
   let cacheDir = ".flat-kh-cache"
       knitConfig :: K.KnitConfig BR.SerializerC BR.CacheData Text =
         (K.defaultKnitConfig $ Just cacheDir)

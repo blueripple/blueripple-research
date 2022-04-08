@@ -1,4 +1,4 @@
-### Blue Ripple’s Demographic Election Model
+# Blue Ripple’s Demographic Election Model
 
 ## Introduction
 
@@ -74,14 +74,42 @@ with state-level effects.
 3. Apply[^postStratify] that model to the demographics of a given district to generate
 a rough estimate of the likely election result.
 
-# Definitions and Notation
+## Definitions and Notation
 Some important labels:
 
-| Name | Description                                                 |
-| ____ | ___________________________________________________________ |
-| $g$  | A specific combination of sex, education and race/ethnicity |
-| $s$  | A specific state                                            |
-| $d$  | A specific district                                         |
+  Name   Description
+ ------  -----------------------------------------------------------------
+ $g$     Demographic Group (combination of sex, education, race/ethnicity)
+ $s$     State
+ $d$     District
+
+And quantities:
+
+ Name   Description
+------  ---------------------------------------------------------
+ $N$    Citizen Voting Age Population (CVAP)
+ $V$    Number of votes cast (for either Democrat or Republican)
+ $t$    Turnout ($t=V/N$)
+ $D$    Number of votes cast for the Democratic candidate
+ $p$    Democratic voter preference
+ $f$    Democratic vote share ($f=D/V$)
+
+A couple of things are worth pointing out here:
+
+- We've chosen to ignore third-party candidates and compute two-party preference (the probability that
+  a voting age citizen who chooses either the Democrat or Republican chooses the Democrat) and
+  two-party share (the probability that a voter who chooses either the Democrat or Republican chooses the
+  Democrat).
+
+- Share and preference are not the same thing! This is sometimes a point of confusion. Preference, which is usually
+  what we model, is measurable in a survey but not
+  -
+
+
+So, for instance,
+
+
+$t^{}
 
 
 

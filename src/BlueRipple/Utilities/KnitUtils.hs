@@ -105,6 +105,10 @@ brWriterOptionsF o =
    in o
         { PA.writerExtensions =
             PA.enableExtension PA.Ext_header_attributes $
+--            PA.enableExtension PA.Ext_grid_tables $
+--            PA.enableExtension PA.Ext_pipe_tables $
+--            PA.enableExtension PA.Ext_fancy_lists $
+--            PA.enableExtension PA.Ext_tex_math_dollars $
               PA.enableExtension PA.Ext_smart exts,
           PA.writerSectionDivs = True
         }
