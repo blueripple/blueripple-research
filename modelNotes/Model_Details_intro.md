@@ -1,12 +1,35 @@
 ### Modeling State Legislative Elections
 We want to build a reasonable but simple demographic model of
-voter turnout and preference which we
-can use to estimate the outcome of an election
-in a state legislative district.  We want to build something
-we can apply fairly easily to any state.
+voter turnout and party preference which we
+can use to predict the outcome of an election
+in a geography with known demographics, like a congressional or
+state-legisltive district.
 And, since this is a redistricting year,
 we want something that we can apply to newly drawn
 districts as well as existing ones.
+
+When we say “predict” above we don’t mean in the sense
+of actually trying to handicap the outcome. Instead we intend
+to estimate the outcome based only on our demographic variables.
+So we ignore things like current national sentiment toward either
+party, whether or not the candidate is an incumbent, etc. Our goal
+is to isolate something like an intrinsic partisan lean, though we
+readily acknowledge that this can shift over time as voter turnout
+and preferences shift. We’re trying to strike a balance between an
+estimate which just assembles voting history for all the precincts
+in a district, e.g., [Dave’s Redistricting][DavesR] and a full-blown
+prediction model, using demographics, poll averages,
+and economic-indicators, e.g.,
+the [Economist Model][EconM].
+
+[DavesR]: https://davesredistricting.org/maps#aboutus
+[EconM]: https://projects.economist.com/us-2020-forecast/president
+
+We don’t expect our model to be more accurate than a historical or
+full-blown predictive model. Instead, we hope to spot places where
+the demographic expectation and historical results don’t line up,
+and to do so well in advance of any polling or in places where polls
+don’t exist, like state-legislative races.
 
 One possibility is that we work bottom-up, using voting precincts as building blocks:
 
@@ -37,16 +60,16 @@ So instead, we work top-down from national-level data:
 1. Use a national survey of voter turnout, e.g., the
 Current Population Survey Voter Registration Supplement
 ([CPSVRS](https://www.census.gov/data/datasets/time-series/demo/cps/cps-supp_cps-repwgt/cps-voting.html)),
-and/or the
+and the
 Cooperative Election Survey
 ([CES](https://cces.gov.harvard.edu),
 formerly the CCES) and a national survey
 of voter preference, like the CES, to build demographically stratified turnout
 and preference data at the state or congressional-district (CD) level.
-We add election result data at the district and state level.
+We add election result data at the congressional district and state level.
 2. Use that data to infer a demographic model of turnout and voter preference,
 possibly with state or CD-level effects.
-3. Apply[^postStratify] that model to the demographics of a SLD to generate
+3. Apply[^postStratify] that model to the demographics of a given district to generate
 a rough estimate of the likely election result.
 
 This approach might be too general: voters in different regions might not
@@ -61,26 +84,29 @@ and we might implement some version of it for comparison.
 
 Some details:
 
-1. For turnout, we have the CPSVRS and/or the CES.  The CPSVRS is self-reported whereas the
+1. For turnout, we have the CPSVRS, the CES and the elections themselves.
+The CPSVRS is self-reported whereas the
 CES validates the turnout data via voter files.  All other things equal, we’d prefer only validated
 data.  But there’s some evidence that the
 [validation process used by the CES introduces bias](https://agadjanianpolitics.wordpress.com/2018/02/19/vote-validation-and-possible-underestimates-of-turnout-among-younger-americans/)
 because it tends to miss people who move between elections,
 and they are disproportionately likely to be young and poor.
 So we use both sources, along with actual reported turnout, though
-for that we have only aggregate data for the state or CCD.
+for that we have only aggregate data for the state or Congressional district.
 People tend to over-report their own turnout, which presents a problem for non-validated sources.
-So we use some standard adjustments
-to the turnout
-data, first suggested by
-[Hur & Achen](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf),
-which adjusts the turnout probabilities from
-CPSVRS so that the actual recorded total turnout matches the CPSVRS post-stratified
-on the geography in question. The Hur & Achen paper doesn’t address how to re-weight
-among various demographic groups within the same geography.  For this we follow the
-procedure outlined (in a slightly different context) on pages 9-10 of
-[this paper](http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf)
-by Ghitza and Gelman.
+This is a problem discussed in detail in
+[Hur & Achen](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf).
+Their suggestion is to reweight the CPS so that the weighted post-stratification matches
+known total turnout in each geography. The standard approach for doing that (explained on pps. 9-10 of
+this [paper][GelmanGhitza2018]) is to perform multi-level regression on your survey data
+and, once the parameters have been estimated, apply the smallest possible correction to each of them
+such that when post-stratified across an election geography, the vote totals match.
+
+[GelmanGhitza2018]: http://www.stat.columbia.edu/~gelman/research/published/mrp_voterfile_20181030.pdf
+
+Our model works slightly differently. We perform multi-level regression on the surveys and known vote
+totals *simultaneously*, by adding the implied post-stratified vote total as a derived parameter and
+including a term in the model for that as well.
 
 2. We choose congressional districts (CD’s) as our basic geographic unit for
 constructing the model of turnout and voter preference.
@@ -107,10 +133,10 @@ demographic categories.
 And we have election results: at the state-level for presidential and senate elections and at the
 CD level for congressional elections.
 
-For each State Legislative District (SLD) we have data from the ACS, which we aggregate from
+For each Legislative District (LD) we have data from the ACS, which we aggregate from
 the block-group level using
 [areal interpolation](https://medium.com/spatial-data-science/spatial-interpolation-with-python-a60b52f16cbb).
-Our shapefiles for the SLDs and the census block-groups come from the Census Bureau, or, in the case of new
+Our shapefiles for the LDs and the census block-groups come from the Census Bureau, or, in the case of new
 legislative maps, from the excellent [Dave’s Redistricting][DavesR].
 The result of this aggregation is a breakdown
 of the citizens in each district by the same demographic variables as the CPSVRS and CES data, as well as
@@ -127,46 +153,40 @@ Modeling proceeds as follows:
    city and then a lot of empty land.  The non-weighted density would be something centered between the city
    density and the very small rural density. But most people live in the city! So the correct density for modeling
    behavior is very close to the density of the city, something captured by population-weighting. We use the
-   geometric mean because it is more robust to outliers and population-density has a lot of outliers.
+   geometric mean because it is more robust to outliers, and population-density has a lot of outliers!
 
-2. We model turnout and vote choice as [beta-binomially][WPBetaBinom]
-   distributed with probabilities and variances determined by the various
+2. We model turnout and vote choice as [binomially][WPBinom]
+   distributed with success probabilities determined by the various
    demographic parameters.  That is, given a district,
    $d$, and the subset (by sex, education-level and race) of people $g$,
    we assume that the turnout, $T$, of eligible voters, $E$,
    and the votes for the Democratic candidate, $D$,
-   out of all validated voters $V$, both follow beta-binomial distributions:
+   out of all validated voters $V$, both follow binomial distributions:
 
-    $T_g^{(d)} \thicksim BB\Big(E^{(d)}_g\Big|A_g^{(d)}, B_g^{(d)}\Big)$
+    $T_g^{(d)} \thicksim B\Big(E^{(d)}_g\Big|t_g^{(d)}\Big)$
 
-    $D_g^{(d)} \thicksim BB\Big(V^{(d)}_g\Big|a_g^{(d)}, b_g^{(d)}\Big)$
+    $D_g^{(d)} \thicksim B\Big(V^{(d)}_g\Big|p_g^{(d)}\Big)$
 
-    where $BB(n|a, b)$ is the distribution of successful outcomes from $n$-trials with
-    probability of success chosen *independently for each trial*
-    from a [beta distribution][WPBeta] with parameters $a$ and $b$. We can [reparameterize][WPBBRepar]
-    $a$ and $b$ into a mean probability $\mu=\frac{a}{a+b}$,
-    and $M=a+b$ (something which plays a role much like the number of trials
-    in the Binomial distribution).
+    where $B(n|p)$ is the distribution of successful outcomes from $n$-trials with
+    probability of success $p$.
 
     NB: If we were using the same data for turnout and preference, $T^{(d)}$
     would be the same as $V^{(d)}$,
     but since we are using different data sets, we need to model them separately.
 
-    We allow the $M$ parameter to be estimated directly by the fitting procedure.
-
-    The $\mu$ parameters must be between 0 and 1 and are modeled via
+    The $t$ and $p$ parameters must be between 0 and 1 and are modeled via
     [logistic functions](https://en.wikipedia.org/wiki/Logistic_function)
     so that the parameters themselves are unconstrained.
     This allows the fitting to proceed more easily.
-    The logistic then maps the unconstrained
+    The logistic function then maps the unconstrained
     sum of the parameters to a probability.
 
     $\begin{equation}
-    \mu_T^{(d,g)} = \textrm{logit}\big(\alpha_T^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_T\big)
+    \t_{(d,g)} = \textrm{logit}\big(\alpha_T^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_T\big)
     \end{equation}$
 
     $\begin{equation}
-    \mu_P^{(d,g)} = \textrm{logit}\big(\alpha_P^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_P\big)
+    \p_{(d,g)} = \textrm{logit}\big(\alpha_P^{S(d)} + \vec{X}^{(d,g)}\cdot\vec{\beta}_P\big)
     \end{equation}$
 
     where $S(d)$ is the state in which the district $d$ is located and
@@ -177,8 +197,8 @@ Modeling proceeds as follows:
     - $\alpha$ is a hierarchical parameter, partially pooling the information from all states
       as to overall level of turnout and preference.
 
-    - $\vec{\beta}$ is a vector of (non-hierarchical, for now) parameters relating turnout and
-      preference to all of our demographic variables besides geographic location (sex, education,
+    - $\vec{\beta}$ is a vector of hierarchical parameters relating turnout and
+      preference to all of our demographic variables (sex, education,
       race/ethnicity and population density)
 
     - Population density is binned into 10 quantiles. We’ve also tried using the log of the population
@@ -188,12 +208,9 @@ Modeling proceeds as follows:
     - There is one additional complication. For turnout we are combining 3 data-sets (CPSVRS, CES and
       election results) and for preference we are combining two (CES and election results). In the actual
       fit, we add one scalar parameter to the non-election data-sets to allow each data set a different
-      average level of turnout or preference.  And we allow the $M$ parameters to be different for each
-      data-set.
+      average level of turnout or preference.
 
-[WPBetaBinom]: https://en.wikipedia.org/wiki/Beta-binomial_distribution
-[WPBBRepar]: https://en.wikipedia.org/wiki/Beta-binomial_distribution#Further_Bayesian_considerations
-[WPBeta]: https://en.wikipedia.org/wiki/Beta_distribution
+[WPBinom]: https://en.wikipedia.org/wiki/Binomial_distribution
 
 3. We use
    [Haskell](https://www.haskell.org) to parse the data, reorganize it and produce
