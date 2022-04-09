@@ -1,5 +1,9 @@
 # Blue Ripple’s Demographic Election Model
 
+1. Introduction
+2. Definitions and Notation
+3. Model Structure
+
 ## Introduction
 
 We want to build a reasonable but simple demographic model of
@@ -75,23 +79,25 @@ with state-level effects.
 a rough estimate of the likely election result.
 
 ## Definitions and Notation
-Some important labels:
+Some important categories:
 
-  Name   Description
- ------  -----------------------------------------------------------------
- $g$     Demographic Group (combination of sex, education, race/ethnicity)
- $s$     State
- $d$     District
+   Name              Description
+ ------------------  ---------------------------------------------------------------------------------
+ $\mathcal{K}        A specific set of demographic groupings (e.g., sex, education and race/ethnicity)
+ $k$                 A specific demographic grouping, i.e., $\mathcal{K} = \{k\}$
+ $l$                 A location (E.g., a state $S$, or congressional district $d$)
+ $\mathcal{D}(S)$    The set of congressional districts in state $S$
 
 And quantities:
 
  Name   Description
-------  ------------------------------------------------------------------------
- $N$    Citizen Voting Age Population (CVAP)
- $V$    Number of votes cast (for either Democrat or Republican)
- $t$    Turnout ($t=\textrm{Pr{Voting age citizen votes in the election}}=V/N$)
- $D$    Number of votes cast for the Democratic candidate
- $p$    Democratic voter preference ($p=\textrm{Pr{Votes for the Democrat|Voted}}=D/V$)
+--------  ------------------------------------------------------------------------
+ $N$      Citizen Voting Age Population (CVAP)
+ $V$      Number of votes cast (for either Democrat or Republican)
+ $t$      Turnout ($t=\textrm{Pr{Voting age citizen votes in the election}}=V/N$)
+ $D$      Number of votes cast for the Democratic candidate
+ $p$      Democratic voter preference ($p=\textrm{Pr{Votes for the Democrat|Voted}}=D/V$)
+ $\rho$   Population Density
 
 A couple of things are worth pointing out here:
 
@@ -100,21 +106,72 @@ A couple of things are worth pointing out here:
   two-party share (the probability that a voter who chooses either the Democrat or Republican chooses the
   Democrat). This is simpler and almost always what we care most about.
 
-- We model the voter preference of *people who vote*. We are interested in election outcomes
+- We model *voter* preference not voting-age-citizen preference. We are interested in election outcomes
   and those are driven by voters.  But there are certainly interesting questions to address about
-  whether voters and non-voters have the same preferences.
+  whether voters and non-voting adult citizens have the same candidate preferences.
 
-The capitalized quantities can be summed directly over demographic groupings.
-E.g., $N^{(s)}=\sum_g N_g^{(s)}$, $V^{(s)}=\sum_g V_g^{(s)}$, $D^{(s)}=\sum_g D_g^{(s)}$
-The lowercase quantities are probabilities so they aggregate differently:
+- We will indicate the subset of each quantity in each demographic group via subscript,
+  as in $N_k(g)$ is the number of voting age citizens from demographic group $k$ in geography $g$.
 
-$t^{(s)} = \frac{\sum_g N_g^{(s)} t_g^{(s)}}{\sum_g N_g^{(s)}}$
+- The capitalized quantities can be summed directly over demographic groupings.
+  E.g., $N(g)=\sum_k N_k(g)$, $V(g)=\sum_k V_k(g)$, $D(g)=\sum_k D_k(g)$
+  The lowercase quantities are probabilities so they aggregate differently.
 
-$p^{(s)} = \frac{\sum_g N_g^{(s)} t_g^{(s)} p_g^{(s)}}{\sum_g N_g^{(s)} t_g^{(s)}}$
+    - $$t(l) = V(l)/N(l) = \sum_k N_k(l) t_k(l) / N(l) = \frac{\sum_k N_k(l) t_k(l)}{\sum_k N_k(l)}$$
 
+    - $$t(S) = V(S)/N(S) = \frac{\sum_{d\in \mathcal{D}(S)}\sum_k N_k(d)t_k(d)}{N(S)}$$
 
+    - $$p(l) = D(l)/V(l) = \frac{\sum_k N_k(l) t_k(g) p_k(l)}{V(l)} =\frac{\sum_k N_k(l) t_k(l) p_k(l)}{\sum_k N_k(l) t_k(l)}$$
 
+    - $$p(S) = D(S)/V(S) = \frac{\sum_{d\in \mathcal{D}(S)}\sum_k N_k(d) t_k(d) p_k(d)}{\sum_{d\in \mathcal{D}(S)} \sum_k N_k(d)t_k(d)}$$
 
+We *observe* $t$ and $p$ in any location where we have survey or election data. In the
+CES survey data, we observe $t_k(g)$ and $p_k(g)$ for demographic variables including age,
+sex, education, race and ethnicity and at the geographic level of congressional districts.
+In the CPSVRS survey, we observe $t_k(s)$, i.e., just turnout and only at the level of states[^cpsState].
+An election result is an observation of $t(s)$ and $p(s)$ or $t(d)$ and $p(d)$, that is
+turnout and preference but without any demographic breakdown[^electionDemographics].
+
+[^cpsState]: The CPSVRS is reported with county-level geography.  Counties can be smaller
+or larger than a congressional district and in practice, these geographies are hard to
+convert.  Rather than deal with that, we aggregate the CPSVRS to the state-level.
+
+[^electionDemographics]: It's possible, via exit polls or the voter file
+(a public record in each state
+matching voters to names and addresses) to try and estimate the demographics of actual
+election turnout. In practice, these methods are unreliable (exit polls) or expensive
+and hard to get right (purchasing, cleaning and matching voter-file data).
+
+Our goal is to model $t$ and $p$ as functions of the location and demographics
+so we can understand them better–how does race affect voter preference in Texas?–
+and look for anomalies, districts where the modeled expectation and the historical
+election results are very different. Such mismatches might indicate issues in the model,
+but they might also be indications of interesting political stories, and places to
+look for flippable or vulnerable districts.
+
+Modeled Quantities
+
+Name   Description
+-----  -----------------------------------
+$u$    Modeled turnout probability
+$q$    Modeled Democratic voter preference
+
+So, for a location $l$ and demographic group $k$, $u_k(l;\rho)$ is the estimated
+probability that a voting-age citizen in that location, with population density
+$\rho$ and with those demographics, will turn out to vote.  And $q_k(l;\rho)$
+is the probability that any such voter will choose the demovratic candidate.
+
+One challenge of modeling
+this data is that they are observed over different sorts of geographies (states and districts)
+though, since these geographies are nested that is not so complex.
+More challenging is the issue of how to incorporate the election data, which is the most
+informative in the sense that there are many more voters than survey takers, but lacks
+demographic specificity. We’ll come back to this shortly when
+
+only the surveys give us observations for each demographic group, $k$, separately.
+
+For any geography, e.g., a district, we know the demographic breakdown, $\{N_{dg}\}$,
+so, given a model fro which allows us, via *post-stratification*[^postStrat], to e
 
 
 
