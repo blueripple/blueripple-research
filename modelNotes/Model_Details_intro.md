@@ -104,10 +104,17 @@ A couple of things are worth pointing out here:
   and those are driven by voters.  But there are certainly interesting questions to address about
   whether voters and non-voters have the same preferences.
 
-Some useful relations among these quantities:
+The capitalized quantities can be summed directly over demographic groupings.
+E.g., $N^{(s)}=\sum_g N_g^{(s)}$, $V^{(s)}=\sum_g V_g^{(s)}$, $D^{(s)}=\sum_g D_g^{(s)}$
+The lowercase quantities are probabilities so they aggregate differently:
 
-- $N^{(s)}=\sum_g N_g^{(s)}$
--
+$t^{(s)} = \frac{\sum_g N_g^{(s)} t_g^{(s)}}{\sum_g N_g^{(s)}}$
+
+$p^{(s)} = \frac{\sum_g N_g^{(s)} t_g^{(s)} p_g^{(s)}}{\sum_g N_g^{(s)} t_g^{(s)}}$
+
+
+
+
 
 
 
