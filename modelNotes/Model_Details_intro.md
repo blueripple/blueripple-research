@@ -2,7 +2,8 @@
 
 1. Introduction
 2. Definitions and Notation
-3. Model Structure
+3. Model Dependencies
+4. Model Paramters and Structure
 
 ## Introduction
 
@@ -151,15 +152,120 @@ look for flippable or vulnerable districts.
 
 Modeled Quantities
 
-Name   Description
------  -----------------------------------
-$u$    Modeled turnout probability
-$q$    Modeled Democratic voter preference
+Name           Description
+-------------  -----------------------------------
+$u_k(l;\rho)$  Modeled turnout probability
+$q_k(l;\rho)$  Modeled Democratic voter preference
 
 So, for a location $l$ and demographic group $k$, $u_k(l;\rho)$ is the estimated
 probability that a voting-age citizen in that location, with population density
 $\rho$ and with those demographics, will turn out to vote.  And $q_k(l;\rho)$
-is the probability that any such voter will choose the demovratic candidate.
+is the probability that any such voter will choose the democratic candidate[^density].
+
+[^density]: The explicit presence of the population density $\rho$ here is
+potentially confusing.
+It might seem like population density should simply be part of what varies with the
+location, $l$.  In our particular setup, we use population density data at a level more
+granular than our modeled set of locations. Most of our data is state-level. And what data
+we have at the congressional district level (CES survey and federal house elections)
+is for the districts which pertained from the 2012-2020 elections.  Many of those
+districts have now changed. And we are interested in state-legislative districts as well.
+So we use states as locations rather than congressional districts.
+But, like demographic variations, population density is known
+to be strongly predictive of voter preference–people in cities are much more likely to
+vote for Democrats than people in suburbs or rural areas and this effect persists
+even when accounting for differences in age and race between those groups. It’s
+relatively easy to gather population density information for any geography of interest:
+states, house districts and state-legislative districts.
+We handle the density differently from the other demographic variables because density
+is a continuous or ordinal predictor rather than categorical, like sex, education or race.
+
+Demographic Model Dependencies (collectively indexed by $k$)
+
+Name            Description
+-------------   -------------------------------------------------------------------------------
+Sex             Female or Male (surveys and the ACS data only record binary gender information)
+Education       Non-graduate from college or college graduate
+Race/Ethnicity  Black, Hispanic, Asian, White-non-Hispanic, or Other
+
+The obvious missing category here is age.  Our input data has age information but when we
+construct demographic breakdowns of new districts we are limited to what's provided by the
+ACS survey. That information is published by the census in various tables and it's not
+possible to extract age, education and race/ethnicity simultaneously[^acsAge]. So we
+cannot post-stratify using the age information, even if it's present in the model. Since
+the model is simpler to fit without it, we drop age information for now.
+
+[^acsAge]: Some ACS tables do have age information, but then we lose education or
+race/ethnicity.  There are interesting techniques using those tables together to
+extract probability distributions of age given sex, education and race/ethnicity.
+We plan to apply these techniques at some point to add age into the model.
+
+## Basic Model Structure
+
+In order to use our data to estimate turnout probability and voter preference, we
+need a model of how survey or election results depend on those quantities. In fact,
+even asserting that what we need to estimate is only those two probabilities
+and not also, e.g., some dispersion in those quantities, implies a particular model.
+We are assuming that for each person of type $k$ in location $l$ with
+population density $\rho$, the choice to vote is like a coin flip where the odds of
+that coin coming up "voted" is $u_k(l;\rho)$ and coming up "didn't vote" is
+$1-u_k(l;\rho)$.  Similarly, for any voter of type  $k$ in location $l$ with
+population density $\rho$, the chance of their vote being for the Democrat is
+"q_k(l;\rho)" and the Republican $1-q_k(l;\rho)$. If we modeled each voter
+separately, these would be [Bernoulli][WPBernoulli] trials and when we take
+groups of Bernoulli trials with the same probability, we get a
+[Binomial][WPBinomial] distribution.
+
+[WPBernoulli]: https://en.wikipedia.org/wiki/Bernoulli_distribution
+[WPBinomial]: https://en.wikipedia.org/wiki/Binomial_distribution
+
+Specifically, given $u_k(l;\rho)$ and $q_k(l;\rho)$ we assume that the
+probability of observing $n$ voters in a group of $N$ voting-age citizens
+of type $k$ in location $l$ with density $\rho$ is $B\big(n|N,u_k(l;\rho)\big)$
+and the probability of observing $d$ votes for the democratic candidate among
+$V$ voters of type $k$ in location $l$ with density $\rho$ is $B\big(d|V,q_k(l;\rho)\big)$.
+
+We need to parameterize $u$ and $q$ in terms of our observed demographic
+variables. We use the [logit][WPlogit] function to map an unbounded
+range into a probability (and thus it's inverse to map back to probability):
+
+[WPlogit]: https://en.wikipedia.org/wiki/Logit
+
+$$u_k(l;\rho) = \textrm{logit}^{-1}(\alpha_l + \vec{X}_k(\rho)\cdot\vec{\beta_l})$$
+$$q_k(l;\rho) = \textrm{logit}^{-1}(\gamma_l + \vec{Y}_k(\rho)\cdot\vec{\theta_l})$$
+
+where $\vec{X}_k(\rho)$ is a vector containing the density and demographic information.
+Population density for any region is computed via a population-weighted geometric mean:
+population-weighted to better reflect the lived density of the people in the region
+and geometric mean because it is more robust to outliers which are a common feature
+of population densities. In our model we bin those densities into 10 quantiles and use
+the quantile index in place of the actual density to further reduce the influence of
+outliers. The demographic information $k$ is encoded via "one-hot" encoding of the
+category: using -1 or 1 for a binary category like college-educated and $M-1$ 0s or 1s
+for an $M$-valued category like race/ethnicity.
+
+$\vec{Y}_k(\rho)$ is the same as $\vec{X}_k(\rho)$ except it also contains
+an element representing incumbency information for the relevant election:
+a $1$ for a Democratic incumbent, $0$ for no-incumbent and $-1$ for a Republican
+incumbent.
+
+# Meta-analysis details
+Since we are using multiple surveys and the election data–a sort of
+meta-analysis–we need to account for the possibility of systematic
+differences between the sources of data.
+Our simplistic approach to this is to add a single extra parameter
+per data-set for each of $u$ and $q$ for each of the non-election sources and for
+each election source other than house elections. This allows each to have a different
+overall level of turnout or voter preference while requiring the location and demographic
+variation to be the same.
+
+# Hierarchical Model
+Rather than estimating $u_k(l;\rho)$ and $q_k(l;\rho)$ directly in each state from data in
+only that state, we use a [multi-level model][WPmultilevel], allowing partial-pooling of the national
+data to inform the estimates in each state.  This introduces more parameters to the model
+but allows for a more robust and informative fit. In our case, we model the $\alpha$, $\gamma$, $\beta$
+
+[WPmultilevel]: https://en.wikipedia.org/wiki/Multilevel_model
 
 One challenge of modeling
 this data is that they are observed over different sorts of geographies (states and districts)
