@@ -252,20 +252,53 @@ incumbent.
 # Meta-analysis details
 Since we are using multiple surveys and the election data–a sort of
 meta-analysis–we need to account for the possibility of systematic
-differences between the sources of data.
-Our simplistic approach to this is to add a single extra parameter
+differences between these sources of data.
+Our (admittedly simplistic) approach to this is to add a single extra parameter
 per data-set for each of $u$ and $q$ for each of the non-election sources and for
-each election source other than house elections. This allows each to have a different
+each election source other than house elections.
+This allows each to have a different
 overall level of turnout or voter preference while requiring the location and demographic
 variation to be the same.
+
+We are, in some sense, treating
+house elections as “neutral” and allowing all other data-sets to vary. We chose
+this since we intend to apply the model to house elections and that simplifies
+post-stratification.
 
 # Hierarchical Model
 Rather than estimating $u_k(l;\rho)$ and $q_k(l;\rho)$ directly in each state from data in
 only that state, we use a [multi-level model][WPmultilevel], allowing partial-pooling of the national
 data to inform the estimates in each state.  This introduces more parameters to the model
-but allows for a more robust and informative fit. In our case, we model the $\alpha$, $\gamma$, $\beta$
+but allows for a more robust and informative fit. In our case, we model the $\alpha$, $\gamma$,
+$\beta$ and $theta$ hierarchically.  There various ways to parameterize this and we
+choose a [non-centered][BANonCentered] parameterization since we expect
+our “contexts” (the various states), to be relatively similar which might lead to problems
+fitting using a centered paramterization.
 
 [WPmultilevel]: https://en.wikipedia.org/wiki/Multilevel_model
+[BANonCentered]: https://betanalpha.github.io/assets/case_studies/hierarchical_modeling.html#51_Multivariate_Centered_and_Non-Centered_Parameterizations
+
+So we set
+
+$$\alpha_l = \alpha + \sigma_\alpha a_l$$
+$$\vec{\beta}_l = \vec{\beta} + \vec{\tau}_{\beta} \cdot \textbf{C}_{\beta} \cdot \vec{b}_l$$
+$$\gamma_l = \gamma + \sigma_\gamma c_l$$
+$$\vec{\theta}_l = \vec{\theta} + \vec{\tau}_{\theta} \cdot \textbf{C}_{\theta} \cdot \vec{d}_l$$
+
+where $\sigma$,and $\vec{\tau}$ are standard-deviation parameters which control
+the amount of pooling of national data with state data. If those parameters are
+small, then the fit is using mostly unpooled, national data. If those parameters are
+large, then the state-level data is mostly informing the fit. We fit those parameters
+along with everything else. $\textbf{C}$ is a correlation matrix, fit to the correlation
+among the density and demographic parameters in the data.
+
+# Modeling Election Data
+So far we’ve dodged one subtlety. Unlike the survey data, the election data
+does not come with attached demographic information. One standard approach
+to this is to remove it from the multi-level model and then adjust the
+model-parameters such that post-stratification matches
+some set of aggregates from the election data, for example,
+[turnout in each state][GGAdj].
 
 One challenge of modeling
 this data is that they are observed over different sorts of geographies (states and districts)
