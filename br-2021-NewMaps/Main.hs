@@ -163,7 +163,7 @@ modelVariant = BRE.Model
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
                BRE.HierarchicalBeta
-               100
+               1000
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]

@@ -294,11 +294,93 @@ among the density and demographic parameters in the data.
 
 # Modeling Election Data
 So far we’ve dodged one subtlety. Unlike the survey data, the election data
-does not come with attached demographic information. One standard approach
-to this is to remove it from the multi-level model and then adjust the
+does not come with attached demographic information. One approach
+is to remove it from the multi-level model and then, after fitting
+the multi-level model to the survey data, adjusting the
 model-parameters such that post-stratification matches
 some set of aggregates from the election data, for example,
-[turnout in each state][GGAdj].
+[turnout in each state][GGAdj]. This is done by choosing a
+smallest such adjustment in some well-specified sense. See,
+e.g., [“Deep Interactions With MRP...][GGDeep2013], pp. 769-770.
+
+[GGDeep2013]: http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf
+
+As discussed in that paper, such an adjustment assumes small correlations between
+the level of over-or-under reporting and the demographic variables in question.
+In the case of the CPS, there is [evidence][AFS2021] that this assumption doesn’t hold.
+
+[AFS2021]: https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf
+
+And there is also a technical issue: When adjusting the parameters this way
+it is unclear what becomes of their distributions. Depending on how we do the
+estimation (see next section), we may have more information about each parameter
+than its likeliest value, including some information about uncertainty or a
+confidence interval. But it’s not at all clear how that information should be
+adjusted via the procedure outlined in the paper above.
+
+There is, however, an alternative. We can add the likelihood of the parameters explaining
+the election data to the model itself. We do this by constructing new parameters for each election $i$:
+
+$$\hat{u}^{(i)} = \frac{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)})}{N^{(i)}}$$
+$$\hat{q}^{(i)} = \frac{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)}) q_k(l^{(i)},\rho^{(i)})}{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)})}$$
+
+and then asserting that the election is governed by the same binomial process as the surveys. That is
+given parameters $u$ and $q$, the probability that, in election $i$, given $N$ voting-age citizens in
+the election location $l^{(i)}$, the probability that there were $V^{(i)}$ voters, $D^{(i)}$ of whome
+voted for the Democratic candidate are $B\big(V^{(i)}|N^{(i)},\hat{u}^{(i)}\big)$ and
+$B\big(D^{(i)}|V^{(i)},\hat{q}^{(i)}\big)$ respectively.
+
+## Practical Considerations
+
+At this point, we are, theoretically, done. We have parameterized our probabilities via our data,
+and asserted that each piece of data, survey or election, has a likelihood expressed by a Binomial
+distribution using those parameters. So we can construct the joint likelihood and attempt to maximize it.
+Or we can be Bayesian, choose priors for our various parameters,
+combine those with the probability of the data given the parameters (the likelihood)
+and use that to find the joint posterior distribution of our parameters given our data, etc.
+
+Let’s recall that our goal is to apply these estimations to new geographical regions via
+post-stratification. So, optimally, we’d like some way of computing a distribution of
+post-stratification results that is consistent with the distribution of parameter values,
+since the uncertainties we are ultimately interested in are those of the post-stratifications.
+
+Monte-Carlo simulation is ideal here, since it allows computation of derived quantities on each path,
+resulting in a distribution of post-stratified results.  Further, Monte-Carlo simulation does not
+require that we analytically maximize this very complex likelihood, though, depending on the method,
+it does require gradients of the likelihood.
+
+In practice, we use [Stan][Stan], a modeling language and Hamiltonian Monte-Carlo
+engine developed in 2012 to run these sortts simulations.
+
+[Stan]: https://en.wikipedia.org/wiki/Stan_(software)
+
+If we only want to model the surveys, this is straightforward and fast.
+
+  - The $\hat{u}$ and $\hat{q}$, being sums over many $\textrm{logit}^{-1}$ functions,
+  make the gradients of the likelihood computationally burdensome.
+  - The elections involve much larger numbers of people per location than the sruveys.
+  The CCES and CPS surveys have about 60,000 respondents each,
+  on the order of 150 people per congressional district.  But a contested house
+  election usually has *hundreds of thousands* of voters.  So there’s a more than 3 order-of-magnitude difference.
+  In practice, this presents a challenging environment for simulation[^surveyVsElection].
+  - The difference in scale of these data makes the election data “too influential” in the sense of
+  [leave-one-out cross-validation].
+
+[loo]: https://arxiv.org/abs/1507.04544
+
+The combination of these is daunting. The challenging geometry forces a smaller Monte-Carlo step-size
+which requires more calculations of the gradients of the likelihood and those are slow. In practice, we
+address all three of these issues at once by artificially shrinking the election sizes by some constant
+factor in order to make them more like the surveys in scale and influence. This does not fix the
+computation issue, but makes it less problematic. If we had but computational resources enough and
+time, we could do this with the full election sizes, though we would still be left with the issue of
+the election-data overpowering the survey-data in the simulation.
+
+[^surveyVsElection]: One way to picture this:  The election data create a very steep set of surfaces
+in the likelihood because the binomial likelihood is relatively narrow for a thing with so many “trials”.
+These surfaces have correspondingly large gradients. The surveys create shallow features
+along these steep surfaces and so simulated paths must somehow navigate the steep bits without missing
+the small shifts created by the surveys, at least along some directions in parameter space.
 
 One challenge of modeling
 this data is that they are observed over different sorts of geographies (states and districts)
