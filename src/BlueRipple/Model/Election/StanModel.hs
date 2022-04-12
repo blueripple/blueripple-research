@@ -593,7 +593,7 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
                $ updateLLSet rttElex distS dVotesInRace (pure (bAP, bBP)) llSet
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT, bBT))
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAT, bBT))
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP, bBP))
   return (centerTF, centerPF, llSet')
 
 addBBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet =

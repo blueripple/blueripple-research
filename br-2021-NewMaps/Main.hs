@@ -159,12 +159,12 @@ modelDir :: Text
 modelDir = "br-2021-NewMaps/stan2"
 modelVariant = BRE.Model
                ET.TwoPartyShare
-               (Set.fromList [ET.President])
+               (Set.fromList [ET.President, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
-               (Set.fromList [BRE.DMDensity, BRE.DMSex]) --, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
+               (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
                BRE.BetaBinomial
                BRE.HierarchicalBeta
-               1000
+               1
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
