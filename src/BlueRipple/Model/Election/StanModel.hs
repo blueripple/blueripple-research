@@ -745,7 +745,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                                       DataSetAlpha centerFM alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial -> do
-                let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "4" :| [SB.scalar "1"])
+                let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "3" :| [SB.scalar "1"])
                 betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=1>" betaWidthPrior
                 betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal "<lower=1>" betaWidthPrior
                 let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex includePP (voteShareType model) (electionScale model)
