@@ -562,42 +562,48 @@ addBBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable r
                                               )
 addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet = do
   let office = officeFromElectionRow officeRow
-  let addLabel x = x <> "_Elex_" <> officeText office
+      addLabel x = x <> "_Elex_" <> officeText office
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
   shareIx <- ixM (addLabel "ixS") shareAlpha
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
+  let vecT = SB.vectorizedOne colIndexT
+      vecP = SB.vectorizedOne colIndexP
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmPC, centerPF) <- centerIf dmPSP centerSM
   muT <- indexedMuE dmTC
   muP <- indexedMuE dmPC
-  let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
-      ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
+  let ptE = SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
+      ppE = SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
-  pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
-  pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE ppE (Just rttElex)
-  let distT = SB.binomialDist' True cvap
-      distS = SB.binomialDist' True votesInRace
-  modelVar rttElex distT votes (pure $ SB.var pTByElex)
-  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
-  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
-               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex) llSet
+  pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) (vecT ptE) (Just rttElex)
+  pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE (vecP ppE) (Just rttElex)
+  let bA mu w = SB.var w `SB.times` SB.paren mu
+      bB mu w = SB.var w `SB.times` SB.paren (SB.scalar "1" `SB.minus` mu)
+      bAT = bA ptE betaWidthT
+      bBT = bB ppE betaWidthT
+      bAP = bA ppE betaWidthP
+      bBP = bB ppE betaWidthP
+  let distT = SB.betaBinomialDist True cvap
+      distS = SB.betaBinomialDist True votesInRace
+  modelVar rttElex distT votes (pure (bAT, bBT))
+  modelVar rttElex distS dVotesInRace (pure $ (bAP, bBP))
+  let llSet' = updateLLSet rttElex distT votes (pure (bAT, bBT))
+               $ updateLLSet rttElex distS dVotesInRace (pure (bAP, bBP)) llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT, bBT))
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAT, bBT))
   return (centerTF, centerPF, llSet')
 
-addBBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
+addBBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet =
   case office of
-    ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-    ET.Senate -> addBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-    ET.House -> addBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-
-
+    ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
+                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
+    ET.Senate -> addBBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
+                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
+    ET.House -> addBBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
+                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
 
 
 type ModelKeyC ks = (V.ReifyConstraint Show F.ElField ks
@@ -705,6 +711,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
               SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaT
+--        bWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=1>" (SB.UnVectorized $ normal  100)
         alphaP <- SB.useDataSetForBindings elexData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
