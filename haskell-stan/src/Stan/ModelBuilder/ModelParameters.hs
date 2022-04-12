@@ -88,11 +88,12 @@ lkjCorrelationMatrixParameter name lkjDim lkjParameter = addParameter name lkjTy
 
 addTransformedParameter :: Text
                         -> SB.StanType
+                        -> Text
                         -> SME.PossiblyVectorized (SB.StanVar -> SB.StanExpr)
                         -> SME.PossiblyVectorized SME.StanExpr
                         -> SB.StanBuilderM md gq SB.StanVar
-addTransformedParameter name sType fromRawF rawPrior = do
-  rawV <- addParameter (name <> "_raw") sType "" rawPrior
+addTransformedParameter name sType rawConstraint fromRawF rawPrior = do
+  rawV <- addParameter (name <> "_raw") sType rawConstraint rawPrior
   SB.inBlock SB.SBTransformedParameters
     $ SB.stanDeclareRHS name sType ""
     $ case fromRawF of
@@ -111,7 +112,7 @@ addHierarchicalScalar name gtt parameterization prior = do
     Centered -> addParameter name pType "" (SME.Vectorized (one gName) prior)
     NonCentered f -> do
       let transform = SME.Vectorized (one gName) f
-      addTransformedParameter name pType transform (SME.Vectorized (one gName) prior)
+      addTransformedParameter name pType "" transform (SME.Vectorized (one gName) prior)
 
 centeredHierarchicalVectorPrior :: SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 centeredHierarchicalVectorPrior mu tau lCorr = do

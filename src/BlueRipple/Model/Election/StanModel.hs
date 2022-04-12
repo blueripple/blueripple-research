@@ -573,18 +573,18 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   (dmPC, centerPF) <- centerIf dmPSP centerSM
   muT <- indexedMuE dmTC
   muP <- indexedMuE dmPC
-  let ptE = SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
-      ppE = SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
+  let ptE = vecT $ SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
+      ppE = vecP $ SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) (vecT ptE) (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE (vecP ppE) (Just rttElex)
-  let bA mu w = SB.var w `SB.times` SB.paren mu
-      bB mu w = SB.var w `SB.times` SB.paren (SB.scalar "1" `SB.minus` mu)
-      bAT = bA ptE betaWidthT
-      bBT = bB ppE betaWidthT
-      bAP = bA ppE betaWidthP
-      bBP = bB ppE betaWidthP
+  let bA mu w = SB.var w `SB.times` SB.paren (SB.var mu)
+      bB mu w = SB.var w `SB.times` SB.paren (SB.scalar "1" `SB.minus` SB.var mu)
+      bAT = bA pTByElex betaWidthT
+      bBT = bB pTByElex betaWidthT
+      bAP = bA pSByElex betaWidthP
+      bBP = bB pSByElex betaWidthP
   let distT = SB.betaBinomialDist True cvap
       distS = SB.betaBinomialDist True votesInRace
   modelVar rttElex distT votes (pure (bAT, bBT))
@@ -678,9 +678,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         ET.House -> fromMaybe 0 $ M.lookup (F.rcast r) houseIncMap
         _ -> 0
       dmPrefType = if votesFrom model == Set.fromList [ET.President] then DMPresOnlyPref else DMPref
-      officesNamePart :: Text = mconcat $ fmap (T.take 1 . show) $ Set.toList $ votesFrom model
-      modelName = "LegDistricts_" <> modelLabel model <> "_" <> officesNamePart
-      jsonDataName = "DM_" <> dataLabel model <> "_Inc_" <> officesNamePart <> "_" <> show datYear
+      modelName = "DM_" <> modelLabel model
+      jsonDataName = "DD_" <> dataLabel model <> "_" <> show datYear
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart DMTurnout (const 0)
@@ -711,7 +710,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
               SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaT
---        bWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=1>" (SB.UnVectorized $ normal  100)
         alphaP <- SB.useDataSetForBindings elexData $ do
           muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
           sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
@@ -732,11 +730,39 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             SingleBeta -> pure muThetaP
 
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
+        (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
+              Binomial -> do
+                let eF (centerTFM, centerPFM, llS) office = addBLModelsForElex includePP (voteShareType model) (electionScale model)
+                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
+                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
+                                                            alphaT thetaT alphaP thetaP llS
+                    cpsTF' centerTFM llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                           DataSetAlpha centerTFM alphaT thetaT llS
+                    ccesTF' centerTFM llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                            DataSetAlpha centerTFM alphaT thetaT llS
+                    ccesPF' (centerFM, llS) office =  addBLModelForDataSet ("CCESP" <> show office) includePP
+                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                                                      DataSetAlpha centerFM alphaP thetaP llS
+                return (eF, cpsTF', ccesTF', ccesPF')
+              BetaBinomial -> do
+                let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "4" :| [SB.scalar "1"])
+                betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=1>" betaWidthPrior
+                betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal "<lower=1>" betaWidthPrior
+                let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex includePP (voteShareType model) (electionScale model)
+                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
+                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
+                                                            alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
+                    cpsTF' centerTFM llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                           DataSetAlpha centerTFM alphaT thetaT betaWidthT llS
+                    ccesTF' centerTFM llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                            DataSetAlpha centerTFM alphaT thetaT betaWidthT llS
+                    ccesPF' (centerFM, llS) office =  addBBLModelForDataSet ("CCESP" <> show office) includePP
+                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                                                      DataSetAlpha centerFM alphaP thetaP betaWidthP llS
+                return (eF, cpsTF', ccesTF', ccesPF')
+
         let elexModels (centerTFM, centerPFM, llS) office = do
-              (centerTF, centerPF, llS') <- addBLModelsForElex includePP (voteShareType model) (electionScale model)
-                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                            alphaT thetaT alphaP thetaP llS
+              (centerTF, centerPF, llS') <- elexModelF (centerTFM, centerPFM, llS) office
               return (Just centerTF, Just centerPF, llS')
             extract (cfM1, cfM2, x) = do
               cf1 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for turnout centering function!" cfM1
@@ -744,24 +770,12 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               return (cf1, cf2, x)
             elexFoldM = FL.FoldM elexModels (return (initialCenterFM, initialCenterFM, SB.emptyLLSet)) extract
         (centerTF, centerPF, llSet1) <- FL.foldM elexFoldM (votesFrom model)
-{-        (centerTF, centerPF, llSet1) <- addBLModelsForElex includePP (voteShareType model) (electionScale model)
-                                        ET.President initialCenterFM initialCenterFM NoDataSetAlpha (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                        alphaT thetaT alphaP thetaP SB.emptyLLSet
--}
-        (_, llSet2) <- addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF)  alphaT thetaT llSet1
-        (_, llSet3) <- addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart) DataSetAlpha (Just centerTF) alphaT thetaT llSet2
+        (_, llSet2) <- ccesTF (Just centerTF) llSet1
+        (_, llSet3) <- cpsTF (Just centerTF) llSet2
 
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
         let ccesP (centerFM, llS) office = do
-              (centerF, llS) <- addBLModelForDataSet
-                                ("CCESP" <> show office)
-                                includePP
-                                (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                DataSetAlpha
-                                centerFM
-                                alphaP
-                                thetaP
-                                llS
+              (centerF, llS) <- ccesPF (centerFM, llS) office
               return (Just centerF, llS)
             llFoldM = FL.FoldM ccesP (return (Just centerPF, llSet3)) return
         (_, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
@@ -806,7 +820,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         postStratify "Turnout" turnoutPS psGroup
         postStratify "Pref" prefPS psGroup
         postStratify "DVote" dVotePS psGroup
-
         pure ()
 
       extractResults :: K.KnitEffects r
@@ -911,7 +924,6 @@ type GetCCESVotesC rs = (F.ElemOf rs HouseVotes
                         , F.ElemOf rs PresRVotes
                         )
 
-
 getCCESVotes :: GetCCESVotesC rs
              => ET.OfficeT -> ET.VoteShareType -> (F.Record rs -> Int, F.Record rs -> Int)
 getCCESVotes ET.House ET.FullShare = (F.rgetField @HouseVotes, F.rgetField @HouseDVotes)
@@ -932,29 +944,33 @@ countCCESZeroVoteRows :: (GetCCESVotesC rs
 countCCESZeroVoteRows office vst = FL.fold (FL.prefilter (zeroCCESVotes office vst) FL.length)
 
 data BetaType = HierarchicalBeta | SingleBeta deriving (Show,Eq)
+data Distribution = Binomial | BetaBinomial deriving (Show)
+
+printVotesFrom :: Set ET.OfficeT -> Text
+printVotesFrom = mconcat . fmap (T.take 1 . show) . Set.toList
 
 data Model = Model { voteShareType :: ET.VoteShareType
                    , votesFrom :: Set ET.OfficeT
                    , densityTransform :: DensityTransform
                    , modelComponents :: Set DMComponents
+                   , distribution :: Distribution
                    , betaType :: BetaType
                    , electionScale :: Int
                    }  deriving (Generic)
 
 
 -- NB each of these records what's relevant to the named thing
+
 -- Stan code
 modelLabel :: Model  -> Text
-modelLabel m = show (voteShareType m)
-               <> "_" <> T.intercalate "_" (officeText <$> Set.toList (votesFrom m))
-               <> "_" <> printDensityTransform (densityTransform m)
-               <> "_" <> printComponents (modelComponents m)
+modelLabel m = printVotesFrom (votesFrom m)
+               <> "_" <> show (distribution m)
                <> "_HierAlpha" <> (if betaType m == HierarchicalBeta then "Beta" else "")
 
 -- model data
 dataLabel :: Model -> Text
 dataLabel m = show (voteShareType m)
-              <> "_" <> T.intercalate "_" (officeText <$> Set.toList (votesFrom m))
+              <> "_" <> printVotesFrom (votesFrom m)
               <> "_" <> printDensityTransform (densityTransform m)
               <> "_" <> printComponents (modelComponents m)
               <> "_EScale" <> show (electionScale m)

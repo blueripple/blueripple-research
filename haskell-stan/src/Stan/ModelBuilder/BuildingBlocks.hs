@@ -301,15 +301,16 @@ postStratifiedParameter prof varNameM rtt gtt wgtE pE reIndexRttM = do
     Just reIndexRtt -> do
       let reIndexKey = SB.dataSetName reIndexRtt
       riProb <-  SB.stanDeclare varName(SB.StanVector $ SB.NamedDim reIndexKey) ""
-      gProb <- profF $ SB.useDataSetForBindings rtt $ do
-        gProb' <- zeroVec gName psDataByGroupName
+      profF $ SB.useDataSetForBindings rtt $ do
+        gProb <- zeroVec gName psDataByGroupName
         gWeight <- zeroVec gName (psDataByGroupName <> "_wgts")
-        psLoops gProb' gWeight
-        return gProb'
-      SB.useDataSetForBindings reIndexRtt
-        $ SB.addExprLine "postStratifiedParameter"
-        $ SB.vectorizedOne reIndexKey
-        $ SB.var riProb `SB.eq` SB.var gProb
+        psLoops gProb gWeight
+        SB.useDataSetForBindings reIndexRtt
+          $ SB.addExprLine "postStratifiedParameter"
+          $ SB.vectorizedOne reIndexKey
+          $ SB.var riProb `SB.eq` SB.var gProb
+
+
 {-
         SB.useDataSetForBindings reIndexRtt
           $ SB.stanForLoopB "k" Nothing reIndexKey
