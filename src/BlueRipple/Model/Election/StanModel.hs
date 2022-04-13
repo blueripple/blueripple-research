@@ -427,12 +427,13 @@ addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
                       -> DataSetAlpha
                       -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                      -> Bool
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.LLSet md gq
                       -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
-addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta betaWidth llSet = do
+addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM countScaled alpha beta betaWidth llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   dsIxM <- ixM (addLabel "ix") dataSetAlpha
@@ -441,7 +442,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alp
   let muE = SB.function "inv_logit" (one $ muT dsIxM alpha beta)
       bA = SB.var betaWidth `SB.times` SB.paren muE
       bB = SB.var betaWidth `SB.times` SB.paren (SB.scalar "1" `SB.minus` muE)
-  let dist = SB.betaBinomialDist True counts
+  let dist = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True counts
       vecA = SB.vectorizeExpr (addLabel "bAT") bA (SB.dataSetName rtt)
       vecB = SB.vectorizeExpr (addLabel "bBT") bB (SB.dataSetName rtt)
   modelVar rtt dist successes $ do
@@ -451,7 +452,6 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alp
   let llSet' = updateLLSet rtt dist successes (pure (bA, bB)) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure (bA, bB))
   return (centerF, llSet')
-
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
@@ -549,6 +549,7 @@ addBBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable r
                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> DataSetAlpha
                      -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrixes (turnout, share)
+                     -> Bool
                      -> SB.StanVar
                      -> SB.StanVar
                      -> SB.StanVar
@@ -560,7 +561,7 @@ addBBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable r
                                               , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SB.LLSet md gq
                                               )
-addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet = do
+addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
   let office = officeFromElectionRow officeRow
       addLabel x = x <> "_Elex_" <> officeText office
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
@@ -579,14 +580,15 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
       grp = electionRowGroup officeRow
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) (vecT ptE) (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE (vecP ppE) (Just rttElex)
-  let bA mu w = SB.var w `SB.times` SB.paren (SB.var mu)
-      bB mu w = SB.var w `SB.times` SB.paren (SB.scalar "1" `SB.minus` SB.var mu)
-      bAT = bA pTByElex betaWidthT
-      bBT = bB pTByElex betaWidthT
-      bAP = bA pSByElex betaWidthP
-      bBP = bB pSByElex betaWidthP
-  let distT = SB.betaBinomialDist True cvap
-      distS = SB.betaBinomialDist True votesInRace
+  let f x w = if countScaled then x `SB.divide` SB.var w else x `SB.times` SB.var w
+      bA mu w = f (SB.paren (SB.var mu)) w
+      bB mu w = f (SB.paren (SB.scalar "1" `SB.minus` SB.var mu)) w
+      bAT = bA pTByElex scaleT
+      bBT = bB pTByElex scaleT
+      bAP = bA pSByElex scaleP
+      bBP = bB pSByElex scaleP
+  let distT = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True cvap
+      distS = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True votesInRace
   modelVar rttElex distT votes (pure (bAT, bBT))
   modelVar rttElex distS dVotesInRace (pure $ (bAP, bBP))
   let llSet' = updateLLSet rttElex distT votes (pure (bAT, bBT))
@@ -596,14 +598,15 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP, bBP))
   return (centerTF, centerPF, llSet')
 
-addBBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet =
+addBBLModelsForElex includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet =
   case office of
     ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
+                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
     ET.Senate -> addBBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
+                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
     ET.House -> addBBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT betaWidthT alphaP betaP betaWidthP llSet
+                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
+
 
 
 type ModelKeyC ks = (V.ReifyConstraint Show F.ElField ks
@@ -745,20 +748,37 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                                       DataSetAlpha centerFM alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial -> do
-                let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "4" :| [SB.scalar "1"])
-                betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=1>" betaWidthPrior
-                betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal "<lower=1>" betaWidthPrior
+                let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "7" :| [SB.scalar "1"])
+                betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=200>" betaWidthPrior
+                betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal "<lower=200>" betaWidthPrior
                 let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex includePP (voteShareType model) (electionScale model)
                                                             office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
                                                             (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
+                                                            False alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
                     cpsTF' centerTFM llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM alphaT thetaT betaWidthT llS
+                                           DataSetAlpha centerTFM False alphaT thetaT betaWidthT llS
                     ccesTF' centerTFM llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM alphaT thetaT betaWidthT llS
+                                            DataSetAlpha centerTFM False alphaT thetaT betaWidthT llS
                     ccesPF' (centerFM, llS) office =  addBBLModelForDataSet ("CCESP" <> show office) includePP
                                                       (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM alphaP thetaP betaWidthP llS
+                                                      DataSetAlpha centerFM False alphaP thetaP betaWidthP llS
+                return (eF, cpsTF', ccesTF', ccesPF')
+
+              CountScaledBB -> do
+                let scalePrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "4" :| [SB.scalar "1"])
+                scaleT <- SMP.addParameter "betaScaleT" SB.StanReal "<lower=1, upper=1000>" scalePrior
+                scaleP <- SMP.addParameter "betaScaleP" SB.StanReal "<lower=1, upper=1000>" scalePrior
+                let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex includePP (voteShareType model) (electionScale model)
+                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
+                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
+                                                            True alphaT thetaT scaleT alphaP thetaP scaleP llS
+                    cpsTF' centerTFM llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                           DataSetAlpha centerTFM True alphaT thetaT scaleT llS
+                    ccesTF' centerTFM llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                            DataSetAlpha centerTFM True alphaT thetaT scaleT llS
+                    ccesPF' (centerFM, llS) office =  addBBLModelForDataSet ("CCESP" <> show office) includePP
+                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                                                      DataSetAlpha centerFM True alphaP thetaP scaleP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
 
         let elexModels (centerTFM, centerPFM, llS) office = do
@@ -944,7 +964,7 @@ countCCESZeroVoteRows :: (GetCCESVotesC rs
 countCCESZeroVoteRows office vst = FL.fold (FL.prefilter (zeroCCESVotes office vst) FL.length)
 
 data BetaType = HierarchicalBeta | SingleBeta deriving (Show,Eq)
-data Distribution = Binomial | BetaBinomial deriving (Show)
+data Distribution = Binomial | BetaBinomial | CountScaledBB deriving (Show)
 
 printVotesFrom :: Set ET.OfficeT -> Text
 printVotesFrom = mconcat . fmap (T.take 1 . show) . Set.toList

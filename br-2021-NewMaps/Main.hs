@@ -162,7 +162,7 @@ modelVariant = BRE.Model
                (Set.fromList [ET.President, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
-               BRE.BetaBinomial
+               BRE.CountScaledBB
                BRE.HierarchicalBeta
                1
 
