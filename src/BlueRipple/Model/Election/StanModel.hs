@@ -772,13 +772,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                                             office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
                                                             (acsRowTag, acsPSWgts, acsDMT, acsDMP)
                                                             True alphaT thetaT scaleT alphaP thetaP scaleP llS
-                    cpsTF' centerTFM llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM True alphaT thetaT scaleT llS
-                    ccesTF' centerTFM llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM True alphaT thetaT scaleT llS
-                    ccesPF' (centerFM, llS) office =  addBBLModelForDataSet ("CCESP" <> show office) includePP
+                    cpsTF' centerTFM llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                           DataSetAlpha centerTFM alphaT thetaT llS
+                    ccesTF' centerTFM llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                            DataSetAlpha centerTFM alphaT thetaT llS
+                    ccesPF' (centerFM, llS) office =  addBLModelForDataSet ("CCESP" <> show office) includePP
                                                       (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM True alphaP thetaP scaleP llS
+                                                      DataSetAlpha centerFM alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
 
         let elexModels (centerTFM, centerPFM, llS) office = do
