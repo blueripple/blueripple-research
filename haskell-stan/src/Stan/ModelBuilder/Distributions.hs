@@ -86,6 +86,32 @@ binomialLogitDist = binomialLogitDist' False
 binomialLogitDistWithConstants :: SME.StanVar -> StanDist SME.StanExpr
 binomialLogitDistWithConstants = binomialLogitDist' True
 
+vecTimes x y = SME.binOp ".*" x y
+vecDivide x y = SME.binOp "./" x y
+toVec v = SME.function "to_vector" (one $ SME.var v)
+
+normallyApproximatedBinomial :: SME.StanVar -> StanDist SME.StanExpr
+normallyApproximatedBinomial tV = StanDist Continuous sample lpdf lupdf rng
+  where
+    muE pE = pE `vecTimes` toVec tV
+    sigma pE = SME.function "sqrt" (one $ pE `vecTimes` SME.paren (SME.scalar "1" `SME.minus` pE) `vecDivide` toVec tV)
+    sample pE sV = toVec sV `SME.vectorSample` SME.function "normal" (muE pE :| [sigma pE])
+    lpdf pE sV = SME.functionWithGivens "normal_lpdf" (one $ toVec sV) (muE pE :| [sigma pE])
+    lupdf pE sV = SME.functionWithGivens "normal_lupdf" (one $ toVec sV) (muE pE :| [sigma pE])
+    rng pE = SME.function "normal_rng" (muE pE :| [sigma pE])
+
+
+normallyApproximatedBinomialLogit :: SME.StanVar -> StanDist SME.StanExpr
+normallyApproximatedBinomialLogit tV = StanDist Continuous sample lpdf lupdf rng
+  where
+    pE lpE = invLogit lpE
+    mu lpE = pE lpE `vecTimes` toVec tV
+    sigma lpE = SME.function "sqrt" (one $ pE lpE `vecTimes` SME.paren (SME.scalar "1" `SME.minus` pE lpE) `vecDivide` toVec tV)
+    sample lpE sV = toVec sV `SME.vectorSample` SME.function "normal" (mu lpE :| [sigma lpE])
+    lpdf lpE sV = SME.functionWithGivens "normal_lpdf" (one $ toVec sV) (mu lpE :| [sigma lpE])
+    lupdf lpE sV = SME.functionWithGivens "normal_lupdf" (one $ toVec sV) (mu lpE :| [sigma lpE])
+    rng lpE = SME.function "normal_rng" (mu lpE :| [sigma lpE])
+
 invLogit :: SME.StanExpr -> SME.StanExpr
 invLogit e = SME.function "inv_logit" (one e)
 

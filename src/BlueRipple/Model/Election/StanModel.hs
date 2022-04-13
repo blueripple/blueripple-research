@@ -601,8 +601,8 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha 
       grp = electionRowGroup officeRow
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE ppE (Just rttElex)
-  let distT = SB.binomialDist' True cvap
-      distS = SB.binomialDist' True votesInRace
+  let distT = SB.normallyApproximatedBinomial cvap
+      distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
   modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
   let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
@@ -660,8 +660,8 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
       grp = electionRowGroup officeRow
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE ppE (Just rttElex)
-  let distT = SB.binomialDist' True cvap
-      distS = SB.binomialDist' True votesInRace
+  let distT = SB.normallyApproximatedBinomial cvap
+      distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
   modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
   let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
@@ -719,8 +719,8 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareA
       grp = electionRowGroup officeRow
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsE ppE (Just rttElex)
-  let distT = SB.binomialDist' True cvap
-      distS = SB.binomialDist' True votesInRace
+  let distT = SB.normallyApproximatedBinomial cvap
+      distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
   modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
   let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
