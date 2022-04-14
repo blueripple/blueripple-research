@@ -158,6 +158,11 @@ groupBuilderDM model psGroup states cds psKeys = do
 -- If only presidential eleciton is included, incumbency is not useful since it's a constant
 data DMType = DMTurnout | DMPref | DMPresOnlyPref deriving (Show, Eq)
 
+dmName :: DMType -> Text
+dmName DMTurnout = "DMTurnout"
+dmName DMPref = "DMPref"
+dmName DMPresOnlyPref = "DMPref"
+
 data DMComponents = DMDensity | DMInc | DMSex | DMEduc | DMRace | DMWNG deriving (Show, Eq, Ord)
 
 printComponents :: Set DMComponents -> Text
@@ -188,7 +193,7 @@ designMatrixRowPS' :: forall rs.(F.ElemOf rs DT.CollegeGradC
                    -> DMType
                    -> (F.Record rs -> Double)
                    -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRowPS' include densRP dmType incF = DM.DesignMatrixRow (show dmType) (dmSubset' dmType include all)
+designMatrixRowPS' include densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType include all)
   where
     incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
@@ -214,7 +219,7 @@ designMatrixRowCCES :: Set DMComponents
                     -> DMType
                     -> (F.Record  CCESWithDensityEM -> Double)
                     -> DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-designMatrixRowCCES include densRP dmType incF = DM.DesignMatrixRow (show dmType) (dmSubset' dmType include all)
+designMatrixRowCCES include densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType include all)
   where
     incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
@@ -225,7 +230,7 @@ designMatrixRowCCES include densRP dmType incF = DM.DesignMatrixRow (show dmType
 
 
 designMatrixRowCPS :: Set DMComponents -> DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM) -> DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS include densRP = DM.DesignMatrixRow (show DMTurnout) $ dmSubset include all
+designMatrixRowCPS include densRP = DM.DesignMatrixRow (dmName DMTurnout) $ dmSubset include all
  where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
