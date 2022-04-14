@@ -228,6 +228,8 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
+
+
 {-
 normalApproxBinomial :: SB.StanBuilderM md gq ()
 normalApproxBinomial = SB.addFunctionsOnce "normallyApproximatedBinomial"
@@ -261,6 +263,58 @@ zeroVectorE indexKey = SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.ind
 
 zeroMatrixE :: SME.IndexKey -> SB.IndexKey -> SB.StanExpr
 zeroMatrixE rowIndex colIndex = SB.function "rep_matrix" ((SB.scalar $ show 0) :| [SB.indexSize rowIndex, SB.indexSize colIndex])
+
+psByGroupFunction :: SB.StanBuilderM md gq ()
+psByGroupFunction = SB.addFunctionsOnce "psByGroup"
+                      $ SB.declareStanFunction "vector psByGroup(int Nps, int Ngrp, array[] int grpPSIndex, vector wgts, vector probs)" $ do
+  SB.addStanLine "vector[Ngrp] SumByGroup = rep_vector(0, Ngrp)"
+  SB.addStanLine "vector[Ngrp] SumWgts = rep_vector(0, Ngrp)"
+  SB.addLine "for (k in 1:Nps) {\n"
+  SB.addStanLine "  SumByGroup[grpPSIndex[k]] += wgts[k] * probs[grpPSIndex[k]]"
+  SB.addStanLine "  SumWgts[grpPSIndex[k]] += wgts[k]"
+  SB.addLine "}\n"
+  SB.addStanLine "SumByGroup ./= SumWgts"
+  SB.addStanLine "return SumByGroup"
+
+
+postStratifiedParameter' :: (Typeable md, Typeable gq)
+                         => Bool
+                         -> Maybe Text
+                         -> SB.RowTypeTag r -- data set to post-stratify
+                         -> SB.GroupTypeTag k -- group by
+                         -> SB.StanExpr -- weight
+                         -> SB.StanExpr -- expression of parameters to post-stratify
+                         -> Maybe (SB.RowTypeTag r') -- re-index?
+                         -> SB.StanBuilderM md gq SB.StanVar
+postStratifiedParameter' prof varNameM rtt gtt wgtE pE reIndexRttM = do
+  psByGroupFunction
+  let dsName = SB.dataSetName rtt
+      gName = SB.taggedGroupName gtt
+      psDataByGroupName = dsName <> "_By_" <> gName
+      indexName = SB.dataSetName rtt <> "_" <> SB.taggedGroupName gtt
+      varName = case reIndexRttM of
+        Nothing -> fromMaybe psDataByGroupName varNameM
+        Just reIndexRtt -> fromMaybe (dsName <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
+      grpVecType =  (SB.StanVector $ SB.NamedDim gName)
+      profF :: SB.StanBuilderM md gq a -> SB.StanBuilderM md gq a
+      profF = if prof then SB.profile varName else SB.bracketed 2
+  SB.inBlock SB.SBTransformedParameters $ case reIndexRttM of
+    Nothing -> do
+      SB.stanDeclareRHS varName grpVecType ""
+        $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, wgtE, pE])
+    Just reIndexRtt -> do
+      let reIndexKey = SB.dataSetName reIndexRtt
+
+      riProb <-  SB.stanDeclare varName (SB.StanVector $ SB.NamedDim reIndexKey) ""
+      profF $ SB.useDataSetForBindings rtt $ do
+        gProb <- SB.stanDeclareRHS psDataByGroupName grpVecType ""
+          $ SME.vectorizedOne dsName $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, wgtE, pE])
+        SB.useDataSetForBindings reIndexRtt
+          $ SB.addExprLine "postStratifiedParameter"
+          $ SB.vectorizedOne reIndexKey
+          $ SB.var riProb `SB.eq` SB.var gProb
+      return riProb
+
 
 postStratifiedParameter :: (Typeable md, Typeable gq)
                         => Bool
@@ -309,14 +363,6 @@ postStratifiedParameter prof varNameM rtt gtt wgtE pE reIndexRttM = do
           $ SB.addExprLine "postStratifiedParameter"
           $ SB.vectorizedOne reIndexKey
           $ SB.var riProb `SB.eq` SB.var gProb
-
-
-{-
-        SB.useDataSetForBindings reIndexRtt
-          $ SB.stanForLoopB "k" Nothing reIndexKey
-          $ SB.addExprLine "postStratifiedParameter"
-          $ SB.var riProb `SB.eq` SB.var gProb'
--}
       return riProb
 
 stackDataSets :: forall md gq r1 r2. (Typeable r1, Typeable r2)

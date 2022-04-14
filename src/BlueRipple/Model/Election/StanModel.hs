@@ -91,6 +91,8 @@ import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import BlueRipple.Model.Election.DataPrep
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
 
 groupBuilderDM :: forall rs ks tr pr.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -431,6 +433,8 @@ addPosteriorPredictiveCheck ppVarName rtt dist eM = do
     . SB.generatePosteriorPrediction rtt pp dist
   pure ()
 
+invLogit x = SB.function "inv_logit" (one x)
+
 addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
                      -> Bool
@@ -440,7 +444,10 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                      -> SB.StanVar
                      -> SB.StanVar
                      -> SB.LLSet md gq
-                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                              , SB.LLSet md gq
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              )
 addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
@@ -452,7 +459,8 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alph
   modelVar rtt dist successes (SB.var <$> vecMu)
   let llSet' = updateLLSet rtt dist successes (pure $ muT dsIxM alpha beta) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure $ muT dsIxM alpha beta)
-  return (centerF, llSet')
+  let prob = fmap (\mu' -> invLogit $ mu' dsIxM alpha beta) . indexedMuE
+  return (centerF, llSet', prob)
 
 
 addBL2ModelForDataSet :: (Typeable md, Typeable gq)
@@ -464,7 +472,10 @@ addBL2ModelForDataSet :: (Typeable md, Typeable gq)
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.LLSet md gq
-                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                               , SB.LLSet md gq
+                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                               )
 addBL2ModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
@@ -477,7 +488,8 @@ addBL2ModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM alp
   modelVar rtt dist successes (SB.var <$> vecMu)
   let llSet' = updateLLSet rtt dist successes (pure $ muT dsAB alpha beta) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure $ muT dsAB alpha beta)
-  return (centerF, llSet')
+  let prob = fmap (\mu' -> invLogit $ mu' dsAB alpha beta) . indexedMuE2
+  return (centerF, llSet', prob)
 
 
 addBL3ModelForDataSet :: (Typeable md, Typeable gq)
@@ -490,7 +502,10 @@ addBL3ModelForDataSet :: (Typeable md, Typeable gq)
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.LLSet md gq
-                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                               , SB.LLSet md gq
+                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                               )
 addBL3ModelForDataSet dataSetLabel gtt includePP dataSetupM dataSetAlpha centerM alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
@@ -503,7 +518,8 @@ addBL3ModelForDataSet dataSetLabel gtt includePP dataSetupM dataSetAlpha centerM
   modelVar rtt dist successes (SB.var <$> vecMu)
   let llSet' = updateLLSet rtt dist successes (pure $ muT dsA alpha beta) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure $ muT dsA alpha beta)
-  return (centerF, llSet')
+  let prob = fmap (\mu' -> invLogit $ mu' dsA alpha beta) . indexedMuE
+  return (centerF, llSet', prob)
 
 
 
@@ -518,14 +534,17 @@ addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.LLSet md gq
-                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar, SB.LLSet md gq)
+                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                               , SB.LLSet md gq
+                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                                )
 addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM countScaled alpha beta betaWidth llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   dsIxM <- ixM (addLabel "ix") dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
   muT <- indexedMuE dmC
-  let muE = SB.function "inv_logit" (one $ muT dsIxM alpha beta)
+  let muE = invLogit $ muT dsIxM alpha beta
       bA = SB.var betaWidth `SB.times` SB.paren muE
       bB = SB.var betaWidth `SB.times` SB.paren (SB.scalar "1" `SB.minus` muE)
   let dist = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True counts
@@ -537,7 +556,8 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM cou
     return (SB.var a, SB.var b)
   let llSet' = updateLLSet rtt dist successes (pure (bA, bB)) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure (bA, bB))
-  return (centerF, llSet')
+  let prob = fmap (\mu' -> invLogit $ mu' dsIxM alpha beta) . indexedMuE
+  return (centerF, llSet', prob)
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
@@ -571,6 +591,11 @@ officeFromElectionRow (PresidentRow _) = ET.President
 officeFromElectionRow (SenateRow _) = ET.Senate
 officeFromElectionRow (HouseRow _) = ET.House
 
+pairM mx my dm = do
+  x <- mx dm
+  y <- my dm
+  return (x, y)
+
 addBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                     => Bool
                     -> ET.VoteShareType
@@ -588,6 +613,8 @@ addBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs
                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , SB.LLSet md gq
+                                             , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                             , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                              )
 addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
@@ -615,17 +642,18 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha 
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
-  return (centerTF, centerPF, llSet')
+  let probT = fmap (\mu' -> invLogit $ mu' Nothing alphaT betaT) . indexedMuE
+      probP = fmap (\mu' -> invLogit $ mu' shareIx alphaP betaP) . indexedMuE
+  return (centerTF, centerPF, llSet', probT, probP)
 
 addBLModelsForElex offices includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
-  let dsAlpha = elexDSAlpha offices office
-  in case office of
-       ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                       centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.Senate -> addBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
+  case office of
+    ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
                     centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.House -> addBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                   centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.Senate -> addBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
+                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.House -> addBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
+                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
 
 
 addBL2ModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
@@ -645,6 +673,8 @@ addBL2ModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable r
                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SB.LLSet md gq
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
 addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
@@ -674,17 +704,18 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
-  return (centerTF, centerPF, llSet')
+  let probT = fmap (\mu' -> invLogit $ mu' dsTAB alphaT betaT) . indexedMuE2
+      probP = fmap (\mu' -> invLogit $ mu' dsPAB alphaP betaP) . indexedMuE2
+  return (centerTF, centerPF, llSet', probT, probP)
 
 addBL2ModelsForElex offices includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
-  let dsAlpha = elexDSAlpha offices office
-  in case office of
-       ET.President -> addBL2ModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                       centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.Senate -> addBL2ModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.House -> addBL2ModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                   centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+  case office of
+    ET.President -> addBL2ModelsForElex' includePP vst eScale (PresidentRow stateGroup)
+                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.Senate -> addBL2ModelsForElex' includePP vst eScale (SenateRow stateGroup)
+                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.House -> addBL2ModelsForElex' includePP vst eScale (HouseRow cdGroup)
+                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
 
 addBL3ModelsForElex' :: forall rs r md gq k. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                      => SB.GroupTypeTag k
@@ -704,6 +735,8 @@ addBL3ModelsForElex' :: forall rs r md gq k. (Typeable md, Typeable gq, Typeable
                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SB.LLSet md gq
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
 addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
@@ -733,20 +766,18 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareA
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
-  return (centerTF, centerPF, llSet')
+  let probT = fmap (\mu' -> invLogit $ mu' dsTA alphaT betaT) . indexedMuE
+      probP = fmap (\mu' -> invLogit $ mu' dsPA alphaP betaP) . indexedMuE
+  return (centerTF, centerPF, llSet', probT, probP)
 
 addBL3ModelsForElex gtt offices includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
-  let dsAlpha = elexDSAlpha offices office
-  in case office of
-       ET.President -> addBL3ModelsForElex' gtt includePP vst eScale (PresidentRow stateGroup)
-                       centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.Senate -> addBL3ModelsForElex' gtt includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-       ET.House -> addBL3ModelsForElex' gtt includePP vst eScale (HouseRow cdGroup)
-                   centerTM centerSM dsAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
-
-
-
+  case office of
+    ET.President -> addBL3ModelsForElex' gtt includePP vst eScale (PresidentRow stateGroup)
+                    centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.Senate -> addBL3ModelsForElex' gtt includePP vst eScale (SenateRow stateGroup)
+                 centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
+    ET.House -> addBL3ModelsForElex' gtt includePP vst eScale (HouseRow cdGroup)
+                centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet
 
 addBBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                      => Bool
@@ -768,6 +799,8 @@ addBBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable r
                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , SB.LLSet md gq
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
 addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
   let office = officeFromElectionRow officeRow
@@ -804,7 +837,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT, bBT))
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP, bBP))
-  return (centerTF, centerPF, llSet')
+  let probT = fmap (\mu' -> invLogit $ mu' Nothing alphaT betaT) . indexedMuE
+      probP = fmap (\mu' -> invLogit $ mu' shareIx alphaP betaP) . indexedMuE
+  return (centerTF, centerPF, llSet', probT, probP)
 
 addBBLModelsForElex offices includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet =
   let dsAlpha = elexDSAlpha offices office
@@ -1014,49 +1049,60 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                                       DataSetAlpha centerFM alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
 
-        let elexModels (centerTFM, centerPFM, llS) office = do
-              (centerTF, centerPF, llS') <- elexModelF (centerTFM, centerPFM, llS) office
-              return (Just centerTF, Just centerPF, llS')
-            extract (cfM1, cfM2, x) = do
+        let elexModels (centerTFM, centerPFM, llS, probsM) office = do
+              (centerTF, centerPF, llS', probT, probP) <- elexModelF (centerTFM, centerPFM, llS) office
+              let probs' = case probsM of
+                    Nothing -> Just (office, probT, probP)
+                    Just (o, pT, pP) -> Just $ case o of
+                                            ET.Senate -> (office, probT, probP)
+                                            ET.President -> if office == ET.House then (office, probT, probP) else (o, pT, pP)
+                                            ET.House -> (o, pT, pP)
+              return (Just centerTF, Just centerPF, llS', probs')
+            extract (cfM1, cfM2, x, pM) = do
               cf1 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for turnout centering function!" cfM1
               cf2 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for pref centering function!" cfM2
-              return (cf1, cf2, x)
-            elexFoldM = FL.FoldM elexModels (return (initialCenterFM, initialCenterFM, SB.emptyLLSet)) extract
-        (centerTF, centerPF, llSet1) <- FL.foldM elexFoldM (votesFrom model)
-        (_, llSet2) <- ccesTF (Just centerTF) llSet1
-        (_, llSet3) <- cpsTF (Just centerTF) llSet2
+              (_, pT, pP) <- SB.stanBuildMaybe "elexModels fold returned a Nothing for ps probs!" pM
+              return (cf1, cf2, x, pT, pP)
+            elexFoldM = FL.FoldM elexModels (return (initialCenterFM, initialCenterFM, SB.emptyLLSet, Nothing)) extract
+        (centerTF, centerPF, llSet1, probTF, probPF) <- FL.foldM elexFoldM (votesFrom model)
+        (_, llSet2, _) <- ccesTF (Just centerTF) llSet1
+        (_, llSet3, _) <- cpsTF (Just centerTF) llSet2
 
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
         let ccesP (centerFM, llS) office = do
-              (centerF, llS) <- ccesPF (centerFM, llS) office
+              (centerF, llS, _) <- ccesPF (centerFM, llS) office
               return (Just centerF, llS)
             llFoldM = FL.FoldM ccesP (return (Just centerPF, llSet3)) return
         (_, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
 
         SB.generateLogLikelihood' $ llSet4 --SB.mergeLLSets llSetT llSetP
-
+{-
         let  dmThetaE ci dmE thetaE = SB.vectorizedOne ci $ SB.function "dot_product" (dmE :| [thetaE])
              probE ci aE dmE thetaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmThetaE ci dmE thetaE
              prob ci alpha dm theta =  probE ci (SB.var alpha) (SB.var dm) (SB.var theta)
              probT dm = prob dmColIndexT alphaT dm thetaT
              probP dm = prob dmColIndexP alphaP dm thetaP
+-}
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "PSData"
         dmPS_T' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart DMTurnout)
         dmPS_P' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart dmPrefType)
         dmPS_T <- centerTF SC.GQData dmPS_T' (Just "T")
         dmPS_P <- centerPF SC.GQData dmPS_P' (Just "P")
-        let psTPrecompute dm dat  = SB.vectorizeExpr "pT" (probT dm) (SB.dataSetName dat)
+        probT <- probTF dmPS_T
+        probP <- probPF dmPS_P
+
+        let psTPrecompute dat  = SB.vectorizeExpr "pT" probT (SB.dataSetName dat)
             psTExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
             psTExpr p =  pure $ SB.var p
-            psPPrecompute dm dat = SB.vectorizeExpr "pD" (probP dm) (SB.dataSetName dat)
+            psPPrecompute dat = SB.vectorizeExpr "pD" probP (SB.dataSetName dat)
             psPExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
             psPExpr p =  pure $ SB.var p
-            psDVotePreCompute dmT dmP dat = (,) <$> psTPrecompute dmT dat <*> psPPrecompute dmP dat
+            psDVotePreCompute dat = (,) <$> psTPrecompute dat <*> psPPrecompute dat
             psDVoteExpr :: (SB.StanVar, SB.StanVar) -> SB.StanBuilderM md gq SB.StanExpr
             psDVoteExpr (pT, pD) = pure $ SB.var pT `SB.times` SB.var pD
-            turnoutPS = ((psTPrecompute dmPS_T psData, psTExpr), Nothing)
-            prefPS = ((psPPrecompute dmPS_P psData, psPExpr), Nothing)
-            dVotePS = ((psDVotePreCompute dmPS_T dmPS_P psData, psDVoteExpr), Just $ SB.var . fst)
+            turnoutPS = ((psTPrecompute psData, psTExpr), Nothing)
+            prefPS = ((psPPrecompute psData, psPExpr), Nothing)
+            dVotePS = ((psDVotePreCompute psData, psDVoteExpr), Just $ SB.var . fst)
             postStratify :: (Typeable md, Typeable gq, Ord k)
                          => Text
                          -> ((SB.StanBuilderM md gq x, x -> SB.StanBuilderM md gq SB.StanExpr), Maybe (x -> SB.StanExpr))
