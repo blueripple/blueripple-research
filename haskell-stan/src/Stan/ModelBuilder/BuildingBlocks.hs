@@ -22,7 +22,7 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.GroupModel as SGM
 
 import Prelude hiding (All)
-import Data.List.NonEmpty as NE
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Dependent.HashMap as DHash
 import qualified Data.Dependent.Sum as DSum
 import qualified Data.Map as Map
@@ -216,11 +216,24 @@ vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
 vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
 
 vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
-vectorizeExpr sn se ik = do
+vectorizeExpr sn se ik = head <$> vectorizeExprT ((sn, se) :| []) ik
+{-
   let vecVname = sn <> "_v"
   fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
   SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeExpr" $ SB.var fv `SB.eq` se
   pure fv
+-}
+
+-- like vectorizeExpr but for multiple things in same loop
+vectorizeExprT :: Traversable t => t (SB.StanName, SB.StanExpr) -> SB.IndexKey -> SB.StanBuilderM md gq (t SB.StanVar)
+vectorizeExprT namedExprs ik = do
+  let vecVname sn = sn <> "_v"
+      declareVec (sn, se) = do
+        fv <- SB.stanDeclare (vecVname sn) (SB.StanVector (SB.NamedDim ik)) ""
+        return (fv, se)
+      fillVec (v, se) = (SB.addExprLine "vectorizeExprA" $ SB.var v `SB.eq` se) >> return v
+  varExps <- traverse declareVec namedExprs
+  SB.stanForLoopB "n" Nothing ik $ traverse fillVec varExps
 
 weightedMeanFunction :: SB.StanBuilderM md gq ()
 weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
@@ -277,16 +290,17 @@ psByGroupFunction = SB.addFunctionsOnce "psByGroup"
   SB.addStanLine "return SumByGroup"
 
 
-postStratifiedParameter' :: (Typeable md, Typeable gq)
+postStratifiedParameterF :: (Typeable md, Typeable gq)
                          => Bool
+                         -> SB.StanBlock
                          -> Maybe Text
                          -> SB.RowTypeTag r -- data set to post-stratify
                          -> SB.GroupTypeTag k -- group by
-                         -> SB.StanExpr -- weight
-                         -> SB.StanExpr -- expression of parameters to post-stratify
+                         -> SB.StanVar -- weight
+                         -> SB.StanVar --  expression of parameters to post-stratify
                          -> Maybe (SB.RowTypeTag r') -- re-index?
                          -> SB.StanBuilderM md gq SB.StanVar
-postStratifiedParameter' prof varNameM rtt gtt wgtE pE reIndexRttM = do
+postStratifiedParameterF prof block varNameM rtt gtt wgtsV pV reIndexRttM = do
   psByGroupFunction
   let dsName = SB.dataSetName rtt
       gName = SB.taggedGroupName gtt
@@ -295,20 +309,25 @@ postStratifiedParameter' prof varNameM rtt gtt wgtE pE reIndexRttM = do
       varName = case reIndexRttM of
         Nothing -> fromMaybe psDataByGroupName varNameM
         Just reIndexRtt -> fromMaybe (dsName <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
-      grpVecType =  (SB.StanVector $ SB.NamedDim gName)
+      grpVecType =  SB.StanVector $ SB.NamedDim gName
+      psVecType =  SB.StanVector $ SB.NamedDim dsName
       profF :: SB.StanBuilderM md gq a -> SB.StanBuilderM md gq a
       profF = if prof then SB.profile varName else SB.bracketed 2
-  SB.inBlock SB.SBTransformedParameters $ case reIndexRttM of
+  SB.inBlock block $ case reIndexRttM of
     Nothing -> do
-      SB.stanDeclareRHS varName grpVecType ""
-        $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, wgtE, pE])
+      probV <- SB.stanDeclare varName grpVecType ""
+      profF $ do
+        wgtsAsVec <- SB.stanDeclareRHS ("wgtsVec") psVecType "" $ SB.vectorizedOne dsName $ SME.function "to_vector" (one $ SB.var wgtsV)
+        SB.addExprLine "postStratifiedParameterF"
+          $ SME.var probV `SME.eq` SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, SB.var wgtsAsVec, SB.var pV])
+      return probV
     Just reIndexRtt -> do
       let reIndexKey = SB.dataSetName reIndexRtt
-
       riProb <-  SB.stanDeclare varName (SB.StanVector $ SB.NamedDim reIndexKey) ""
       profF $ SB.useDataSetForBindings rtt $ do
+        wgtsAsVec <- SB.stanDeclareRHS ("wgtsVec") psVecType "" $ SB.vectorizedOne dsName $ SME.function "to_vector" (one $ SB.var wgtsV)
         gProb <- SB.stanDeclareRHS psDataByGroupName grpVecType ""
-          $ SME.vectorizedOne dsName $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, wgtE, pE])
+          $ SME.vectorizedOne dsName $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, SB.var wgtsAsVec, SB.var pV])
         SB.useDataSetForBindings reIndexRtt
           $ SB.addExprLine "postStratifiedParameter"
           $ SB.vectorizedOne reIndexKey
