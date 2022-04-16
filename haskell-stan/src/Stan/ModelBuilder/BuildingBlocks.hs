@@ -184,13 +184,6 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
 
 generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction rtt sv sDist args = generatePosteriorPrediction' rtt sv sDist args id
-{-
-  SB.inBlock SB.SBGeneratedQuantities $ do
-  let rngE = SMD.familyRNG sDist args
-  ppVar <- SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` rngE
-  return sv
--}
 
 generatePosteriorPrediction' :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> (SB.StanExpr -> SB.StanExpr) -> SB.StanBuilderM md gq SME.StanVar
 generatePosteriorPrediction' rtt sv@(SME.StanVar ppName t) sDist args f = SB.inBlock SB.SBGeneratedQuantities $ do
@@ -217,12 +210,6 @@ vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
 
 vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
 vectorizeExpr sn se ik = head <$> vectorizeExprT ((sn, se) :| []) ik
-{-
-  let vecVname = sn <> "_v"
-  fv <- SB.stanDeclare vecVname (SB.StanVector (SB.NamedDim ik)) ""
-  SB.stanForLoopB "n" Nothing ik $ SB.addExprLine "vectorizeExpr" $ SB.var fv `SB.eq` se
-  pure fv
--}
 
 -- like vectorizeExpr but for multiple things in same loop
 vectorizeExprT :: Traversable t => t (SB.StanName, SB.StanExpr) -> SB.IndexKey -> SB.StanBuilderM md gq (t SB.StanVar)
@@ -240,19 +227,6 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
                         $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
-
-
-
-{-
-normalApproxBinomial :: SB.StanBuilderM md gq ()
-normalApproxBinomial = SB.addFunctionsOnce "normallyApproximatedBinomial"
-                       $ SB.declareStanFunction "real normalApproxBinomialLogit_lpdf(int[] succ, int[] trials, vector lp)" $ do
-  SB.addStanLine "int N = size s"
-  SB.addStanLine "vector[N] p = inv_logit(lp)"
-  SB.addStanLine "vector[N] m = p .* trials"
-  SB.addStanLine "vector[N] var = (p .* (1 - p)) .* trials"
-  SB.addStanLine "return normal_lpdf(succ, m, sqrt(var))"
--}
 
 realIntRatio :: SME.StanVar -> SME.StanVar -> SME.StanExpr
 realIntRatio k l = SB.binOp "/"
@@ -447,8 +421,6 @@ stackDataSets name rtt1 rtt2 groups = do
   return (rtt, stackVars)
 
 {-
-
-
 groupDataSetMembershipMatrix :: SB.IndexKey -> SB.RowTypeTag r -> SB.StanBuilderM env d SB.StanVar
 groupDataSetMembershipMatrix groupIndexKey rttD = SB.inBlock SB.SBTransformedData $ SB.useDataSetForBindings rttD $ do
   let dsIndexKey = SB.dataSetName rttD

@@ -187,20 +187,21 @@ declarationPart  st c = case st of
 --  StanArray dims st -> declarationPart st c
 
 -- for use in function declarations
-varAsArgument :: StanVar -> StanExpr
-varAsArgument (StanVar sn st) = bare $ (typePart st) <> " " <> sn where
-  typePart :: StanType -> Text
-  typePart x = case x of
-    StanInt -> "int"
-    StanReal -> "real"
-    StanVector _ -> "vector"
-    StanMatrix _ -> "matrix"
-    s@(StanArray ds y) -> let StanArray cs z = collapseArray s
-                          in "[" <> T.replicate (length cs - 1) "," <> "]"
-    _ -> error $ "varAsArgument: type=" <> show st <> " not supported as function argument"
-  --  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
+varArgTypeText :: StanType -> Text
+varArgTypeText x = case x of
+  StanInt -> "int"
+  StanReal -> "real"
+  StanVector _ -> "vector"
+  StanMatrix _ -> "matrix"
+  s@(StanArray ds y) -> let StanArray cs z = collapseArray s
+                        in "[" <> T.replicate (length cs - 1) "," <> "]"
+  _ -> error $ "varAsArgument: type=" <> show x <> " not supported as function argument"
+--  StanCorrMatrix dim -> withIndexes (name "corr_matrix") [dim]
 --  StanCholeskyFactorCorr dim -> withIndexes (name "cholesky_factor_corr") [dim]
 --  StanCovMatrix dim -> withIndexes (name "cov_matrix") [dim]
+
+varAsArgument :: StanVar -> StanExpr
+varAsArgument (StanVar sn st) = bare $ (varArgTypeText st) <> " " <> sn where
 
 -- for use in function calls
 varNameE :: StanVar -> StanExpr

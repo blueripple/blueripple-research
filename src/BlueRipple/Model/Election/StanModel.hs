@@ -89,21 +89,6 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 
 import BlueRipple.Model.Election.DataPrep
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder as SB
 
 groupBuilderDM :: forall rs ks tr pr.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -640,6 +625,42 @@ makePSVars rttPS rttElex grp office ptE ppE wgtsV = do
   pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp wgtsE ppE (Just rttElex)
   return (pTByElex, pSByElex)
+
+{-
+psStanFunction :: SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanVar
+               -> SB.StanBuilderM md gq SB.StanExpr
+psStanFunction psN
+               grpN
+               grpIndex@(SB.StanVar _ (SB.StanVector (SB.NamedDim psIdx)))
+               psWgts
+               alphaT@(SB.StanVar _ (SB.StanVector (SB.NamedDim gIdx)))
+               betaT
+               dmT@(SB.StanVar _ (SB.StanMatrix (SB.NamedDim _, SB.NamedDim colTIdx)))
+               alphaP
+               betaP
+               dmP@(SB.StanVar _ (SB.StanMatrix (SB.NamedDim _, SB.NamedDim colPIdx))) = do
+
+-}
+{-
+  let grpAt e c = SB.indexBy e $ SB.indexBy (SB.var grpIndex) $ SB.bare c
+  SB.stanDeclare "p" (SB.StanMatrix (SB.ExprDim $ SB.varNameE grpN, SB.GivenDim 2)) ""
+  SB.stanDeclare "wgt" (SB.StanMatrix (SB.ExprDim $ SB.varNameE grpN, SB.GivenDim 2)) ""
+  SB.stanDeclare "pT" (SB.StanVector $ SB.ExprDim $ SB.varNameE psN) ""
+  pT <- SB.stanForLoop "k" Nothing (SB.varName psN) $ const
+        $ SB.addExprLine "psStanFunction"
+        $ SB.var pT `SB.eq` (alphaT `grpAt` "k") `SB.plus` (SB.function "dot_product" ()
+-}
+
+
 
 addBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                     => Bool
@@ -1673,5 +1694,54 @@ addNormalModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM 
       $ SB.generatePosteriorPrediction rtt pp dist (muT dsIxM dmC, sdT dsIxM dmC)
     pure ()
   return (centerF, llSet')
+
+-}
+{-
+  let (SB.StanVar _ psWgtsType) = psWgts
+  psIndex <- case psWgtsType of
+    SB.StanArray [SB.NamedDim ik] SB.StanInt -> return ik
+    _ -> SB.stanBuildError "psStanFunction: psWgts not an int array"
+  let (SB.StanVar _ dmTType) = dmT
+  dmTColIndex <- case dmTType of
+    SB.StanMatrix (_, SB.NamedDim ik) -> return ik
+    _ -> SB.stanBuildError "psStanFunction: dmT not a matrix with named column dim."
+  let (SB.StanVar _ dmPType) = dmP
+  dmPColIndex <- case dmPType of
+    SB.StanMatrix (_, SB.NamedDim ik) -> return ik
+    _ -> SB.stanBuildError "psStanFunction: dmP not a matrix with named column dim."
+  let (SB.StanVar _ alphaTType) = alphaT
+  case alphaTType of
+    SB.Stan
+      declBindings = Map.fromList [(gik,SB.bare grpN)]
+  SB.addScopedDeclBindings declBindings $ do
+    p <- SB.stanDeclare "p" (SB.StanMatrix (SB.NamedDim gik, SB.GivenDim 2)) ""
+  let pCol = SB.StanVar "p" (SB.StanVector $ SB.NamedDim gik)
+  wgt <- SB.stanDeclare "wgt" (SB.StanMatrix (SB.NamedDim gik, SB.GivenDim 2)) ""
+  let wgtCol = SB.StanVar "wgt" (SB.StanVector $ SB.NamedDim gik)
+  let grpIndexed x = SB.indexBy x (SB.varName grpIndex)
+  ptv <- SB.vectorizeExpr
+         "pT"
+         (invLogit
+          $ SB.var alphaT `SB.plus` SB.vectorizedOne dmTColIndex (SB.function "dot_product" (SB.var dmT :| [SB.var betaT]))
+         )
+         psIndex
+  ppv <- SB.vectorizeExpr
+         "pP"
+         (invLogit
+          $ SB.var alphaP `SB.plus` SB.vectorizedOne dmPColIndex (SB.function "dot_product" (SB.var dmP :| [SB.var betaP]))
+         )
+         psIndex
+  SB.stanForLoopB "k" Nothing psIndex $ do
+    ps <- SB.stanDeclareRHS "ps" (SB.StanVector $ SB.ExprDim $ SB.scalar "2") ""
+      $ SB.group "[" "]" $ SB.csExprs
+      $ (SB.var psWgts `SB.times` grpIndexed (SB.var ptv))
+      :| [SB.var psWgts `SB.times` grpIndexed (SB.var ptv) `SB.times` grpIndexed (SB.var ptv)]
+    SB.addExprLine "psStanFunction" $ SB.var p `SB.eq` SB.var ps
+    wgts <- SB.stanDeclareRHS "wgts" (SB.StanVector $ SB.ExprDim $ SB.scalar "2") ""
+      $ SB.group "[" "]" $ SB.csExprs
+      $ (SB.var psWgts) :| [SB.var psWgts `SB.times` grpIndexed (SB.var ptv)]
+    SB.addExprLine "psStanFunction" $ SB.var wgt `SB.eq` SB.var wgts
+  SB.addExprLine "psStanFunction" $ SB.binOp "./=" (SB.var p) (SB.var wgt)
+  return $ SB.var p
 
 -}
