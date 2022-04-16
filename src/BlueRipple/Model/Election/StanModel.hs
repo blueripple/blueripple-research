@@ -102,6 +102,8 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
+import qualified Stan.ModelBuilder as SB
 
 groupBuilderDM :: forall rs ks tr pr.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -600,17 +602,17 @@ officeFromElectionRow (PresidentRow _) = ET.President
 officeFromElectionRow (SenateRow _) = ET.Senate
 officeFromElectionRow (HouseRow _) = ET.House
 
-makePSVars :: (Typeable md, Typeable gq)
-           => SB.StanBlock
-           -> SB.RowTypeTag r
-           -> SB.RowTypeTag r'
-           -> SB.GroupTypeTag k
-           -> ET.OfficeT
-           -> SB.StanExpr
-           -> SB.StanExpr
-           -> SB.StanVar
-           -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
-makePSVars block rttPS rttElex grp office ptE ppE wgtsV = SB.inBlock block  $ do
+makePSVarsF :: (Typeable md, Typeable gq)
+            => SB.StanBlock
+            -> SB.RowTypeTag r
+            -> SB.RowTypeTag r'
+            -> SB.GroupTypeTag k
+            -> ET.OfficeT
+            -> SB.StanExpr
+            -> SB.StanExpr
+            -> SB.StanVar
+            -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
+makePSVarsF block rttPS rttElex grp office ptE ppE wgtsV = SB.inBlock block  $ do
   asVars <- SB.useDataSetForBindings rttPS
             $ SB.vectorizeExprT [("pT_" <> officeText office, ptE)
                                 , ("pP_" <> officeText office, ppE)
@@ -621,6 +623,22 @@ makePSVars block rttPS rttElex grp office ptE ppE wgtsV = SB.inBlock block  $ do
     _ -> SB.stanBuildError "makePSVars: vectorizeExprT returned wrong number of vars!"
   pTByElex <- SB.postStratifiedParameterF False block (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp wgtsV ptV (Just rttElex)
   pSByElex <- SB.postStratifiedParameterF False block (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp sWgtsV ppV (Just rttElex)
+  return (pTByElex, pSByElex)
+
+
+makePSVars :: (Typeable md, Typeable gq)
+           => SB.RowTypeTag r
+           -> SB.RowTypeTag r'
+           -> SB.GroupTypeTag k
+           -> ET.OfficeT
+           -> SB.StanExpr
+           -> SB.StanExpr
+           -> SB.StanVar
+           -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
+makePSVars rttPS rttElex grp office ptE ppE wgtsV = do
+  let wgtsE = SB.var wgtsV `SB.times` ptE
+  pTByElex <- SB.postStratifiedParameter False (Just $ "ElexT_" <> officeText office <> "_ps") rttPS grp (SB.var wgtsV) ptE (Just rttElex)
+  pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp wgtsE ppE (Just rttElex)
   return (pTByElex, pSByElex)
 
 addBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
@@ -659,7 +677,7 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha 
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAlphaM alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -719,7 +737,7 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT dsTAB alphaT betaT)
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAB alphaP betaP)
       grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -781,7 +799,7 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareA
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPA alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -843,7 +861,7 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let ptE = vecT $ SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
       ppE = vecP $ SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
       grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
   let f x w = if countScaled then x `SB.divide` SB.var w else x `SB.times` SB.var w
       bA mu w = f (SB.paren (SB.var mu)) w
       bB mu w = f (SB.paren (SB.scalar "1" `SB.minus` SB.var mu)) w
