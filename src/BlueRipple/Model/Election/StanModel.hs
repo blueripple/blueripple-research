@@ -659,18 +659,16 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha 
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAlphaM alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
-  (pTByElex_model, pSByElex_model) <- makePSVars SB.SBModel rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
-  modelVar rttElex distT votes (pure $ SB.var pTByElex_model)
-  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex_model)
-  (pTByElex_ll, pSByElex_ll) <- makePSVars SB.SBLogLikelihood rttPS rttElex grp office ptE ppE wgtsV
-  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex_ll)
-               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex_ll) llSet
-  (pTByElex_gq, pSByElex_gq) <- makePSVars SB.SBGeneratedQuantities rttPS rttElex grp office ptE ppE wgtsV
+  modelVar rttElex distT votes (pure $ SB.var pTByElex)
+  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
+  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
+               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex) llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex_gq)
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex_gq)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
   let probT = fmap (\mu' -> invLogit $ mu' dsTAlphaM alphaT betaT) . indexedMuE
       probP = fmap (\mu' -> invLogit $ mu' dsPAlphaM alphaP betaP) . indexedMuE
   return (centerTF, centerPF, llSet', probT, probP)
@@ -721,18 +719,16 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT dsTAB alphaT betaT)
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAB alphaP betaP)
       grp = electionRowGroup officeRow
-  (pTByElex_model, pSByElex_model) <- makePSVars SB.SBModel rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
-  modelVar rttElex distT votes (pure $ SB.var pTByElex_model)
-  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex_model)
-  (pTByElex_ll, pSByElex_ll) <- makePSVars SB.SBLogLikelihood rttPS rttElex grp office ptE ppE wgtsV
-  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex_ll)
-               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex_ll) llSet
-  (pTByElex_gq, pSByElex_gq) <- makePSVars SB.SBGeneratedQuantities rttPS rttElex grp office ptE ppE wgtsV
+  modelVar rttElex distT votes (pure $ SB.var pTByElex)
+  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
+  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
+               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex) llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex_gq)
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex_gq)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
   let probT = fmap (\mu' -> invLogit $ mu' dsTAB alphaT betaT) . indexedMuE2
       probP = fmap (\mu' -> invLogit $ mu' dsPAB alphaP betaP) . indexedMuE2
   return (centerTF, centerPF, llSet', probT, probP)
@@ -785,18 +781,16 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareA
       ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPA alphaP betaP)
       sWgtsE = SB.var wgtsV `SB.times` ptE
       grp = electionRowGroup officeRow
-  (pTByElex_model, pSByElex_model) <- makePSVars SB.SBModel rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
-  modelVar rttElex distT votes (pure $ SB.var pTByElex_model)
-  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex_model)
-  (pTByElex_ll, pSByElex_ll) <- makePSVars SB.SBLogLikelihood rttPS rttElex grp office ptE ppE wgtsV
-  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex_ll)
-               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex_ll) llSet
-  (pTByElex_gq, pSByElex_gq) <- makePSVars SB.SBGeneratedQuantities rttPS rttElex grp office ptE ppE wgtsV
+  modelVar rttElex distT votes (pure $ SB.var pTByElex)
+  modelVar rttElex distS dVotesInRace (pure $ SB.var pSByElex)
+  let llSet' = updateLLSet rttElex distT votes (pure $ SB.var pTByElex)
+               $ updateLLSet rttElex distS dVotesInRace (pure $ SB.var pSByElex) llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex_gq)
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex_gq)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure $ SB.var pTByElex)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
   let probT = fmap (\mu' -> invLogit $ mu' dsTA alphaT betaT) . indexedMuE
       probP = fmap (\mu' -> invLogit $ mu' dsPA alphaP betaP) . indexedMuE
   return (centerTF, centerPF, llSet', probT, probP)
@@ -849,7 +843,7 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let ptE = vecT $ SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
       ppE = vecP $ SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
       grp = electionRowGroup officeRow
-  (pTByElex_model, pSByElex_model) <- makePSVars SB.SBModel rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- makePSVars SB.SBTransformedParameters rttPS rttElex grp office ptE ppE wgtsV
   let f x w = if countScaled then x `SB.divide` SB.var w else x `SB.times` SB.var w
       bA mu w = f (SB.paren (SB.var mu)) w
       bB mu w = f (SB.paren (SB.scalar "1" `SB.minus` SB.var mu)) w
@@ -859,15 +853,13 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
       bBP pp = bB pp scaleP
   let distT = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True cvap
       distS = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True votesInRace
-  modelVar rttElex distT votes (pure (bAT pTByElex_model, bBT pTByElex_model))
-  modelVar rttElex distS dVotesInRace (pure $ (bAP pSByElex_model, bBP pSByElex_model))
-  (pTByElex_ll, pSByElex_ll) <- makePSVars SB.SBGeneratedQuantities rttPS rttElex grp office ptE ppE wgtsV
-  let llSet' = updateLLSet rttElex distT votes (pure (bAT pTByElex_ll, bBT pTByElex_ll))
-               $ updateLLSet rttElex distS dVotesInRace (pure (bAP pSByElex_ll, bBP pSByElex_ll)) llSet
-  (pTByElex_gq, pSByElex_gq) <- makePSVars SB.SBGeneratedQuantities rttPS rttElex grp office ptE ppE wgtsV
+  modelVar rttElex distT votes (pure (bAT pTByElex, bBT pTByElex))
+  modelVar rttElex distS dVotesInRace (pure $ (bAP pSByElex, bBP pSByElex))
+  let llSet' = updateLLSet rttElex distT votes (pure (bAT pTByElex, bBT pTByElex))
+               $ updateLLSet rttElex distS dVotesInRace (pure (bAP pSByElex, bBP pSByElex)) llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT pTByElex_gq, bBT pTByElex_gq))
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP pSByElex_gq, bBP pSByElex_gq))
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT pTByElex, bBT pTByElex))
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP pSByElex, bBP pSByElex))
   let probT = fmap (\mu' -> invLogit $ mu' Nothing alphaT betaT) . indexedMuE
       probP = fmap (\mu' -> invLogit $ mu' shareIx alphaP betaP) . indexedMuE
   return (centerTF, centerPF, llSet', probT, probP)
