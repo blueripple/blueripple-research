@@ -572,6 +572,10 @@ setDataSetForBindings rtt = do
 useDataSetForBindings :: RowTypeTag r -> StanBuilderM md gq a -> StanBuilderM md gq a
 useDataSetForBindings rtt x = getDataSetBindings rtt >>= flip withUseBindings x
 
+-- add anything not already present
+addDataSetBindings :: RowTypeTag r -> StanBuilderM md gq a -> StanBuilderM md gq a
+addDataSetBindings rtt x = getDataSetBindings rtt >>= flip extendUseBindings x
+
 modifyDeclaredVars :: (ScopedDeclarations -> ScopedDeclarations) -> BuilderState md gq -> BuilderState md gq
 modifyDeclaredVars f bs = bs {declaredVars = f (declaredVars bs)}
 --(BuilderState dv vbs mrb gqrb cj hf c) = BuilderState (f dv) vbs mrb gqrb cj hf c
@@ -604,10 +608,34 @@ withUseBindings ubs m = do
   modify $ modifyIndexBindings $ const oldBindings
   return a
 
+extendUseBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM md gq a -> StanBuilderM md gq a
+extendUseBindings ubs' m = do
+  oldBindings <- indexBindings <$> get
+  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs dbs) -> SME.VarBindingStore (Map.union ubs ubs') dbs)
+  a <- m
+  modify $ modifyIndexBindings $ const oldBindings
+  return a
+
+withDeclBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM md gq a -> StanBuilderM md gq a
+withDeclBindings dbs m = do
+  oldBindings <- indexBindings <$> get
+  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs _) -> SME.VarBindingStore ubs dbs)
+  a <- m
+  modify $ modifyIndexBindings $ const oldBindings
+  return a
+
+extendDeclBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM md gq a -> StanBuilderM md gq a
+extendDeclBindings dbs' m = do
+  oldBindings <- indexBindings <$> get
+  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs dbs) -> SME.VarBindingStore ubs (Map.union dbs dbs'))
+  a <- m
+  modify $ modifyIndexBindings $ const oldBindings
+  return a
+
 addScopedDeclBindings :: Map SME.IndexKey SME.StanExpr -> StanBuilderM env d a -> StanBuilderM env d a
 addScopedDeclBindings dbs' m = do
   oldBindings <- indexBindings <$> get
-  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs dbs) -> SME.VarBindingStore ubs (Map.union dbs dbs))
+  modify $ modifyIndexBindings (\(SME.VarBindingStore ubs dbs) -> SME.VarBindingStore ubs (Map.union dbs dbs'))
   a <- m
   modify $ modifyIndexBindings $ const oldBindings
   return a
@@ -1110,7 +1138,7 @@ stanDeclare' sn st sc mRHS = do
   _ <- if isNew
     then case mRHS of
            Nothing -> addExprLine "stanDeclare'" lhs
-           Just rhs -> addExprLine "stanDeclare'" (SME.declaration lhs `SME.eq` rhs)
+           Just rhs -> addExprLine "stanDeclare'" ((SME.declaration lhs) `SME.eq` rhs)
     else case mRHS of
            Nothing -> return ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
@@ -1330,6 +1358,9 @@ declareStanFunction :: Text -> StanBuilderM md gq a -> StanBuilderM md gq a
 declareStanFunction declaration body = inBlock SBFunctions $ do
   addLine declaration
   bracketed 2 body
+
+declareStanFunction' :: Text -> StanBuilderM md gq ()
+declareStanFunction' t = inBlock SBFunctions $ traverse_ addLine $ fmap (<> "\n") $ T.lines t
 
 indent :: Int -> StanCode -> StanCode
 indent n (StanCode b blocks) =

@@ -9,6 +9,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -47,6 +48,7 @@ import qualified Data.IntMap as IM
 import qualified Data.Set as Set
 import Data.String.Here (here)
 import qualified Data.Serialize                as S
+import Data.String.Here (here)
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
@@ -87,6 +89,7 @@ import qualified Control.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Stan.ModelBuilder.StanFunctionBuilder as SFB
 
 import BlueRipple.Model.Election.DataPrep
 
@@ -393,14 +396,15 @@ muE dm = do
   dmBetaE <- mBetaE dm
   return $ \aE betaE -> aE `SB.plus` dmBetaE betaE
 
+addIf :: Maybe SB.StanVar -> SB.StanVar -> SB.StanExpr
+addIf mv v = case mv of
+  Nothing -> SB.var v
+  Just v' -> SB.var v' `SB.plus` SB.var v
+
 indexedMuE :: SB.StanVar -> SB.StanBuilderM md gq (Maybe SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
 indexedMuE dm = do
   muE' <- muE dm
-  let f ixM alpha beta = case ixM of
-        Nothing -> muE' (SB.var alpha) (SB.var beta)
-        Just ixV -> muE' (SB.var ixV `SB.plus` SB.var alpha) (SB.var beta)
-  return f
-
+  return $ \ixM alpha beta -> muE' (addIf ixM alpha) (SB.var beta)
 
 indexedMuE2 :: SB.StanVar -> SB.StanBuilderM md gq (Maybe (SB.StanVar, SB.StanVar) -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
 indexedMuE2 dm = do
@@ -626,41 +630,68 @@ makePSVars rttPS rttElex grp office ptE ppE wgtsV = do
   pSByElex <- SB.postStratifiedParameter False (Just $ "ElexS_" <> officeText office <> "_ps") rttPS grp wgtsE ppE (Just rttElex)
   return (pTByElex, pSByElex)
 
-{-
-psStanFunction :: SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanVar
-               -> SB.StanBuilderM md gq SB.StanExpr
-psStanFunction psN
-               grpN
-               grpIndex@(SB.StanVar _ (SB.StanVector (SB.NamedDim psIdx)))
-               psWgts
-               alphaT@(SB.StanVar _ (SB.StanVector (SB.NamedDim gIdx)))
-               betaT
-               dmT@(SB.StanVar _ (SB.StanMatrix (SB.NamedDim _, SB.NamedDim colTIdx)))
-               alphaP
-               betaP
-               dmP@(SB.StanVar _ (SB.StanMatrix (SB.NamedDim _, SB.NamedDim colPIdx))) = do
+elexPSFunctionText :: Text
+elexPSFunctionText =
+  [here|
+matrix elexPSFunction(array[] int gIdx, vector psWgts, vector aT, matrix bT, matrix dT, vector aP, matrix bP, matrix dP, int N_elex, array[] int elexIdx) {
+  int N_ps = size(gIdx);
+  int N_grp = size(aT);
+  matrix[N_grp, 2] p = rep_matrix(0, N_grp, 2);
+  matrix[N_grp, 2] wgts = rep_matrix(0, N_grp, 2);
+  for (k in 1:N_ps) {
+    real pT = inv_logit(aT[gIdx[k]] + dot_product(dT[k], bT[,gIdx[k]]));
+    real pP = inv_logit(aP[gIdx[k]] + dot_product(dP[k], bP[,gIdx[k]]));
+    real wPT = psWgts[k] * pT;
+    p[gIdx[k], 1] += wPT;
+    p[gIdx[k], 2] += wPT * pP;
+    wgts[gIdx[k], 1] += psWgts[k];
+    wgts[gIdx[k], 2] += wPT;
+  }
+  p ./= wgts;
+  matrix[N_elex, 2] q;
+  q[,1] = p[elexIdx,1];
+  q[,2] = p[elexIdx,2];
+  return q;
+}
+|]
 
--}
-{-
-  let grpAt e c = SB.indexBy e $ SB.indexBy (SB.var grpIndex) $ SB.bare c
-  SB.stanDeclare "p" (SB.StanMatrix (SB.ExprDim $ SB.varNameE grpN, SB.GivenDim 2)) ""
-  SB.stanDeclare "wgt" (SB.StanMatrix (SB.ExprDim $ SB.varNameE grpN, SB.GivenDim 2)) ""
-  SB.stanDeclare "pT" (SB.StanVector $ SB.ExprDim $ SB.varNameE psN) ""
-  pT <- SB.stanForLoop "k" Nothing (SB.varName psN) $ const
-        $ SB.addExprLine "psStanFunction"
-        $ SB.var pT `SB.eq` (alphaT `grpAt` "k") `SB.plus` (SB.function "dot_product" ()
--}
+elexPSFunction :: Text
+               -> SB.RowTypeTag r -- ps rows
+               -> SB.RowTypeTag r' -- election rows
+               -> SB.GroupTypeTag k
+               -> SB.StanVar -- psWgts
+               -> SB.StanExpr -- alphaT
+               -> SB.StanExpr -- betaT
+               -> SB.StanVar -- dmT
+               -> SB.StanExpr -- alphaP
+               -> SB.StanExpr -- betaP
+               -> SB.StanVar -- dmP
+               -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
+elexPSFunction varNameSuffix rttPS rttElex gtt psWgtsV alphaTE betaTE dmTV alphaPE betaPE dmPV = do
+  SB.addFunctionsOnce "elexPSFunction" $ SB.declareStanFunction' elexPSFunctionText
+  psIndexKey <- SB.named1dArrayIndex psWgtsV
+  let elexIK = SB.dataSetName rttElex
+  let grpIndexKey = SB.taggedGroupName gtt
+  dmColIdxT <- SB.namedMatrixColIndex dmTV
+  dmColIdxP <- SB.namedMatrixColIndex dmPV
+  let vecPS = SB.vectorizedOne psIndexKey
+      vecT = SB.vectorized $ Set.fromList [grpIndexKey, psIndexKey, dmColIdxT]
+      vecP = SB.vectorized $ Set.fromList [grpIndexKey, psIndexKey, dmColIdxP]
+  SB.useDataSetForBindings rttPS $ SB.addDataSetBindings rttElex $ do
+    ps <- SB.stanDeclareRHS ("elexProbs_" <> varNameSuffix) (SB.StanMatrix (SB.NamedDim elexIK, SB.GivenDim 2)) ""
+          $ SB.function "elexPSFunction"
+          $ vecPS (SB.index grpIndexKey)
+          :| [SB.function "to_vector" (one $ SB.varNameE psWgtsV)
+             , vecT alphaTE, vecT betaTE, vecT (SB.var dmTV)
+             , vecP alphaPE, vecP betaPE, vecP (SB.var dmPV)
+             , SB.indexSize elexIK, SB.bare (SB.groupIndexVarName rttElex gtt)
+             ]
 
-
+    pT <- SB.stanDeclareRHS ("elexPT_" <> varNameSuffix) (SB.StanVector $ SB.NamedDim elexIK) ""
+          $ SB.function "col" $ (SB.varNameE ps :| [SB.scalar "1"])
+    pP <- SB.stanDeclareRHS ("elexPP_" <> varNameSuffix) (SB.StanVector $ SB.NamedDim elexIK) ""
+          $ SB.function "col" $ (SB.varNameE ps :| [SB.scalar "2"])
+    return (pT, pP)
 
 addBLModelsForElex' :: forall rs r md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                     => Bool
@@ -688,17 +719,13 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha 
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
   dsTAlphaM <- ixM (addLabel "alphaT") shareAlpha
   dsPAlphaM <- ixM (addLabel "alphaP") shareAlpha
-  colIndexT <- colIndex dmPST
-  colIndexP <- colIndex dmPSP
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmPC, centerPF) <- centerIf dmPSP centerSM
-  muT <- indexedMuE dmTC
-  muP <- indexedMuE dmPC
-  let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT dsTAlphaM alphaT betaT)
-      ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAlphaM alphaP betaP)
-      sWgtsE = SB.var wgtsV `SB.times` ptE
-      grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
+                          $ elexPSFunction (officeText office)
+                          rttPS rttElex stateGroup wgtsV
+                          (SB.var alphaT) (SB.var betaT) dmTC
+                          (SB.var alphaP) (SB.var betaP) dmPC
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -746,19 +773,24 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let office = officeFromElectionRow officeRow
   let addLabel x = x <> "_Elex_" <> officeText office
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
-  let SB.StanVar _ betaTType = betaT
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
   dsTAB <- dsAlphaBeta ("Elex_" <> officeText office <> "_T") colIndexT shareAlpha
   dsPAB <- dsAlphaBeta ("Elex_" <> officeText office <> "_P") colIndexP shareAlpha
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmPC, centerPF) <- centerIf dmPSP centerSM
-  muT <- indexedMuE2 dmTC
-  muP <- indexedMuE2 dmPC
-  let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT dsTAB alphaT betaT)
-      ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPAB alphaP betaP)
-      grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
+  let addIfBeta mx y = case mx of
+        Nothing -> SB.var y
+        Just x -> SB.function "rep_matrix" (SB.varNameE x :| [SB.indexSize (SB.taggedGroupName stateGroup)]) `SB.plus` SB.var y
+      alphaTE = addIf (fst <$> dsTAB) alphaT
+      betaTE = addIfBeta (snd <$> dsTAB) betaT
+      alphaPE = addIf (fst <$> dsPAB) alphaP
+      betaPE = addIfBeta (snd <$> dsPAB) betaP
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
+                          $ elexPSFunction (officeText office)
+                          rttPS rttElex stateGroup wgtsV
+                          alphaTE betaTE dmTC
+                          alphaPE betaPE dmPC
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -807,20 +839,17 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM shareA
   let office = officeFromElectionRow officeRow
   let addLabel x = x <> "_Elex_" <> officeText office
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
-  let SB.StanVar _ betaTType = betaT
-  colIndexT <- colIndex dmPST
-  colIndexP <- colIndex dmPSP
   dsTA <- dsAlphaGroup ("Elex_" <> officeText office <> "_T") gtt shareAlpha
   dsPA <- dsAlphaGroup ("Elex_" <> officeText office <> "_P") gtt shareAlpha
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmPC, centerPF) <- centerIf dmPSP centerSM
-  muT <- indexedMuE dmTC
-  muP <- indexedMuE dmPC
-  let ptE = SB.vectorizedOne colIndexT $ SB.function "inv_logit" (one $ muT dsTA alphaT betaT)
-      ppE = SB.vectorizedOne colIndexP $ SB.function "inv_logit" (one $ muP dsPA alphaP betaP)
-      sWgtsE = SB.var wgtsV `SB.times` ptE
-      grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
+  let alphaTE = addIf dsTA alphaT
+      alphaPE = addIf dsPA alphaP
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
+                          $ elexPSFunction (officeText office)
+                          rttPS rttElex stateGroup wgtsV
+                          alphaTE (SB.var betaT) dmTC
+                          alphaPE (SB.var betaP) dmPC
   let distT = SB.normallyApproximatedBinomial cvap
       distS = SB.normallyApproximatedBinomial votesInRace
   modelVar rttElex distT votes (pure $ SB.var pTByElex)
@@ -870,19 +899,17 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   let office = officeFromElectionRow officeRow
       addLabel x = x <> "_Elex_" <> officeText office
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
-  shareIx <- ixM (addLabel "ixS") shareAlpha
+  shareIxT <- ixM (addLabel "ixST") shareAlpha
+  shareIxP <- ixM (addLabel "ixSP") shareAlpha
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
-  let vecT = SB.vectorizedOne colIndexT
-      vecP = SB.vectorizedOne colIndexP
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmPC, centerPF) <- centerIf dmPSP centerSM
-  muT <- indexedMuE dmTC
-  muP <- indexedMuE dmPC
-  let ptE = vecT $ SB.function "inv_logit" (one $ muT Nothing alphaT betaT)
-      ppE = vecP $ SB.function "inv_logit" (one $ muP shareIx alphaP betaP)
-      grp = electionRowGroup officeRow
-  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters $ makePSVars rttPS rttElex grp office ptE ppE wgtsV
+  (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
+                          $ elexPSFunction (officeText office)
+                          rttPS rttElex stateGroup wgtsV
+                          (addIf shareIxT alphaT) (SB.var betaT) dmTC
+                          (addIf shareIxP alphaP) (SB.var betaP) dmPC
   let f x w = if countScaled then x `SB.divide` SB.var w else x `SB.times` SB.var w
       bA mu w = f (SB.paren (SB.var mu)) w
       bB mu w = f (SB.paren (SB.scalar "1" `SB.minus` SB.var mu)) w
@@ -899,8 +926,8 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerSM shareAlpha
   when includePP $ do
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT pTByElex, bBT pTByElex))
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP pSByElex, bBP pSByElex))
-  let probT = fmap (\mu' -> invLogit $ mu' Nothing alphaT betaT) . indexedMuE
-      probP = fmap (\mu' -> invLogit $ mu' shareIx alphaP betaP) . indexedMuE
+  let probT = fmap (\mu' -> invLogit $ mu' shareIxT alphaT betaT) . indexedMuE
+      probP = fmap (\mu' -> invLogit $ mu' shareIxP alphaP betaP) . indexedMuE
   return (centerTF, centerPF, llSet', probT, probP)
 
 addBBLModelsForElex offices includePP vst eScale office centerTM centerSM shareAlpha (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet =

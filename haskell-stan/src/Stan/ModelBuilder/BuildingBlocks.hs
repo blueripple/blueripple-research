@@ -32,6 +32,27 @@ import qualified Data.Vector as V
 import qualified Stan.ModelConfig as SB
 import Streamly.Data.Array.Foreign (getIndex)
 
+namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
+namedVectorIndex x = case SME.varType x of
+  SME.StanVector (SME.NamedDim ik) -> return ik
+  _ -> SB.stanBuildError $ "namedVectorIndex: bad type=" <> show x
+
+named1dArrayIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
+named1dArrayIndex x = case SME.varType x of
+  SME.StanArray [SME.NamedDim ik] _ -> return ik
+  _ -> SB.stanBuildError $ "named1dArrayIndex: bad type=" <> show x
+
+namedMatrixRowIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
+namedMatrixRowIndex x = case SME.varType x of
+  SME.StanMatrix (SME.NamedDim ik, _) -> return ik
+  _ -> SB.stanBuildError $ "namedMatrixRowIndex: bad type=" <> show x
+
+namedMatrixColIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
+namedMatrixColIndex x = case SME.varType x of
+  SME.StanMatrix (_, SME.NamedDim ik) -> return ik
+  _ -> SB.stanBuildError $ "namedMatrixColIndex: bad type=" <> show x
+
+
 addIntData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
             -> SME.StanName
