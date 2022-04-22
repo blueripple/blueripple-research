@@ -95,6 +95,7 @@ import qualified Stan.ModelBuilder as SB
 import BlueRipple.Data.Loaders (stateAbbrCrosswalkLoader)
 import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified Stan.JSON as DT
+import qualified BlueRipple.Model.Election.StanModel as BRM
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -161,10 +162,10 @@ modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
-               (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG])
-               BRE.Binomial
+               (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
+               BRE.Binomial2
                BRE.HierarchicalBeta
-               1000
+               500
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]

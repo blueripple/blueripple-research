@@ -437,13 +437,22 @@ invLogit x = SB.function "inv_logit" (one x)
 
 data QR = NoQR | DoQR | WithQR SB.StanVar SB.StanVar
 
-handleQR :: QR -> SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, QR)
-handleQR qr m theta =  case qr of
+handleQR :: SB.RowTypeTag r -> QR -> SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, QR)
+handleQR rtt qr m theta =  case qr of
   NoQR -> return (m, NoQR)
   WithQR rI beta -> do
-    q <- SB.inBlock SB.SBTransformedData
-             $ SB.stanDeclareRHS ("Q_" <> SB.varName m) (SB.varType m) ""
-             $ m `SB.matMult` rI
+    let qName = "Q_" <> SB.varName m
+    colIndex <- SB.namedMatrixColIndex m
+    let vec = SB.vectorized $ Set.fromList [SB.dataSetName rtt, colIndex]
+    alreadyDeclared <- SB.isDeclared qName
+    q <- case alreadyDeclared of
+      True -> return $ SB.StanVar qName (SB.varType m)
+      False -> do
+        SB.inBlock SB.SBTransformedData
+          $ SB.useDataSetForBindings rtt
+          $ SB.stanDeclareRHS ("Q_" <> SB.varName m) (SB.varType m) ""
+          $ vec
+          $ m `SB.matMult` rI
     return (q, WithQR rI beta)
   DoQR -> do
     (q, _, rI, mBeta) <- DM.thinQR m (Just $ (theta, "ri_" <> SB.varName theta))
@@ -454,8 +463,11 @@ handleQR qr m theta =  case qr of
 
 applyQR :: QR -> (SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr) -> SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
 applyQR NoQR f m = f m
-applyQR (WithQR rI _) f m = SB.inBlock SB.SBGeneratedQuantities $ do
-  mQ <- SB.stanDeclareRHS (SB.varName m <> "_Q") (SB.varType m) "" $ m `SB.matMult` rI
+applyQR (WithQR rI _) f m = SB.inBlock SB.SBTransformedDataGQ $ do
+  rowIndex <- SB.namedMatrixRowIndex m
+  colIndex <- SB.namedMatrixColIndex rI
+  let vec = SB.vectorized $ Set.fromList [rowIndex, colIndex]
+  mQ <- SB.stanDeclareRHS (SB.varName m <> "_Q") (SB.varType m) "" $ vec $ m `SB.matMult` rI
   f mQ
 applyQR DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
@@ -479,7 +491,7 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM qr a
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   dsIxM <- ixM (addLabel "alpha") dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
-  (dmQR, retQR) <- handleQR qr dmC beta
+  (dmQR, retQR) <- handleQR rtt qr dmC beta
   muT <- indexedMuE dmQR
   let dist = SB.binomialLogitDist counts
       vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsIxM alpha beta) (SB.dataSetName rtt)
@@ -510,7 +522,7 @@ addBL2ModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM qr 
   colIndexKey <- colIndex dm
   dsAB <- dsAlphaBeta dataSetLabel colIndexKey dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
-  (dmQR, retQR) <- handleQR qr dmC beta
+  (dmQR, retQR) <- handleQR rtt qr dmC beta
   muT <- indexedMuE2 dmQR
   let dist = SB.binomialLogitDist counts
       vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsAB alpha beta) (SB.dataSetName rtt)
@@ -543,7 +555,7 @@ addBL3ModelForDataSet dataSetLabel gtt includePP dataSetupM dataSetAlpha centerM
   colIndexKey <- colIndex dm
   dsA <- dsAlphaGroup dataSetLabel gtt dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
-  (dmQR, retQR) <- handleQR qr dmC beta
+  (dmQR, retQR) <- handleQR rtt qr dmC beta
   muT <- indexedMuE dmQR
   let dist = SB.binomialLogitDist counts
       vecMu = SB.vectorizeExpr (addLabel "mu") (muT dsA alpha beta) (SB.dataSetName rtt)
@@ -575,7 +587,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dataSetAlpha centerM qr 
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   dsAlphaM <- ixM (addLabel "alpha") dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
-  (dmQR, retQR) <- handleQR qr dmC beta
+  (dmQR, retQR) <- handleQR rtt qr dmC beta
   muT <- indexedMuE dmQR
   let muE = invLogit $ muT dsAlphaM alpha beta
       bA = SB.var betaWidth `SB.times` SB.paren muE
@@ -719,9 +731,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP sha
   dsTAlphaM <- ixM (addLabel "alphaT") shareAlpha
   dsPAlphaM <- ixM (addLabel "alphaP") shareAlpha
   (dmTC, centerTF) <- centerIf dmPST centerTM
-  (dmTQR, retQRT) <- handleQR qrT dmTC betaT
+  (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerPM
-  (dmPQR, retQRP) <- handleQR qrP dmPC betaP
+  (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
                           $ elexPSFunction (officeText office)
                           rttPS rttElex stateGroup wgtsV
@@ -785,9 +797,9 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP sh
   dsTAB <- dsAlphaBeta ("Elex_" <> officeText office <> "_T") colIndexT shareAlpha
   dsPAB <- dsAlphaBeta ("Elex_" <> officeText office <> "_P") colIndexP shareAlpha
   (dmTC, centerTF) <- centerIf dmPST centerTM
-  (dmTQR, retQRT) <- handleQR qrT dmTC betaT
+  (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerPM
-  (dmPQR, retQRP) <- handleQR qrP dmPC betaP
+  (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   let addIfBeta mx y = case mx of
         Nothing -> SB.var y
         Just x -> SB.function "rep_matrix" (SB.varNameE x :| [SB.indexSize (SB.taggedGroupName stateGroup)]) `SB.plus` SB.var y
@@ -811,7 +823,7 @@ addBL2ModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP sh
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
   let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAB alphaT betaT) . indexedMuE2
       probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAB alphaP betaP) . indexedMuE2
-  return (centerTF, centerPF, retQRP, retQRP, llSet', probT, probP)
+  return (centerTF, centerPF, retQRT, retQRP, llSet', probT, probP)
 
 
 addBL2ModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP shareAlpha (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
@@ -858,9 +870,9 @@ addBL3ModelsForElex' gtt includePP vst eScale officeRow centerTM centerSM qrT qr
   dsTA <- dsAlphaGroup ("Elex_" <> officeText office <> "_T") gtt shareAlpha
   dsPA <- dsAlphaGroup ("Elex_" <> officeText office <> "_P") gtt shareAlpha
   (dmTC, centerTF) <- centerIf dmPST centerTM
-  (dmTQR, retQRT) <- handleQR qrT dmTC betaT
+  (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerSM
-  (dmPQR, retQRP) <- handleQR qrP dmPC betaP
+  (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   let alphaTE = addIf dsTA alphaT
       alphaPE = addIf dsPA alphaP
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
@@ -928,9 +940,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP sh
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
   (dmTC, centerTF) <- centerIf dmPST centerTM
-  (dmTQR, retQRT) <- handleQR qrT dmTC betaT
+  (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerPM
-  (dmPQR, retQRP) <- handleQR qrP dmPC betaP
+  (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
                           $ elexPSFunction (officeText office)
                           rttPS rttElex stateGroup wgtsV
@@ -1049,6 +1061,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
             centerMatrices = False
             initialCenterFM = if centerMatrices then Nothing else (Just $ \_ v _ -> pure v)
+            initialQR = NoQR
             meanTurnout = 0.6
             logit x = Numeric.log (x / (1 - x))
             logitMeanTurnout = logit meanTurnout
@@ -1095,119 +1108,123 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
               Binomial -> do
-                let eF (centerTFM, centerPFM, llS) office = addBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            alphaT thetaT alphaP thetaP llS
-                    cpsTF' centerTFM llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesTF' centerTFM llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesPF' (centerFM, llS) office =  addBLModelForDataSet ("CCESP" <> show office) includePP
-                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM alphaP thetaP llS
+                let eF (centerTFM, centerPFM, qrT, qrP, llS) office
+                      = addBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
+                        office centerTFM centerPFM qrT qrP (elexDSAlpha (votesFrom model) office)
+                        (acsRowTag, acsPSWgts, acsDMT, acsDMP) alphaT thetaT alphaP thetaP llS
+                    cpsTF' centerTFM qrT llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                               DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesTF' centerTFM qrT llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                                DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesPF' (centerPFM, qrP, llS) office
+                      =  addBLModelForDataSet ("CCESP" <> show office) includePP
+                         (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                         DataSetAlpha centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               Binomial2 -> do
-                let eF (centerTFM, centerPFM, llS) office = addBL2ModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            alphaT thetaT alphaP thetaP llS
-                    cpsTF' centerTFM llS = addBL2ModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesTF' centerTFM llS = addBL2ModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesPF' (centerFM, llS) office =  addBL2ModelForDataSet ("CCESP" <> show office) includePP
-                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM alphaP thetaP llS
+                let eF (centerTFM, centerPFM, qrT, qrP, llS) office
+                      = addBL2ModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
+                        office centerTFM centerPFM qrT qrP (elexDSAlpha (votesFrom model) office)
+                        (acsRowTag, acsPSWgts, acsDMT, acsDMP) alphaT thetaT alphaP thetaP llS
+                    cpsTF' centerTFM qrT llS = addBL2ModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                               DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesTF' centerTFM qrT llS = addBL2ModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                                DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesPF' (centerPFM, qrP, llS) office
+                      =  addBL2ModelForDataSet ("CCESP" <> show office) includePP
+                         (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                         DataSetAlpha centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               Binomial3 -> do
-                let eF (centerTFM, centerPFM, llS) office = addBL3ModelsForElex stateGroup (votesFrom model) includePP (voteShareType model) (electionScale model)
-                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            alphaT thetaT alphaP thetaP llS
-                    cpsTF' centerTFM llS = addBL3ModelForDataSet "CPST" stateGroup includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesTF' centerTFM llS = addBL3ModelForDataSet "CCEST" stateGroup includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesPF' (centerFM, llS) office =  addBL3ModelForDataSet ("CCESP" <> show office) stateGroup includePP
-                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM alphaP thetaP llS
+                let eF (centerTFM, centerPFM, qrT, qrP, llS) office
+                      = addBL3ModelsForElex stateGroup (votesFrom model) includePP (voteShareType model) (electionScale model)
+                        office centerTFM centerPFM qrT qrP (elexDSAlpha (votesFrom model) office)
+                        (acsRowTag, acsPSWgts, acsDMT, acsDMP) alphaT thetaT alphaP thetaP llS
+                    cpsTF' centerTFM qrT llS
+                      = addBL3ModelForDataSet "CPST" stateGroup includePP (setupCPSData compInclude densityMatrixRowPart)
+                        DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesTF' centerTFM qrT llS
+                      = addBL3ModelForDataSet "CCEST" stateGroup includePP (setupCCESTData compInclude densityMatrixRowPart)
+                        DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesPF' (centerPFM, qrP, llS) office
+                      =  addBL3ModelForDataSet ("CCESP" <> show office) stateGroup includePP
+                         (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                         DataSetAlpha centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial -> do
                 let betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "7" :| [SB.scalar "1"])
                 betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal "<lower=200>" betaWidthPrior
                 betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal "<lower=200>" betaWidthPrior
-                let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            False alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
-                    cpsTF' centerTFM llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM False alphaT thetaT betaWidthT llS
-                    ccesTF' centerTFM llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM False alphaT thetaT betaWidthT llS
-                    ccesPF' (centerFM, llS) office =  addBBLModelForDataSet ("CCESP" <> show office) includePP
-                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM False alphaP thetaP betaWidthP llS
+                let eF (centerTFM, centerPFM, qrT, qrP, llS) office
+                      = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
+                        office centerTFM centerPFM qrT qrP (elexDSAlpha (votesFrom model) office)
+                        (acsRowTag, acsPSWgts, acsDMT, acsDMP)
+                        False alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
+                    cpsTF' centerTFM qrT llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                               DataSetAlpha centerTFM qrT False alphaT thetaT betaWidthT llS
+                    ccesTF' centerTFM qrT llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                                DataSetAlpha centerTFM qrT False alphaT thetaT betaWidthT llS
+                    ccesPF' (centerPFM, qrP, llS) office
+                      =  addBBLModelForDataSet ("CCESP" <> show office) includePP
+                         (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                         DataSetAlpha centerPFM qrP False alphaP thetaP betaWidthP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
-
               CountScaledBB -> do
                 let scalePrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar "4" :| [SB.scalar "1"])
                 scaleT <- SMP.addParameter "betaScaleT" SB.StanReal "<lower=1, upper=1000>" scalePrior
                 scaleP <- SMP.addParameter "betaScaleP" SB.StanReal "<lower=1, upper=1000>" scalePrior
-                let eF (centerTFM, centerPFM, llS) office = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                                                            office centerTFM centerPFM (elexDSAlpha (votesFrom model) office)
-                                                            (acsRowTag, acsPSWgts, acsDMT, acsDMP)
-                                                            True alphaT thetaT scaleT alphaP thetaP scaleP llS
-                    cpsTF' centerTFM llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                           DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesTF' centerTFM llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                            DataSetAlpha centerTFM alphaT thetaT llS
-                    ccesPF' (centerFM, llS) office =  addBLModelForDataSet ("CCESP" <> show office) includePP
-                                                      (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                                                      DataSetAlpha centerFM alphaP thetaP llS
+                let eF (centerTFM, centerPFM, qrT, qrP, llS) office
+                      = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
+                        office centerTFM centerPFM qrT qrP (elexDSAlpha (votesFrom model) office)
+                        (acsRowTag, acsPSWgts, acsDMT, acsDMP) True alphaT thetaT scaleT alphaP thetaP scaleP llS
+                    cpsTF' centerTFM qrT llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
+                                               DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesTF' centerTFM qrT llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
+                                                DataSetAlpha centerTFM qrT alphaT thetaT llS
+                    ccesPF' (centerPFM, qrP, llS) office
+                      =  addBLModelForDataSet ("CCESP" <> show office) includePP
+                         (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
+                         DataSetAlpha centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
 
-        let elexModels (centerTFM, centerPFM, llS, probsM) office = do
-              (centerTF, centerPF, llS', probT, probP) <- elexModelF (centerTFM, centerPFM, llS) office
+        let elexModels (centerTFM, centerPFM, qrT, qrP, llS, probsM) office = do
+              (centerTF, centerPF, qrT', qrP', llS', probT, probP) <- elexModelF (centerTFM, centerPFM, qrT, qrP, llS) office
               let probs' = case probsM of
                     Nothing -> Just (office, probT, probP)
                     Just (o, pT, pP) -> Just $ case o of
                                             ET.Senate -> (office, probT, probP)
                                             ET.President -> if office == ET.House then (office, probT, probP) else (o, pT, pP)
                                             ET.House -> (o, pT, pP)
-              return (Just centerTF, Just centerPF, llS', probs')
-            extract (cfM1, cfM2, x, pM) = do
+              return (Just centerTF, Just centerPF, qrT', qrP', llS', probs')
+            extract (cfM1, cfM2, qrT, qrP, x, pM) = do
               cf1 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for turnout centering function!" cfM1
               cf2 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for pref centering function!" cfM2
               (_, pT, pP) <- SB.stanBuildMaybe "elexModels fold returned a Nothing for ps probs!" pM
-              return (cf1, cf2, x, pT, pP)
-            elexFoldM = FL.FoldM elexModels (return (initialCenterFM, initialCenterFM, SB.emptyLLSet, Nothing)) extract
-        (centerTF, centerPF, llSet1, probTF, probPF) <- FL.foldM elexFoldM (votesFrom model)
-        (_, llSet2, _) <- ccesTF (Just centerTF) llSet1
-        (_, llSet3, _) <- cpsTF (Just centerTF) llSet2
+              return (cf1, cf2, qrT, qrP, x, pT, pP)
+            elexFoldM = FL.FoldM
+                        elexModels
+                        (return (initialCenterFM, initialCenterFM, initialQR, initialQR, SB.emptyLLSet, Nothing))
+                        extract
+        (centerTF, centerPF, qrT, qrP, llSet1, probTF, probPF) <- FL.foldM elexFoldM (votesFrom model)
+        (_, _, llSet2, _) <- ccesTF (Just centerTF) qrT llSet1
+        (_, _, llSet3, _) <- cpsTF (Just centerTF) qrT llSet2
 
-        let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
-        let ccesP (centerFM, llS) office = do
-              (centerF, llS, _) <- ccesPF (centerFM, llS) office
-              return (Just centerF, llS)
-            llFoldM = FL.FoldM ccesP (return (Just centerPF, llSet3)) return
-        (_, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
+        let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding
+                                        $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
+        let ccesP (centerFM, qrP, llS) office = do
+              (centerF, qrP', llS, _) <- ccesPF (centerFM, qrP, llS) office
+              return (Just centerF, qrP', llS)
+            llFoldM = FL.FoldM ccesP (return (Just centerPF, qrP, llSet3)) return
+        (_, _, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
 
         SB.generateLogLikelihood' $ llSet4 --SB.mergeLLSets llSetT llSetP
-{-
-        let  dmThetaE ci dmE thetaE = SB.vectorizedOne ci $ SB.function "dot_product" (dmE :| [thetaE])
-             probE ci aE dmE thetaE = SB.function "inv_logit" $ one $ aE `SB.plus` dmThetaE ci dmE thetaE
-             prob ci alpha dm theta =  probE ci (SB.var alpha) (SB.var dm) (SB.var theta)
-             probT dm = prob dmColIndexT alphaT dm thetaT
-             probP dm = prob dmColIndexP alphaP dm thetaP
--}
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "PSData"
         dmPS_T' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart DMTurnout)
         dmPS_P' <- DM.addDesignMatrix psData (designMatrixRowPS compInclude densityMatrixRowPart dmPrefType)
         dmPS_T <- centerTF SC.GQData dmPS_T' (Just "T")
         dmPS_P <- centerPF SC.GQData dmPS_P' (Just "P")
-        probT <- probTF dmPS_T
-        probP <- probPF dmPS_P
+        probT <- SB.useDataSetForBindings psData $ probTF dmPS_T
+        probP <- SB.useDataSetForBindings psData $ probPF dmPS_P
 
         let psTPrecompute dat  = SB.vectorizeExpr "pT" probT (SB.dataSetName dat)
             psTExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
