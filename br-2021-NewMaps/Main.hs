@@ -157,15 +157,16 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stan4"
+modelDir = "br-2021-NewMaps/stan5"
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
-               BRE.Binomial2
+               (BRE.BetaBinomial 10)
+               BRE.DSAlphaBeta
                BRE.HierarchicalBeta
-               500
+               1
 
 --emptyRel = [Path.reldir||]
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
@@ -789,7 +790,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       psInfoDM name = (mapGroup, name)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
 
-      modelDM :: BRE.Model -> Text -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR)))
+      modelDM :: BRE.Model k -> Text -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR)))
       modelDM model name =
         BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
   modeled_C <- modelDM modelVariant ("All_New_CD")
@@ -1139,7 +1140,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
 --      model = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
-      modelDM :: BRE.Model -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
+      modelDM :: BRE.Model k -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM model name x = do
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C x
