@@ -349,48 +349,35 @@ setupCCESPData include densRP dmPrefType incF office vst = do
 data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
 
 colIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
-colIndex m =  case m of
-  (SB.StanVar _ (SB.StanMatrix (_, SB.NamedDim ik))) -> return ik
-  (SB.StanVar x _) -> SB.stanBuildError $ "colIndex: " <> x <> " is not a matrix with named column index"
+colIndex = SB.namedMatrixColIndex
 
-ixM :: SB.StanName -> DataSetAlpha -> SB.StanBuilderM md gq (Maybe SB.StanVar)
-ixM varName ds = case ds of
-  NoDataSetAlpha -> return Nothing
-  DataSetAlpha -> Just <$> SMP.addParameter varName SB.StanReal "" (SB.UnVectorized $ SB.normal Nothing (SB.scalar "0.5"))
+dsAlphaBeta :: Text -> SB.IndexKey -> SB.StanExpr -> SB.StanExpr -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
+dsAlphaBeta dsName ik alphaPrior betaPrior = do
+    dsAlpha <- SMP.addParameter ("alpha_" <> dsName) SB.StanReal "" (SB.UnVectorized alphaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
+    dsBeta <- SMP.addParameter ("beta_" <> dsName) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) betaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
+    return (dsAlpha, dsBeta)
 
-dsAlphaBeta :: Text -> SB.IndexKey -> DataSetAlpha -> SB.StanBuilderM md gq (Maybe (SB.StanVar, SB.StanVar))
-dsAlphaBeta dsName ik ds = case ds of
-  NoDataSetAlpha -> return Nothing
-  DataSetAlpha -> do
-    dsAlpha <- SMP.addParameter ("alpha_" <> dsName) SB.StanReal "" (SB.UnVectorized $ SB.normal Nothing (SB.scalar "0.5"))
-    dsBeta <- SMP.addParameter ("beta_" <> dsName) (SB.StanVector $ SB.NamedDim ik)  "" (SB.Vectorized (one ik) $ SB.normal Nothing (SB.scalar "0.5"))
-    return $ Just (dsAlpha, dsBeta)
-
-dsAlphaGroup :: Text -> SB.GroupTypeTag k -> DataSetAlpha -> SB.StanBuilderM md gq (Maybe SB.StanVar)
-dsAlphaGroup dsName gtt ds = case ds of
-  NoDataSetAlpha -> return Nothing
-  DataSetAlpha -> do
+dsAlphaGroup :: Text -> SB.GroupTypeTag k -> SB.StanExpr -> SB.StanExpr -> SB.StanBuilderM md gq SB.StanVar
+dsAlphaGroup dsName gtt muPrior  sigmaPrior = do
     let normal x y = SB.normal (Just $ SB.scalar $ show x) (SB.scalar $ show y)
-    muDSAlphaP <- SMP.addParameter ("muAlpha_" <> dsName) SB.StanReal "" (SB.UnVectorized $ normal 0 0.5)
-    sigmaDSAlphaP <- SMP.addParameter ("sigmaAlpha_" <> dsName) SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
+    muDSAlphaP <- SMP.addParameter ("muAlpha_" <> dsName) SB.StanReal "" (SB.UnVectorized muPrior) -- $ normal 0 0.5)
+    sigmaDSAlphaP <- SMP.addParameter ("sigmaAlpha_" <> dsName) SB.StanReal "<lower=0>"  (SB.UnVectorized sigmaPrior) -- $ normal 0 0.4)
     dsAlphaNonCenterF <- SMP.scalarNonCenteredF muDSAlphaP sigmaDSAlphaP
-    Just <$> SMP.addHierarchicalScalar ("alpha_" <>  dsName) gtt (SMP.NonCentered dsAlphaNonCenterF) (normal 0 1)
+    SMP.addHierarchicalScalar ("alpha_" <>  dsName) gtt (SMP.NonCentered dsAlphaNonCenterF) (normal 0 1)
 
-dsSpecific :: Text -> DataSetSpecific k -> SB.IndexKey -> SB.StanBuilderM md gq (Maybe SB.StanVar, Maybe SB.StanVar)
-dsSpecific dsLabel dss ik =
-  case dss of
-    DSNone -> return (Nothing, Nothing)
-    DSAlpha -> do
-      dsAlpha <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized $ SB.normal Nothing (SB.scalar "0.5"))
+dsSpecific :: Text -> DSSpecificWithPriors k -> SB.IndexKey -> SB.StanBuilderM md gq (Maybe SB.StanVar, Maybe SB.StanVar)
+dsSpecific dsLabel dsp ik =
+  case dsp of
+    DSPNone -> return (Nothing, Nothing)
+    DSPAlpha ap -> do
+      dsAlpha <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
       return (Just dsAlpha, Nothing)
-    DSAlphaGroup gtt -> do
-      dsAlphaM <- dsAlphaGroup dsLabel gtt DataSetAlpha
-      return (dsAlphaM, Nothing)
-    DSAlphaBeta -> do
-      abM <- dsAlphaBeta dsLabel ik DataSetAlpha
-      case abM of
-        Just (a, b) -> return (Just a, Just b)
-        Nothing -> SB.stanBuildError "dsSpecific: dsAlphaBeta returned Nothing!"
+    DSPAlphaGroup gtt muPrior sigmaPrior -> do
+      dsAlpha <- dsAlphaGroup dsLabel gtt muPrior sigmaPrior
+      return (Just dsAlpha, Nothing)
+    DSPAlphaBeta alphaPrior betaPrior -> do
+      (a, b) <- dsAlphaBeta dsLabel ik alphaPrior betaPrior
+      return (Just a, Just b)
 
 centerIf :: (Typeable md, Typeable gq)
          => SB.StanVar -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
@@ -527,7 +514,7 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
                      -> Bool
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
-                     -> DataSetSpecific k
+                     -> DSSpecificWithPriors k
                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
                      -> SB.StanVar
@@ -543,7 +530,6 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr alpha bet
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   colIndexKey <- colIndex dm
   (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel dsSp colIndexKey
---  dsIxM <- ixM (addLabel "alpha") dataSetAlpha
   (dmC, centerF) <- centerIf dm centerM
   (dmQR, retQR) <- handleQR rtt qr dmC beta
   muF <- indexedMuE3 dmQR
@@ -560,7 +546,7 @@ addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       => Text
                       -> Bool
                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
-                      -> DataSetSpecific k
+                      -> DSSpecificWithPriors k
                       -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                       -> QR
                       -> Bool
@@ -602,11 +588,11 @@ officeText office = case office of
   ET.Senate -> "Se"
   ET.House -> "Ho"
 
-elexDSSp :: Set ET.OfficeT -> ET.OfficeT -> DataSetSpecific k -> DataSetSpecific k
+elexDSSp :: Set ET.OfficeT -> ET.OfficeT -> DSSpecificWithPriors k -> DSSpecificWithPriors k
 elexDSSp offices o dsSp
-  | ET.House `Set.member` offices = if o == ET.House then DSNone else dsSp
-  | ET.President `Set.member` offices = if o == ET.President then DSNone else dsSp
-  | otherwise = DSNone
+  | ET.House `Set.member` offices = if o == ET.House then DSPNone else dsSp
+  | ET.President `Set.member` offices = if o == ET.President then DSPNone else dsSp
+  | otherwise = DSPNone
 
 type ElectionC rs = (F.ElemOf rs PUMS.Citizens
                    , F.ElemOf rs TVotes
@@ -700,7 +686,8 @@ addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable 
                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                     -> QR
                     -> QR
-                    -> DataSetSpecific k
+                    -> DSSpecificWithPriors k
+                    -> DSSpecificWithPriors k
                     -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrixes (turnout, share)
                     -> SB.StanVar
                     -> SB.StanVar
@@ -715,15 +702,15 @@ addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable 
                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                              )
-addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
+addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
       dsLabel = "Elex_" <> officeText office
   let addLabel x = x <> "_" <> dsLabel
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
   colTIndexKey <- colIndex dmPST
   colPIndexKey <- colIndex dmPSP
-  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) dsSp colTIndexKey
-  (dsPAlphaM, dsPBetaM) <- dsSpecific ("P_" <> dsLabel) dsSp colPIndexKey
+  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) dsSpT colTIndexKey
+  (dsPAlphaM, dsPBetaM) <- dsSpecific ("P_" <> dsLabel) dsSpP colPIndexKey
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerPM
@@ -748,16 +735,16 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsS
       probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
   return (centerTF, centerPF, retQRT, retQRP, llSet', probT, probP)
 
-addBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
+addBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
   case office of
     ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                    centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP)
+                    centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                     alphaT betaT alphaP betaP llSet
     ET.Senate -> addBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP)
+                 centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                  alphaT betaT alphaP betaP llSet
     ET.House -> addBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP)
+                centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                 alphaT betaT alphaP betaP llSet
 
 addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
@@ -769,7 +756,8 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
                      -> QR
-                     -> DataSetSpecific k
+                     -> DSSpecificWithPriors k
+                     -> DSSpecificWithPriors k
                      -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, SB.StanVar) -- ps data-set, wgt var, design-matrixes (turnout, share)
                      -> Bool
                      -> SB.StanVar
@@ -787,15 +775,15 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
-addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
+addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
   let office = officeFromElectionRow officeRow
       dsLabel = "Elex_" <> officeText office
       addLabel x = x <> "_" <> dsLabel
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
   colIndexT <- colIndex dmPST
   colIndexP <- colIndex dmPSP
-  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) dsSp colIndexT
-  (dsPAlphaM, dsPBetaM) <- dsSpecific ("P_" <> dsLabel) dsSp colIndexP
+  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) dsSpT colIndexT
+  (dsPAlphaM, dsPBetaM) <- dsSpecific ("P_" <> dsLabel) dsSpP colIndexP
   (dmTC, centerTF) <- centerIf dmPST centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
   (dmPC, centerPF) <- centerIf dmPSP centerPM
@@ -827,17 +815,15 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP ds
       probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
   return (centerTF, centerPF, retQRT, retQRP, llSet', probT, probP)
 
-addBBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSp (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet =
-  let dsSp' = elexDSSp offices office dsSp
-  in case office of
+addBBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
        ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                       centerTM centerPM qrT qrP dsSp' (rttPS, wgtsV, dmPST, dmPSP)
+                       centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                        countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
        ET.Senate -> addBBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                    centerTM centerPM qrP qrT dsSp' (rttPS, wgtsV, dmPST, dmPSP)
+                    centerTM centerPM qrP qrT dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                     countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
        ET.House -> addBBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                   centerTM centerPM qrP qrT dsSp' (rttPS, wgtsV, dmPST, dmPSP)
+                   centerTM centerPM qrP qrT dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                    countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
 
 type ModelKeyC ks = (V.ReifyConstraint Show F.ElField ks
@@ -963,22 +949,42 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
               SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
             SingleBeta -> pure muThetaP
-
+        (dssWPT, dssWPP) <- case dataSetSpecific model of
+          DSNone -> return (DSPNone, DSPNone)
+          DSAlpha -> let x = DSPAlpha (normal 0 0.5) in return (x, x)
+          DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
+          DSAlphaBeta -> SB.useDataSetForBindings elexData $ do
+            SB.addDeclBinding' dmColIndexT dmColExprT
+            SB.addDeclBinding' dmColIndexP dmColExprP
+--            SB.addUseBinding' dmColIndexT dmColExprT
+            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            sigmaBetaTDS <- SMP.addParameter "sigmaThetaT_DS" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
+            let wpt = DSPAlphaBeta (SB.normal Nothing $ SB.var sigmaAlphaTDS) (SB.normal Nothing $ SB.var sigmaBetaTDS)
+            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            sigmaBetaPDS <- SMP.addParameter "sigmaThetaP_DS" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
+            let wpp = DSPAlphaBeta (SB.normal Nothing $ SB.var sigmaAlphaPDS) (SB.normal Nothing $ SB.var sigmaBetaPDS)
+            return (wpt, wpp)
+{-
+          DSAlphaBeta -> do
+            let ap = normal 0 0.5
+                bp = normal 0 0.5
+            return $ (DSPAlphaBeta ap bp, DSPAlphaBeta ap bp)
+-}
         (acsRowTag, acsPSWgts, acsDMT, acsDMP) <- setupACSPSRows compInclude densityMatrixRowPart dmPrefType (const 0) -- incF but for which office?
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
               Binomial -> do
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                        office centerTFM centerPFM qrT qrP (elexDSSp (votesFrom model) office (dataSetSpecific model))
+                        office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))
                         (acsRowTag, acsPSWgts, acsDMT, acsDMP) alphaT thetaT alphaP thetaP llS
                     cpsTF' centerTFM qrT llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                               (dataSetSpecific model) centerTFM qrT alphaT thetaT llS
+                                               dssWPT centerTFM qrT alphaT thetaT llS
                     ccesTF' centerTFM qrT llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                                (dataSetSpecific model) centerTFM qrT alphaT thetaT llS
+                                                dssWPT centerTFM qrT alphaT thetaT llS
                     ccesPF' (centerPFM, qrP, llS) office
                       =  addBLModelForDataSet ("CCESP" <> show office) includePP
                          (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                         (dataSetSpecific model) centerPFM qrP alphaP thetaP llS
+                         dssWPP centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial n -> do
                 let lnPriorMu = 2 * (round $ Numeric.log $ realToFrac n)
@@ -987,17 +993,17 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal ("<lower=" <> show n <> ">") betaWidthPrior
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                        office centerTFM centerPFM qrT qrP (elexDSSp (votesFrom model) office (dataSetSpecific model))
+                        office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))
                         (acsRowTag, acsPSWgts, acsDMT, acsDMP)
                         False alphaT thetaT betaWidthT alphaP thetaP betaWidthP llS
                     cpsTF' centerTFM qrT llS = addBBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                               (dataSetSpecific model) centerTFM qrT False alphaT thetaT betaWidthT llS
+                                               dssWPT centerTFM qrT False alphaT thetaT betaWidthT llS
                     ccesTF' centerTFM qrT llS = addBBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                                (dataSetSpecific model) centerTFM qrT False alphaT thetaT betaWidthT llS
+                                                dssWPT centerTFM qrT False alphaT thetaT betaWidthT llS
                     ccesPF' (centerPFM, qrP, llS) office
                       =  addBBLModelForDataSet ("CCESP" <> show office) includePP
                          (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                         (dataSetSpecific model) centerPFM qrP False alphaP thetaP betaWidthP llS
+                         dssWPP centerPFM qrP False alphaP thetaP betaWidthP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               CountScaledBB n -> do
                 let lnPriorMu = (round $ Numeric.log $ realToFrac n) `div` 2
@@ -1006,16 +1012,16 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 scaleP <- SMP.addParameter "betaScaleP" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
-                        office centerTFM centerPFM qrT qrP (elexDSSp (votesFrom model) office (dataSetSpecific model))
+                        office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))
                         (acsRowTag, acsPSWgts, acsDMT, acsDMP) True alphaT thetaT scaleT alphaP thetaP scaleP llS
                     cpsTF' centerTFM qrT llS = addBLModelForDataSet "CPST" includePP (setupCPSData compInclude densityMatrixRowPart)
-                                               (dataSetSpecific model) centerTFM qrT alphaT thetaT llS
+                                               dssWPT centerTFM qrT alphaT thetaT llS
                     ccesTF' centerTFM qrT llS = addBLModelForDataSet "CCEST" includePP (setupCCESTData compInclude densityMatrixRowPart)
-                                                (dataSetSpecific model) centerTFM qrT alphaT thetaT llS
+                                                dssWPT centerTFM qrT alphaT thetaT llS
                     ccesPF' (centerPFM, qrP, llS) office
                       =  addBLModelForDataSet ("CCESP" <> show office) includePP
                          (setupCCESPData compInclude densityMatrixRowPart dmPrefType incF office (voteShareType model))
-                         (dataSetSpecific model) centerPFM qrP alphaP thetaP llS
+                         dssWPP centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
 
         let elexModels (centerTFM, centerPFM, qrT, qrP, llS, probsM) office = do
@@ -1215,7 +1221,6 @@ printBetaType HierarchicalBeta = "Hab"
 printBetaType SingleBeta = "Ha"
 
 data Distribution = Binomial | BetaBinomial Int | CountScaledBB Int deriving (Show)
-
 printDistribution :: Distribution -> Text
 printDistribution Binomial = "Binomial"
 printDistribution (BetaBinomial n) = "BetaBinomial" <> show n
@@ -1228,6 +1233,11 @@ printDataSetSpecific DSNone = "DSn"
 printDataSetSpecific DSAlpha = "DSa"
 printDataSetSpecific (DSAlphaGroup gtt) = "DSa" <> (SB.taggedGroupName gtt)
 printDataSetSpecific DSAlphaBeta = "DSab"
+
+data DSSpecificWithPriors k = DSPNone
+                            | DSPAlpha SB.StanExpr
+                            | DSPAlphaGroup (SB.GroupTypeTag k) SB.StanExpr SB.StanExpr
+                            | DSPAlphaBeta SB.StanExpr SB.StanExpr
 
 
 printVotesFrom :: Set ET.OfficeT -> Text

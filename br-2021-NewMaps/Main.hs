@@ -157,12 +157,12 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stan5"
+modelDir = "br-2021-NewMaps/stan6"
 modelVariant = BRE.Model
                ET.TwoPartyShare
-               (Set.fromList [ET.President, ET.Senate, ET.House])
+               (Set.fromList [ET.President]) --, ET.Senate, ET.House])
                (BRE.BinDensity 10 5)
-               (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
+               (Set.fromList [BRE.DMDensity, BRE.DMSex]) --, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
                (BRE.BetaBinomial 10)
                BRE.DSAlphaBeta
                BRE.HierarchicalBeta
