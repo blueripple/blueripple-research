@@ -164,7 +164,7 @@ modelVariant = BRE.Model
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
                (BRE.BetaBinomial 10)
-               BRE.DSAlphaBetaHNC
+               (BRE.DSAlphaBetaNH $ Just ET.House)
                BRE.HierarchicalBeta
                1
 
