@@ -378,6 +378,13 @@ dsSpecific dsLabel dsp ik oM =
     DSPAlphaHNC alphaF -> do
       dsAlpha <- alphaF dsLabel
       return (Just dsAlpha, Nothing)
+    DSPAlphaHCBetaNH oM' ap bp -> do
+      a <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
+      if fromMaybe True ((/=) <$> oM <*> oM')
+        then do
+        b <- SMP.addParameter ("theta_" <> dsLabel) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) bp)
+        return (Just a, Just b)
+        else return (Just a, Nothing)
     DSPAlphaGroup gtt muPrior sigmaPrior -> do
       dsAlpha <- dsAlphaGroup dsLabel gtt muPrior sigmaPrior
       return (Just dsAlpha, Nothing)
@@ -962,6 +969,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             let dssT = DSPAlphaHNC $ alphaF sigmaAlphaTDS
                 dssP = DSPAlphaHNC $ alphaF sigmaAlphaPDS
             return (dssT, dssP)
+          DSAlphaHCBetaNH oM -> do
+            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            let bp = normal 0 0.5
+                dssT = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaTDS) bp
+                dssP = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaPDS) bp
+            return (dssT, dssP)
           DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
           DSAlphaBetaNH oM -> do
             let ap = normal 0 0.5
@@ -1263,7 +1277,9 @@ printDistribution Binomial = "Binomial"
 printDistribution (BetaBinomial n) = "BetaBinomial" <> show n
 printDistribution (CountScaledBB n) = "CountScaledBB" <> show n
 
-data DataSetSpecific k = DSNone | DSAlpha | DSAlphaHC | DSAlphaHNC | DSAlphaGroup (SB.GroupTypeTag k)
+data DataSetSpecific k = DSNone | DSAlpha | DSAlphaHC | DSAlphaHNC
+                       | DSAlphaHCBetaNH (Maybe ET.OfficeT)
+                       | DSAlphaGroup (SB.GroupTypeTag k)
                        | DSAlphaBetaNH (Maybe ET.OfficeT) | DSAlphaBetaHC | DSAlphaBetaHNC
 
 printDataSetSpecific :: DataSetSpecific k -> Text
@@ -1271,6 +1287,7 @@ printDataSetSpecific DSNone = "DSn"
 printDataSetSpecific DSAlpha = "DSa"
 printDataSetSpecific DSAlphaHC = "DSaHC"
 printDataSetSpecific DSAlphaHNC = "DSaHNC"
+printDataSetSpecific (DSAlphaHCBetaNH oM) = "DSaHCbNH" <> maybe "" officeText oM
 printDataSetSpecific (DSAlphaGroup gtt) = "DSa" <> (SB.taggedGroupName gtt)
 printDataSetSpecific (DSAlphaBetaNH oM) = "DSabNH" <> maybe "" officeText oM
 printDataSetSpecific DSAlphaBetaHC = "DSabHC"
@@ -1280,6 +1297,7 @@ data DSSpecificWithPriors k md gq  = DSPNone
                                    | DSPAlpha SB.StanExpr
                                    | DSPAlphaHC SB.StanExpr
                                    | DSPAlphaHNC (Text -> SB.StanBuilderM md gq SB.StanVar)
+                                   | DSPAlphaHCBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
                                    | DSPAlphaGroup (SB.GroupTypeTag k) SB.StanExpr SB.StanExpr
                                    | DSPAlphaBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
                                    | DSPAlphaBetaHC SB.StanExpr SB.StanExpr
