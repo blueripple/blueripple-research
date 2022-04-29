@@ -163,14 +163,14 @@ censusTablesForExistingCDs = censusTablesByDistrict fileByYear "existingCDs" whe
   fileByYear = [ (BRC.TY2012, censusDataDir <> "/cd113Raw.csv")
                , (BRC.TY2014, censusDataDir <> "/cd114Raw.csv")
                , (BRC.TY2016, censusDataDir <> "/cd115Raw.csv")
-               , (BRC.TY2018, censusDataDir <> "/cd116Raw.csv")
+               , (BRC.TY2020, censusDataDir <> "/cd116Raw.csv")
                ]
 
 censusTablesForDRACDs  :: (K.KnitEffects r
                           , BR.CacheEffects r)
                        => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesForDRACDs = censusTablesByDistrict fileByYear "DRA_CDs" where
-  fileByYear = [ (BRC.TY2018, censusDataDir <> "/NC_DRA.csv")]
+  fileByYear = [ (BRC.TY2020, censusDataDir <> "/NC_DRA.csv")]
 
 noMaps = Set.fromList ["FL","LA","MO","NH","OH"]
 
@@ -184,9 +184,10 @@ censusTablesForProposedCDs = do
                                  && not (F.rgetField @BR.OneDistrict r)
                                  && not (F.rgetField @BR.StateAbbreviation r `Set.member` noMaps)
                                ) stateInfo
-      fileByYear = fmap (\sa -> (BRC.TY2018, censusDataDir <> "/cd117_" <> sa <> ".csv")) states
+      fileByYear = fmap (\sa -> (BRC.TY2020, censusDataDir <> "/cd117_" <> sa <> ".csv")) states
   censusTablesByDistrict fileByYear "proposedCDs"
 
+{-
 censusTablesForSLDs ::  (K.KnitEffects r
                         , BR.CacheEffects r)
                     => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
@@ -200,7 +201,7 @@ censusTablesForSLDs = censusTablesByDistrict fileByYear "existingSLDs" where
                , (BRC.TY2018, censusDataDir <> "/nv_2020_sldl.csv")
                , (BRC.TY2018, censusDataDir <> "/oh_2020_sldl.csv")
                ]
-
+-}
 censusTablesFor2022SLDs ::  (K.KnitEffects r
                         , BR.CacheEffects r)
                     => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
@@ -211,7 +212,7 @@ censusTablesFor2022SLDs = do
                                          && not (F.rgetField @BR.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
                                   ) stateInfo
       fileByYear = concat
-                   $ fmap (\(sa, uo) -> [(BRC.TY2018, censusDataDir <> "/" <> sa <> "_2022_sldu.csv")] ++
+                   $ fmap (\(sa, uo) -> [(BRC.TY2020, censusDataDir <> "/" <> sa <> "_2022_sldu.csv")] ++
                                         if uo then [] else [(BRC.TY2018, censusDataDir <> "/" <> sa <> "_2022_sldl.csv")]) statesAnd
   censusTablesByDistrict fileByYear "SLDs_2022"
 
