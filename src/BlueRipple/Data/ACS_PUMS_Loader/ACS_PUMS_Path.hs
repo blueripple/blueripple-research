@@ -26,7 +26,7 @@ pumsACS1YrRowGen = (F.rowGen pumsACS1YrCSV) { F.tablePrefix = "PUMS"
 
 
 pumsACS1YrCSV' :: FilePath
-pumsACS1YrCSV' = toString $ dataDir <> "/acsByPUMA_2010To2019.csv"
+pumsACS1YrCSV' = toString $ dataDir <> "/acsByPUMA_2010To2020.csv"
 
 
 {-

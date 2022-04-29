@@ -672,10 +672,8 @@ cachedPumsByCD :: forall r.(K.KnitEffects r, BR.CacheEffects r)
                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMSByCDR))
 cachedPumsByCD pums_C cdFromPUMA_C = do
   let pumsByCDDeps = (,) <$> pums_C <*> cdFromPUMA_C
-  fmap (fmap copy2019to2020)
-    $ BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
+  BR.retrieveOrMakeFrame "model/house/pumsByCD.bin" pumsByCDDeps
     $ \(pums, cdFromPUMA) -> pumsByCD pums cdFromPUMA
-
 
 pumsByState :: F.FrameRec PUMS.PUMS -> F.FrameRec PUMSByStateR
 pumsByState pums = F.rcast <$> FL.fold (PUMS.pumsStateRollupF (pumsReKey . F.rcast)) filteredPums
@@ -699,8 +697,7 @@ cachedPumsByState pums_C = do
                   $ const
                   $ BRK.addDefaultRec @CensusPredictorR zeroCount
                  )
-  fmap (fmap copy2019to2020)
-    $ BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
+  BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
     $ pure . FL.fold addZeroF . pumsByState
 
 {-
