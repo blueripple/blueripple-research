@@ -1,7 +1,10 @@
 # New Maps, New Dem Strategy: Our NC Analysis
 
-**Updates 3/4/2022:** This post has been updated to reflect the [new NC maps][NCRuling] as well
-as using a slightly newer version of our model.
+**Updates 3/4/2022:** This post has been updated to reflect the [new NC maps][NCRuling].
+
+**Updates 5/6/2022:** We’ve finalized our 2022 model and updated our
+demographic data with the 2020 American Community Survey. We’ve
+updated the numbers in this post accordingly.
 
 [NCRuling]: https://www.nytimes.com/2022/02/23/us/politics/north-carolina-maps-democrats.html
 
@@ -18,9 +21,6 @@ makeup in terms of race, sex, education, and population density.
 We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
-
-Update: As promised in our original post, as we improve the model[^modelChanges], we’ll update
-these recommendations.
 
 In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
 
@@ -58,20 +58,3 @@ estimates of Democratic candidate votes, Republican candidate votes and votes
 for other candidates.  We’ve taken those numbers and computed 2-party vote share
 for the Democratic candidate, that is, D Votes/(D Votes + R Votes). That makes it
 comparable with the Demographic model which also produces 2-party vote share.
-
-[^modelChanges]: Our initial model was a relatively simple Bayesian Monte-Carlo
-estimation of binomial models for turnout and party preference in each of our
-demographic categories. In particular, we did *not* use the state-specific information
-in the data to inform the predictions in a particular state, instead pooling all
-the data for fitting.
-In the new version, we are using partial-pooling at the state level, allowing the
-fitting procedure itself to decide how much to allow the state-level probabilities
-to vary from the nationwide ones. We’ve switched from using a binomial model to
-a beta-binomial, which we think is a better match for the data.
-We’ve also introduced some ability for the distributions of coefficients to have
-correlation structure, meaning that, for example, if within the data it was more likely
-that in states with higher-than-average turnout of white voters there was also
-higher-than-average turnout of Hispanic voters, the fit adjusts accordingly.
-In addition we’ve replaced our use of the log of the population density with 10 quantiles
-of population density. This is very similar but tames some odd results for extremely sparse
-or dense districts, something we see more often at the State Legislative level.

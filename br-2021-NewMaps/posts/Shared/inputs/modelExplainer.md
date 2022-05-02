@@ -4,16 +4,24 @@ check out the links at the end of this section,
 visit our Github page, or contact us directly.
 
 Our model is demographic.
-We use turnout data from the [CPS][CPS] voter supplement,
-voting and turnout data from the [CES][CES] survey broken down by education,
-sex, and race, pair it with population density and state to
-estimate expected turnout and voter preference for various types of
-people in each state. These surveys are
-augmented by requiring the various parameters to closely reproduce the
-actual election for President, Senate (if there was a Senate race in
-that state), and House (for all districts where the race was contested).[^augment]
+We use turnout data from the 2020 [CPS][CPS] voter supplement
+(a self-reported survey);
+voting and turnout data from the 2020 [CES][CES] (a validated survey);
+and election result data from the 2020 presidential,
+senate and house elections. The survey data from the CPS and CES is
+broken down by several demographic categories, including
+sex, education and race/ethnicity.
 
-Then we look at the demographics of a particular district
+The election results are trickier to use in the model
+since we don’t have demographic information paired with
+with turnout or vote choice. What we do know is the overall
+demographics of the state or house district.
+So we use the election-data to assign a likelihood to
+the *post-stratification* of our parameters across the demographics
+of the relevant region (from the micro-data [ACS][ACS]).
+
+Then we look at the demographics of a particular house or
+state-legislative district
 (using tract-level census data from the [ACS][ACS]), breaking it down into
 the same categories and then apply our model of turnout and voter preference
 to estimate the 2-party vote share we expect for a Democratic candidate.
@@ -29,9 +37,9 @@ the same people will vote the same way in subsequent elections,
 regardless of where the district lines lie. So why did we build a
 demographic model? Three reasons:
 
-1.	We’re interested in places where the history may be misleading, either because of the specific story
-in a district or because changing politics or demographics may have altered the balance of likely voters
-but one or both parties are not seeing the threat or new opportunity.[^empowerment]
+1.	We’re interested in places where the history may be misleading,
+either because of the specific story in a district or because changing
+politics or demographics may have altered the balance of likely voters.[^empowerment]
 
 2.	Our demographic analysis is potentially more useful when the districts are new,
 since voting history may be less “sticky” there. For example, if I’m a Dem-leaning voter
@@ -39,9 +47,9 @@ in a strong-D district, I might not have bothered voting much in the past becaus
 figured my vote didn’t matter. But if I now live in a district that’s more competitive
 in the new map, I might be much more likely to turn out.
 
-3.	We’re fundamentally interested not so much in predicting what will happen in each district,
-but what plausibly could happen in each district if Dems applied resources in the right way, or
-fail to when the Republicans do.
+3.	We’re not as interested in predicting what will happen in each district,
+but what plausibly could happen in each district if Dems applied resources in the
+right way, or fail to when the Republicans do.
 The historical model is backward-looking, whereas our demographic model is forward-looking
 making them complementary when it comes to strategic thinking.
 

@@ -1,7 +1,9 @@
 # New Congressional Maps, New Dem Strategy: Our TX Analysis
 
-**Updates 3/18/2022:** We’ve refined our model some, and this has shifted the numbers
-in Texas enough that we’ve updated this post.
+**Updates 5/6/2022:** We’ve finalized our 2022 model and updated our
+demographic data with the 2020 American Community Survey.
+This has shifted our modeled numbers
+in Texas a bit, so we’ve updated this post.
 
 Like all states, Texas is locking down new district maps, which affect
 Democrat’s odds in 2022 Congressional races. In this reshaped landscape,

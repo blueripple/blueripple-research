@@ -16,7 +16,7 @@ And, since this is a redistricting year,
 we want something that we can apply to newly drawn
 districts as well as existing ones.
 
-When we say “predict” above we don’t mean in the sense
+By “predict,” we don’t mean in the sense
 of actually trying to handicap the outcome. Instead we intend
 to estimate the outcome based only on geographic and demographic variables.
 So we ignore things like current national sentiment toward either
@@ -44,7 +44,7 @@ We could work bottom-up, using voting precincts as building blocks:
 1. Get the geographic boundary and election results for each precinct,
 e.g., from [openprecincts](https://openprecincts.org).
 2. Build a demographic profile of the precinct using overlaps[^arealInterpolation]
-of the precinct and census “blocks” or “block groups”[^censusGeographies].
+of the precinct and census “blocks,” “block groups” or “tracts”[^censusGeographies].
 3. Use the total number of votes and votes cast for the Democratic candidate
 in each precinct to *infer* a demographic and geographic model of turnout and voter preference in the
 entire set of precincts.
@@ -73,7 +73,8 @@ Cooperative Election Survey
 formerly the CCES) and a national survey
 of voter preference, like the CES, to build demographically stratified turnout
 and preference data at the state or congressional-district (CD) level.
-We add federal election result data at the Congressional-district and state-wide level.
+We also add federal election result data at the Congressional-district and state-wide
+(President and Senate) level.
 2. Use that data to *infer* a demographic model of turnout and voter preference,
 with state-level effects.
 3. Apply[^postStratify] that model to the demographics of a given district to generate
@@ -91,11 +92,11 @@ Some important categories:
 
 And quantities:
 
- Name   Description
+ Name     Description
 --------  ------------------------------------------------------------------------
  $N$      Citizen Voting Age Population (CVAP)
- $V$      Number of votes cast (for either Democrat or Republican)
- $t$      Turnout ($t=\textrm{Pr{Voting age citizen votes in the election}}=V/N$)
+ $V$      Number of votes cast (for either a Democrat or Republican)
+ $t$      Turnout probability ($t=\textrm{Pr{Voting age citizen votes in the election}}=V/N$)
  $D$      Number of votes cast for the Democratic candidate
  $p$      Democratic voter preference ($p=\textrm{Pr{Votes for the Democrat|Voted}}=D/V$)
  $\rho$   Population Density
@@ -108,7 +109,7 @@ A couple of things are worth pointing out here:
   Democrat). This is simpler and almost always what we care most about.
 
 - We model *voter* preference not voting-age-citizen preference. We are interested in election outcomes
-  and those are driven by voters.  But there are certainly interesting questions to address about
+  and those are created by voters.  But there are certainly interesting questions to address about
   whether voters and non-voting adult citizens have the same candidate preferences.
 
 - We will indicate the subset of each quantity in each demographic group via subscript,
@@ -116,7 +117,7 @@ A couple of things are worth pointing out here:
 
 - The capitalized quantities can be summed directly over demographic groupings.
   E.g., $N(g)=\sum_k N_k(g)$, $V(g)=\sum_k V_k(g)$, $D(g)=\sum_k D_k(g)$
-  The lowercase quantities are probabilities so they aggregate differently.
+  The lowercase quantities are probabilities, so they aggregate differently.
 
     - $$t(l) = V(l)/N(l) = \sum_k N_k(l) t_k(l) / N(l) = \frac{\sum_k N_k(l) t_k(l)}{\sum_k N_k(l)}$$
 
@@ -148,7 +149,7 @@ so we can better understand them–how does race affect voter preference in Texa
 and look for anomalies, districts where the modeled expectation and the historical
 election results are very different. Such mismatches might indicate issues in the model,
 but they might also be indications of interesting political stories, and places to
-look for flippable or vulnerable districts. We use $u$ for the modeled $t$ and $q$
+look for flippable or vulnerable districts. We use $u$ for the modeled $t$, and $q$
 for the modeled $p$.
 
 Modeled Quantities
@@ -169,9 +170,9 @@ It might seem like population density should simply be part of what varies with 
 location, $l$.  In our particular setup, we use population density data at a level more
 granular than our modeled set of locations. Most of our data is state-level. And what data
 we have at the congressional district level (CES survey and federal house elections)
-is for the districts which pertained from the 2012-2020 elections.  Many of those
+is for the districts which existed from the 2012-2020 elections.  Many of those
 districts have now changed. And we are interested in state-legislative districts as well.
-So we use states as locations rather than congressional districts.
+So we use states as modeling locations rather than congressional districts.
 But, like demographic variations, population density is known
 to be strongly predictive of voter preference–people in cities are much more likely to
 vote for Democrats than people in suburbs or rural areas and this effect persists
@@ -204,10 +205,10 @@ We plan to apply these techniques at some point to add age into the model.
 ## Basic Model Structure
 
 In order to use our data to estimate turnout probability and voter preference, we
-need a model of how survey or election results depend on those quantities. In fact,
-even asserting that what we need to estimate is only those two probabilities
-and not also, e.g., some dispersion in those quantities, implies a particular model.
-We are assuming that for each person of type $k$ in location $l$ with
+need a model of how survey or election results depend on those quantities. The
+standard choices for turnout and voter preference models is
+[Bernoulli][WPBernoulli]/[Binomial][WPBinomial]–which assumes that
+for each person of type $k$ in location $l$ with
 population density $\rho$, the choice to vote is like a coin flip where the odds of
 that coin coming up "voted" is $u_k(l;\rho)$ and coming up "didn't vote" is
 $1-u_k(l;\rho)$.  Similarly, for any voter of type  $k$ in location $l$ with
@@ -217,14 +218,28 @@ separately, these would be [Bernoulli][WPBernoulli] trials and when we take
 groups of Bernoulli trials with the same probability of success, we get a
 [Binomial][WPBinomial] distribution.
 
+The Bernoulli/Binomial is a reasonable fit
+for each data-set alone, but had insufficient dispersion,
+even allowing for various offsets in the parameters, to
+account for the different data sources all in one model.
+The [Beta-Binomial][WPBetaBinomial],
+on the other hand, allows a reasonable fit to all the data.  The cost
+of using this slightly more complex model, is the introduction of
+a parameter (one each for turnout and vote choice) which reflects
+the dispersion in the observed probabilities.
+
 [WPBernoulli]: https://en.wikipedia.org/wiki/Bernoulli_distribution
 [WPBinomial]: https://en.wikipedia.org/wiki/Binomial_distribution
+[WPBetaBinomial]: https://en.wikipedia.org/wiki/Beta-binomial_distribution
 
-Specifically, given $u_k(l;\rho)$ and $q_k(l;\rho)$ we assume that the
+Specifically, given $u_k(l;\rho)$ and $q_k(l;\rho)$, we assume that the
 probability of observing $n$ voters in a group of $N$ voting-age citizens
-of type $k$ in location $l$ with density $\rho$ is $B\big(n|N,u_k(l;\rho)\big)$
+of type $k$ in location $l$ with density $\rho$ is
+$BB\big(n|N,u_k(l;\rho)\phi_T,(1-u_k(l;\rho))\phi_T\big)$
 and the probability of observing $d$ votes for the democratic candidate among
-$V$ voters of type $k$ in location $l$ with density $\rho$ is $B\big(d|V,q_k(l;\rho)\big)$.
+$V$ voters of type $k$ in location $l$ with density $\rho$ is
+$BB\big(d|V,q_k(l;\rho)\phi_P,(1-q_k(l;\rho))\phi_P\big)$, where the
+$\phi$’s parameterize the dispersion in probabilities.
 
 We need to parameterize $u$ and $q$ in terms of our observed demographic
 variables. We use the [logit][WPlogit] function to map an unbounded
@@ -250,28 +265,12 @@ an element representing incumbency information for the relevant election:
 a $1$ for a Democratic incumbent, $0$ for no-incumbent and $-1$ for a Republican
 incumbent.
 
-# Meta-analysis details
-Since we are using multiple surveys and the election data–a sort of
-meta-analysis–we need to account for the possibility of systematic
-differences between these sources of data.
-Our (admittedly simplistic) approach to this is to add a single extra parameter
-per data-set for each of $u$ and $q$ for each of the non-election sources and for
-each election source other than house elections.
-This allows each to have a different
-overall level of turnout or voter preference while requiring the location and demographic
-variation to be the same.
-
-We are, in some sense, treating
-house elections as “neutral” and allowing all other data-sets to vary. We chose
-this since we intend to apply the model to house elections and that simplifies
-post-stratification.
-
 # Hierarchical Model
 Rather than estimating $u_k(l;\rho)$ and $q_k(l;\rho)$ directly in each state from data in
 only that state, we use a [multi-level model][WPmultilevel], allowing partial-pooling of the national
 data to inform the estimates in each state.  This introduces more parameters to the model
 but allows for a more robust and informative fit. In our case, we model the $\alpha$, $\gamma$,
-$vec{beta}$ and $\vec{theta}$ hierarchically.  There various ways to parameterize this and we
+$\vec{\beta}$ and $\vec{\theta}$ hierarchically.  There various ways to parameterize this and we
 choose a [non-centered][BANonCentered] parameterization since we expect
 our “contexts” (the various states), to be relatively similar which might lead to problems
 fitting using a centered paramterization.
@@ -294,6 +293,33 @@ large, then the state-level data is mostly informing the fit. We fit those param
 along with everything else. $\textbf{C}$ is a correlation matrix, fit to the correlation
 among the density and demographic parameters in the data.
 
+# Meta-analysis details
+Since we are using multiple surveys and the election data–a sort of
+meta-analysis–we need to account for the possibility of systematic
+differences between these sources of data.
+Our approach to this is to add a hierarchical (logistic) $\alpha$
+centered at 0 and varying among the data-sets, as well as a non-hierarchical
+data-set-specific offsets for each demographic category $\vec{\beta}$ in each
+data-set except the house election results[^dataSetBeta].
+
+[^dataSetBeta]: There are two things to explain here. Why isn’t the data-set
+$\beta$ also hierarchical? And why not have a $\vec{\beta}$ offset for all data-sets?
+We tried a hierarchical data-set-$\beta$ but it was difficult to fit
+and, we think, requires a mix of centered/non-centered parameterizations.
+So we switched to a non-hierarchical set of offsets for $\vec{\beta}$.
+But once the parameter
+is non-hierarchical, having an offset for each data-set would introduce a
+redundancy (technically, the parameters would be
+“[non-identifiable][WPIdentifiability]”) because a fixed amount could be added
+to each data-set $\vec{\beta}$ and removed from the shared $\vec{\beta}$
+without changing the estimated
+probabilities. To fix that, we pick one data-set as “neutral” and don’t add
+the demographic offset there. Since we are interested in house
+and state-legislative elections, using the house election as the “neutral”
+data-set makes the most sense.
+
+[WPIdentifiability]: https://en.wikipedia.org/wiki/Identifiability
+
 # Modeling Election Data
 So far we’ve dodged one subtlety. Unlike the survey data, the election data
 does not come with attached demographic information. One approach
@@ -302,14 +328,14 @@ the multi-level model to the survey data, adjusting the
 model-parameters such that post-stratification matches
 some set of aggregates from the election data, for example,
 turnout in each state. This is done by choosing a
-smallest such adjustment in some well-specified sense. See,
+“smallest” such adjustment in some well-specified sense. See,
 e.g., [“Deep Interactions With MRP...][GGDeep2013], pp. 769-770.
 
 [GGDeep2013]: http://www.stat.columbia.edu/~gelman/research/published/misterp.pdf
 
 As discussed in that paper, such an adjustment assumes small correlations between
 whatever leads to mismatches between the survey and the election results
-and the demographic variables in question. It’s not clear why that shoudl be the case.
+and the demographic variables in question. It’s not clear why that should be the case.
 In the case of the CPS at least, there is [evidence][AFS2021] that this assumption doesn’t hold.
 
 [AFS2021]: https://static1.squarespace.com/static/5fac72852ca67743c720d6a1/t/5ff8a986c87fc6090567c6d0/1610131850413/CPS_AFS_2021.pdf
@@ -327,17 +353,20 @@ the election data to the model itself. We do this by constructing new parameters
 $$\hat{u}^{(i)} = \frac{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)})}{N^{(i)}}$$
 $$\hat{q}^{(i)} = \frac{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)}) q_k(l^{(i)},\rho^{(i)})}{\sum_k N^{(i)}_k u_k(l^{(i)};\rho^{(i)})}$$
 
-and then asserting that the election is governed by the same binomial process as the surveys. That is
-given parameters $u$ and $q$, the probability that, in election $i$, given $N$ voting-age citizens in
-the election location $l^{(i)}$, the probability that there were $V^{(i)}$ voters, $D^{(i)}$ of whome
-voted for the Democratic candidate are $B\big(V^{(i)}|N^{(i)},\hat{u}^{(i)}\big)$ and
-$B\big(D^{(i)}|V^{(i)},\hat{q}^{(i)}\big)$ respectively.
+and then asserting that the election is governed by the same beta-binomial process as the surveys.
+That is given parameters $u$ and $q$, the probability that,
+in election $i$, given $N$ voting-age citizens in
+the election location $l^{(i)}$, the probability that there were $V^{(i)}$ voters,
+$D^{(i)}$ of whom voted for the Democratic candidate are
+$BB\big(V^{(i)}|N^{(i)},\hat{u}^{(i)}\phi_T,(1-\hat{u}^{(i)})\phi_T\big)$ and
+$BB\big(D^{(i)}|V^{(i)},\hat{q}^{(i)}\phi_P,(1-\hat{q}^{(i)})\phi_P\big)$ respectively.
 
 ## Practical Considerations
 
 At this point, we are, theoretically, done. We have parameterized our probabilities via our data,
-and asserted that each piece of data, survey or election, has a likelihood expressed by a Binomial
-distribution using those parameters. So we can construct the joint likelihood and attempt to maximize it.
+and asserted that each piece of data, survey or election, has a likelihood expressed by a Beta-Binomial
+distribution using those parameters. So we can construct the joint likelihood
+and attempt to maximize it in order to estimate our parameters.
 Or we can use a Bayesian approach, choose priors for our various parameters,
 combine those with the probability of the data given the parameters (the likelihood)
 and use that to find the joint posterior distribution of our parameters given our data, etc.
@@ -353,34 +382,10 @@ require that we analytically maximize this very complex likelihood, though, depe
 it does require gradients of the likelihood.
 
 If we only want to model the surveys, this is straightforward and fast. However, once we include the
-election results, things get harder:
-
-  - The $\hat{u}$ and $\hat{q}$, being sums over many $\textrm{logit}^{-1}$ functions,
-  make the gradients of the likelihood computationally burdensome.
-  - The elections involve much larger numbers of people per location than the surveys.
-  The CCES and CPS surveys have about 60,000 respondents each,
-  on the order of 150 people per congressional district.  But a contested house
-  election usually has *hundreds of thousands* of voters.  So there’s a more than 3 order-of-magnitude difference.
-  In practice, this presents a challenging environment for simulation[^surveyVsElection].
-  - The difference in scale of these data makes the election data “too influential” in the sense of
-  [leave-one-out cross-validation].
-
-[loo]: https://arxiv.org/abs/1507.04544
-
-The combination of these is daunting. The challenging geometry forces a smaller Monte-Carlo step-size
-which requires more calculations of the gradients of the likelihood and those are slow. In practice, we
-address all three of these issues at once by artificially shrinking the election sizes by some constant
-factor in order to make them more like the surveys in scale and influence. This does not fix the
-computation issue, but makes it less problematic. If we had but computational resources enough and
-time, we could do this with the full election sizes, though we would still be left with the issue of
-the election-data overpowering the survey-data in the simulation.
-
-[^surveyVsElection]: One way to picture this:  The election data create a very steep set of surfaces
-in the likelihood because the binomial likelihood is relatively narrow for a thing with so many “trials”.
-These surfaces have correspondingly large gradients. The surveys create shallow features
-along these steep surfaces and so simulated paths must somehow navigate the steep bits without missing
-the small shifts created by the surveys, at least along some directions in parameter space.
-
+election results, things get harder since the $\hat{u}$ and $\hat{q}$,
+being sums over many $\textrm{logit}^{-1}$ functions, make the gradients of
+the likelihood computationally burdensome. In practice, these models run in a few
+hours on a reasonably powerful laptop.
 
 We use [Haskell](https://www.haskell.org) to parse the data, reorganize it and produce
 code for [Stan](https://mc-stan.org), which then runs the
@@ -391,7 +396,7 @@ posterior distributions of $u_k(l,\rho)$ and $q_k(l,\rho)$.
 To produce demographic profiles of new districts, we get shapefiles from
 [Dave’s Redistricting][DRA], ACS data from the Census Bureau via [NHGIS][NHGIS]
 and use areal interpolation[^arealInterpolation] to compute the overlap of each
-census geography (block-groups[^censusGeographies], in this case) with our
+census geography (tracts[^censusGeographies], in this case) with our
 new districts and then aggregate that census information for the district.
 
 [DRA]: https://davesredistricting.org
@@ -421,7 +426,7 @@ data every year and thus is more up to date than the decennial census, data is a
 only at the “block-group” level, consisting of a few thousand people.
 
 [^arealInterpolation]: By “overlap” we mean that we weight a census geography in a
-SLD by computing how much the area of that geography overlaps the district, a
+district by computing how much the area of that geography overlaps the district, a
 technique called
 [“areal interpolation”](https://www.spatialanalysisonline.com/HTML/areal_interpolation.htm).
 Areal interpolation assumes that people are distributed evenly over the source geographies

@@ -1,20 +1,23 @@
 ## 2. Districts worthy of Dem donor support
-Based on the results above, we think there are five good options
+Based on the results above, we think there are six good options
 for Dem donors in TX:
-- TX-15 (Toss-up in Blue Ripple Model): We think this current Dem seat needs resources
-for Team Blue to hold it, particularly since it became tighter after redistricting.
-The incumbent, Vincente Gonzalez, opted to run in TX-34, which looks nominally safer
-for Dems (see below). Six Dems and nine Republicans have filed to compete in the primary.
+- TX-15 (R+5 in Blue Ripple Model): We think this current Dem seat needs resources
+  for Team Blue to hold it, particularly since it became tighter after redistricting.
+  The incumbent, Vincente Gonzalez, opted to run in TX-34, which looks nominally safer
+  for Dems (see below). Six Dems and nine Republicans have filed to compete in the primary.
 
-- TX-28 (D+4) was won by 18 points by incumbent Dem Henry Cuellar in 2020,
-but is now significantly more competitive and needs defensive support.
-Cuellar is being primaried from the left by Jessica Cisneros,
-who almost unseated him in 2020; seven Republicans have also thrown their hats in the ring.
+- TX-28 (R+2) was won by 18 points by incumbent Dem Henry Cuellar in 2020,
+  but is now significantly more competitive and needs defensive support.
+  Cuellar is being primaried from the left by Jessica Cisneros,
+  who almost unseated him in 2020; seven Republicans have also thrown their hats in the ring.
 
-- TX-34 (D+2) is being viewed as relatively safe by Dems (see above),
-but we believe it may be tighter than pundits appreciate, and in need of support.
-Retiring Dem incumbent Filemon Vela has thrown his support behind Vincente Gonzalez
-in a race with multiple GOP hopefuls.
+- TX-34 (R+1) is being viewed as relatively safe by Dems (see above),
+  but we believe it may be tighter than pundits appreciate, and in need of support.
+  Retiring Dem incumbent Filemon Vela has thrown his support behind Vincente Gonzalez
+  in a race with multiple GOP hopefuls.
+
+- TX-35 (D+3) is, modeled historically, a very safe Dem seat (D+23), including parts of Austin and
+  San Antonio.
 
 TX-24 (D+4) and TX-38 (D+4) appear to be “plausible long-shots” in our demographic model.
 Both are relatively dense, majority-white districts near cities.
@@ -56,7 +59,7 @@ and are open to the idea of supporting some long-shot candidates,
 then donating to a Dem in TX-24 or TX-38 might fit the bill.
 
 A few overarching observations:
-(Again, these similar to points we’ve made in prior analyses.)
+(Again, we’ve made similar points in prior analyses.)
 As with many gerrymandered maps, this one makes the minority party very
 safe in their small number of districts and the majority somewhat less safe in theirs.
 Although the historical analysis has most of the R districts about
