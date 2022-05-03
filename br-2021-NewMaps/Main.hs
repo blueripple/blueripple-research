@@ -321,7 +321,7 @@ deepDive2022CD cmdLine sa dn = do
 deepDive2020CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
 deepDive2020CD cmdLine sa dn = do
   acs_C <- BRE.prepACS False
-  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @BR.CongressionalDistrict r == dn
+  let filter r = F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @BR.CongressionalDistrict r == dn
   deepDive cmdLine ("2020-" <> sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap fixACS . F.filterFrame filter) acs_C)
 
 

@@ -708,45 +708,6 @@ cachedPumsByState pums_C = do
   BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C
     $ pure . FL.fold addZeroF . pumsByState
 
-{-
-adjUsing :: forall x n d rs a.(V.KnownField x
-                              , F.ElemOf rs x
-                              , V.Snd x ~ Double
-                              , V.KnownField n
-                              , V.Snd n ~ Double
-                              , V.KnownField d
-                              , F.ElemOf rs d
-                              , V.Snd d ~ a
-                              )
-         => (a -> Double) -> F.Record rs -> F.Record (rs V.++ '[n])
-adjUsing toDbl r = r F.<+> FT.recordSingleton @n (F.rgetField @x r * toDbl (F.rgetField @d r))
-
-type CCESAdj cs = CCESByCDR V.++ '[PUMS.Citizens] V.++ cs
-addAHColToCCES :: forall ahc ahd cs r.
-                  (F.ElemOf (CCESAdj cs V.++ '[AchenHurWeight]) ahd
-                  , F.ElemOf (cs V.++ '[AchenHurWeight]) AchenHurWeight
-                  , V.KnownField ahc
-                  , V.KnownField ahd
-                  , V.Snd ahc ~ Double
-                  , Real (V.Snd ahd)
-                  , (cs V.++ '[ahc])  F.⊆ (CCESAdj (cs V.++ '[AchenHurWeight]) V.++ '[ahc])
-                  )
-               => (F.Record (CCESAdj cs) -> Double)
-               ->  FL.FoldM
-                  (K.Sem r)
-                  (F.Record (CCESAdj cs V.++ '[AchenHurWeight]))
-                  (F.FrameRec (CCESAdj cs V.++ '[AchenHurWeight]))
-               -> F.FrameRec (CCESAdj cs)
-               -> K.Sem r (F.FrameRec (CCESAdj cs V.++ '[ahc]))
-addAHColToCCES wgtF ahFld rows = do
-  let ahw = FT.recordSingleton @AchenHurWeight . wgtF
-      rowsWithWeight = fmap (FT.mutate ahw) rows
-  adjProb <- FL.foldM ahFld rowsWithWeight
-  let adjResult :: F.Record (CCESAdj cs V.++ '[AchenHurWeight]) -> F.Record (CCESAdj cs V.++ '[ahc])
-      adjResult = F.rcast . adjUsing @AchenHurWeight @ahc @ahd realToFrac
-      res = fmap adjResult adjProb
-  return res
--}
 --caFilter = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "CA")
 
 prepCCESAndPums :: forall r.(K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
@@ -764,96 +725,8 @@ prepCCESAndPums clearCache = do
   pumsByState_C <- cachedPumsByState pums_C
   countedCCES_C <- fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C <- fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
-  {-
-  -- Do the turnout corrections, CPS first
-  stateTurnout_C <- BR.stateTurnoutLoader
-  let cpsAchenHurDeps = (,,) <$> cpsVByState_C <*> pumsByState_C <*> stateTurnout_C
-      cpsAchenHurCacheKey = cacheKey testRun "model/house/CPSV_AchenHur"
-  when clearCache $ BR.clearIfPresentD cpsAchenHurCacheKey
-  cpsV_AchenHur_C <- BR.retrieveOrMakeFrame cpsAchenHurCacheKey cpsAchenHurDeps $ \(cpsV, acsByState, stateTurnout) -> do
-    K.logLE K.Diagnostic $ "Pre Achen-Hur: CPS (by state) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y cpsV) [2012, 2014, 2016, 2018, 2020]
-    K.logLE K.Diagnostic $ "ACS (by state) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y acsByState) [2012, 2014, 2016, 2018, 2020]
-
-    K.logLE K.Info "Doing (Ghitza/Gelman) logistic Achen/Hur adjustment to correct CPS for state-specific under-reporting."
-    let ewU r = FT.recordSingleton @AchenHurWeight (realToFrac (F.rgetField @BRCF.Successes r) / realToFrac (F.rgetField @BRCF.Count r))
-        cpsWithProbU = fmap (FT.mutate ewU) cpsV
-        (cpsWithProbAndCitU, missingU) = FJ.leftJoinWithMissing @(StateKeyR V.++ CensusPredictorR) cpsWithProbU $ acsByState
-    when (not $ null missingU) $ K.knitError $ "prepCCESAndPums: Missing keys in unweighted cpsV/acs join: " <> show missingU
-    when (fLength cpsWithProbU /= fLength cpsWithProbAndCitU) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(unweighted cps,acs)"
-    adjCPSProbU <- FL.foldM (BRTA.adjTurnoutFold @PUMS.Citizens @AchenHurWeight stateTurnout) cpsWithProbAndCitU
-    let adjVotersU = adjUsing @AchenHurWeight @AHSuccesses @BRCF.Count realToFrac
-        res = fmap (F.rcast @CPSVByStateAH . adjVotersU) adjCPSProbU
-    K.logLE K.Diagnostic $ "Post Achen-Hur: CPS (by state) rows per year:"
-    K.logLE K.Diagnostic $ show $ fmap (\y -> lengthInYear y res) [2012, 2014, 2016, 2018, 2020]
-    return res
--}
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
   pumsByCD_C <- cachedPumsByCD pums_C cdFromPUMA_C
-{-
---  K.ignoreCacheTime (fmap caFilter pumsByCD_C) >>= BR.logFrame
---  K.ignoreCacheTime (fmap caFilter countedCCES_C) >>= BR.logFrame
-  let ccesWithACSDeps = (,) <$> countedCCES_C <*> pumsByCD_C
-      ccesWithACSCacheKey = "model/house/ccesWithACS.bin"
-  when clearCache $ BR.clearIfPresentD ccesWithACSCacheKey
-  ccesWithACS_C <- BR.retrieveOrMakeFrame ccesWithACSCacheKey ccesWithACSDeps $ \(cces, acsByCD) -> do
-    K.logLE K.Info "Adding missing zeroes to ACS data with CCES predictor cols"
-    let zeroCount = 0 F.&: V.RNil :: F.Record '[PUMS.Citizens]
-        addZeroF = FMR.concatFold
-                   $ FMR.mapReduceFold
-                   FMR.noUnpack
-                   (FMR.assignKeysAndData @CDKeyR @(CCESPredictorR V.++ '[PUMS.Citizens]))
-                   (FMR.makeRecsWithKey id
-                    $ FMR.ReduceFold
-                    $ const
-                    $ BRK.addDefaultRec @CCESPredictorR zeroCount
-                   )
-        fixedACS = FL.fold addZeroF $ fmap (fixDC_CD . addRace5) acsByCD
-        (ccesWithACS, missing) =  FJ.leftJoinWithMissing @(CDKeyR V.++ CCESPredictorR) cces fixedACS
-    when (not $ null missing) $ K.knitError $ "Missing keys in cces/acs join: " <> show missing
-    when (fLength cces /= fLength ccesWithACS) $ K.knitError "prepCCESAndPums: rows added/deleted by left-join(cces,acs)"
-    return $ fmap (F.rcast @(CCESByCDR V.++'[PUMS.Citizens])) $ ccesWithACS
-
-
-  let ccesTAchenHurDeps = (,) <$> ccesWithACS_C <*> stateTurnout_C
-      ccesTAchenHurCacheKey = cacheKey testRun "model/house/CCEST_AchenHur"
-  when clearCache $ BR.clearIfPresentD ccesTAchenHurCacheKey
-  ccesTAchenHur_C <- BR.retrieveOrMakeFrame ccesTAchenHurCacheKey ccesTAchenHurDeps $ \(ccesWithACS, stateTurnout) -> do
-    let wgtF r = let s = F.rgetField @Surveyed r in if s == 0 then 0.5 else realToFrac (F.rgetField @Voted r) / realToFrac s
-        ahFld = BRTA.adjTurnoutFold @PUMS.Citizens @AchenHurWeight stateTurnout
-    addAHColToCCES @AHVoted @Surveyed @'[] wgtF ahFld ccesWithACS
-
-  -- now vote totals corrections ??
-  presidentialElectionResults_C <- prepPresidentialElectionData clearCache earliestYear
-  let ccesPVAchenHurDeps = (,) <$> ccesTAchenHur_C <*> presidentialElectionResults_C
-      ccesPVAchenHurCacheKey = cacheKey testRun "model/house/CCESPV_AchenHur"
-  when clearCache $ BR.clearIfPresentD ccesPVAchenHurCacheKey
-  ccesPVAchenHur_C <- BR.retrieveOrMakeFrame ccesPVAchenHurCacheKey ccesPVAchenHurDeps $ \(ccesT, presElex) -> do
-    let wgtD r = let pv = F.rgetField @PresVotes r in if pv == 0 then 0.5 else realToFrac (F.rgetField @PresDVotes r) / realToFrac pv
-        elexDShare r = realToFrac (F.rgetField @DVotes r) / realToFrac (F.rgetField @TVotes r)
-        ahDFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexDShare presElex
-    ccesWithPD <- addAHColToCCES @AHPresDVotes @PresVotes @'[AHVoted] wgtD ahDFld ccesT
-    let wgtR r = let pv = F.rgetField @PresVotes r in if pv == 0 then 0.5 else realToFrac (F.rgetField @PresRVotes r) / realToFrac pv
-        elexRShare r = realToFrac (F.rgetField @RVotes r) / realToFrac (F.rgetField @TVotes r)
-        ahRFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexRShare presElex
-    addAHColToCCES @AHPresRVotes @PresVotes @'[AHVoted, AHPresDVotes] wgtR ahRFld ccesWithPD
--}
-  houseElectionResults_C <- prepHouseElectionData clearCache earliestYear
- {-
-  let ccesHVAchenHurDeps = (,) <$> ccesPVAchenHur_C <*> houseElectionResults_C
-      ccesHVAchenHurCacheKey = cacheKey testRun "model/house/CCESHV_AchenHur"
-  when clearCache $ BR.clearIfPresentD ccesHVAchenHurCacheKey
-  ccesHVAchenHur_C <- BR.retrieveOrMakeFrame ccesHVAchenHurCacheKey ccesHVAchenHurDeps $ \(ccesTP, houseElex) -> do
-    let wgtD r = let pv = F.rgetField @HouseVotes r in if pv == 0 then 0.5 else realToFrac (F.rgetField @HouseDVotes r) / realToFrac pv
-        elexDShare r = realToFrac (F.rgetField @DVotes r) / realToFrac (F.rgetField @TVotes r)
-        ahDFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] elexDShare houseElex
-    ccesWithHD <- addAHColToCCES @AHHouseDVotes @HouseVotes @'[AHVoted, AHPresDVotes, AHPresRVotes] wgtD ahDFld ccesTP
-    let wgtR r = let pv = F.rgetField @HouseVotes r in if pv == 0 then 0.5 else realToFrac (F.rgetField @HouseRVotes r) / realToFrac pv
-        elexRShare r = realToFrac (F.rgetField @RVotes r) / realToFrac (F.rgetField @TVotes r)
-        ahRFld = BRTA.adjTurnoutFoldG @PUMS.Citizens @AchenHurWeight @[BR.Year, BR.StateAbbreviation] elexRShare houseElex
-    addAHColToCCES @AHHouseRVotes @HouseVotes @'[AHVoted, AHPresDVotes, AHPresRVotes, AHHouseDVotes] wgtR ahRFld ccesWithHD
--}
   let deps = (,,) <$> countedCCES_C <*> cpsVByState_C <*> pumsByCD_C
       allCacheKey = cacheKey testRun "model/house/CCESAndPUMS"
   when clearCache $ BR.clearIfPresentD allCacheKey
