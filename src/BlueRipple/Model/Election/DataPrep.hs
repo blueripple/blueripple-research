@@ -455,8 +455,6 @@ makeStateElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
 makeStateElexDataFrame office earliestYear acsByState elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
             length = FL.fold FL.length
---        acs_C <- PUMS.pumsLoaderAdults
---        acsByState <- K.ignoreCacheTimeM $ cachedPumsByState acs_C
         let cvapFld = FMR.concatFold
                       $ FMR.mapReduceFold
                       FMR.noUnpack

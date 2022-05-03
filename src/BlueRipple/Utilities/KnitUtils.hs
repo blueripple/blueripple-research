@@ -268,6 +268,14 @@ logFrame ::
 logFrame fr =
   K.logLE K.Info $ "\n" <> (T.intercalate "\n" . fmap show $ FL.fold FL.list fr)
 
+logCachedFrame ::
+  (K.KnitEffects r, CacheEffects r, Foldable f, Show (F.Record rs)) =>
+  K.ActionWithCacheTime r (f (F.Record rs)) ->
+  K.Sem r ()
+logCachedFrame fr_C = do
+  fr <- K.ignoreCacheTime fr_C
+  K.logLE K.Info $ "\n" <> (T.intercalate "\n" . fmap show $ FL.fold FL.list fr)
+
 retrieveOrMakeD ::
   ( K.KnitEffects r,
     CacheEffects r,
