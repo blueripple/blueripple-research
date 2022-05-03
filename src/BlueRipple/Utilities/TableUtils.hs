@@ -18,6 +18,9 @@ module BlueRipple.Utilities.TableUtils
   , textToCell
   , textToStyledHtml
   , brAddRawHtmlTable
+  , dataRow
+  , summaryRow
+  , dataOrSummary
   )
 where
 
@@ -31,6 +34,7 @@ import qualified Text.Printf                   as PF
 import qualified Knit.Report                   as K
 
 import           BlueRipple.Utilities.KnitUtils ( brAddMarkDown )
+import System.IO (openTempFileWithDefaultPermissions)
 
 data CellStyle row col = CellStyle (row -> col -> T.Text)
 instance Semigroup (CellStyle r c) where
@@ -99,5 +103,14 @@ brAddRawHtmlTable title attr colonnade rows =
     BC.encodeCellTable attr colonnade rows
 
 
+-- summary helpers
+newtype DataOrSummary a b = DataOrSummary { unDataOrSummary :: Either a b }
+dataRow :: a -> DataOrSummary a b
+dataRow = DataOrSummary . Left
+summaryRow :: b -> DataOrSummary a b
+summaryRow = DataOrSummary . Right
 
+
+dataOrSummary :: (a -> x) -> (b -> x) -> DataOrSummary a b -> x
+dataOrSummary f g = either f g . unDataOrSummary
 -- pivot helper

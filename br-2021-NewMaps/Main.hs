@@ -96,6 +96,8 @@ import BlueRipple.Data.Loaders (stateAbbrCrosswalkLoader)
 import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified Stan.JSON as DT
 import qualified BlueRipple.Model.Election.StanModel as BRM
+import BlueRipple.Data.CensusTables (TableYear(TY2020))
+import Numeric.MCMC.Diagnostics (summarize)
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -143,11 +145,13 @@ main = do
         runThis x = runAll || x `elem` BR.postNames cmdLine
     when (runThis "modelDetails") $ modelDetails cmdLine
     when (runThis "modelDiagnostics") $ modelDiagnostics cmdLine
-    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "24"
-    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "11"
-    when (runThis "deepDive") $ deepDiveCD cmdLine "TX" "31"
-    when (runThis "deepDive") $ deepDiveCD cmdLine "CA" "2"
-    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
+--    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "24"
+--    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "11"
+--    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
+--    when (runThis "deepDive") $ deepDive2022CD cmdLine "CA" "2"
+    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 7
+    when (runThis "deepDive") $ deepDive2022CD cmdLine "AZ" "7"
+--    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
     when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
     when (runThis "newSLDs") $ newStateLegMapPosts cmdLine
     when (runThis "allCDs") $ allCDsPost cmdLine
@@ -308,11 +312,18 @@ modelDetails cmdLine = do
   BR.brNewPost detailsPaths postInfoDetails "ElectionModel"
     $ BR.brAddPostMarkDownFromFile detailsPaths "_intro"
 
-deepDiveCD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Text -> K.Sem r ()
-deepDiveCD cmdLine sa dn = do
+deepDive2022CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Text -> K.Sem r ()
+deepDive2022CD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
-  deepDive cmdLine (sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  deepDive cmdLine ("2022-" <> sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+
+deepDive2020CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
+deepDive2020CD cmdLine sa dn = do
+  acs_C <- BRE.prepACS False
+  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @BR.CongressionalDistrict r == dn
+  deepDive cmdLine ("2020-" <> sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap fixACS . F.filterFrame filter) acs_C)
+
 
 deepDiveState :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.Sem r ()
 deepDiveState cmdLine sa = do
@@ -358,6 +369,9 @@ deepDive cmdLine ddName psData_C = do
       dSdP r = FT.recordSingleton @DSDP $ turnout r * (realToFrac $ cvap r) / totalVotes
       dSdT r = FT.recordSingleton @DSDT $ (pref r - (realToFrac totalDVotes/realToFrac totalVotes)) * (realToFrac $ cvap r) / totalVotes
       deepDiveWFrac = fmap (FT.mutate dSdP . FT.mutate dSdT . FT.mutate popFrac) deepDive
+      deepDiveSummary = FL.fold deepDiveSummaryFld $ fmap F.rcast deepDiveWFrac
+      deepDiveWSummary = (BR.dataRow <$> FL.fold FL.list deepDiveWFrac) ++ [BR.summaryRow deepDiveSummary]
+-- summarize
   BR.logFrame deepDiveWFrac
   deepDivePaths <- postPaths ("DeepDive_" <> ddName) cmdLine
   BR.brNewPost deepDivePaths postInfoDeepDive ("DeepDive_" <> ddName) $ do
@@ -365,33 +379,49 @@ deepDive cmdLine ddName psData_C = do
       ("Deep Dive: " <> ddName)
       (BHA.class_ "brTable")
       (deepDiveColonnade mempty)
-      deepDiveWFrac
+      deepDiveWSummary
+
+data DeepDiveSummary = DeepDiveSummary { ddsCVAP :: Int, ddsFracPop :: Double, ddsTurnout :: Double, ddsPref :: Double, ddsShare :: Double}
+
+deepDiveSummaryFld :: FL.Fold (F.Record [BRC.Count, FracPop, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare]) DeepDiveSummary
+deepDiveSummaryFld =
+  let cntFld = FL.premap (F.rgetField @BRC.Count) FL.sum
+      fracPopFld = FL.premap (F.rgetField @FracPop) FL.sum
+      wgtdFld w f = (/) <$> FL.premap (\r -> w r * f r) FL.sum <*> FL.premap w FL.sum
+      cvapWgtdFld = wgtdFld (realToFrac . F.rgetField @BRC.Count)
+      tFld = cvapWgtdFld (MT.ciMid . F.rgetField @BRE.ModeledTurnout)
+      pFld = cvapWgtdFld (MT.ciMid . F.rgetField @BRE.ModeledPref)
+      sFld = wgtdFld (\r -> realToFrac (F.rgetField @BRC.Count r) * (MT.ciMid . F.rgetField @BRE.ModeledTurnout $ r)) (MT.ciMid . F.rgetField @BRE.ModeledPref)
+  in DeepDiveSummary <$> cntFld <*> fracPopFld <*> tFld<*> pFld<*> sFld
 
 deepDiveColonnade cas =
-  let state = F.rgetField @DT.StateAbbreviation
-      mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
-      mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
-      mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
-      mDiff r = let x = mShare r in (2 * x - 1)
-      cvap = F.rgetField @BRC.Count
-      fracPop = F.rgetField @FracPop
+  let orNA g = BR.dataOrSummary g (BR.textToStyledHtml . const "N/A")
+      showOrNA f = orNA (BR.textToStyledHtml . show . f)
+      state = showOrNA $ F.rgetField @DT.StateAbbreviation
+      mTurnout = (MT.ciMid . F.rgetField @BRE.ModeledTurnout) `BR.dataOrSummary` ddsTurnout
+      mPref = (MT.ciMid . F.rgetField @BRE.ModeledPref) `BR.dataOrSummary` ddsPref
+      mShare' = MT.ciMid . F.rgetField @BRE.ModeledShare
+      mShare = mShare' `BR.dataOrSummary` ddsShare
+      mDiff = orNA (\r -> let x = mShare' r in BR.numberToStyledHtml "%2.1f" . (100*) $ (2 * x - 1))
+      cvap = F.rgetField @BRC.Count `BR.dataOrSummary` ddsCVAP
+      fracPop = F.rgetField @FracPop `BR.dataOrSummary` ddsFracPop
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
-      sex = F.rgetField @DT.SexC
-      education = F.rgetField @DT.CollegeGradC
-      race = F.rgetField @DT.Race5C
-      dSdT = F.rgetField @DSDT
-      dSdP = F.rgetField @DSDP
-  in C.headed "Sex" (BR.toCell cas "Sex" "Sex" (BR.textToStyledHtml . show . sex))
-     <> C.headed "Education" (BR.toCell cas "Edu" "Edu" (BR.textToStyledHtml . show . education))
-     <> C.headed "Race" (BR.toCell cas "Race" "Race" (BR.textToStyledHtml . show . race))
+      sex = showOrNA $ F.rgetField @DT.SexC
+      education = showOrNA $ F.rgetField @DT.CollegeGradC
+      race = showOrNA $ F.rgetField @DT.Race5C
+      dSdT = orNA $ BR.numberToStyledHtml "%2.1f" . (100*) . F.rgetField @DSDT
+      dSdP = orNA $ BR.numberToStyledHtml "%2.1f" . (100*) . F.rgetField @DSDP
+  in C.headed "Sex" (BR.toCell cas "Sex" "Sex" sex)
+     <> C.headed "Education" (BR.toCell cas "Edu" "Edu" education)
+     <> C.headed "Race" (BR.toCell cas "Race" "Race" race)
      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
      <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
-     <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
-     <> C.headed "dS/dT" (BR.toCell cas "dS/dT" "dS/dT" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdT))
-     <> C.headed "dS/dP" (BR.toCell cas "dS/dP" "dS/dP" (BR.numberToStyledHtml "%2.1f" . (100*) . dSdP))
+     <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" mDiff)
+     <> C.headed "dS/dT" (BR.toCell cas "dS/dT" "dS/dT" dSdT)
+     <> C.headed "dS/dP" (BR.toCell cas "dS/dP" "dS/dP" dSdP)
 
 ccesAndCPSForStates :: [Text] -> BRE.CCESAndCPSEM -> BRE.CCESAndCPSEM
 ccesAndCPSForStates sas (BRE.CCESAndCPSEM cces cpsV acs stElex cdElex) =
@@ -466,6 +496,9 @@ modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
+  BRE.prepHouseElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
+  BRE.prepSenateElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
+  BRE.prepPresidentialElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       fixedACS_C =  FL.fold postStratRollupFld . fmap fixACS <$> acs2020_C

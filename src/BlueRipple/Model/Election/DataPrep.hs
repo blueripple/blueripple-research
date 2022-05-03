@@ -449,13 +449,14 @@ addUnopposed = FT.mutate (FT.recordSingleton @ET.Unopposed . unopposed) where
 makeStateElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
+                       -> F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[PUMS.Citizens])
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, BR.Special]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
-makeStateElexDataFrame office earliestYear elex = do
+makeStateElexDataFrame office earliestYear acsByState elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
             length = FL.fold FL.length
-        acs_C <- PUMS.pumsLoaderAdults
-        acsByState <- K.ignoreCacheTimeM $ cachedPumsByState acs_C
+--        acs_C <- PUMS.pumsLoaderAdults
+--        acsByState <- K.ignoreCacheTimeM $ cachedPumsByState acs_C
         let cvapFld = FMR.concatFold
                       $ FMR.mapReduceFold
                       FMR.noUnpack
@@ -481,9 +482,11 @@ prepPresidentialElectionData clearCache earliestYear = do
   let cacheKey = "model/house/presElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   presElex_C <- BR.presidentialElectionsWithIncumbency
-  let deps = (,) <$> presElex_C
-  BR.retrieveOrMakeFrame cacheKey presElex_C
-    $ \pElex -> makeStateElexDataFrame ET.President earliestYear (fmap (F.rcast . addSpecial) $ pElex)
+  acs_C <- PUMS.pumsLoaderAdults
+  acsByState_C <- cachedPumsByState acs_C
+  let deps = (,) <$> acsByState_C <*> presElex_C
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(acsByState, pElex) -> makeStateElexDataFrame ET.President earliestYear acsByState (fmap (F.rcast . addSpecial) $ pElex)
 
 prepSenateElectionData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Bool
@@ -493,23 +496,24 @@ prepSenateElectionData clearCache earliestYear = do
   let cacheKey = "model/house/senateElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   senateElex_C <- BR.senateElectionsWithIncumbency
-  BR.retrieveOrMakeFrame cacheKey senateElex_C
-    $ \senateElex -> makeStateElexDataFrame ET.Senate earliestYear (fmap F.rcast senateElex)
+  acs_C <- PUMS.pumsLoaderAdults
+  acsByState_C <- cachedPumsByState acs_C
+  let deps = (,) <$> acsByState_C <*> senateElex_C
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(acsByState, senateElex) -> makeStateElexDataFrame ET.Senate earliestYear acsByState (fmap F.rcast senateElex)
 
 makeCDElexDataFrame ::  (K.KnitEffects r, BR.CacheEffects r)
                        => ET.OfficeT
                        -> Int
+                       -> F.FrameRec PUMSByCDR
                        -> F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
                        -> K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
-makeCDElexDataFrame office earliestYear elex = do
+makeCDElexDataFrame office earliestYear acsByCD elex = do
         let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
             length = FL.fold FL.length
             fixDC_CD r = if (F.rgetField @BR.StateAbbreviation r == "DC")
                          then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
                          else r
-        acs_C <- PUMS.pumsLoaderAdults
-        cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-        acsByCD <- K.ignoreCacheTimeM $ cachedPumsByCD acs_C cdFromPUMA_C
         let cvapFld = FMR.concatFold
                       $ FMR.mapReduceFold
                       FMR.noUnpack
@@ -535,8 +539,12 @@ prepHouseElectionData clearCache earliestYear = do
   let cacheKey = "model/house/houseElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
   houseElex_C <- BR.houseElectionsWithIncumbency
-  BR.retrieveOrMakeFrame cacheKey houseElex_C
-    $ \houseElex -> makeCDElexDataFrame ET.House earliestYear (fmap F.rcast houseElex)
+  acs_C <- PUMS.pumsLoaderAdults
+  cdByPUMA_C <- BR.allCDFromPUMA2012Loader
+  acsByCD_C <- cachedPumsByCD acs_C cdByPUMA_C
+  let deps = (,) <$> acsByCD_C <*> houseElex_C
+  BR.retrieveOrMakeFrame cacheKey deps
+    $ \(acsByCD, houseElex) -> makeCDElexDataFrame ET.House earliestYear acsByCD (fmap F.rcast houseElex)
 
 
 -- TODO:  Use weights?  Design effect?
