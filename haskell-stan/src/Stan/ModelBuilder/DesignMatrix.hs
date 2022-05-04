@@ -279,14 +279,21 @@ addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, 
       ]
   pure (alpha, beta, mu, tau, lCorr)
 
+data DMStandardization = DMCenterOnly | DMCenterAndScale
+
+fixSDZeroFunction :: SB.StanBuilderM md gq ()
+fixSDZeroFunction =  SB.addFunctionsOnce "fixSDZero"
+                   $ SB.declareStanFunction "real fixSDZero(real x)" $ do
+  SB.addStanLine "return (x == 0 ? 1 : x)"
 
 centerDataMatrix :: (Typeable md, Typeable gq)
-                 => SB.StanVar -- matrix
+                 => DMStandardization
+                 -> SB.StanVar -- matrix
                  -> Maybe SB.StanVar -- row weights
-                 -> SB.StanBuilderM md gq (SB.StanVar -- centered matrix, X - row_mean(X)
-                                          , SB.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> Y - row_mean(X)
+                 -> SB.StanBuilderM md gq (SB.StanVar -- standardized matrix, X - row_mean(X) or (X - row_mean(X))/row_stddev(X)
+                                          , SB.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> standardized Y (via mean/var of X)
                                           )
-centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
+centerDataMatrix dms mV@(SB.StanVar mn mt) mwgtsV = do
   (rowIndexKey, colIndexKey) <- case mt of
     SB.StanMatrix (rowDim, colDim) -> do
       rowIndex <- case rowDim of
@@ -297,28 +304,45 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
         _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: column dimension of given matrix must be a named dimension"
       return (rowIndex, colIndex)
     _ -> SB.stanBuildError "DesignMatrix.centerDataMatrix: Given argument must be a marix."
-  (centeredXV, meanXV) <- SB.inBlock SB.SBTransformedData $ do
-    meanFunction <- case mwgtsV of
-      Nothing -> return $ SB.function "mean" (one $ SB.vectorizedOne rowIndexKey (SB.var mV))
+  (centeredXV, meanXV, sdXV) <- SB.inBlock SB.SBTransformedData $ do
+    fixSDZeroFunction
+    meanVarFunction <- case mwgtsV of
+      Nothing -> do
+        SBB.unWeightedMeanVarianceFunction
+        return $ SB.function "unweighted_mean_variance" (one $ SB.vectorizedOne rowIndexKey (SB.var mV))
       Just wgtsV -> do
-        SBB.weightedMeanFunction
+        SBB.weightedMeanVarianceFunction
         let vectorizedWgts = SB.function "to_vector" (one $ SB.vectorizedOne rowIndexKey (SB.var wgtsV))
-        return $ SB.function "weighted_mean" (vectorizedWgts :| [SB.vectorizedOne rowIndexKey (SB.var mV)])
+        return $ SB.function "weighted_mean_variance" (vectorizedWgts :| [SB.vectorizedOne rowIndexKey (SB.var mV)])
     meanXV' <- SB.stanDeclareRHS ("mean_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
       $ SB.function "rep_vector"  (SB.scalar "0" :| [SB.indexSize colIndexKey])
-    centeredXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
+    sdXV' <- SB.stanDeclareRHS ("sd_" <> mn) (SB.StanVector $ SB.NamedDim colIndexKey) ""
+      $ SB.function "rep_vector"  (SB.scalar "0" :| [SB.indexSize colIndexKey])
+    stdXV' <- SB.stanDeclare ("centered_" <> mn) mt ""
     SB.stanForLoopB "k" Nothing colIndexKey $ do
-      SB.addExprLine "centerDataMatrix" $ SB.var meanXV' `SB.eq` meanFunction
+      meanVar <- SB.stanDeclareRHS "meanVar" (SB.StanVector $ SB.GivenDim 2) "" $ meanVarFunction
+      SB.addExprLine "centerDataMatrix" $ SB.var meanXV' `SB.eq` SB.withIndexes (SB.varNameE meanVar) (one $ SB.GivenDim 1)
       SB.addExprLine "centerDataMatrix"
-        $ SB.vectorizedOne rowIndexKey $ SB.var centeredXV' `SB.eq` (SB.var mV `SB.minus` SB.var meanXV')
-    pure (centeredXV', meanXV')
-  let centeredX idt mv@(SB.StanVar mn mt) mSuffix = do
+        $ SB.var sdXV' `SB.eq` SB.function "fixSDZero" (one $ SB.function "sqrt" (one $ SB.withIndexes (SB.varNameE meanVar) (one $ SB.GivenDim 2)))
+      SB.addExprLine "centerDataMatrix"
+        $ SB.vectorizedOne rowIndexKey
+        $ case dms of
+            DMCenterOnly -> SB.var stdXV' `SB.eq` (SB.var mV `SB.minus` SB.var meanXV')
+            DMCenterAndScale -> SB.var stdXV' `SB.eq` SB.paren (SB.var mV `SB.minus` SB.var meanXV') `SB.divide` SB.var sdXV'
+    SBB.printVar "" meanXV'
+    SBB.printVar "" sdXV'
+    pure (stdXV', meanXV', sdXV')
+  let stdX idt mv@(SB.StanVar mn mt) mSuffix = do
         let codeBlock = if idt == SB.ModelData then SB.SBTransformedData else SB.SBTransformedDataGQ
         case mt of
           cmt@(SB.StanMatrix (SB.NamedDim rKey, SB.NamedDim cKey)) -> SB.inBlock codeBlock $ do
             cv <- SB.stanDeclare ("centered_" <> mn <> fromMaybe "" mSuffix) cmt ""
             SB.stanForLoopB "k" Nothing cKey $ do
-              SB.addExprLine "centerData.Matrix.centeredX"$ SB.vectorizedOne rKey $ SB.var cv `SB.eq` (SB.var mv `SB.minus` SB.var meanXV)
+              SB.addExprLine "centerData.Matrix.centeredX"
+                $ SB.vectorizedOne rKey
+                $ case dms of
+                    DMCenterOnly -> SB.var cv `SB.eq` (SB.var mv `SB.minus` SB.var meanXV)
+                    DMCenterAndScale -> SB.var cv `SB.eq` SB.paren (SB.var mv `SB.minus` SB.var meanXV) `SB.divide` SB.var sdXV
             return cv
           _ -> SB.stanBuildError
                $ "centeredX (from DesignMatrix.centerDataMatrix called with x="
@@ -326,7 +350,7 @@ centerDataMatrix mV@(SB.StanVar mn mt) mwgtsV = do
                <> "): called with mv="
                <> show mv
                <> " which is not a matrix type with indexed row and column dimension."
-  pure (centeredXV, centeredX)
+  pure (centeredXV, stdX)
 
 -- take a matrix x and return (thin) Q, R and inv(R)
 -- as Q_x, R_x, invR_x

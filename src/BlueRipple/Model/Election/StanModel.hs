@@ -403,11 +403,13 @@ dsSpecific dsLabel dsp ik oM =
       return (Just a, Just b)
 
 centerIf :: (Typeable md, Typeable gq)
-         => SB.StanVar -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+         => SB.StanVar
+         -> Maybe SB.StanVar
+         -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
          -> SB.StanBuilderM md gq (SB.StanVar
                                   , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-centerIf m centerM =  case centerM of
-  Nothing -> DM.centerDataMatrix m Nothing
+centerIf m wgtsM centerM =  case centerM of
+  Nothing -> DM.centerDataMatrix DM.DMCenterAndScale m wgtsM
   Just f -> do
     mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
     return (mC, f)
@@ -530,7 +532,7 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr alpha bet
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   colIndexKey <- colIndex dm
   (dsAlphaM, dsBetaM) <- SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- centerIf dm centerM
+  (dmC, centerF) <- centerIf dm Nothing centerM
   (dmQR, retQR) <- handleQR rtt qr dmC beta
   muF <- indexedMuE3 dmQR
   let muE = muF dsAlphaM dsBetaM alpha beta
@@ -564,7 +566,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr countSca
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   colIndexKey <- colIndex dm
   (dsAlphaM, dsBetaM) <-  SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- centerIf dm centerM
+  (dmC, centerF) <- centerIf dm Nothing centerM
   (dmQR, retQR) <- handleQR rtt qr dmC beta
   muF <- indexedMuE3 dmQR
   let muE = invLogit $ muF dsAlphaM dsBetaM alpha beta
@@ -711,9 +713,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsS
   colPIndexKey <- colIndex dmPSP
   (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colTIndexKey (Just office)
   (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colPIndexKey (Just office)
-  (dmTC, centerTF) <- centerIf dmPST centerTM
+  (dmTC, centerTF) <- centerIf dmPST Nothing centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
-  (dmPC, centerPF) <- centerIf dmPSP centerPM
+  (dmPC, centerPF) <- centerIf dmPSP Nothing centerPM
   (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   betaT' <- addIfM dsTBetaM betaT
   betaP' <- addIfM dsPBetaM betaP
@@ -784,9 +786,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP ds
   colIndexP <- colIndex dmPSP
   (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colIndexT (Just office)
   (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colIndexP (Just office)
-  (dmTC, centerTF) <- centerIf dmPST centerTM
+  (dmTC, centerTF) <- centerIf dmPST Nothing centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
-  (dmPC, centerPF) <- centerIf dmPSP centerPM
+  (dmPC, centerPF) <- centerIf dmPSP Nothing centerPM
   (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   betaT' <- addIfM dsTBetaM betaT
   betaP' <- addIfM dsPBetaM betaP
@@ -904,7 +906,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       dataAndCodeBuilder = do
         let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart DMTurnout (const 0)
             (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding $ designMatrixRowCCES compInclude densityMatrixRowPart dmPrefType (const 0)
-            centerMatrices = False
+            centerMatrices = True
             initialCenterFM = if centerMatrices then Nothing else (Just $ \_ v _ -> pure v)
             initialQR = NoQR
             meanTurnout = 0.6

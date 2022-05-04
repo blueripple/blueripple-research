@@ -161,7 +161,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stan6"
+modelDir = "br-2021-NewMaps/stan7"
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
@@ -380,24 +380,27 @@ deepDive cmdLine ddName psData_C = do
       (deepDiveColonnade mempty)
       deepDiveWSummary
 
-data DeepDiveSummary = DeepDiveSummary { ddsCVAP :: Int, ddsFracPop :: Double, ddsTurnout :: Double, ddsPref :: Double, ddsShare :: Double}
+data DeepDiveSummary = DeepDiveSummary { ddsCVAP :: Int, ddsFracPop :: Double, ddsDensity :: Double, ddsTurnout :: Double, ddsPref :: Double, ddsShare :: Double}
 
-deepDiveSummaryFld :: FL.Fold (F.Record [BRC.Count, FracPop, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare]) DeepDiveSummary
+deepDiveSummaryFld :: FL.Fold (F.Record [BRC.Count, FracPop, DT.PopPerSqMile, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare]) DeepDiveSummary
 deepDiveSummaryFld =
   let cntFld = FL.premap (F.rgetField @BRC.Count) FL.sum
       fracPopFld = FL.premap (F.rgetField @FracPop) FL.sum
       wgtdFld w f = (/) <$> FL.premap (\r -> w r * f r) FL.sum <*> FL.premap w FL.sum
-      cvapWgtdFld = wgtdFld (realToFrac . F.rgetField @BRC.Count)
+      geomWgtdFld w f = Numeric.exp <$> wgtdFld w (Numeric.log . f)
+      cvapWgt = realToFrac . F.rgetField @BRC.Count
+      densFld = geomWgtdFld cvapWgt (F.rgetField @DT.PopPerSqMile)
+      cvapWgtdFld = wgtdFld cvapWgt
       tFld = cvapWgtdFld (MT.ciMid . F.rgetField @BRE.ModeledTurnout)
       pFld = cvapWgtdFld (MT.ciMid . F.rgetField @BRE.ModeledPref)
       sFld = wgtdFld (\r -> realToFrac (F.rgetField @BRC.Count r) * (MT.ciMid . F.rgetField @BRE.ModeledTurnout $ r)) (MT.ciMid . F.rgetField @BRE.ModeledPref)
-  in DeepDiveSummary <$> cntFld <*> fracPopFld <*> tFld<*> pFld<*> sFld
+  in DeepDiveSummary <$> cntFld <*> fracPopFld <*> densFld <*> tFld <*> pFld<*> sFld
 
 deepDiveColonnade cas =
   let orNA g = BR.dataOrSummary g (BR.textToStyledHtml . const "N/A")
       showOrNA f = orNA (BR.textToStyledHtml . show . f)
       state = showOrNA $ F.rgetField @DT.StateAbbreviation
-      density = F.rgetField @DT.PopPerSqMile `BR.dataOrS`
+      density = F.rgetField @DT.PopPerSqMile `BR.dataOrSummary` ddsDensity
       mTurnout = (MT.ciMid . F.rgetField @BRE.ModeledTurnout) `BR.dataOrSummary` ddsTurnout
       mPref = (MT.ciMid . F.rgetField @BRE.ModeledPref) `BR.dataOrSummary` ddsPref
       mShare' = MT.ciMid . F.rgetField @BRE.ModeledShare
@@ -416,6 +419,7 @@ deepDiveColonnade cas =
      <> C.headed "Race" (BR.toCell cas "Race" "Race" race)
      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
      <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
+     <> C.headed "Ppl/SqMi" (BR.toCell cas "Ppl/SqMi" "Ppl/SqMi" (BR.numberToStyledHtml "%2.1f" . (100*) . density))
      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))

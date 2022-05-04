@@ -249,6 +249,27 @@ weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
   SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
   SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
 
+weightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
+weightedMeanVarianceFunction =  SB.addFunctionsOnce "weighted_mean_variance"
+                        $ SB.declareStanFunction "vector weighted_mean_variance(vector ws, vector xs)" $ do
+  SB.addStanLine "int N = num_elements(xs)"
+  SB.addStanLine "vector[N] wgtdXs = ws .* xs"
+  SB.addStanLine "vector[2] meanVar"
+  SB.addStanLine "meanVar[1] = sum(wgtdXs)/sum(ws)"
+  SB.addStanLine "vector[N] dmWgtdxs = wgtdXs - m"
+  SB.addStanLine "meanVar[2] = sum(dmWgtdxs .* dmWgtdxs)/sum(ws)"
+  SB.addStanLine "return meanVar"
+
+unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
+unWeightedMeanVarianceFunction =  SB.addFunctionsOnce "unweighted_mean_variance"
+                        $ SB.declareStanFunction "vector unweighted_mean_variance(vector xs)" $ do
+  SB.addStanLine "int N = num_elements(xs)"
+  SB.addStanLine "vector[2] meanVar"
+  SB.addStanLine "meanVar[1] = mean(xs)"
+  SB.addStanLine "meanVar[2] = variance(xs)"
+  SB.addStanLine "return meanVar"
+
+
 realIntRatio :: SME.StanVar -> SME.StanVar -> SME.StanExpr
 realIntRatio k l = SB.binOp "/"
                    (SB.paren $ (SB.scalar "1.0" `SB.times` SB.var k))
