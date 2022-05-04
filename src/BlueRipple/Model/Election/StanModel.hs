@@ -167,7 +167,7 @@ dmName DMPresOnlyPref = "DMPref"
 data DMComponents = DMDensity | DMInc | DMSex | DMEduc | DMRace | DMWNG deriving (Show, Eq, Ord)
 
 printComponents :: Set DMComponents -> Text
-printComponents = mconcat . fmap eachToText . Set.toList
+printComponents = mconcat . fmap eachToText . Set.toAscList
   where eachToText DMDensity = "D"
         eachToText DMInc = "I"
         eachToText DMSex = "S"

@@ -256,7 +256,7 @@ data ResultAction r md gq b p c where
   DoNothing :: ResultAction r md gq b p ()
 
 emptyResult :: ResultAction r md gq b p ()
-emptyResult = SkipSummary $ \_ _ _ -> return ()
+emptyResult = SkipSummary $ \_ _ _ -> pure ()
 
 sampleFile :: T.Text -> Maybe Int -> FilePath
 sampleFile outputFilePrefix chainIndexM = toString outputFilePrefix <> (maybe "" (("_" <>) . show) chainIndexM) <> ".csv"

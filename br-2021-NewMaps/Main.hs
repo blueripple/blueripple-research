@@ -149,7 +149,7 @@ main = do
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "11"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "CA" "2"
-    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 7
+    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 1
     when (runThis "deepDive") $ deepDive2022CD cmdLine "AZ" "7"
 --    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
     when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
@@ -340,7 +340,6 @@ type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C]
 
 deepDive :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r ()
 deepDive cmdLine ddName psData_C = do
---  ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
@@ -398,6 +397,7 @@ deepDiveColonnade cas =
   let orNA g = BR.dataOrSummary g (BR.textToStyledHtml . const "N/A")
       showOrNA f = orNA (BR.textToStyledHtml . show . f)
       state = showOrNA $ F.rgetField @DT.StateAbbreviation
+      density = F.rgetField @DT.PopPerSqMile `BR.dataOrS`
       mTurnout = (MT.ciMid . F.rgetField @BRE.ModeledTurnout) `BR.dataOrSummary` ddsTurnout
       mPref = (MT.ciMid . F.rgetField @BRE.ModeledPref) `BR.dataOrSummary` ddsPref
       mShare' = MT.ciMid . F.rgetField @BRE.ModeledShare

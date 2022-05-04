@@ -396,7 +396,7 @@ runModel config rScriptsToWrite dataWrangler cb makeResult toPredict md_C gq_C =
         Say.say $ toText (CS.unparsed summary)
       f summary toPredict modelResultDeps mGQResultDeps
     SC.SkipSummary f -> f toPredict modelResultDeps mGQResultDeps
-    SC.DoNothing -> return ()
+    SC.DoNothing -> pure ()
 {-# INLINEABLE runModel #-}
 
 data StaleFiles = StaleData | StaleOutput | StaleSummary deriving (Show, Eq, Ord)
