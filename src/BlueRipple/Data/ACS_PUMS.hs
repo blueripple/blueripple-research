@@ -239,7 +239,6 @@ pumsLoaderAdults =  pumsLoader'
     return $ F.filterFrame (\r -> F.rgetField @BR.Age5FC r /= BR.A5F_Under18) allPUMS
 -}
 
-
 sumPeopleF :: FL.Fold (F.Record [Citizens, NonCitizens]) (F.Record [Citizens, NonCitizens])
 sumPeopleF = FF.foldAllConstrained @Num FL.sum
 
@@ -578,6 +577,13 @@ densityF =
   in (/) <$> wgtSumF <*> wgtF
 {-# INLINE densityF #-}
 
+geomDensityF :: FL.Fold (Double, Double) Double
+geomDensityF =
+  let wgtF = FL.premap fst FL.sum
+      wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * Numeric.log d) FL.sum
+  in (/) <$> wgtSumF <*> wgtF
+{-# INLINE geomDensityF #-}
+
 pctNativeEnglishF :: FL.Fold (Double, BR.Language) Double
 pctNativeEnglishF =
   let wgtF = FL.premap fst FL.sum
@@ -716,10 +722,6 @@ pumsRowCountF =
      V.:& FF.toFoldRecord nonCitF
      V.:& V.RNil
 {-# INLINE pumsRowCountF #-}
-
-
-
-
 
 -- we have to drop all records with age < 18
 -- PUMSAGE

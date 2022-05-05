@@ -385,6 +385,13 @@ dsSpecific dsLabel dsp ik oM =
         b <- SMP.addParameter ("theta_" <> dsLabel) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) bp)
         return (Just a, Just b)
         else return (Just a, Nothing)
+    DSPAlphaHNCBetaNH oM' alphaF bp -> do
+      dsAlpha <- alphaF dsLabel --a <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
+      if fromMaybe True ((/=) <$> oM <*> oM')
+        then do
+        b <- SMP.addParameter ("theta_" <> dsLabel) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) bp)
+        return (Just dsAlpha, Just b)
+        else return (Just dsAlpha, Nothing)
     DSPAlphaGroup gtt muPrior sigmaPrior -> do
       dsAlpha <- dsAlphaGroup dsLabel gtt muPrior sigmaPrior
       return (Just dsAlpha, Nothing)
@@ -879,7 +886,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
   ccesDataRows <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
   let densityMatrixRowPart :: forall x. F.ElemOf x DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record x)
       densityMatrixRowPart = densityMatrixRowPartFromData (densityTransform model) ccesDataRows
-      reportZeroRows :: K.Sem r ()
+  let reportZeroRows :: K.Sem r ()
       reportZeroRows = do
         let numZeroHouseRows = countCCESZeroVoteRows ET.House (voteShareType model) ccesDataRows
             numZeroPresRows = countCCESZeroVoteRows ET.President (voteShareType model) ccesDataRows
@@ -977,6 +984,18 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             let bp = normal 0 0.5
                 dssT = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaTDS) bp
                 dssP = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaPDS) bp
+            return (dssT, dssP)
+          DSAlphaHNCBetaNH oM -> do
+            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
+            let alphaF sigma t = do
+                  raw <- SMP.addParameter ("alpha_" <> t <> "_raw") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
+                  SB.inBlock SB.SBTransformedParameters
+                    $ SB.stanDeclareRHS ("alpha_" <> t) SB.StanReal ""
+                    $ SB.var sigma `SB.times` SB.var raw
+            let bp = normal 0 0.5
+                dssT = DSPAlphaHNCBetaNH oM (alphaF sigmaAlphaTDS) bp
+                dssP = DSPAlphaHNCBetaNH oM (alphaF sigmaAlphaPDS) bp
             return (dssT, dssP)
           DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
           DSAlphaBetaNH oM -> do
@@ -1281,6 +1300,7 @@ printDistribution (CountScaledBB n) = "CountScaledBB" <> show n
 
 data DataSetSpecific k = DSNone | DSAlpha | DSAlphaHC | DSAlphaHNC
                        | DSAlphaHCBetaNH (Maybe ET.OfficeT)
+                       | DSAlphaHNCBetaNH (Maybe ET.OfficeT)
                        | DSAlphaGroup (SB.GroupTypeTag k)
                        | DSAlphaBetaNH (Maybe ET.OfficeT) | DSAlphaBetaHC | DSAlphaBetaHNC
 
@@ -1290,6 +1310,7 @@ printDataSetSpecific DSAlpha = "DSa"
 printDataSetSpecific DSAlphaHC = "DSaHC"
 printDataSetSpecific DSAlphaHNC = "DSaHNC"
 printDataSetSpecific (DSAlphaHCBetaNH oM) = "DSaHCbNH" <> maybe "" officeText oM
+printDataSetSpecific (DSAlphaHNCBetaNH oM) = "DSaHNCbNH" <> maybe "" officeText oM
 printDataSetSpecific (DSAlphaGroup gtt) = "DSa" <> (SB.taggedGroupName gtt)
 printDataSetSpecific (DSAlphaBetaNH oM) = "DSabNH" <> maybe "" officeText oM
 printDataSetSpecific DSAlphaBetaHC = "DSabHC"
@@ -1300,6 +1321,7 @@ data DSSpecificWithPriors k md gq  = DSPNone
                                    | DSPAlphaHC SB.StanExpr
                                    | DSPAlphaHNC (Text -> SB.StanBuilderM md gq SB.StanVar)
                                    | DSPAlphaHCBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
+                                   | DSPAlphaHNCBetaNH (Maybe ET.OfficeT) (Text -> SB.StanBuilderM md gq SB.StanVar) SB.StanExpr
                                    | DSPAlphaGroup (SB.GroupTypeTag k) SB.StanExpr SB.StanExpr
                                    | DSPAlphaBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
                                    | DSPAlphaBetaHC SB.StanExpr SB.StanExpr
@@ -1438,11 +1460,11 @@ densityMatrixRowPartFromData :: forall rs rs'.(F.ElemOf rs DT.PopPerSqMile, F.El
                          => DensityTransform
                          -> F.FrameRec rs'
                          -> DM.DesignMatrixRowPart (F.Record rs)
-densityMatrixRowPartFromData RawDensity _ = (DM.DesignMatrixRowPart "Density" 1 f)
+densityMatrixRowPartFromData RawDensity _ = DM.DesignMatrixRowPart "Density" 1 f
   where
    f = VU.fromList . pure . F.rgetField @DT.PopPerSqMile
 densityMatrixRowPartFromData LogDensity _ =
-  (DM.DesignMatrixRowPart "Density" 1 logDensityPredictor)
+  DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
 densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPart "Density" 1 f where
   sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.list) dat
   quantileSize = List.length sortedData `div` bins
@@ -1455,7 +1477,7 @@ densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPar
   quantileF x = go x indexedBreaks
   g x = VU.fromList [quantileF x]
   f = g . F.rgetField @DT.PopPerSqMile
-densityMatrixRowPartFromData (SigmoidDensity c s range) _ = DM.DesignMatrixRowPart "Density" 1 f where
+densityMatrixRowPartFromData (SigmoidDensity c s range) _ = DM.DesignMatrixRowPart "Density" 1 f  where
   d = F.rgetField @DT.PopPerSqMile
   y r = realToFrac c / (d r)
   yk r = (y r) ** realToFrac s

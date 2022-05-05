@@ -150,6 +150,8 @@ main = do
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "CA" "2"
     when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 1
+    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 9
+    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 3
     when (runThis "deepDive") $ deepDive2022CD cmdLine "AZ" "7"
 --    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
     when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
@@ -168,7 +170,7 @@ modelVariant = BRE.Model
                (BRE.BinDensity 10 5)
                (Set.fromList [BRE.DMDensity, BRE.DMSex, BRE.DMEduc, BRE.DMRace, BRE.DMWNG, BRM.DMInc])
                (BRE.BetaBinomial 10)
-               (BRE.DSAlphaHCBetaNH $ Just ET.House)
+               (BRE.DSAlphaHNCBetaNH $ Just ET.House)
                BRE.HierarchicalBeta
                1
 
@@ -419,7 +421,7 @@ deepDiveColonnade cas =
      <> C.headed "Race" (BR.toCell cas "Race" "Race" race)
      <> C.headed "CVAP" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%d" . cvap))
      <> C.headed "%Pop" (BR.toCell cas "CVAP" "CVAP" (BR.numberToStyledHtml "%2.1f" . (100*) . fracPop))
-     <> C.headed "Ppl/SqMi" (BR.toCell cas "Ppl/SqMi" "Ppl/SqMi" (BR.numberToStyledHtml "%2.1f" . (100*) . density))
+     <> C.headed "Ppl/SqMi" (BR.toCell cas "Ppl/SqMi" "Ppl/SqMi" (BR.numberToStyledHtml "%2.0f" . density))
      <> C.headed "Modeled Turnout" (BR.toCell cas "M Turnout" "M Turnout" (BR.numberToStyledHtml "%2.1f" . (100*) . mTurnout))
      <> C.headed "Modeled 2-party D Pref" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mPref))
      <> C.headed "Modeled 2-party D Share" (BR.toCell cas "M Share" "M Share" (BR.numberToStyledHtml "%2.1f" . (100*) . mShare))
@@ -500,6 +502,29 @@ modelDiagnostics cmdLine = do
   ccesAndPums_C <- BRE.prepCCESAndPums False
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
+{-
+  pumsRaw_C <- PUMS.pumsLoaderAdults
+  let pbpFilter r = F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "AZ"
+  pumsByPUMA <- BRE.pumsByPUMA pbpFilter <$> K.ignoreCacheTime pumsRaw_C
+  K.logLE K.Info "PumsByPUMA"
+  BR.logFrame pumsByPUMA
+  cdByPUMA_C <- BR.allCDFromPUMA2012Loader
+  pumsByCD_C <- BRE.cachedPumsByCD pumsRaw_C cdByPUMA_C
+  let pbCDFilter r = pbpFilter r && F.rgetField @BR.CongressionalDistrict r == 9
+  pumsByCD <-  F.filterFrame pbCDFilter <$> K.ignoreCacheTime pumsByCD_C
+  K.logLE K.Info "PumsByCD"
+  BR.logFrame pumsByCD
+  let acsByCD_C = fmap BRE.acsRows ccesAndCPSEM_C
+  acsByCD <- F.filterFrame pbCDFilter <$> K.ignoreCacheTime acsByCD_C
+  K.logLE K.Info "acsByCD"
+  BR.logFrame acsByCD
+  preppedACS_C <- BRE.prepACS False
+  preppedACSByCD <-  F.filterFrame pbCDFilter <$> K.ignoreCacheTime preppedACS_C
+  K.logLE K.Info "preppedACSByCD"
+  BR.logFrame preppedACSByCD
+  K.knitError "STOP"
+-}
+
   BRE.prepHouseElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
   BRE.prepSenateElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
   BRE.prepPresidentialElectionData False 2020 >>= K.ignoreCacheTime >>= BR.logFrame
@@ -776,7 +801,7 @@ postStratRollupFld = FMR.concatFold
   where
     innerFld :: FL.Fold (F.Record [DT.PopPerSqMile, BRC.Count]) (F.Record [DT.PopPerSqMile, BRC.Count])
     innerFld =
-      let dFold = fmap (fromMaybe 0) (FL.premap (F.rgetField @DT.PopPerSqMile) FL.last)
+      let dFold = BRE.wgtdGMeanF (realToFrac . F.rgetField @BRC.Count) (F.rgetField @DT.PopPerSqMile) --fmap (fromMaybe 0) (FL.premap (F.rgetField @DT.PopPerSqMile) FL.last)
           cFold = FL.premap (F.rgetField @BRC.Count) FL.sum
       in (\d c -> d F.&: c F.&: V.RNil) <$> dFold <*> cFold
 
