@@ -66,3 +66,20 @@ that district worth a longer look, especially if a strong candidate is running a
 strong local organizing.  Conversely, in AZ-18, we see R+1 where the historical model sees D+10.
 There, we think it might be important to make sure the D candidate is well supported because the
 demographics might support a stronger than expected R performance.
+
+And some notes specific to AZ:
+
+- Our model struggles to predict the voter turnout and preference
+  of voters whose race/ethnicity is other than Black, Hispanic, Asian and White-non-Hispanic.
+  There are not a lot of such voters in the survey data which results in large uncertainties. For
+  districts where such voters are a large fraction of the population (e.g., AZ-6), we are not
+  suprised to see the model diverge strongly from the historical result and we would trust
+  history over our model, especially in a safe district.
+
+- Our model is somewhat more pessimistic about Hispanic voter preference than the historical model
+  we’re comparing to here.  That might be mostly because we use only 2020 data and the typical
+  historical model uses the past 2 or 3 elections. This shifts our estimate downwards in any
+  district which has a large number of Hispanic voters, something true in several AZ districts.
+  In this case, what you think is correct depends on whether you think the Dems can return to
+  their pre-2020 levels of support from Hispanic voters or instead that 2020 is an indication
+  of things to come.

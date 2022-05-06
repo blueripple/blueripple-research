@@ -2,12 +2,8 @@
 Based on the results above, we think there are four good options
 for Dem donors in NC: NC-1, NC-9, NC-13, and perhaps NC-6:
 
-- We think NC-1 is closer than it appears to the pundits who rely on historical data.
-We think it’s a good Dem donor investment since it might be closer than it looks
-historically, expecially if the Republicans field a good candidate.
-
-Our findings in NC-1 provide a good opportunity to discuss why these models may differ.
-NC-1 looks like a safe-D district
+Our findings in NC-9 provide a good opportunity to discuss why these models may differ.
+NC-9 looks like a lean-R district
 given the voting patterns in the precincts within it,
 but our demographic model suggests it’s a toss-up.
 What might this mean? One way to answer this question is to consider the difference between the two models.
@@ -15,22 +11,23 @@ Our demographic model asks: if the voting-age citizens of this district turned o
 in other parts of the country,  what would we expect the outcome of this election to be?
 Whereas the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
 vote as they have in previous elections. This points to a few possible reasons why a historically
-safe-D district like NC-1 might look like a toss-up in our model -- including, but not limited to, the following:
+lean-R district like NC-9 might look like a toss-up in our model -- including, but not limited to, the following:
 
 - Our model may be wrong about how we define "similar" voters. We've incorporated factors like education and race,
-but maybe we've missed key things that make voters in NC-1 different from superficially "similar" voters in other districts nationwide.
+  but maybe we've missed key things that make voters in NC-9 different from superficially "similar" voters in other districts nationwide.
 
 - Location-specific factors may support Dem voting. E.g., perhaps the Democratic party or local
-organizations are particularly well-organized in NC-1 and that is reflected in the historical
-model suing those voters.
+  organizations are not particularly well-organized in NC-9 and that is reflected in the historical
+  model using those voters.
 
-- Republicans may, in fact, have underperformed relative to their potential.
-It's possible that more effective candidate recruitment, campaigning, or organizing could, in fact,
-yield a more competitive race than history would suggest.
+- Democrats may, in fact, have underperformed relative to their potential. Or there may have
+  been demographic shifts in the district since the last election which favor Dems.
+  It's possible that more effective candidate recruitment, campaigning, or organizing could, in fact,
+  yield a more competitive race than history would suggest.
 
 We don't know which (if any) of these explanations is correct. But our model suggests that if you want to
-support Team Blue in NC, and are open to the idea of playing some important defense,
-then donating to a Dem in NC-1 might fit the bill.
+support Team Blue in NC, and are open to the idea of playing some offense,
+then donating to a Dem in NC-9 might fit the bill.
 
 ## 3.	Coming next from Blue Ripple
 

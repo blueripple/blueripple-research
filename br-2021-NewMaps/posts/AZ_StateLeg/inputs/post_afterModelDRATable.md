@@ -7,18 +7,19 @@ by widening the range an extra point on both sides.
 With those preliminaries in mind,
 here are a few observations on the new AZ state-house districts:
 
-1. Unexpected findings – pickup opportunities for Dem donors (2)
+1. Unexpected findings – pickup opportunities for Dem donors (5)
 
-    - Our model shows strong D performance is possible in AZ-14, AZ-27 and AZ-29 though the historical model sees them
-    as safe R. AZ-14 and AZ-27 overlap with Congressional districts which are also competitive, making donations to them
-    even more useful.
+    - Our model shows strong D performance is possible in AZ-10, AZ-14, AZ-15, AZ-27, and AZ-29
+    though the historical model sees them as safe R.
+    AZ-10, AZ-14, AZ-15 and AZ-27 (all but AZ-29) overlap with Congressional districts which are also competitive,
+    making donations to them even more useful.
 
 2. Unexpected findings – potential defense opportunities for Dem donors (3)
 
    - There are also places where we are concerned that historically safe-looking districts might be in need of
-   defense. In particular, AZ-18 where we see R+1 vs the historical D+10. AZ-8 and AZ-12 are both safe D historically
-   but we see both as within striking distance for Rs. All of these districts overlap
-   competitive Congressional districts as well.
+   defense. In particular, AZ-23 looks R+5 in our model but D+8 historically.
+   In AZ-18 and AZ-21 where we see a tossup vs the historical D+10. All of these overlap competitive Congressional
+   districts.
 
 3. Expected findings – known high-priority races for Dem Donors (5)
 
