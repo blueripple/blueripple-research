@@ -70,12 +70,12 @@ rowFuncF :: FL.Fold (DesignMatrixRowPart r) (r -> V.Vector Double)
 rowFuncF = appConcat . sequenceA <$> FL.premap dmrpVecF FL.list
   where appConcat g r = V.concat (g r)
 
-matrixFromRowData :: DesignMatrixRow r -> SB.MatrixRowFromData r
-matrixFromRowData (DesignMatrixRow name rowParts) = SB.MatrixRowFromData name length f
+matrixFromRowData :: DesignMatrixRow r -> Maybe SB.IndexKey -> SB.MatrixRowFromData r
+matrixFromRowData (DesignMatrixRow name rowParts) indexKeyM = SB.MatrixRowFromData name indexKeyM length f
   where (length, f) = FL.fold ((,) <$> rowLengthF <*> rowFuncF) rowParts
 
 designMatrixRowPartFromMatrixRowData :: SB.MatrixRowFromData r -> DesignMatrixRowPart r
-designMatrixRowPartFromMatrixRowData (SB.MatrixRowFromData name n rowFunc) = DesignMatrixRowPart name n rowFunc
+designMatrixRowPartFromMatrixRowData (SB.MatrixRowFromData name _ n rowFunc) = DesignMatrixRowPart name n rowFunc
 
 {-
 combineRowFuncs :: Foldable f => f (Int, r -> V.Vector Double) -> (Int, r -> V.Vector Double)
@@ -133,19 +133,23 @@ rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name
         sumScaledVecs r = FL.fold (FL.Fold (MN.!+!) (MA.compute $ MV.sreplicate (MA.Sz vecSize) 0) id) $ scaledVecs r
 
 -- adds matrix (name_dataSetName)
--- adds K_name for col dimension (also <NamedDim name_Cols>)
--- row dimension should be N_dataSetNamer  (which is <NamedDim dataSetName)
+-- adds K_name (or given index) for col dimension (also <NamedDim name_Cols>)
+-- row dimension should be N_dataSetName (which is <NamedDim dataSetName)
 -- E.g., if name="Design" and dataSetName="myDat"
 -- In data
 -- "Int N_myDat;" (was already there)
 -- "Int K_Design;"
 -- "matrix[N_myDat, K_Design] Design_myDat;"
 -- with accompanying json
-addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq SB.StanVar
-addDesignMatrix rtt dmr = SB.add2dMatrixJson rtt (matrixFromRowData dmr) ""  (SB.NamedDim (SB.dataSetName rtt))
+addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> Maybe SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
+addDesignMatrix rtt dmr colIndexM = SB.add2dMatrixJson rtt (matrixFromRowData dmr colIndexM) ""  (SB.NamedDim (SB.dataSetName rtt))
 
-designMatrixColDimBinding ::  DesignMatrixRow r -> (SB.IndexKey, SB.StanExpr)
-designMatrixColDimBinding dmr = (dmName dmr <> "_Cols", SB.name $ "K_" <> dmName dmr)
+designMatrixColDimBinding ::  DesignMatrixRow r -> Maybe SB.IndexKey -> (SB.IndexKey, SB.StanExpr)
+designMatrixColDimBinding dmr indexKeyM = (colIndex, colExpr)
+  where
+    ik = fromMaybe (dmName dmr) indexKeyM
+    colIndex = ik  <> "_Cols"
+    colExpr = SB.name $ "K_" <> ik
 {-# INLINEABLE designMatrixColDimBinding #-}
 
 designMatrixIndexes :: DesignMatrixRow r -> [(Text, Int, Int)]
@@ -370,6 +374,8 @@ thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, SB.NamedDim colDimNa
     rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
     let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
     rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
+    SBB.printVar "" rV
+    SBB.printVar "" rInvV
     return (qV, rV, rInvV)
   mBeta <- case mThetaBeta of
     Nothing -> return Nothing

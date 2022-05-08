@@ -1294,7 +1294,7 @@ addColumnMJsonOnce rtt name st sc toMX = do
     else return $ SME.StanVar name st
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
-data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, rowLength :: Int, rowVec :: r -> VU.Vector Double }
+data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, colIndexM :: Maybe SME.IndexKey, rowLength :: Int, rowVec :: r -> VU.Vector Double }
 
 add2dMatrixJson :: (Typeable md, Typeable gq)
                 => RowTypeTag r
@@ -1302,12 +1302,13 @@ add2dMatrixJson :: (Typeable md, Typeable gq)
                 -> SME.DataConstraint
                 -> SME.StanDim
                 -> StanBuilderM md gq SME.StanVar
-add2dMatrixJson rtt (MatrixRowFromData name cols vecF) sc rowDim = do
+add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) sc rowDim = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName
-      colName = "K" <> "_" <> name
-      colDimName = name <> "_Cols"
-      colDimVar = SME.StanVar colDimName SME.StanInt
+      colIndex = fromMaybe name colIndexM
+      colName = "K" <> "_" <> colIndex
+      colDimName = colIndex <> "_Cols"
+      colDimVar = SME.StanVar colIndex SME.StanInt
   addFixedIntJson' (inputDataType rtt) colName Nothing cols
 --  addDeclBinding' colDimName (SME.name colName)
   addDeclBinding colDimName $ SME.StanVar colName SME.StanInt
