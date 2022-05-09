@@ -761,6 +761,24 @@ newStateLegMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyLower . onlyState "NC") proposedSLDs_C)
 -}
 
+  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  paPaths <- postPaths "PA_StateLeg" cmdLine
+  BR.brNewPost paPaths postInfoPA "AZ_SLD" $ do
+    overlapsU <- DO.loadOverlapsFromCSV "data/districtOverlaps/PA_SLDU_CD.csv" "AZ" ET.StateUpper ET.Congressional
+    overlapsL <- DO.loadOverlapsFromCSV "data/districtOverlaps/PA_SLDL_CD.csv" "AZ" ET.StateLower ET.Congressional
+    sldUDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "PA" "Passed" ET.StateUpper)
+    sldLDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "PA" "Passed" ET.StateLower)
+    cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "PA" "Passed" ET.Congressional)
+
+    let postSpec = NewSLDMapsPostSpec "PA" "StateBoth" paPaths (sldUDRA <> sldLDRA) cdDRA
+                   (M.fromList [(ET.StateUpper, overlapsU), (ET.StateLower, overlapsL)])
+    newStateLegMapAnalysis False cmdLine postSpec postInfoPA
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "PA") proposedCDs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "PA") proposedSLDs_C)
+
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   azPaths <- postPaths "AZ_StateLeg" cmdLine
@@ -769,7 +787,7 @@ newStateLegMapPosts cmdLine = do
     sldDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.StateUpper)
     cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional)
 
-    let postSpec = NewSLDMapsPostSpec "AZ" ET.StateUpper azPaths sldDRA cdDRA overlaps
+    let postSpec = NewSLDMapsPostSpec "AZ" "StateUpper" azPaths sldDRA cdDRA (one $ (ET.StateUpper, overlaps))
     newStateLegMapAnalysis False cmdLine postSpec postInfoAZ
       (K.liftActionWithCacheTime ccesWD_C)
       (K.liftActionWithCacheTime ccesAndCPSEM_C)
@@ -1093,12 +1111,13 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
 data NewSLDMapsPostSpec = NewSLDMapsPostSpec { stateAbbr :: Text
-                                             , districtType :: ET.DistrictType
+                                             , districtDescription :: Text
                                              , paths :: BR.PostPaths BR.Abs
                                              , sldDRAnalysis :: F.Frame Redistrict.DRAnalysis
                                              , cdDRAnalysis :: F.Frame Redistrict.DRAnalysis
-                                             , overlaps :: DO.DistrictOverlaps Int
+                                             , overlaps :: Map ET.DistrictType (DO.DistrictOverlaps Int)
                                              }
+
 
 newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                        => Bool
@@ -1112,7 +1131,7 @@ newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r
                        -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- proposed SLDs
                        -> K.Sem r ()
 newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C cdDemo_C sldDemo_C = K.wrapPrefix "newStateLegMapAnalysis" $ do
-  K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr postSpec <> "( " <> show (districtType postSpec) <> ")"
+  K.logLE K.Info $ "Rebuilding state-leg map analysis for " <> stateAbbr postSpec <> "( " <> districtDescription postSpec <> ")"
   BR.brAddPostMarkDownFromFile (paths postSpec) "_intro"
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
@@ -1120,16 +1139,16 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
 
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
-      postStratInfo dt = (mapGroup
-                         , "DM" <> "_" <> stateAbbr postSpec <> "_" <> show dt
+      postStratInfo dd = (mapGroup
+                         , "DM" <> "_" <> stateAbbr postSpec <> "_" <> dd
                          )
-      modelDM :: ET.DistrictType
+      modelDM :: Text
               -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM dt x = do
-        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (postStratInfo dt) ccesAndCPS2020_C x
-  modeledCDs <- modelDM ET.Congressional (fmap F.rcast <$> cdDemo_C)
-  modeledSLDs <- modelDM (districtType postSpec) (fmap F.rcast <$> sldDemo_C)
+      modelDM dd x = do
+        K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (postStratInfo dd) ccesAndCPS2020_C x
+  modeledCDs <- modelDM "Congressional" (fmap F.rcast <$> cdDemo_C)
+  modeledSLDs <- modelDM (districtDescription postSpec) (fmap F.rcast <$> sldDemo_C)
   sldDemo <- K.ignoreCacheTime sldDemo_C
 {-  let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
@@ -1147,6 +1166,7 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
       inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
       dName = F.rgetField @ET.DistrictName
+      dType = F.rgetField @ET.DistrictTypeC
 --      modMid r = round @_ @Int . (100*) $ MT.ciMid $ F.rgetField @BRE.ModeledShare r
 --      dra r =  round @_ @Int . (100*) $ F.rgetField @TwoPartyDShare r
       cdModelMap = FL.fold (FL.premap (\r -> (dName r, modMid r)) FL.map) modeledCDs
@@ -1155,16 +1175,18 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
         where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
-  let tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName) => BR.CellStyle (F.Record rs) String
+  let overlapsMMap (dt, dn) = M.lookup dt (overlaps postSpec) >>= (\d -> DO.overlapsOverThresholdForRowByName 0.25 d dn)
+      tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC)
+               => BR.CellStyle (F.Record rs) String
       tableCAS =  modelVsHistoricalTableCellStyle <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
         where
           f r = Monoid.getAny $ mconcat
                 $ fmap (Monoid.Any . modelCompetitive . fst)
-                $ M.toList $ fromMaybe mempty $ DO.overlapsOverThresholdForRowByName 0.25 (overlaps postSpec) (dName r)
+                $ M.toList $ fromMaybe mempty $ overlapsMMap (dType r, dName r) --DO.overlapsOverThresholdForRowByName 0.25 (overlaps postSpec) (dName r)
   BR.brAddRawHtmlTable
-    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg (" <> show (districtType postSpec) <> ") 2022: Demographic Model vs. Historical Model (DR)")
+    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg (" <> districtDescription postSpec <> ") 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (dmColonnadeOverlap 0.25 (overlaps postSpec) tableCAS)
+    (dmColonnadeOverlap overlapsMMap tableCAS)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
   let sldByModelShare = modelShareSort modeledSLDs --proposedPlusStateAndStateRace_RaceDensityNC
@@ -1197,9 +1219,11 @@ newStateLegMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPS
   BR.brAddSharedMarkDownFromFile (paths postSpec) "modelExplainer"
   pure ()
 
-dmColonnadeOverlap x ols cas =
+dmColonnadeOverlap olMM cas =
   let state = F.rgetField @DT.StateAbbreviation
+      dType = F.rgetField @ET.DistrictTypeC
       dName = F.rgetField @ET.DistrictName
+      dKey r = (dType r, dName r)
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
@@ -1207,7 +1231,7 @@ dmColonnadeOverlap x ols cas =
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
-     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . DO.overlapsOverThresholdForRowByName x ols . dName))
+     <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . olMM . dKey))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
 
