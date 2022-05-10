@@ -20,4 +20,8 @@ With that in mind,  here are a few observations on the new PA districts:
 - We think the rest are competitive, though historically three of those (PA-4, PA-6, PA-17) are
   historically safe D.
 
+- We’re particularly interested/concerned with PA-8, which is historically competitive (D+1) but
+  our model sees as R+9.
+
+
 Here’s a different look at the data, in a table sorted by the Dem share in our demographic model.
