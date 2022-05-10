@@ -1103,6 +1103,20 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
 
 
+  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  paPaths <- postPaths "PA_Congressional" cmdLine
+  BR.brNewPost paPaths postInfoPA "PA" $ do
+    paNMPS <- NewCDMapPostSpec "PA" paPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "PA" "Passed" ET.Congressional))
+    let (NewCDMapPostSpec _ _ dra) = paNMPS
+    newCongressionalMapAnalysis False cmdLine paNMPS postInfoPA
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "PA") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "PA") proposedCDs_C)
+
+
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
@@ -1312,7 +1326,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C x
 
   proposedBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
-  extantBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
+  extantBaseHV <- modelDM modelVariant (stateAbbr <> "_Extant") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
 
 --  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
 --  (_, proposedBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)

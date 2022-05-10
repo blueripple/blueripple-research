@@ -60,8 +60,10 @@ There are 253 seats to analyze (though only 228 are contested in this election)
 but most are safe D or safe R.  We model every district but we only
 present results for “interesting” districts:
 
-    1. Either model sees the district as between R+5 and D+5.
-    2. One model sees the district as D+5 or higher and the other as R+5 or higher.
+1. BR model sees the district as between R+5 and D+5.
+2. Dave’s Redistricting sees the district as between R+3 and D+3.
+3. BR model sees the district as D+5 or more but Dave’s sees it as R+3 or more.
+4. BR model sees the district as R+5 or more but Dave’s sees it as D+3 or more.
 
 We drop the rest of the districts because the tables would get too long and the charts too crowded.
 
