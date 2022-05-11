@@ -35,8 +35,12 @@ Here’s where we’re planning to take these analyses over the next few months:
 
 - We’re going to do the same type analysis in many (all?) of the states,
 in order to identify the best options for Dem donors in 2022 on both
-offense and defense nationwide. See [here][TXPost] for our take on the new
-Texas map.
+offense and defense nationwide. Here are our takes on
+[Arizona][AZPost],
+[Michigan][MIPost],
+[Pennsylvania][PAPost],
+and [Texas][TXPost].
+
 - We’re going to continue to refine and improve our demographic model–we’ll
 update this post and others as we do so. Feel free to contact us if you want
 more details on the mechanics, or if you’d like to propose changes or improvements.
@@ -46,6 +50,10 @@ more details on the mechanics, or if you’d like to propose changes or improvem
 If you want to stay up-to-date, please sign up for our email updates!
 We’re also on Twitter, Facebook, and Github.
 
+[AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
+[MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
+[NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
+[PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
 
 ## 4. Coda #1: Demographics of new vs. old NC districts

@@ -77,7 +77,18 @@ Here’s where we’re planning to take these analyses over the next few months:
 
 - We’re going to do the same type analysis in many (all?) of the states,
 in order to identify the best options for Dem donors in 2022 on both
-offense and defense nationwide.
+offense and defense nationwide. Here are our takes on
+[Arizona][AZPost],
+[Michigan][MIPost],
+[North Carolina][NCPost],
+and [Pennsylvania][PAPost].
+
+[AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
+[TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
+[NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
+[PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html
+[MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
+
 - We’re going to continue to refine and improve our demographic model–we’ll
 update this post and others as we do so. Feel free to contact us if you want
 more details on the mechanics, or if you’d like to propose changes or improvements.

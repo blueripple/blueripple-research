@@ -1,4 +1,4 @@
-# New Maps, New Dem Strategy: Our AZ Analysis
+# New Maps, New Dem Strategy: Our MI Analysis
 
 The 2022 Congressional elections will involve new district maps in
 all 50 states.
@@ -14,18 +14,18 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-In this post, we’re focusing on Arizona. Here’s what we’ll cover:
+In this post, we’re focusing on Michigan. Here’s what we’ll cover:
 
-1. Dem-lean by district in AZ: our demographic model vs. historical data
+1. Dem-lean by district in MI: our demographic model vs. historical data
 2. Districts worthy of Dem donor support
 3. Coming next from Blue Ripple
-4. Coda #1: Demographics of the new AZ districts
+4. Coda #1: Demographics of the new MI districts
 5. Coda #2: Brief intro to our methods (for non-experts)
 
-## 1. Dem-lean by district in AZ: our demographic model vs. historical data
+## 1. Dem-lean by district in MI: our demographic model vs. historical data
 
 Our “demographic” model forecasts the potential Democratic lean of each
-new district in AZ based on attributes like race, education, age, and
+new district in MI based on attributes like race, education, age, and
 population density. In the graph and table below,
 we compare our predictions to a “historical” model (from the excellent
 [Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level

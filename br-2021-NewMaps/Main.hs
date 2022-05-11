@@ -1060,7 +1060,7 @@ newCongressionalMapPosts cmdLine = do
   let postInfoNC = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just BR.Unpublished)
+                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just $ BR.Published $ Time.fromGregorian 2022 05 11)
                    )
   ncPaths <-  postPaths "NC_Congressional" cmdLine
   BR.brNewPost ncPaths postInfoNC "NC" $ do
@@ -1076,7 +1076,7 @@ newCongressionalMapPosts cmdLine = do
   let postInfoTX = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just BR.Unpublished)
+                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just $  BR.Published $ Time.fromGregorian 2022 05 11)
                    )
   txPaths <- postPaths "TX_Congressional" cmdLine
   BR.brNewPost txPaths postInfoTX "TX" $ do
@@ -1089,7 +1089,7 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "TX") acs_C)
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "TX") proposedCDs_C)
 
-  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
   azPaths <- postPaths "AZ_Congressional" cmdLine
   BR.brNewPost azPaths postInfoAZ "AZ" $ do
     azNMPS <- NewCDMapPostSpec "AZ" azPaths
@@ -1103,7 +1103,7 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
 
 
-  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
   paPaths <- postPaths "PA_Congressional" cmdLine
   BR.brNewPost paPaths postInfoPA "PA" $ do
     paNMPS <- NewCDMapPostSpec "PA" paPaths
@@ -1116,6 +1116,18 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "PA") acs_C)
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "PA") proposedCDs_C)
 
+  let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
+  miPaths <- postPaths "MI_Congressional" cmdLine
+  BR.brNewPost miPaths postInfoMI "MI" $ do
+    miNMPS <- NewCDMapPostSpec "MI" miPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "MI" "Passed" ET.Congressional))
+    let (NewCDMapPostSpec _ _ dra) = miNMPS
+    newCongressionalMapAnalysis False cmdLine miNMPS postInfoMI
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "MI") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "MI") proposedCDs_C)
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -1133,8 +1145,6 @@ districtColonnade cas =
 modelCompColonnade states cas =
   C.headed "Model" (BR.toCell cas "Model" "Model" (BR.textToStyledHtml . fst))
   <> mconcat (fmap (\s -> C.headed (BR.textToCell s) (BR.toCell cas s s (BR.maybeNumberToStyledHtml "%2.2f" . M.lookup s . snd))) states)
-
-
 
 type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopPerSqMile]
 type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] V.++ ModelPredictorR V.++ '[BRC.Count]
@@ -1308,18 +1318,15 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       rescaleExtant = rescaleDensity $ Numeric.exp (acs2020PWLD - extantPWLD)
       rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
   K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD
-  --      ccesVoteSource = BRE.CCESComposite
   let addDistrict r = r F.<+> ((ET.Congressional F.&: show (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
---      modelDir =  "br-2021-NewMaps/stanAH"
       mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup
                       , "DM" <> "_" <> name
                       )
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
---      model = BRE.Model ET.TwoPartyShare (one ET.President) BRE.LogDensity
       modelDM :: BRE.Model k -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
       modelDM model name x = do
@@ -1327,11 +1334,6 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
 
   proposedBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
   extantBaseHV <- modelDM modelVariant (stateAbbr <> "_Extant") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
-
---  (ccesAndCPS_CrossTabs, extantBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Extant") $ (fmap F.rcast <$> extantDemo_C)
---  (_, proposedBaseHV) <- modelDM modelVariant BRE.CCESAndCPS (stateAbbr <> "_Proposed") $ (fmap F.rcast <$> proposedDemo_C)
---  BR.logFrame proposedBaseHV
---  K.ignoreCacheTime proposedDemo_C >>= BR.logFrame
 
   let extantForPost = extantBaseHV
       proposedForPost = proposedBaseHV
