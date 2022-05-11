@@ -1057,6 +1057,33 @@ newCongressionalMapPosts cmdLine = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
   drCDPlans <- Redistrict.allPassedCongressionalPlans
+
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
+  azPaths <- postPaths "AZ_Congressional" cmdLine
+  BR.brNewPost azPaths postInfoAZ "AZ" $ do
+    azNMPS <- NewCDMapPostSpec "AZ" azPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional))
+    let (NewCDMapPostSpec _ _ dra) = azNMPS
+    newCongressionalMapAnalysis False cmdLine azNMPS postInfoAZ
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "AZ") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
+
+  let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  gaPaths <- postPaths "GA_Congressional" cmdLine
+  BR.brNewPost gaPaths postInfoGA "GA" $ do
+    gaNMPS <- NewCDMapPostSpec "GA" gaPaths
+            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "GA" "Passed" ET.Congressional))
+    let (NewCDMapPostSpec _ _ dra) = gaNMPS
+    newCongressionalMapAnalysis False cmdLine gaNMPS postInfoGA
+      (K.liftActionWithCacheTime ccesWD_C)
+      (K.liftActionWithCacheTime ccesAndCPSEM_C)
+      (K.liftActionWithCacheTime acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "GA") acs_C)
+      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "GA") proposedCDs_C)
+
   let postInfoNC = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
@@ -1089,18 +1116,6 @@ newCongressionalMapPosts cmdLine = do
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "TX") acs_C)
       (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "TX") proposedCDs_C)
 
-  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
-  azPaths <- postPaths "AZ_Congressional" cmdLine
-  BR.brNewPost azPaths postInfoAZ "AZ" $ do
-    azNMPS <- NewCDMapPostSpec "AZ" azPaths
-            <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "AZ" "Passed" ET.Congressional))
-    let (NewCDMapPostSpec _ _ dra) = azNMPS
-    newCongressionalMapAnalysis False cmdLine azNMPS postInfoAZ
-      (K.liftActionWithCacheTime ccesWD_C)
-      (K.liftActionWithCacheTime ccesAndCPSEM_C)
-      (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState "AZ") acs_C)
-      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "AZ") proposedCDs_C)
 
 
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
