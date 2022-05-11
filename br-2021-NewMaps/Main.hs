@@ -966,7 +966,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-      brDF r = brDistrictFramework brShareRange draShareRange (share50 r) (dave r)
+      brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
                                <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
@@ -999,7 +999,7 @@ allCDsColonnade cas =
      <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
 
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
@@ -1272,7 +1272,7 @@ dmColonnadeOverlap olMM cas =
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
      <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . olMM . dKey))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
@@ -1526,38 +1526,67 @@ modelVsHistoricalTableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS
     leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draShareRange (dra r)&& h == "Historical"
     safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draShareRange (dra r) && h == "Historical"
 
-data DistType = SafeR | LeanR | LeanD | SafeD deriving (Eq, Ord, Show)
+data DistType = SafeR | LeanR | Tossup | LeanD | SafeD deriving (Eq, Ord, Show)
 distType :: Int -> Int -> Int -> DistType
 distType safeRUpper safeDLower x
   | x < safeRUpper = SafeR
   | x >= safeRUpper && x < 50 = LeanR
-  | x >= 50 && x <= safeDLower = LeanD
+  | x == 50 = Tossup
+  | x > 50 && x <= safeDLower = LeanD
   | otherwise = SafeD
 
 modelDRALeans :: (Int, Int) -> (Int, Int) -> Int -> Int -> (DistType, DistType)
 modelDRALeans brRange draRange brModel dra = (uncurry distType brRange brModel, uncurry distType draRange dra)
 
+data BRDFStyle = DFLong | DFShort deriving (Eq)
+data DFIncumbency = DFUnk | DFInc ET.PartyT | DFOpen deriving (Eq)
 
-brDistrictFramework :: (Int, Int) -> (Int, Int) -> Int -> Int -> Text
-brDistrictFramework brRange draRange brModel dra =
---  case (uncurry distType brRange brModel, uncurry distType draRange dra) of
-  case modelDRALeans brRange draRange brModel dra of
-    (SafeD, SafeR) -> "Latent Flip/Win Opportunity"
-    (SafeD, LeanD) -> "Flippable/Winnable"
-    (SafeD, LeanR) -> "Flippable/Winnable"
-    (SafeD, SafeD) -> "Safe D"
-    (LeanD, SafeR) -> "Latent Flip Opportunity"
-    (LeanR, SafeR) -> "Possible Long-Term Win/Flip"
-    (LeanD, LeanR) -> "Toss-Up"
-    (LeanR, LeanR) -> "Toss-Up"
-    (LeanD, LeanD) -> "Toss-Up"
-    (LeanR, LeanD) -> "Toss-Up"
-    (LeanD, SafeD) -> "Possible Long-Term Vulnerability"
-    (LeanR, SafeD) -> "Latent Vulnerability"
-    (SafeR, SafeR) -> "Safe R"
-    (SafeR, LeanR) -> "Highly Vulnerable"
-    (SafeR, LeanD) -> "Highly Vulnerable"
-    (SafeR, SafeD) -> "Latent Vulnerability"
+brDistrictFramework :: BRDFStyle -> DFIncumbency -> (Int, Int) -> (Int, Int) -> Int -> Int -> Text
+brDistrictFramework long inc brRange draRange brModel dra =
+  let ifLong x = if long == DFLong then " (" <> x <> ")" else ""
+      ifInc o d r = case inc of
+        DFUnk -> o
+        DFOpen -> o
+        DFInc ET.Other -> o
+        DFInc ET.Democratic -> d
+        DFInc ET.Republican -> r
+      topLeft = "Flippable" <> ifLong "Strongly D-leaning"
+      midLeft =  "Becoming Flippable" <> ifLong "More balanced than Advertised"
+      topCenter = ifInc ("Toss-up" <> ifLong "Highly Winnable by D")
+                      ("Safe D" <> ifLong "No near-term D risk")
+                      ("Toss-up" <> ifLong "Highly Winnable by D")
+      center = "Toss-up" <> ifLong "Down to the Wire"
+      bottomCenter = ifInc ("Safe R" <> ifLong "No near-term D hope")
+                      ("Toss-up" <> ifLong "Highly Vulnerable for D")
+                      ("Safe R" <> ifLong "No near-term D hope")
+      midRight = "Becoming At-Risk" <> ifLong "More Balanced than Advertised"
+      bottomRight = "At-Risk" <> ifLong "Moving away from D"
+  in case modelDRALeans brRange draRange brModel dra of
+    (SafeR, SafeR) -> "Safe R" <> ifLong "No near-term D hope"
+    (LeanR, SafeR) -> midLeft
+    (Tossup, SafeR) -> midLeft
+    (LeanD, SafeR) -> topLeft
+    (SafeD, SafeR) -> topLeft
+    (SafeR, LeanR) -> bottomCenter
+    (LeanR, LeanR) -> center
+    (Tossup, LeanR) -> center
+    (LeanD, LeanR) -> center
+    (SafeD, LeanR) -> topCenter
+    (SafeR, Tossup) -> bottomCenter
+    (LeanR, Tossup) -> center
+    (Tossup, Tossup) -> center
+    (LeanD, Tossup) -> center
+    (SafeD, Tossup) -> topCenter
+    (SafeR, LeanD) -> bottomCenter
+    (LeanR, LeanD) -> center
+    (Tossup, LeanD) -> center
+    (LeanD, LeanD) -> center
+    (SafeD, LeanD) -> topCenter
+    (SafeR, SafeD) -> bottomRight
+    (LeanR, SafeD) -> bottomRight
+    (Tossup, SafeD) -> midRight
+    (LeanD, SafeD) -> midRight
+    (SafeD, SafeD) -> "Safe D" <> ifLong "No near-term D risk"
 
 
 daveModelColonnade cas =
@@ -1569,7 +1598,7 @@ daveModelColonnade cas =
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
 
 
 extantModeledColonnade cas =

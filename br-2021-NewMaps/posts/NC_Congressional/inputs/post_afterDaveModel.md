@@ -17,9 +17,9 @@ With that in mind,  here are a few observations on the new NC districts:
   model agree that NC-2, NC-4, NC-6, NC-12, and NC-14 are safe D.
   Both models also agree that NC-3, NC-5, NC-8, NC-10 and NC-11 are far out of reach for Dems.
 
-- We think the rest are competitive: NC-1 we see as D+3 but the
-  historical model says safe-D (D+5), both models agree that NC-13 is a toss-up and NC-9
-  an R-leaning toss-up. NC-7 looks barely competitive to us (R+5) and marginally worse
+- We think the rest are competitive: NC-1 we see as D+4 but the
+  historical model says safe-D (D+5), both models agree that NC-13 and NC-9
+  are toss-ups. NC-7 looks barely competitive to us (R+5) and marginally worse
   historically (R+6).
 
 - In sum, we think there are 5 safe D (NC-2, NC-4, NC-6, NC-12, NC-14),
