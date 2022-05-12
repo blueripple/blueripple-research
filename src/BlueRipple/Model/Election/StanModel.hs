@@ -1220,11 +1220,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       dataWranglerAndCode modelData_C gqData_C = do
         modelData <-  K.ignoreCacheTime modelData_C
         gqData <-  K.ignoreCacheTime gqData_C
-        K.logLE K.Info
+        K.logLE K.Diagnostic
           $ "CCES has "
           <> show (FL.fold FL.length $ ccesEMRows modelData)
           <> " rows."
-        K.logLE K.Info
+        K.logLE K.Diagnostic
           $ "CPSV "
           <> show (FL.fold FL.length $ cpsVEMRows modelData)
           <> " rows."
@@ -1232,7 +1232,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             cds = FL.fold (FL.premap districtKey FL.list) (ccesEMRows modelData)
             psKeys = FL.fold (FL.premap F.rcast FL.list) gqData
             groups = groupBuilderDM model psGroup states cds psKeys
-        K.logLE K.Info $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
+        K.logLE K.Diagnostic $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
   let addUnwrapIf o varName unwrapName = if (Set.member o $ votesFrom model) then [SR.UnwrapNamed varName unwrapName] else []
   let unwrapVoted = [SR.UnwrapNamed "Voted_CPS" "yCPSVotes", SR.UnwrapNamed "Voted_CCES" "yCCESVotes"]

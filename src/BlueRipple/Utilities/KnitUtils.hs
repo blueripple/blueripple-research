@@ -265,8 +265,17 @@ logFrame ::
   (K.KnitEffects r, Foldable f, Show (F.Record rs)) =>
   f (F.Record rs) ->
   K.Sem r ()
-logFrame fr =
-  K.logLE K.Info $ "\n" <> (T.intercalate "\n" . fmap show $ FL.fold FL.list fr)
+logFrame = logFrame' K.Info
+{-# INLINEABLE logFrame #-}
+
+logFrame' ::
+  (K.KnitEffects r, Foldable f, Show (F.Record rs))
+  => K.LogSeverity
+  -> f (F.Record rs)
+  ->K.Sem r ()
+logFrame' ll fr =
+  K.logLE ll $ "\n" <> (T.intercalate "\n" . fmap show $ FL.fold FL.list fr)
+{-# INLINEABLE logFrame' #-}
 
 logCachedFrame ::
   (K.KnitEffects r, CacheEffects r, Foldable f, Show (F.Record rs)) =>

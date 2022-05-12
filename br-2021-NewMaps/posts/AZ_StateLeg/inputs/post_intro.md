@@ -14,18 +14,30 @@ data to help Dem donors identify races that we think deserve support, either
 for “offense” or “defense”.
 
 This post focuses on the Arizona state-legislature districts.
-We’ve done a similar analyses for Congressional districts
-in [Texas][TXPost] and [North Carolina][NCPost].
+We’ve done a similar analyses for Congressional districts in
+[Arizona][AZPost],
+[Michigan][MIPost],
+[North Carolina][NCPost],
+[Pennsylvania][PAPost],
+and [Texas][TXPost],
+as well as state-legislature districts in
+[Pennsylvania][PASLD]
+and [Michigan][MISLD]
 Here’s what we’ll cover:
 
+[AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
+[PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html
+[MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
+[AZSLD]: https://blueripple.github.io/research/NewMaps/AZ_StateLeg/post.html
+[MISLD]: https://blueripple.github.io/research/NewMaps/MI_StateLeg/post.html
+[PASLD]: https://blueripple.github.io/research/NewMaps/PA_StateLeg/post.html
+
 
 1. Dem-lean by district in AZ: our demographic model vs. historical data
-2. Districts worthy of Dem donor support
-3. Coming next from Blue Ripple
-4. Coda #1: Demographics of the new AZ districts
-5. Coda #2: Brief intro to our methods (for non-experts)
+2. Coda #1: Demographics of the new AZ districts
+3. Coda #2: Brief intro to our methods (for non-experts)
 
 ## 1. Dem-lean by district in AZ: our demographic model vs. historical data
 
