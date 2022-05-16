@@ -19,10 +19,8 @@ We’ve done a similar analyses for Congressional districts in
 [Michigan][MIPost],
 [North Carolina][NCPost],
 [Pennsylvania][PAPost],
-and [Texas][TXPost],
-as well as state-legislature districts in
-[Pennsylvania][PASLD]
-and [Michigan][MISLD]
+and [Texas][TXPost].
+
 Here’s what we’ll cover:
 
 [AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
@@ -33,7 +31,6 @@ Here’s what we’ll cover:
 [AZSLD]: https://blueripple.github.io/research/NewMaps/AZ_StateLeg/post.html
 [MISLD]: https://blueripple.github.io/research/NewMaps/MI_StateLeg/post.html
 [PASLD]: https://blueripple.github.io/research/NewMaps/PA_StateLeg/post.html
-
 
 1. Dem-lean by district in AZ: our demographic model vs. historical data
 2. Coda #1: Demographics of the new AZ districts

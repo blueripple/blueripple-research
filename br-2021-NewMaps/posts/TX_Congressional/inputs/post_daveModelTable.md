@@ -66,11 +66,6 @@ not likely in 2022, but you never know!–this map might be surprisingly risky f
 And for Dem donors, it points to several giving opportunities that could help move
 the needle in 2022 or future elections.
 
-If the map changes (there is [ongoing litigation][TXSuit]) or we update the model enough
-to significantly shift our view on any of this, we’ll update this note (and let you know).
-
-[TXSuit]: https://www.texastribune.org/2021/12/06/department-of-justice-texas-political-maps/
-
 ## 3.	Coming next from Blue Ripple
 
 Here’s where we’re planning to take these analyses over the next few months:
@@ -95,8 +90,14 @@ more details on the mechanics, or if you’d like to propose changes or improvem
 - As maps get solidified, we’ll set up ActBlue donation links for candidates
 (after the primaries) to make it easy for you to donate.
 
-If you want to stay up-to-date, please sign up for our email updates!
-We’re also on Twitter, Facebook, and Github.
+If you want to stay up-to-date, please [sign up][email] for our email updates!
+We’re also on [Twitter][Twitter], [Facebook][Facebook],
+and [Github][Github].
+
+[Twitter]: https://twitter.com/BlueRipplePol
+[Facebook]: https://www.facebook.com/blueripplepolitics
+[Github]: https://github.com/blueripple
+[Email]: http://eepurl.com/gzmeQ5
 
 ## 4. Coda #1: Demographics of new TX districts
 One thing we haven’t seen discussed very much is how redistricting in TX

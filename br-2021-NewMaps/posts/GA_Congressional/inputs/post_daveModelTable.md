@@ -1,46 +1,54 @@
 ## 2. Districts worthy of Dem donor support
-Based on the results above, we think there are six good options
-for Dem donors in PA: PA-1, PA-6, PA-7, PA-8, PA-10 and PA-17.
-We think PA-4 is safe although we’re going to keep an eye on any
-polling there.
+Based on the results above, we think there are three good options
+for Dem donors in GA: GA-2, GA-6, and GA-11.
 
-Our findings in PA-8 provide a good opportunity to discuss why BR’s demographic
-model and the historical model may differ.
-PA-8 looks like a D-leaning tossup
-given the voting patterns in the precincts within it,
-but our demographic model suggests it’s safe R (R+9).
+GA-6 (BR: D+1) and GA-11 (BR: R+2) appear to be “plausible long-shots” in our demographic model.
+GA-6 used to be a D-leaning district. It was redistricted by the Republican legislature to
+be more R-leaning (some voters-of-color and White voters with college degress were shifted to
+GA-7). But it remains the district in GA with the highest percentage of college
+educated White voters which is why our model sees a possibility of D success there.
+GA-11 is similar but has about 15% lower rate of college graduates and so is a tougher lift.
+
+A few points on “plausible long-shots”:
+(Feel free to skip if you’ve read our discussion of these sorts of districts in other analyses.)
+Our findings in GA-6 and GA-11 deserve particular discussion. These look to be "safe R"
+given the voting history in the precincts within them,
+but our demographic model suggests they should be much more Dem-leaning, and maybe even Dem-winnable.
 What might this mean? One way to answer this question is to consider the difference between the two models.
 Our demographic model asks: if the voting-age citizens of this district turned out and voted like similar people
-in other parts of the country,  what would we expect the outcome of this election to be?
-Whereas the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
+in other parts of the country and state, what would we expect the outcome of this election to be?
+In contrast, the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
 vote as they have in previous elections. This points to a few possible reasons why a historically
-tossup district like PA-8 might look like a toss-up in our model -- including, but not limited to, the following:
+red district like GA-6 might look flippable in our model -- including, but not limited to, the following:
 
 - Our model may be wrong about how we define "similar" voters. We've incorporated factors like education and race,
-  but maybe we've missed key things that make voters in PA-8 different from superficially "similar" voters in other districts nationwide.
+but maybe we've missed key things that make voters in GA-6
+different from superficially "similar" voters in other districts nationwide.
 
-- Location-specific factors may support Dem voting. E.g., perhaps the Democratic party or local
-  organizations are particularly well-organized in PA-8 and that is reflected in the historical
-  model using those voters.
+- Location-specific factors may depress Dem voting. It's possible that barriers related to voter
+access in GA-6 depress Dem vote share below what it would be in other districts.
 
-- Democrats may, in fact, have outperformed relative to their potential. Or there may have
-  been demographic shifts in the district since the last election which favor Republicans.
+- Dems may, in fact, have underperformed relative to their potential among these voters.
+It's possible that more effective candidate recruitment, campaigning,
+or organizing could, in fact, yield a win for Dems in GA-6 or GA-11.
 
-We don't know which (if any) of these explanations is correct. But our model suggests that PA-8
-is especially vulnerable.
+We don't know which (if any) of these explanations is correct.
+But our model suggests that if you want to support Team Blue in TX,
+and are open to the idea of supporting some long-shot candidates,
+then donating to a Dem in GA-6 or GA-11 might fit the bill.
 
 ## 3.	Coming next from Blue Ripple
 
 Here’s where we’re planning to take these analyses over the next few months:
 
-- We’re going to do the same type analysis in many (all?) of the states,
+- We’re going to do the same type analysis in many of the states,
 in order to identify the best options for Dem donors in 2022 on both
-offense and defense nationwide.  Here are our takes on
+offense and defense nationwide. Here are our takes on
 [Arizona][AZPost],
 [Michigan][MIPost],
 [North Carolina][NCPost],
+[Pennsylvania][PAPost],
 and [Texas][TXPost].
-
 
 - We’re going to continue to refine and improve our demographic model–we’ll
 update this post and others as we do so. Feel free to contact us if you want
@@ -52,24 +60,24 @@ If you want to stay up-to-date, please [sign up][email] for our email updates!
 We’re also on [Twitter][Twitter], [Facebook][Facebook],
 and [Github][Github].
 
-[Twitter]: https://twitter.com/BlueRipplePol
-[Facebook]: https://www.facebook.com/blueripplepolitics
-[Github]: https://github.com/blueripple
-[Email]: http://eepurl.com/gzmeQ5
-
 [AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
 [MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
 [PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
 
-## 4. Coda #1: Demographics of new vs. old PA districts
-One thing we haven’t seen discussed very much is how redistricting in PA
+[Twitter]: https://twitter.com/BlueRipplePol
+[Facebook]: https://www.facebook.com/blueripplepolitics
+[Github]: https://github.com/blueripple
+[Email]: http://eepurl.com/gzmeQ5
+
+## 4. Coda #1: Demographics of new vs. old GA districts
+One thing we haven’t seen discussed very much is how redistricting in GA
 has changed the demographics in each district. As a way of putting the
 demographic model results in context, let’s look at the underlying
 population two different ways:
 
-- The first chart below shows each of PA’s proposed 2022 districts,
+- The first chart below shows each of GA’s 2022 districts,
 with the population broken down by race/ethnicity (Black, Hispanic, Asian,
 White-non-Hispanic and other) and education (college graduate and
 non-college graduate).
@@ -82,7 +90,7 @@ We’ve ordered the districts by D-share based on our demographic model,
 which is helpful for understanding how the model responds to demographics and density.
 
 - In the second chart, we look at these demographics a different way,
-placing each PA district according to its proportion of college graduates
+placing each GA district according to its proportion of college graduates
 and non-white citizens of voting age. We also indicate (logarithmic)
 population density via the size of the circle and modeled D-edge (D-share minus 50%)
 via color. This makes it easier to see that the model predicts larger D vote-share

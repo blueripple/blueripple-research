@@ -30,6 +30,7 @@ Folks interested in our data and modeling efforts should also check out our
 [**Github**](${brGithub}) page.*
 |]
 
+
 brHome :: T.Text
 brHome = "https://www.blueripplepolitics.org"
 

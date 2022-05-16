@@ -333,8 +333,8 @@ centerDataMatrix dms mV@(SB.StanVar mn mt) mwgtsV = do
         $ case dms of
             DMCenterOnly -> SB.var stdXV' `SB.eq` (SB.var mV `SB.minus` SB.var meanXV')
             DMCenterAndScale -> SB.var stdXV' `SB.eq` SB.paren (SB.var mV `SB.minus` SB.var meanXV') `SB.divide` SB.var sdXV'
---    SBB.printVar "" meanXV'
---    SBB.printVar "" sdXV'
+    SBB.printVar "" meanXV'
+    SBB.printVar "" sdXV'
     pure (stdXV', meanXV', sdXV')
   let stdX idt mv@(SB.StanVar mn mt) mSuffix = do
         let codeBlock = if idt == SB.ModelData then SB.SBTransformedData else SB.SBTransformedDataGQ

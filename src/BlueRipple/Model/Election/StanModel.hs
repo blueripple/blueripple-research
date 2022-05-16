@@ -418,17 +418,25 @@ dsSpecific dsLabel dsp ik oM =
       b <- betaF dsLabel
       return (Just a, Just b)
 
+data CenterDM md gq = NoCenter
+                    | CenterWith (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                    | UnweightedCenter
+                    | WeightedCenter SB.StanVar
+
 centerIf :: (Typeable md, Typeable gq)
          => SB.StanVar
-         -> Maybe SB.StanVar
-         -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+         -> CenterDM md gq
+--         -> Maybe SB.StanVar
+--         -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
          -> SB.StanBuilderM md gq (SB.StanVar
                                   , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-centerIf m wgtsM centerM =  case centerM of
-  Nothing -> DM.centerDataMatrix DM.DMCenterAndScale m wgtsM
-  Just f -> do
+centerIf m centerDM =  case centerDM of
+  NoCenter -> return (m, \_ v _ -> pure v)
+  CenterWith f -> do
     mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
     return (mC, f)
+  UnweightedCenter -> DM.centerDataMatrix DM.DMCenterAndScale m Nothing
+  WeightedCenter wgts -> DM.centerDataMatrix DM.DMCenterAndScale m (Just wgts)
 
 mBetaE :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr)
 mBetaE dm = do
@@ -533,22 +541,23 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                      -> Bool
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
                      -> DSSpecificWithPriors k md gq
-                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                     -> CenterDM md gq
+--                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
                      -> SB.StanVar
                      -> SB.StanVar
                      -> SB.LLSet md gq
-                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                     -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , QR
                                               , SB.LLSet md gq
                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
-addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr alpha beta llSet = do
+addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   colIndexKey <- colIndex dm
   (dsAlphaM, dsBetaM) <- SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm Nothing centerM
+  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR rtt qr dmC beta
   muF <- indexedMuE3 dmQR
   let muE = muF dsAlphaM dsBetaM alpha beta
@@ -558,31 +567,32 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr alpha bet
   let llSet' = updateLLSet rtt dist successes (pure muE) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure muE)
   let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (centerF, retQR, llSet', prob)
+  return (CenterWith centerF, retQR, llSet', prob)
 
 addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       => Text
                       -> Bool
                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
                       -> DSSpecificWithPriors k md gq
-                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                      -> CenterDM md gq
+--                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                       -> QR
                       -> Bool
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.StanVar
                       -> SB.LLSet md gq
-                      -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                      -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                                , QR
                                                , SB.LLSet md gq
                                                , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
-                                                )
-addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr countScaled alpha beta betaWidth llSet = do
+                                               )
+addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countScaled alpha beta betaWidth llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
   colIndexKey <- colIndex dm
   (dsAlphaM, dsBetaM) <-  SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm Nothing centerM
+  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR rtt qr dmC beta
   muF <- indexedMuE3 dmQR
   let muE = invLogit $ muF dsAlphaM dsBetaM alpha beta
@@ -598,7 +608,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerM qr countSca
   let llSet' = updateLLSet rtt dist successes (pure (bA, bB)) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure (bA, bB))
   let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (centerF, retQR, llSet', prob)
+  return (CenterWith centerF, retQR, llSet', prob)
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
@@ -700,8 +710,10 @@ addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable 
                     -> ET.VoteShareType
                     -> Int
                     -> ElectionRow rs
-                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                    -> CenterDM md gq
+                    -> CenterDM md gq
+--                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+--                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                     -> QR
                     -> QR
                     -> DSSpecificWithPriors k md gq
@@ -712,15 +724,15 @@ addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable 
                     -> SB.StanVar
                     -> SB.StanVar
                     -> SB.LLSet md gq
-                    -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
-                                             , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                    -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                             , CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , QR
                                              , QR
                                              , SB.LLSet md gq
                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                              )
-addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) alphaT betaT alphaP betaP llSet = do
+addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
       dsLabel = "Elex_" <> officeText office
   let addLabel x = x <> "_" <> dsLabel
@@ -732,9 +744,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsS
   colPIndexKey <- colIndex dmPSP
   (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colTIndexKey (Just office)
   (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colPIndexKey (Just office)
-  (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST Nothing centerTM
+  (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST centerTDM --Nothing centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
-  (dmPC, centerPF) <- SB.useDataSetForBindings rttPS $ centerIf dmPSP Nothing centerPM
+  (dmPC, centerPF) <- SB.useDataSetForBindings rttPS $ centerIf dmPSP centerPDM --Nothing centerPM
   (dmPQR, retQRP) <- handleQR rttElex qrP dmPC betaP
   betaT' <- addIfM dsTBetaM betaT
   betaP' <- addIfM dsPBetaM betaP
@@ -754,18 +766,18 @@ addBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsS
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure $ SB.var pSByElex)
   let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAlphaM dsTBetaM alphaT betaT) . indexedMuE3
       probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
-  return (centerTF, centerPF, retQRT, retQRP, llSet', probT, probP)
+  return (CenterWith centerTF, CenterWith centerPF, retQRT, retQRP, llSet', probT, probP)
 
-addBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
+addBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
   case office of
     ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                    centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                    centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                     alphaT betaT alphaP betaP llSet
     ET.Senate -> addBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                 centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                 centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                  alphaT betaT alphaP betaP llSet
     ET.House -> addBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                 alphaT betaT alphaP betaP llSet
 
 addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
@@ -773,8 +785,10 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                      -> ET.VoteShareType
                      -> Int
                      -> ElectionRow rs
-                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                     -> CenterDM md gq
+                     -> CenterDM md gq
+--                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+--                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
                      -> QR
                      -> DSSpecificWithPriors k md gq
@@ -788,15 +802,15 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                      -> SB.StanVar
                      -> SB.StanVar
                      -> SB.LLSet md gq
-                     -> SB.StanBuilderM md gq (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
-                                              , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                     -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                                              , CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , QR
                                               , QR
                                               , SB.LLSet md gq
                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
                                               )
-addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
+addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
   let office = officeFromElectionRow officeRow
       dsLabel = "Elex_" <> officeText office
       addLabel x = x <> "_" <> dsLabel
@@ -808,9 +822,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP ds
   colIndexP <- colIndex dmPSP
   (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colIndexT (Just office)
   (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colIndexP (Just office)
-  (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST Nothing centerTM
+  (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST centerTDM --Nothing centerTM
   (dmTQR, retQRT) <- handleQR rttPS qrT dmTC betaT
-  (dmPC, centerPF) <- SB.useDataSetForBindings rttPS $ centerIf dmPSP Nothing centerPM
+  (dmPC, centerPF) <- SB.useDataSetForBindings rttPS $ centerIf dmPSP centerPDM --Nothing centerPM
   (dmPQR, retQRP) <- handleQR rttPS qrP dmPC betaP
   betaT' <- addIfM dsTBetaM betaT
   betaP' <- addIfM dsPBetaM betaP
@@ -837,17 +851,17 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTM centerPM qrT qrP ds
     addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP pSByElex, bBP pSByElex))
   let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAlphaM dsTBetaM alphaT betaT) . indexedMuE3
       probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
-  return (centerTF, centerPF, retQRT, retQRP, llSet', probT, probP)
+  return (CenterWith centerTF, CenterWith centerPF, retQRT, retQRP, llSet', probT, probP)
 
-addBBLModelsForElex offices includePP vst eScale office centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
+addBBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
        ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
-                       centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                       centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                        countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
        ET.Senate -> addBBLModelsForElex' includePP vst eScale (SenateRow stateGroup)
-                    centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                    centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                     countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
        ET.House -> addBBLModelsForElex' includePP vst eScale (HouseRow cdGroup)
-                   centerTM centerPM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
+                   centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                    countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
 
 type ModelKeyC ks = (V.ReifyConstraint Show F.ElField ks
@@ -926,10 +940,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       jsonDataName = "DD_" <> dataLabel model <> "_" <> show datYear
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec rs) ()
       dataAndCodeBuilder = do
+        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart DMTurnout (const 0)) (Just "DMTurnout")
             (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
             centerMatrices = True
-            initialCenterFM = if centerMatrices then Nothing else (Just $ \_ v _ -> pure v)
+            initialCenterFM = if centerMatrices then WeightedCenter acsPSWgts else NoCenter
             initialQRT = DoQR
             initialQRP = DoQR
             meanTurnout = 0.6
@@ -1058,7 +1073,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                     $ SB.vectorizedOne dmColIndexP
                     $ SB.function "diag_pre_multiply" (SB.var tauPDS :| [SB.var corrPDS]) `SB.times` SB.var raw
             return (DSPAlphaBetaHNC alphaTF betaTNonCenterF, DSPAlphaBetaHNC alphaPF betaPNonCenterF)
-        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
+--        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
               Binomial -> do
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
@@ -1120,10 +1135,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                             ET.Senate -> (office, probT, probP)
                                             ET.President -> if office == ET.House then (office, probT, probP) else (o, pT, pP)
                                             ET.House -> (o, pT, pP)
-              return (Just centerTF, Just centerPF, qrT', qrP', llS', probs')
-            extract (cfM1, cfM2, qrT, qrP, x, pM) = do
-              cf1 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for turnout centering function!" cfM1
-              cf2 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for pref centering function!" cfM2
+              return (centerTF, centerPF, qrT', qrP', llS', probs')
+            extract (cf1, cf2, qrT, qrP, x, pM) = do
+--              cf1 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for turnout centering function!" cfM1
+--              cf2 <- SB.stanBuildMaybe "elexModels fold returned a Nothing for pref centering function!" cfM2
               (_, pT, pP) <- SB.stanBuildMaybe "elexModels fold returned a Nothing for ps probs!" pM
               return (cf1, cf2, qrT, qrP, x, pT, pP)
             elexFoldM = FL.FoldM
@@ -1131,23 +1146,29 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                         (return (initialCenterFM, initialCenterFM, initialQRT, initialQRP, SB.emptyLLSet, Nothing))
                         extract
         (centerTF, centerPF, qrT, qrP, llSet1, probTF, probPF) <- FL.foldM elexFoldM (votesFrom model)
-        (_, _, llSet2, _) <- ccesTF (Just centerTF) qrT llSet1
-        (_, _, llSet3, _) <- cpsTF (Just centerTF) qrT llSet2
+        (_, _, llSet2, _) <- ccesTF centerTF qrT llSet1
+        (_, _, llSet3, _) <- cpsTF centerTF qrT llSet2
 
         let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding
                                         (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
         let ccesP (centerFM, qrP, llS) office = do
               (centerF, qrP', llS, _) <- ccesPF (centerFM, qrP, llS) office
-              return (Just centerF, qrP', llS)
-            llFoldM = FL.FoldM ccesP (return (Just centerPF, qrP, llSet3)) return
+              return (centerF, qrP', llS)
+            llFoldM = FL.FoldM ccesP (return (centerPF, qrP, llSet3)) return
         (_, _, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
 
         SB.generateLogLikelihood' $ llSet4 --SB.mergeLLSets llSetT llSetP
         psData <- SB.dataSetTag @(F.Record rs) SC.GQData "PSData"
         dmPS_T' <- DM.addDesignMatrix psData (designMatrixRowPS model densityMatrixRowPart DMTurnout) (Just "DMTurnout")
         dmPS_P' <- DM.addDesignMatrix psData (designMatrixRowPS model densityMatrixRowPart (DMPref ET.House)) (Just "DMPref")
-        dmPS_T <- centerTF SC.GQData dmPS_T' (Just "T")
-        dmPS_P <- centerPF SC.GQData dmPS_P' (Just "P")
+        centerT <- case centerTF of
+          CenterWith x -> return x
+          _ -> SB.stanBuildError "Non CenterWith returned after all models."
+        centerP <- case centerPF of
+          CenterWith x -> return x
+          _ -> SB.stanBuildError "Non CenterWith returned after all models."
+        dmPS_T <- centerT SC.GQData dmPS_T' (Just "T")
+        dmPS_P <- centerP SC.GQData dmPS_P' (Just "P")
         probT <- SB.useDataSetForBindings psData $ probTF dmPS_T
         probP <- SB.useDataSetForBindings psData $ probPF dmPS_P
 

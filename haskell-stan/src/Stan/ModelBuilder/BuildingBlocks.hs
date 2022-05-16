@@ -256,8 +256,8 @@ weightedMeanVarianceFunction =  SB.addFunctionsOnce "weighted_mean_variance"
   SB.addStanLine "vector[N] wgtdXs = ws .* xs"
   SB.addStanLine "vector[2] meanVar"
   SB.addStanLine "meanVar[1] = sum(wgtdXs)/sum(ws)"
-  SB.addStanLine "vector[N] dmWgtdxs = wgtdXs - m"
-  SB.addStanLine "meanVar[2] = sum(dmWgtdxs .* dmWgtdxs)/sum(ws)"
+  SB.addStanLine "vector[N] y = (xs - meanVar[1])"
+  SB.addStanLine "meanVar[2] = sum(ws .* y .* y)/sum(ws)"
   SB.addStanLine "return meanVar"
 
 unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq ()

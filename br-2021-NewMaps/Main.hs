@@ -124,10 +124,13 @@ main = do
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "11"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "CA" "2"
-    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 1
-    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 9
-    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 3
-    when (runThis "deepDive") $ deepDive2022CD cmdLine "AZ" "7"
+--    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 1
+    when (runThis "deepDive") $ deepDive2022SLD cmdLine "AZ" ET.StateUpper "6"
+    when (runThis "deepDive") $ deepDive2022SLD cmdLine "AZ" ET.StateUpper "23"
+
+--    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 9
+--    when (runThis "deepDive") $ deepDive2020CD cmdLine "AZ" 3
+--    when (runThis "deepDive") $ deepDive2022CD cmdLine "AZ" "7"
 --    when (runThis "deepDive") $ deepDiveState cmdLine "CA"
     when (runThis "newCDs") $ newCongressionalMapPosts cmdLine
     when (runThis "newSLDs") $ newStateLegMapPosts cmdLine
@@ -138,7 +141,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stan9"
+modelDir = "br-2021-NewMaps/stan10"
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
@@ -294,6 +297,12 @@ deepDive2022CD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
   let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
   deepDive cmdLine ("2022-" <> sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+
+deepDive2022SLD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> ET.DistrictType -> Text -> K.Sem r ()
+deepDive2022SLD cmdLine sa dt dn = do
+  proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
+  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictTypeC r == dt && F.rgetField @ET.DistrictName r == dn
+  deepDive cmdLine ("2022-" <> sa <> "_" <> houseChar dt <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedSLDs_C)
 
 deepDive2020CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
 deepDive2020CD cmdLine sa dn = do
@@ -694,6 +703,10 @@ cdDiagTableColonnade cas =
       <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 
+houseChar :: ET.DistrictType -> Text
+houseChar ET.StateLower = "L"
+houseChar ET.StateUpper = "U"
+houseChar ET.Congressional = "C"
 
 newStateLegMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 newStateLegMapPosts cmdLine = do
@@ -707,10 +720,6 @@ newStateLegMapPosts cmdLine = do
       dName r = toString $ F.rgetField @ET.DistrictName r
       regSLDPost pi sa contested interestingOnly houses desc = do
         let houseList = Set.toList houses
-            houseChar :: ET.DistrictType -> Text
-            houseChar ET.StateLower = "L"
-            houseChar ET.StateUpper = "U"
-            houseChar ET.Congressional = "C"
         paPaths <- postPaths (sa <> "_StateLeg") cmdLine
         BR.brNewPost paPaths pi (sa <> "_SLD") $ do
           let overlapF h = (h,) <$> DO.loadOverlapsFromCSV (toString $ "data/districtOverlaps/" <> sa <> "_SLD" <> houseChar h <> "_CD.csv") sa h ET.Congressional
@@ -957,8 +966,6 @@ diffVsChart title (xLabel, f) vc rows =
       finalSpec = [FV.title title, GV.layer [ptSpec], makeShareDiff [], vlData]
   in FV.configuredVegaLite vc finalSpec
 
-
-
 diffVsHispChart :: Text
                 -> FV.ViewConfig
                 -> F.FrameRec ([BR.StateAbbreviation, ET.DistrictName, BRE.ModeledShare, TwoPartyDShare, Redistrict.HispanicFrac])
@@ -977,59 +984,50 @@ newCongressionalMapPosts :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.Co
 newCongressionalMapPosts cmdLine = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
-  let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C --prepCCESDM False (fmap BRE.districtRows ccesAndPums_C) (fmap BRE.ccesRows ccesAndPums_C)
-  proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  drExtantCDs_C <- prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs
+  let ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
+  proposedCDs_C <- fmap (fmap (F.rcast @PostStratR)) <$> (prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs)
+  drExtantCDs_C <- fmap (fmap (F.rcast @PostStratR)) <$> (prepCensusDistrictData False "model/newMaps/extantCDDemographicsDR.bin" =<< BRC.censusTablesForDRACDs)
   drCDPlans <- Redistrict.allPassedCongressionalPlans
+  let acsExtantCDs_C = fmap fixACS <$> acs_C
 
-  let regCDPost pi sa = do
+  let regCDPost pi sa extantDemo_C = do
         paths <- postPaths (sa <> "_Congressional") cmdLine
         BR.brNewPost paths pi sa $ do
           postSpec <- NewCDMapPostSpec sa paths
             <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId sa "Passed" ET.Congressional))
-          let (NewCDMapPostSpec _ _ dra) = postSpec
           newCongressionalMapAnalysis False cmdLine postSpec pi
             (K.liftActionWithCacheTime ccesWD_C)
             (K.liftActionWithCacheTime ccesAndCPSEM_C)
             (K.liftActionWithCacheTime acs_C)
-            (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap fixACS . onlyState sa) acs_C)
-            (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState sa) proposedCDs_C)
+            (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . onlyState sa) extantDemo_C)
+            (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . onlyState sa) proposedCDs_C)
 
-  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
-  regCDPost postInfoAZ "AZ"
+  let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 13) Nothing)
+  regCDPost postInfoAZ "AZ" acsExtantCDs_C
 
   let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-  regCDPost postInfoGA "GA"
+  regCDPost postInfoGA "GA" acsExtantCDs_C
 
-  let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
-  regCDPost postInfoMI "MI"
+  let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 13) Nothing)
+  regCDPost postInfoMI "MI" acsExtantCDs_C
 
-  -- NC is different because acs doesn't have correct CD boundaries
+  -- NC is different because ACS doesn't have correct CD boundaries (this might have changed w 2020 ACS?)
   let postInfoNC = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just $ BR.Published $ Time.fromGregorian 2022 05 11)
+                     (BR.Published $ Time.fromGregorian 2021 12 15) (Just $ BR.Published $ Time.fromGregorian 2022 05 13)
                    )
-  ncPaths <-  postPaths "NC_Congressional" cmdLine
-  BR.brNewPost ncPaths postInfoNC "NC" $ do
-    ncNMPS <- NewCDMapPostSpec "NC" ncPaths
-              <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId "NC" "Passed" ET.Congressional))
-    newCongressionalMapAnalysis False cmdLine ncNMPS postInfoNC
-      (K.liftActionWithCacheTime ccesWD_C)
-      (K.liftActionWithCacheTime ccesAndCPSEM_C)
-      (K.liftActionWithCacheTime acs_C)
-      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") drExtantCDs_C)
-      (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState "NC") proposedCDs_C)
+  regCDPost postInfoNC "NC" drExtantCDs_C
 
-  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 11) Nothing)
-  regCDPost postInfoPA "PA"
+  let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 13) Nothing)
+  regCDPost postInfoPA "PA" acsExtantCDs_C
 
   let postInfoTX = BR.PostInfo
                    (BR.postStage cmdLine)
                    (BR.PubTimes
-                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just $  BR.Published $ Time.fromGregorian 2022 05 11)
+                     (BR.Published $ Time.fromGregorian 2022 2 25) (Just $  BR.Published $ Time.fromGregorian 2022 05 13)
                    )
-  regCDPost postInfoTX "TX"
+  regCDPost postInfoTX "TX" acsExtantCDs_C
 
 districtColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -1039,7 +1037,6 @@ districtColonnade cas =
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
---     <> C.headed "2019 Result" (BR.toCell cas "2019" "2019" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @BR.DShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
@@ -1201,7 +1198,6 @@ printDType :: ET.DistrictType -> Text
 printDType ET.StateUpper = "Upper"
 printDType ET.StateLower = "Lower"
 printDType ET.Congressional = "Congressional"
-
 
 newCongressionalMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
                             => Bool

@@ -1,6 +1,6 @@
 ## 2. Districts worthy of Dem donor support
-Based on the results above, we think there are four good options
-for Dem donors in NC: NC-1, NC-9, NC-13, and perhaps NC-6:
+Based on the results above, we think there are three good options
+for Dem donors in NC: NC-1, NC-9, and NC-13.
 
 Our findings in NC-9 provide a good opportunity to discuss why these models may differ.
 NC-9 looks like a lean-R district
@@ -33,7 +33,7 @@ then donating to a Dem in NC-9 might fit the bill.
 
 Here’s where we’re planning to take these analyses over the next few months:
 
-- We’re going to do the same type analysis in many (all?) of the states,
+- We’re going to do the same type analysis in many of the states,
 in order to identify the best options for Dem donors in 2022 on both
 offense and defense nationwide. Here are our takes on
 [Arizona][AZPost],
@@ -47,14 +47,20 @@ more details on the mechanics, or if you’d like to propose changes or improvem
 - As maps get solidified, we’ll set up ActBlue donation links for candidates
 (after the primaries) to make it easy for you to donate.
 
-If you want to stay up-to-date, please sign up for our email updates!
-We’re also on Twitter, Facebook, and Github.
+If you want to stay up-to-date, please [sign up][email] for our email updates!
+We’re also on [Twitter][Twitter], [Facebook][Facebook],
+and [Github][Github].
 
 [AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
 [MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
 [PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html
 [TXPost]: https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html
+
+[Twitter]: https://twitter.com/BlueRipplePol
+[Facebook]: https://www.facebook.com/blueripplepolitics
+[Github]: https://github.com/blueripple
+[Email]: http://eepurl.com/gzmeQ5
 
 ## 4. Coda #1: Demographics of new vs. old NC districts
 One thing we haven’t seen discussed very much is how redistricting in NC

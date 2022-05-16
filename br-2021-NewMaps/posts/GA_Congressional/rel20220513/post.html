@@ -1,0 +1,3536 @@
+<!doctype html>
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=UA-146776294-1"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'UA-146776294-1');
+</script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="English">
+<head>
+<meta charset="utf-8">
+<meta name="generator" content="pandoc">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GA</title>
+
+<!-- Yahoo! CDN combo URL for selected Pure.css modules -->
+<link rel="stylesheet" href="https://yui.yahooapis.com/combo?pure/0.6.0/base-min.css&pure/0.6.0/grids-responsive-min.css&pure/0.6.0/menus-min.css&pure/0.6.0/tables-min.css">
+<!-- MathJax -->
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js?config=TeX-MML-AM_CHTML"></script>
+<!-- Vega and Vega Embed -->
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+
+<!-- Extra styles -->
+<style>
+  @viewport {
+      width: device-width;
+      zoom: 1.0;
+  }
+  body {margin:0 0 0}.pure-g{padding:0 1em}.pure-menu-link:focus{background-color:#d3d3d3}nav{margin:0 0 1em;padding:0 0 1em;border-bottom:1px solid #ccc}footer{margin:5em 0 1em}pre{white-space:pre-wrap;margin-left:3em}code{font-size:89%;color:#191919}.author{margin-bottom:0;padding-bottom:0}.headnote,.published,.license{font-size:89%;margin-bottom:.75em}@media screen and (max-width:35.5em){thead{display:none}tr,th,td{display:block}td{border-top:0}tr td:first-child{border-top:1px solid #ddd;font-weight:700}}
+  .br-header {
+      font-family: proxima-nova, sans-serif;
+      letter-spacing: 2px;
+      font-weight: 500;
+      font-size: 14pt;
+      color: white;
+      margin-top: 0em;
+      margin-left: 0em;
+      margin-bottom: 1em;
+      margin-right: 0.1em;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      background-color: black;
+      padding: 5px;
+      padding-top: 20px;
+      padding-bottom: 20px;
+  }
+  .br-header-logo-wrapper
+  {
+      width: 140px;
+      background-color: white;
+      height: 58px;
+      margin-left: 10px;
+  }
+  .br-header-logo
+  {
+      width: 140px;
+      object-fit: contain;
+  }
+  .br-header-item
+  {
+      display: flex;
+      flex-basis: auto;
+  }
+  .br-header-br {
+      margin-left: 10px;
+  }
+  .br-header-br a:link, .br-header-br a:visited, .brheader a:hover, .br-header-br a:active
+  {
+      color: white;
+      text-decoration: none;
+  }
+  .br-home-button-c {
+      flex-direction: column;
+      justify-content: center;
+      margin-right: 10px;
+  }
+  .br-home-button-b {
+      font-size: 10pt;
+      border-style: solid;
+      border-width: 2px;
+      border-color: white;
+      border-radius: 25px;
+      padding: 5px 20px;
+      color: white;
+      text-align: center;
+  }
+  .br-home-button-b a:hover {
+      background-color: white;
+  }
+  .br-readmore {
+      font-style: italic;
+  }
+  .brTable {
+      font-size: 180t
+  }
+  .brTableTitle {
+      text-align: center;
+      font-size:  14pt
+  }
+  .footnotes {
+      font-size: 10pt;
+  }
+  @media screen and (min-width: 600px) {
+     .content-wrapper {
+	 margin-left: 150px;
+	 margin-right: 150px
+     }
+  }
+  @media screen and (max-width: 600px) {
+      .content-wrapper {
+	  margin-left: 10px;
+	  margin-right: 10px
+      }
+  }
+  figure {
+      margin-left: 0px;
+      margin-right: 0px;
+  }
+  a, a:link, a:visited, a:hover, a:active {
+      color: hsl(175, 43%, 42%);
+      text-decoration: none;
+  }
+  h1 {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      font-size: 32px;
+      letter-spacing: 0px
+  }
+  h2 {
+      font-family: proxima-nova, sans-serif;
+      font-weight: 600;
+      color: hsla(0,0%,10%,0.9);
+      line-height: 1.2em;
+      letter-spacing: 0.05em;
+      font-size: 25px;
+      text-transform: uppercase;
+  }
+  .published {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  .updated {
+      color: lightslategrey;
+      font-family: Garamond;
+      font-size: 12pt
+  }
+  body {
+      font-family: Garamond;
+      font-weight: 400;
+      color: hsla(0,0%,10%,0.7);
+      font-size: 18px;
+      letter-spacing: 0px;
+      line-height: 1.6em;
+  }
+  table {
+      font-size: 10pt;
+      margin: 0;
+      padding: 0;
+      table-layout: auto;
+      width: 100%;
+  }
+  table tr {
+      background-color: #f8f8f8;
+      border: 0.5px solid #ddd;
+      padding: .35em;
+  }
+  table th,
+  table td {
+      padding: .125 em;
+      border: 1px solid black;
+  }
+  @media screen and (max-width: 600px) {
+      table thead {
+	  border: none;
+	  clip: rect(0 0 0 0);
+	  height: 1px;
+	  margin: -1px;
+	  overflow: hidden;
+	  padding: 0;
+	  position: absolute;
+	  width: 1px;
+      }
+
+      table tr {
+	  border-bottom: 3px solid #ddd;
+	  display: block;
+      }
+
+      table td {
+	  border-bottom: 1px solid #ddd;
+	  display: block;
+	  text-align: right;
+      }
+
+      table td::before {
+	  content: attr(data-label);
+	  float: left;
+      }
+  }
+  table-old {
+      border-collapse: collapse;
+      font-size: 10pt;
+      margin-left: auto;
+      margin-right: auto;
+      margin-bottom: 24px;
+      border-spacing: 0;
+      border-bottom: 2px solid black;
+      border-top: 2px solid black;
+  }
+  figure {
+      border: 1px #cccccc solid;
+      padding: 4px;
+      margin: auto
+  }
+  figcaption {
+      font-style: italic;
+      font-size: 12pt;
+      text-align: center;
+  }
+</style>
+
+</head>
+<body>
+  <div class="br-header">
+    <a href="https://www.blueripplepolitics.org">
+      <div class="br-header-item br-header-logo-wrapper">
+	<img class="br-header-logo" src="https://blueripple.github.io/logo/full.png" alt="BLUE RIPPLE POLITICS"/>
+      </div>
+    </a>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+<section id="page-content">
+<div class="content-wrapper pure-g">
+<div class="pure-u-1 pure-u-sm-1 pure-u-md-1 pure-u-lg-1 pure-u-xl-1">
+
+<!-- page content begins here -->
+
+<div class="published">May 13, 2022 (15:14:05) </div>
+<section id="new-maps-new-dem-strategy-our-ga-analysis" class="level1">
+<h1>New Maps, New Dem Strategy: Our GA Analysis</h1>
+<p>The 2022 Congressional elections will involve new district maps in
+all 50 states. Districts will be reshaped, created, and eliminated,
+which will change Dems’ odds in each race. How can donors figure out
+which races have the biggest “bang for buck” for flipping tenuous GOP
+seats or protecting vulnerable Dems?</p>
+<p>To help answer that question, we’ve been building and refining a
+demographic model that predicts Democratic lean in each district based
+on its makeup in terms of race, sex, education, and population density.
+We then compare those results to an existing model based on historical
+data to help Dem donors identify races that we think deserve support for
+“offense” or “defense”.</p>
+<p>In this post, we’re focusing on Georgia. Here’s what we’ll cover:</p>
+<ol type="1">
+<li>Dem-lean by district in GA: our demographic model vs. historical
+data</li>
+<li>Districts worthy of Dem donor support</li>
+<li>Coming next from Blue Ripple</li>
+<li>Coda #1: Demographics of the new GA districts</li>
+<li>Coda #2: Brief intro to our methods (for non-experts)</li>
+</ol>
+<section
+id="dem-lean-by-district-in-ga-our-demographic-model-vs.-historical-data"
+class="level2">
+<h2>1. Dem-lean by district in GA: our demographic model vs. historical
+data</h2>
+<p>Our “demographic” model forecasts the potential Democratic lean of
+each new district in GA based on attributes like race, education, age,
+and population density. In the graph and table below, we compare our
+predictions to a “historical” model (from the excellent <a
+href="https://davesredistricting.org/maps#aboutus">Dave’s Redistricting
+(DR) web-site</a>) built up from precinct-level results in prior
+elections<a href="#fn1" class="footnote-ref" id="fnref1"
+role="doc-noteref"><sup>1</sup></a>. (See methods at the end of this
+post for more details.) The axes show the projected 2-party Dem vote
+share with each model. The diagonal line represents where districts
+would fall on this scatter-plot if the two models agreed precisely. In
+districts to the left of the line, our demographic model thinks the D
+vote share is higher than historical results, and to the right of the
+line, we think it’s lower than the historical model predicts<a
+href="#fn2" class="footnote-ref" id="fnref2"
+role="doc-noteref"><sup>2</sup></a>.</p>
+<p>NB: For this and all scatter charts to follow, you can pan &amp; zoom
+by dragging with the mouse or moving the scroll wheel. To reset the
+chart, hold shift and click with the mouse.</p>
+<figure id="figure_10">
+<script type="text/javascript">var vlSpec=
+{
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "autosize": {
+        "contains": "padding",
+        "resize": true,
+        "type": "pad"
+    },
+    "config": {
+        "view": {
+            "continuousHeight": 600,
+            "continuousWidth": 600,
+            "discreteHeight": 600,
+            "discreteWidth": 600
+        }
+    },
+    "data": {
+        "format": {
+            "parse": {}
+        },
+        "values": [
+            {
+                "Demographic Model": 39.75,
+                "Demographic Model (5% CI)": 37.3,
+                "Demographic Model (95% CI)": 42.120000000000005,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "1",
+                "Historical Model": 41.67773577194237,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 37.269999999999996,
+                "Demographic Model (5% CI)": 34.83,
+                "Demographic Model (95% CI)": 39.69,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "10",
+                "Historical Model": 36.079313164349955,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 48.03,
+                "Demographic Model (5% CI)": 45.800000000000004,
+                "Demographic Model (95% CI)": 50.36000000000001,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "11",
+                "Historical Model": 38.96824581235228,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 44.06,
+                "Demographic Model (5% CI)": 41.56,
+                "Demographic Model (95% CI)": 46.400000000000006,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "12",
+                "Historical Model": 43.03926568077512,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 74.69,
+                "Demographic Model (5% CI)": 72.48,
+                "Demographic Model (95% CI)": 76.72,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "13",
+                "Historical Model": 79.16116583731086,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 35.18,
+                "Demographic Model (5% CI)": 32.96,
+                "Demographic Model (95% CI)": 37.4,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "14",
+                "Historical Model": 29.30628138128906,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 50.55,
+                "Demographic Model (5% CI)": 47.86,
+                "Demographic Model (95% CI)": 53.02,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "2",
+                "Historical Model": 54.18909312480958,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 36.84,
+                "Demographic Model (5% CI)": 34.410000000000004,
+                "Demographic Model (95% CI)": 39.26,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "3",
+                "Historical Model": 32.64555669050051,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 73.39,
+                "Demographic Model (5% CI)": 70.86,
+                "Demographic Model (95% CI)": 75.94,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "4",
+                "Historical Model": 76.99277206556042,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 74.16,
+                "Demographic Model (5% CI)": 70.98,
+                "Demographic Model (95% CI)": 77.39,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "5",
+                "Historical Model": 81.46485769662348,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 51.41,
+                "Demographic Model (5% CI)": 48.44,
+                "Demographic Model (95% CI)": 54.53,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "6",
+                "Historical Model": 37.74514837252285,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 65.31,
+                "Demographic Model (5% CI)": 62.3,
+                "Demographic Model (95% CI)": 68.43,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "7",
+                "Historical Model": 59.42740286298569,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 37.37,
+                "Demographic Model (5% CI)": 34.58,
+                "Demographic Model (95% CI)": 40.14,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "8",
+                "Historical Model": 34.29415359543695,
+                "State": "GA"
+            },
+            {
+                "Demographic Model": 31.72,
+                "Demographic Model (5% CI)": 29.15,
+                "Demographic Model (95% CI)": 34.23,
+                "Demographic Model Type": "TwoPartyShare_HSP_BinDensity_10_5_DISERwe_EScale1",
+                "District": "9",
+                "Historical Model": 28.1160311603116,
+                "State": "GA"
+            }
+        ]
+    },
+    "height": 600,
+    "layer": [
+        {
+            "encoding": {
+                "tooltip": [
+                    {
+                        "field": "District",
+                        "type": "nominal"
+                    },
+                    {
+                        "field": "Historical",
+                        "type": "quantitative"
+                    },
+                    {
+                        "field": "Demographic Model (5% CI)",
+                        "type": "quantitative"
+                    },
+                    {
+                        "field": "Demographic Model",
+                        "type": "quantitative"
+                    },
+                    {
+                        "field": "Demographic Model (95% CI)",
+                        "type": "quantitative"
+                    }
+                ],
+                "x": {
+                    "axis": {
+                        "title": "Historical Model"
+                    },
+                    "field": "Historical Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "axis": {
+                        "title": "Demographic Model"
+                    },
+                    "field": "Demographic Model (5% CI)",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y2": {
+                    "axis": {
+                        "title": null
+                    },
+                    "field": "Demographic Model (95% CI)",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "ticks": {
+                    "color": "black"
+                },
+                "type": "errorbar"
+            }
+        },
+        {
+            "encoding": {
+                "x": {
+                    "axis": {
+                        "title": "Historical Model"
+                    },
+                    "field": "Demographic Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "axis": {
+                        "title": "Demographic Model"
+                    },
+                    "field": "Demographic Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "tooltip": null,
+                "type": "line"
+            }
+        },
+        {
+            "encoding": {
+                "text": {
+                    "field": "District Name",
+                    "type": "nominal"
+                },
+                "tooltip": [
+                    {
+                        "field": "District",
+                        "type": "nominal"
+                    },
+                    {
+                        "field": "Historical Model",
+                        "type": "quantitative"
+                    },
+                    {
+                        "field": "Demographic Model",
+                        "type": "quantitative"
+                    }
+                ],
+                "x": {
+                    "axis": {
+                        "title": "Historical Model"
+                    },
+                    "field": "Historical Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "axis": {
+                        "title": "Demographic Model"
+                    },
+                    "field": "Demographic Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "dx": 20,
+                "type": "text"
+            },
+            "transform": [
+                {
+                    "as": "District Name",
+                    "calculate": "datum.State + '-' + datum.District"
+                }
+            ]
+        },
+        {
+            "encoding": {
+                "tooltip": [
+                    {
+                        "field": "District",
+                        "type": "nominal"
+                    },
+                    {
+                        "field": "Historical Model",
+                        "type": "quantitative"
+                    },
+                    {
+                        "field": "Demographic Model",
+                        "type": "quantitative"
+                    }
+                ],
+                "x": {
+                    "axis": {
+                        "title": "Historical Model"
+                    },
+                    "field": "Historical Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "axis": {
+                        "title": "Demographic Model"
+                    },
+                    "field": "Demographic Model",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": "circle",
+            "selection": {
+                "view": {
+                    "bind": "scales",
+                    "clear": "click[event.shiftKey]",
+                    "encodings": [
+                        "x",
+                        "y"
+                    ],
+                    "type": "interval"
+                }
+            }
+        }
+    ],
+    "padding": 5,
+    "title": "GA 2022: Historical vs. Demographic models",
+    "width": 600
+};
+vegaEmbed('#figure_10',vlSpec,{"renderer": "canvas"});</script>
+</figure>
+<p>We generally focus our attention on districts that fall in the 45-55%
+range of Dem share in our demographic model and 47-53% in the historical
+model. That’s because we think a 3-point gap is one that either party
+could potentially close with some focused energy, resources, and
+strategic thinking. Our demographic model carries some additional
+uncertainties, so we expand the range a bit there. Our methodology for
+using our model and the historical data to classify districts is
+explained <a
+href="https://blueripplepolitics.org/blog/high-yield-donation-opportunities">in
+this post</a>.</p>
+<p>With that in mind, here are a few observations on the new GA
+districts:</p>
+<ul>
+<li><p>First, let’s dispense with the obvious ones. Several GA districts
+are clearly far outside the competitive range and don’t merit serious
+investment by Dems looking to maximize their impact. Both the
+demographic model and the historical model agree that GA-4, GA-5, GA-7,
+GA-13 are safe D. Both models also agree that GA-1, GA-3, GA-8, GA-9,
+GA-10, and GA-12 are far out of reach for Dems.</p></li>
+<li><p>We think the rest (GA-2, GA-6, GA-11) are competitive. Though the
+historical model has GA-6 and GA-11 as safe R so these are what we call
+“plausible long-shots”. GA-2 is historically safe D but here we are
+concerned that it’s not as safe as it may look, especially in a wave
+year for Rs.</p></li>
+</ul>
+<p>Here’s a different look at the data, in a table sorted by the Dem
+share in our demographic model.</p>
+<div class="brTableTitle">Calculated Dem Vote Share, GA 2022: Demographic Model vs. Historical Model (DR)</div>
+<table class="brTable"><thead><tr><th>State</th><th>District</th><th>Demographic Model (Blue Ripple)</th><th>Historical Model (Dave&#39;s Redistricting)</th><th>BR Stance</th></tr></thead><tbody><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">13</td><td style="; ; ; border: 3px solid blue; ; ; ; ; ; color: green" data-label="Demographic">75</td><td style="; ; ; ; ; ; ; border: 3px solid blue; ; color: green" data-label="Historical">79</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe D (No near-term D risk)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">5</td><td style="; ; ; border: 3px solid blue; ; ; ; ; ; color: green" data-label="Demographic">74</td><td style="; ; ; ; ; ; ; border: 3px solid blue; ; color: green" data-label="Historical">81</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe D (No near-term D risk)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">4</td><td style="; ; ; border: 3px solid blue; ; ; ; ; ; color: green" data-label="Demographic">73</td><td style="; ; ; ; ; ; ; border: 3px solid blue; ; color: green" data-label="Historical">77</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe D (No near-term D risk)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">7</td><td style="; ; ; border: 3px solid blue; ; ; ; ; ; color: green" data-label="Demographic">65</td><td style="; ; ; ; ; ; ; border: 3px solid blue; ; color: green" data-label="Historical">59</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe D (No near-term D risk)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">6</td><td style="; ; border: 3px solid skyblue; ; ; ; ; ; ; color: green" data-label="Demographic">51</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">38</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Flippable (Strongly D-leaning)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">2</td><td style="; ; border: 3px solid skyblue; ; ; ; ; ; ; color: green" data-label="Demographic">51</td><td style="; ; ; ; ; ; ; border: 3px solid blue; ; color: green" data-label="Historical">54</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Becoming At-Risk (More Balanced than Advertised)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">11</td><td style="; border: 3px solid pink; ; ; ; ; ; ; ; color: green" data-label="Demographic">48</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">39</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Becoming Flippable (More balanced than Advertised)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">12</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">44</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">43</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">1</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">40</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">42</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">8</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">37</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">34</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">10</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">37</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">36</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">3</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">37</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">33</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">14</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">35</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">29</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr><tr><td style="; ; ; ; ; ; ; ; ; " data-label="State">GA</td><td style="; ; ; ; ; ; ; ; ; " data-label="District">9</td><td style="border: 3px solid red; ; ; ; ; ; ; ; ; color: green" data-label="Demographic">32</td><td style="; ; ; ; border: 3px solid red; ; ; ; ; color: green" data-label="Historical">28</td><td style="; ; ; ; ; ; ; ; ; " data-label="BR Stance">Safe R (No near-term D hope)</td></tr></tbody></table>
+</section>
+<section id="districts-worthy-of-dem-donor-support" class="level2">
+<h2>2. Districts worthy of Dem donor support</h2>
+<p>Based on the results above, we think there are three good options for
+Dem donors in GA: GA-2, GA-6, and GA-11.</p>
+<p>GA-6 (BR: D+1) and GA-11 (BR: R+2) appear to be “plausible
+long-shots” in our demographic model. GA-6 used to be a D-leaning
+district. It was redistricted by the Republican legislature to be more
+R-leaning (some voters-of-color and White voters with college degress
+were shifted to GA-7). But it remains the district in GA with the
+highest percentage of college educated White voters which is why our
+model sees a possibility of D success there. GA-11 is similar but has
+about 15% lower rate of college graduates and so is a tougher lift.</p>
+<p>A few points on “plausible long-shots”: (Feel free to skip if you’ve
+read our discussion of these sorts of districts in other analyses.) Our
+findings in GA-6 and GA-11 deserve particular discussion. These look to
+be "safe R" given the voting history in the precincts within them, but
+our demographic model suggests they should be much more Dem-leaning, and
+maybe even Dem-winnable. What might this mean? One way to answer this
+question is to consider the difference between the two models. Our
+demographic model asks: if the voting-age citizens of this district
+turned out and voted like similar people in other parts of the country
+and state, what would we expect the outcome of this election to be? In
+contrast, the historical model asks how we'd expect the election to turn
+out if the voters in this district turn out and vote as they have in
+previous elections. This points to a few possible reasons why a
+historically red district like GA-6 might look flippable in our model --
+including, but not limited to, the following:</p>
+<ul>
+<li><p>Our model may be wrong about how we define "similar" voters.
+We've incorporated factors like education and race, but maybe we've
+missed key things that make voters in GA-6 different from superficially
+"similar" voters in other districts nationwide.</p></li>
+<li><p>Location-specific factors may depress Dem voting. It's possible
+that barriers related to voter access in GA-6 depress Dem vote share
+below what it would be in other districts.</p></li>
+<li><p>Dems may, in fact, have underperformed relative to their
+potential among these voters. It's possible that more effective
+candidate recruitment, campaigning, or organizing could, in fact, yield
+a win for Dems in GA-6 or GA-11.</p></li>
+</ul>
+<p>We don't know which (if any) of these explanations is correct. But
+our model suggests that if you want to support Team Blue in TX, and are
+open to the idea of supporting some long-shot candidates, then donating
+to a Dem in GA-6 or GA-11 might fit the bill.</p>
+</section>
+<section id="coming-next-from-blue-ripple" class="level2">
+<h2>3. Coming next from Blue Ripple</h2>
+<p>Here’s where we’re planning to take these analyses over the next few
+months:</p>
+<ul>
+<li><p>We’re going to do the same type analysis in many of the states,
+in order to identify the best options for Dem donors in 2022 on both
+offense and defense nationwide. Here are our takes on <a
+href="https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html">Arizona</a>,
+<a
+href="https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html">Michigan</a>,
+<a
+href="https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html">North
+Carolina</a>, <a
+href="https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html">Pennsylvania</a>,
+and <a
+href="https://blueripple.github.io/research/NewMaps/TX_Congressional/post.html">Texas</a>.</p></li>
+<li><p>We’re going to continue to refine and improve our demographic
+model–we’ll update this post and others as we do so. Feel free to
+contact us if you want more details on the mechanics, or if you’d like
+to propose changes or improvements.</p></li>
+<li><p>As maps get solidified, we’ll set up ActBlue donation links for
+candidates (after the primaries) to make it easy for you to
+donate.</p></li>
+</ul>
+<p>If you want to stay up-to-date, please <a
+href="http://eepurl.com/gzmeQ5">sign up</a> for our email updates! We’re
+also on <a href="https://twitter.com/BlueRipplePol">Twitter</a>, <a
+href="https://www.facebook.com/blueripplepolitics">Facebook</a>, and <a
+href="https://github.com/blueripple">Github</a>.</p>
+</section>
+<section id="coda-1-demographics-of-new-vs.-old-ga-districts"
+class="level2">
+<h2>4. Coda #1: Demographics of new vs. old GA districts</h2>
+<p>One thing we haven’t seen discussed very much is how redistricting in
+GA has changed the demographics in each district. As a way of putting
+the demographic model results in context, let’s look at the underlying
+population two different ways:</p>
+<ul>
+<li><p>The first chart below shows each of GA’s 2022 districts, with the
+population broken down by race/ethnicity (Black, Hispanic, Asian,
+White-non-Hispanic and other) and education (college graduate and
+non-college graduate). Each bar also has a dot representing the
+(logarithmic) population density<a href="#fn3" class="footnote-ref"
+id="fnref3" role="doc-noteref"><sup>3</sup></a> of the district. The
+scale for that dot is on the right-side axis of the chart. For
+reference, a log density of 5 represents about 150 people per square
+mile and a log density of 8 represents about 3000 people per square
+mile. We’ve ordered the districts by D-share based on our demographic
+model, which is helpful for understanding how the model responds to
+demographics and density.</p></li>
+<li><p>In the second chart, we look at these demographics a different
+way, placing each GA district according to its proportion of college
+graduates and non-white citizens of voting age. We also indicate
+(logarithmic) population density via the size of the circle and modeled
+D-edge (D-share minus 50%) via color. This makes it easier to see that
+the model predicts larger D vote-share as the district becomes more
+educated, more non-white and more dense.</p></li>
+</ul>
+<figure id="figure_11">
+<script type="text/javascript">var vlSpec=
+{
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "autosize": {
+        "contains": "padding",
+        "resize": true,
+        "type": "pad"
+    },
+    "config": {
+        "legend": {
+            "orient": "bottom"
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "Count": 3870,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.912096611724409,
+                "sort": 12
+            },
+            {
+                "Count": 61486,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.912096611724409,
+                "sort": 3
+            },
+            {
+                "Count": 10559,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 6
+            },
+            {
+                "Count": 3237,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.91209661172441,
+                "sort": 9
+            },
+            {
+                "Count": 125866,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 0
+            },
+            {
+                "Count": 1935,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.912096611724409,
+                "sort": 13
+            },
+            {
+                "Count": 15952,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.912096611724409,
+                "sort": 4
+            },
+            {
+                "Count": 2873,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 7
+            },
+            {
+                "Count": 2293,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.912096611724409,
+                "sort": 10
+            },
+            {
+                "Count": 52372,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 1
+            },
+            {
+                "Count": 4255,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.912096611724409,
+                "sort": 12
+            },
+            {
+                "Count": 57743,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.912096611724409,
+                "sort": 3
+            },
+            {
+                "Count": 14492,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 6
+            },
+            {
+                "Count": 2568,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.912096611724409,
+                "sort": 9
+            },
+            {
+                "Count": 120735,
+                "District": "GA-1",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 0
+            },
+            {
+                "Count": 1077,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.912096611724409,
+                "sort": 13
+            },
+            {
+                "Count": 9280,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.912096611724409,
+                "sort": 4
+            },
+            {
+                "Count": 2553,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 7
+            },
+            {
+                "Count": 2022,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.912096611724409,
+                "sort": 10
+            },
+            {
+                "Count": 46052,
+                "District": "GA-1",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.912096611724409,
+                "sort": 1
+            },
+            {
+                "Count": 2635,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.8352784639186535,
+                "sort": 12
+            },
+            {
+                "Count": 45463,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.8352784639186535,
+                "sort": 3
+            },
+            {
+                "Count": 10475,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 6
+            },
+            {
+                "Count": 2848,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.8352784639186535,
+                "sort": 9
+            },
+            {
+                "Count": 121823,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 0
+            },
+            {
+                "Count": 1008,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.8352784639186535,
+                "sort": 13
+            },
+            {
+                "Count": 12710,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.8352784639186535,
+                "sort": 4
+            },
+            {
+                "Count": 3224,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 7
+            },
+            {
+                "Count": 2394,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.8352784639186535,
+                "sort": 10
+            },
+            {
+                "Count": 53341,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.835278463918654,
+                "sort": 1
+            },
+            {
+                "Count": 2735,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.8352784639186535,
+                "sort": 12
+            },
+            {
+                "Count": 41981,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.8352784639186535,
+                "sort": 3
+            },
+            {
+                "Count": 11572,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 6
+            },
+            {
+                "Count": 2488,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.8352784639186535,
+                "sort": 9
+            },
+            {
+                "Count": 116647,
+                "District": "GA-10",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 0
+            },
+            {
+                "Count": 1073,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.8352784639186535,
+                "sort": 13
+            },
+            {
+                "Count": 7223,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.8352784639186535,
+                "sort": 4
+            },
+            {
+                "Count": 2241,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 7
+            },
+            {
+                "Count": 2010,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.8352784639186535,
+                "sort": 10
+            },
+            {
+                "Count": 46034,
+                "District": "GA-10",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.8352784639186535,
+                "sort": 1
+            },
+            {
+                "Count": 3514,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.291901410717735,
+                "sort": 12
+            },
+            {
+                "Count": 27030,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.291901410717735,
+                "sort": 3
+            },
+            {
+                "Count": 17448,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 6
+            },
+            {
+                "Count": 3624,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.291901410717735,
+                "sort": 9
+            },
+            {
+                "Count": 104335,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 0
+            },
+            {
+                "Count": 3442,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.291901410717735,
+                "sort": 13
+            },
+            {
+                "Count": 19232,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.291901410717736,
+                "sort": 4
+            },
+            {
+                "Count": 4575,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 7
+            },
+            {
+                "Count": 7015,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.291901410717735,
+                "sort": 10
+            },
+            {
+                "Count": 70974,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 1
+            },
+            {
+                "Count": 3798,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.291901410717735,
+                "sort": 12
+            },
+            {
+                "Count": 24544,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.291901410717735,
+                "sort": 3
+            },
+            {
+                "Count": 19450,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 6
+            },
+            {
+                "Count": 2597,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.291901410717734,
+                "sort": 9
+            },
+            {
+                "Count": 92845,
+                "District": "GA-11",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 0
+            },
+            {
+                "Count": 2732,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.291901410717735,
+                "sort": 13
+            },
+            {
+                "Count": 12583,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.291901410717735,
+                "sort": 4
+            },
+            {
+                "Count": 5335,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 7
+            },
+            {
+                "Count": 6891,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.291901410717735,
+                "sort": 10
+            },
+            {
+                "Count": 68577,
+                "District": "GA-11",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.291901410717735,
+                "sort": 1
+            },
+            {
+                "Count": 3963,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.572039957230401,
+                "sort": 12
+            },
+            {
+                "Count": 83528,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.572039957230401,
+                "sort": 3
+            },
+            {
+                "Count": 7994,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 6
+            },
+            {
+                "Count": 3014,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.572039957230401,
+                "sort": 9
+            },
+            {
+                "Count": 112437,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 0
+            },
+            {
+                "Count": 943,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.572039957230401,
+                "sort": 13
+            },
+            {
+                "Count": 17045,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.572039957230401,
+                "sort": 4
+            },
+            {
+                "Count": 2459,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 7
+            },
+            {
+                "Count": 2687,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.572039957230401,
+                "sort": 10
+            },
+            {
+                "Count": 42295,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 1
+            },
+            {
+                "Count": 2733,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.572039957230401,
+                "sort": 12
+            },
+            {
+                "Count": 78333,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.572039957230401,
+                "sort": 3
+            },
+            {
+                "Count": 10358,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 6
+            },
+            {
+                "Count": 1681,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.572039957230401,
+                "sort": 9
+            },
+            {
+                "Count": 110156,
+                "District": "GA-12",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 0
+            },
+            {
+                "Count": 1126,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.572039957230401,
+                "sort": 13
+            },
+            {
+                "Count": 9582,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.572039957230401,
+                "sort": 4
+            },
+            {
+                "Count": 1885,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 7
+            },
+            {
+                "Count": 2176,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.572039957230401,
+                "sort": 10
+            },
+            {
+                "Count": 37067,
+                "District": "GA-12",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.572039957230401,
+                "sort": 1
+            },
+            {
+                "Count": 2886,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.4525532519176085,
+                "sort": 12
+            },
+            {
+                "Count": 113107,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.452553251917608,
+                "sort": 3
+            },
+            {
+                "Count": 17148,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.4525532519176085,
+                "sort": 6
+            },
+            {
+                "Count": 6618,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.452553251917608,
+                "sort": 9
+            },
+            {
+                "Count": 42032,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.452553251917608,
+                "sort": 0
+            },
+            {
+                "Count": 1383,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.452553251917608,
+                "sort": 13
+            },
+            {
+                "Count": 60631,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.452553251917608,
+                "sort": 4
+            },
+            {
+                "Count": 3518,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.4525532519176085,
+                "sort": 7
+            },
+            {
+                "Count": 3304,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.452553251917608,
+                "sort": 10
+            },
+            {
+                "Count": 16886,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.452553251917608,
+                "sort": 1
+            },
+            {
+                "Count": 2642,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.452553251917608,
+                "sort": 12
+            },
+            {
+                "Count": 96278,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.452553251917608,
+                "sort": 3
+            },
+            {
+                "Count": 20002,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.452553251917607,
+                "sort": 6
+            },
+            {
+                "Count": 5633,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.4525532519176085,
+                "sort": 9
+            },
+            {
+                "Count": 37417,
+                "District": "GA-13",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.452553251917608,
+                "sort": 0
+            },
+            {
+                "Count": 1176,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.4525532519176085,
+                "sort": 13
+            },
+            {
+                "Count": 31607,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.452553251917608,
+                "sort": 4
+            },
+            {
+                "Count": 2267,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.4525532519176085,
+                "sort": 7
+            },
+            {
+                "Count": 2794,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.452553251917608,
+                "sort": 10
+            },
+            {
+                "Count": 14692,
+                "District": "GA-13",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.452553251917608,
+                "sort": 1
+            },
+            {
+                "Count": 3282,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 6.117788780441477,
+                "sort": 12
+            },
+            {
+                "Count": 27385,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 6.117788780441476,
+                "sort": 3
+            },
+            {
+                "Count": 21413,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 6
+            },
+            {
+                "Count": 2468,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.117788780441477,
+                "sort": 9
+            },
+            {
+                "Count": 182208,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 0
+            },
+            {
+                "Count": 1120,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 6.117788780441477,
+                "sort": 13
+            },
+            {
+                "Count": 12115,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 6.117788780441477,
+                "sort": 4
+            },
+            {
+                "Count": 3406,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 7
+            },
+            {
+                "Count": 1884,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.117788780441477,
+                "sort": 10
+            },
+            {
+                "Count": 50563,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 1
+            },
+            {
+                "Count": 2921,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 6.117788780441478,
+                "sort": 12
+            },
+            {
+                "Count": 26480,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 6.117788780441477,
+                "sort": 3
+            },
+            {
+                "Count": 23726,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 6
+            },
+            {
+                "Count": 1576,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.117788780441477,
+                "sort": 9
+            },
+            {
+                "Count": 169287,
+                "District": "GA-14",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 0
+            },
+            {
+                "Count": 1006,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 6.117788780441477,
+                "sort": 13
+            },
+            {
+                "Count": 7059,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 6.117788780441477,
+                "sort": 4
+            },
+            {
+                "Count": 2441,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.117788780441478,
+                "sort": 7
+            },
+            {
+                "Count": 1508,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.117788780441477,
+                "sort": 10
+            },
+            {
+                "Count": 43949,
+                "District": "GA-14",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.117788780441477,
+                "sort": 1
+            },
+            {
+                "Count": 3369,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.6941024406028955,
+                "sort": 12
+            },
+            {
+                "Count": 117469,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.694102440602895,
+                "sort": 3
+            },
+            {
+                "Count": 8388,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 6
+            },
+            {
+                "Count": 2485,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.694102440602895,
+                "sort": 9
+            },
+            {
+                "Count": 97316,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.694102440602894,
+                "sort": 0
+            },
+            {
+                "Count": 765,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.694102440602895,
+                "sort": 13
+            },
+            {
+                "Count": 23245,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.694102440602894,
+                "sort": 4
+            },
+            {
+                "Count": 2213,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 7
+            },
+            {
+                "Count": 1532,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.6941024406028955,
+                "sort": 10
+            },
+            {
+                "Count": 34082,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 1
+            },
+            {
+                "Count": 2676,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.694102440602895,
+                "sort": 12
+            },
+            {
+                "Count": 106505,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.694102440602895,
+                "sort": 3
+            },
+            {
+                "Count": 12282,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 6
+            },
+            {
+                "Count": 1976,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.694102440602895,
+                "sort": 9
+            },
+            {
+                "Count": 94057,
+                "District": "GA-2",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 0
+            },
+            {
+                "Count": 886,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.6941024406028955,
+                "sort": 13
+            },
+            {
+                "Count": 12235,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.694102440602895,
+                "sort": 4
+            },
+            {
+                "Count": 1792,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 7
+            },
+            {
+                "Count": 1446,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.6941024406028955,
+                "sort": 10
+            },
+            {
+                "Count": 31007,
+                "District": "GA-2",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.694102440602895,
+                "sort": 1
+            },
+            {
+                "Count": 3302,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.8057070943781275,
+                "sort": 12
+            },
+            {
+                "Count": 49136,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.805707094378127,
+                "sort": 3
+            },
+            {
+                "Count": 8772,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 6
+            },
+            {
+                "Count": 2726,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.805707094378127,
+                "sort": 9
+            },
+            {
+                "Count": 142876,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 0
+            },
+            {
+                "Count": 1757,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.805707094378127,
+                "sort": 13
+            },
+            {
+                "Count": 15884,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.805707094378127,
+                "sort": 4
+            },
+            {
+                "Count": 2824,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 7
+            },
+            {
+                "Count": 2329,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.805707094378127,
+                "sort": 10
+            },
+            {
+                "Count": 56497,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 1
+            },
+            {
+                "Count": 2770,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.805707094378127,
+                "sort": 12
+            },
+            {
+                "Count": 44348,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.805707094378127,
+                "sort": 3
+            },
+            {
+                "Count": 10255,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 6
+            },
+            {
+                "Count": 2199,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.805707094378127,
+                "sort": 9
+            },
+            {
+                "Count": 131322,
+                "District": "GA-3",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 0
+            },
+            {
+                "Count": 1402,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.805707094378127,
+                "sort": 13
+            },
+            {
+                "Count": 8123,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.805707094378127,
+                "sort": 4
+            },
+            {
+                "Count": 2296,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 7
+            },
+            {
+                "Count": 2707,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.805707094378127,
+                "sort": 10
+            },
+            {
+                "Count": 51895,
+                "District": "GA-3",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.805707094378127,
+                "sort": 1
+            },
+            {
+                "Count": 4477,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.872988544369306,
+                "sort": 12
+            },
+            {
+                "Count": 99766,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.872988544369307,
+                "sort": 3
+            },
+            {
+                "Count": 13285,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.872988544369307,
+                "sort": 6
+            },
+            {
+                "Count": 7273,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.872988544369307,
+                "sort": 9
+            },
+            {
+                "Count": 34538,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.872988544369307,
+                "sort": 0
+            },
+            {
+                "Count": 2619,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.872988544369307,
+                "sort": 13
+            },
+            {
+                "Count": 52489,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.872988544369307,
+                "sort": 4
+            },
+            {
+                "Count": 3853,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.872988544369307,
+                "sort": 7
+            },
+            {
+                "Count": 7889,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.872988544369307,
+                "sort": 10
+            },
+            {
+                "Count": 48180,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.872988544369308,
+                "sort": 1
+            },
+            {
+                "Count": 2677,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.872988544369308,
+                "sort": 12
+            },
+            {
+                "Count": 85524,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.872988544369307,
+                "sort": 3
+            },
+            {
+                "Count": 16003,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.872988544369307,
+                "sort": 6
+            },
+            {
+                "Count": 6971,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.872988544369307,
+                "sort": 9
+            },
+            {
+                "Count": 30763,
+                "District": "GA-4",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.872988544369307,
+                "sort": 0
+            },
+            {
+                "Count": 1681,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.872988544369307,
+                "sort": 13
+            },
+            {
+                "Count": 31547,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.872988544369307,
+                "sort": 4
+            },
+            {
+                "Count": 3130,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.872988544369308,
+                "sort": 7
+            },
+            {
+                "Count": 7601,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.872988544369307,
+                "sort": 10
+            },
+            {
+                "Count": 44952,
+                "District": "GA-4",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.872988544369308,
+                "sort": 1
+            },
+            {
+                "Count": 2868,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 8.31019608188639,
+                "sort": 12
+            },
+            {
+                "Count": 98868,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 8.31019608188639,
+                "sort": 3
+            },
+            {
+                "Count": 6732,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 6
+            },
+            {
+                "Count": 2250,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 8.31019608188639,
+                "sort": 9
+            },
+            {
+                "Count": 22320,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 0
+            },
+            {
+                "Count": 3083,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 8.31019608188639,
+                "sort": 13
+            },
+            {
+                "Count": 42890,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 8.31019608188639,
+                "sort": 4
+            },
+            {
+                "Count": 5523,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 7
+            },
+            {
+                "Count": 8368,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 8.31019608188639,
+                "sort": 10
+            },
+            {
+                "Count": 77970,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 1
+            },
+            {
+                "Count": 1883,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 8.31019608188639,
+                "sort": 12
+            },
+            {
+                "Count": 86827,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 8.31019608188639,
+                "sort": 3
+            },
+            {
+                "Count": 8036,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 6
+            },
+            {
+                "Count": 1572,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 8.31019608188639,
+                "sort": 9
+            },
+            {
+                "Count": 24568,
+                "District": "GA-5",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 0
+            },
+            {
+                "Count": 2423,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 8.31019608188639,
+                "sort": 13
+            },
+            {
+                "Count": 28855,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 8.31019608188639,
+                "sort": 4
+            },
+            {
+                "Count": 4613,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 7
+            },
+            {
+                "Count": 8293,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 8.31019608188639,
+                "sort": 10
+            },
+            {
+                "Count": 80213,
+                "District": "GA-5",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 8.31019608188639,
+                "sort": 1
+            },
+            {
+                "Count": 3001,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.38315059691616,
+                "sort": 12
+            },
+            {
+                "Count": 11644,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.38315059691616,
+                "sort": 3
+            },
+            {
+                "Count": 11622,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.383150596916161,
+                "sort": 6
+            },
+            {
+                "Count": 6428,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.383150596916159,
+                "sort": 9
+            },
+            {
+                "Count": 83559,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.383150596916159,
+                "sort": 0
+            },
+            {
+                "Count": 2429,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.38315059691616,
+                "sort": 13
+            },
+            {
+                "Count": 14003,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.38315059691616,
+                "sort": 4
+            },
+            {
+                "Count": 7114,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.383150596916161,
+                "sort": 7
+            },
+            {
+                "Count": 20472,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.383150596916159,
+                "sort": 10
+            },
+            {
+                "Count": 100195,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.38315059691616,
+                "sort": 1
+            },
+            {
+                "Count": 2594,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.383150596916159,
+                "sort": 12
+            },
+            {
+                "Count": 10744,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.38315059691616,
+                "sort": 3
+            },
+            {
+                "Count": 12944,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.38315059691616,
+                "sort": 6
+            },
+            {
+                "Count": 4224,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.38315059691616,
+                "sort": 9
+            },
+            {
+                "Count": 69544,
+                "District": "GA-6",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.38315059691616,
+                "sort": 0
+            },
+            {
+                "Count": 2830,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.38315059691616,
+                "sort": 13
+            },
+            {
+                "Count": 9817,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.383150596916159,
+                "sort": 4
+            },
+            {
+                "Count": 7702,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.383150596916159,
+                "sort": 7
+            },
+            {
+                "Count": 21997,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.38315059691616,
+                "sort": 10
+            },
+            {
+                "Count": 102690,
+                "District": "GA-6",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.38315059691616,
+                "sort": 1
+            },
+            {
+                "Count": 1998,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.936785236751941,
+                "sort": 12
+            },
+            {
+                "Count": 44327,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.936785236751942,
+                "sort": 3
+            },
+            {
+                "Count": 32844,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.936785236751941,
+                "sort": 6
+            },
+            {
+                "Count": 19867,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.936785236751941,
+                "sort": 9
+            },
+            {
+                "Count": 50784,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.936785236751941,
+                "sort": 0
+            },
+            {
+                "Count": 1824,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.936785236751941,
+                "sort": 13
+            },
+            {
+                "Count": 29564,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.936785236751941,
+                "sort": 4
+            },
+            {
+                "Count": 8212,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.936785236751941,
+                "sort": 7
+            },
+            {
+                "Count": 17269,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.93678523675194,
+                "sort": 10
+            },
+            {
+                "Count": 43900,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.936785236751941,
+                "sort": 1
+            },
+            {
+                "Count": 1648,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 7.936785236751942,
+                "sort": 12
+            },
+            {
+                "Count": 38970,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 7.936785236751941,
+                "sort": 3
+            },
+            {
+                "Count": 39508,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.936785236751942,
+                "sort": 6
+            },
+            {
+                "Count": 15488,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.936785236751941,
+                "sort": 9
+            },
+            {
+                "Count": 44649,
+                "District": "GA-7",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.936785236751942,
+                "sort": 0
+            },
+            {
+                "Count": 1897,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 7.936785236751941,
+                "sort": 13
+            },
+            {
+                "Count": 20430,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 7.93678523675194,
+                "sort": 4
+            },
+            {
+                "Count": 5928,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 7.93678523675194,
+                "sort": 7
+            },
+            {
+                "Count": 17242,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 7.936785236751941,
+                "sort": 10
+            },
+            {
+                "Count": 45005,
+                "District": "GA-7",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 7.936785236751941,
+                "sort": 1
+            },
+            {
+                "Count": 2728,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.275764962077525,
+                "sort": 12
+            },
+            {
+                "Count": 65756,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.275764962077525,
+                "sort": 3
+            },
+            {
+                "Count": 9935,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 6
+            },
+            {
+                "Count": 2670,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.275764962077525,
+                "sort": 9
+            },
+            {
+                "Count": 123624,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 0
+            },
+            {
+                "Count": 1056,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.275764962077525,
+                "sort": 13
+            },
+            {
+                "Count": 13219,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.275764962077525,
+                "sort": 4
+            },
+            {
+                "Count": 1796,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 7
+            },
+            {
+                "Count": 1711,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.275764962077525,
+                "sort": 10
+            },
+            {
+                "Count": 43845,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 1
+            },
+            {
+                "Count": 2023,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 5.275764962077525,
+                "sort": 12
+            },
+            {
+                "Count": 62614,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 5.275764962077525,
+                "sort": 3
+            },
+            {
+                "Count": 14470,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 6
+            },
+            {
+                "Count": 1448,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.275764962077525,
+                "sort": 9
+            },
+            {
+                "Count": 120796,
+                "District": "GA-8",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 0
+            },
+            {
+                "Count": 561,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 5.275764962077525,
+                "sort": 13
+            },
+            {
+                "Count": 8285,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 5.275764962077525,
+                "sort": 4
+            },
+            {
+                "Count": 1801,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 7
+            },
+            {
+                "Count": 1450,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 5.275764962077525,
+                "sort": 10
+            },
+            {
+                "Count": 36647,
+                "District": "GA-8",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 5.275764962077525,
+                "sort": 1
+            },
+            {
+                "Count": 2924,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 6.023883333363483,
+                "sort": 12
+            },
+            {
+                "Count": 18617,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 6.023883333363483,
+                "sort": 3
+            },
+            {
+                "Count": 25581,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.023883333363484,
+                "sort": 6
+            },
+            {
+                "Count": 7592,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.023883333363483,
+                "sort": 9
+            },
+            {
+                "Count": 153668,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 0
+            },
+            {
+                "Count": 1718,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 6.023883333363483,
+                "sort": 13
+            },
+            {
+                "Count": 7773,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 6.023883333363483,
+                "sort": 4
+            },
+            {
+                "Count": 3751,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 7
+            },
+            {
+                "Count": 6944,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.023883333363483,
+                "sort": 10
+            },
+            {
+                "Count": 63094,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 1
+            },
+            {
+                "Count": 2530,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Other",
+                "log(Density)": 6.023883333363483,
+                "sort": 12
+            },
+            {
+                "Count": 17499,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Black",
+                "log(Density)": 6.023883333363483,
+                "sort": 3
+            },
+            {
+                "Count": 27340,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 6
+            },
+            {
+                "Count": 5821,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.023883333363483,
+                "sort": 9
+            },
+            {
+                "Count": 142385,
+                "District": "GA-9",
+                "Education": "NonGrad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 0
+            },
+            {
+                "Count": 730,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Other",
+                "log(Density)": 6.023883333363483,
+                "sort": 13
+            },
+            {
+                "Count": 5260,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Black",
+                "log(Density)": 6.023883333363483,
+                "sort": 4
+            },
+            {
+                "Count": 3664,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Hispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 7
+            },
+            {
+                "Count": 5711,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_Asian",
+                "log(Density)": 6.023883333363483,
+                "sort": 10
+            },
+            {
+                "Count": 57639,
+                "District": "GA-9",
+                "Education": "Grad",
+                "Race": "R5_WhiteNonHispanic",
+                "log(Density)": 6.023883333363483,
+                "sort": 1
+            }
+        ]
+    },
+    "height": 600,
+    "layer": [
+        {
+            "encoding": {
+                "color": {
+                    "field": "Race",
+                    "sort": [
+                        "R5_Other",
+                        "R5_Asian",
+                        "R5_Hispanic",
+                        "R5_Black",
+                        "R5_WhiteNonHispanic"
+                    ],
+                    "type": "nominal"
+                },
+                "opacity": {
+                    "field": "Education",
+                    "sort": [
+                        "Grad",
+                        "NonGrad"
+                    ],
+                    "type": "nominal"
+                },
+                "tooltip": [
+                    {
+                        "field": "Race",
+                        "type": "nominal"
+                    },
+                    {
+                        "field": "Education",
+                        "type": "nominal"
+                    }
+                ],
+                "x": {
+                    "field": "District",
+                    "sort": [
+                        "GA-13",
+                        "GA-5",
+                        "GA-4",
+                        "GA-7",
+                        "GA-6",
+                        "GA-2",
+                        "GA-11",
+                        "GA-12",
+                        "GA-1",
+                        "GA-8",
+                        "GA-10",
+                        "GA-3",
+                        "GA-14",
+                        "GA-9"
+                    ],
+                    "type": "nominal"
+                },
+                "y": {
+                    "field": "stack",
+                    "title": "Fraction",
+                    "type": "quantitative"
+                },
+                "y2": {
+                    "field": "stack_end",
+                    "type": "quantitative"
+                }
+            },
+            "mark": "bar"
+        },
+        {
+            "encoding": {
+                "x": {
+                    "field": "District",
+                    "sort": [
+                        "GA-13",
+                        "GA-5",
+                        "GA-4",
+                        "GA-7",
+                        "GA-6",
+                        "GA-2",
+                        "GA-11",
+                        "GA-12",
+                        "GA-1",
+                        "GA-8",
+                        "GA-10",
+                        "GA-3",
+                        "GA-14",
+                        "GA-9"
+                    ],
+                    "type": "nominal"
+                },
+                "y": {
+                    "aggregate": "max",
+                    "axis": {
+                        "orient": "right"
+                    },
+                    "field": "log(Density)",
+                    "scale": {
+                        "zero": false
+                    },
+                    "title": "log(Density)",
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "color": "purple",
+                "type": "circle"
+            }
+        }
+    ],
+    "padding": 5,
+    "resolve": {
+        "scale": {
+            "y": "independent"
+        }
+    },
+    "title": "GA New: By Race and Education",
+    "transform": [
+        {
+            "as": [
+                "stack",
+                "stack_end"
+            ],
+            "groupby": [
+                "District"
+            ],
+            "offset": "normalize",
+            "sort": [
+                {
+                    "field": "sort",
+                    "order": "ascending"
+                }
+            ],
+            "stack": "Count"
+        }
+    ],
+    "width": 600
+};
+vegaEmbed('#figure_11',vlSpec,{"renderer": "canvas"});</script>
+</figure>
+<figure id="figure_12">
+<script type="text/javascript">var vlSpec=
+{
+    "$schema": "https://vega.github.io/schema/vega-lite/v4.json",
+    "autosize": {
+        "contains": "padding",
+        "resize": true,
+        "type": "pad"
+    },
+    "config": {
+        "legend": {
+            "orient": "bottom"
+        }
+    },
+    "data": {
+        "values": [
+            {
+                "% college grad": 25.20398359262407,
+                "% non-white": 36.25050811130409,
+                "District": "GA-1",
+                "Modeled D-Edge": -10.249999999999998,
+                "log density": 5.912096611724409
+            },
+            {
+                "% college grad": 26.79144767056182,
+                "% non-white": 31.041485941725774,
+                "District": "GA-10",
+                "Modeled D-Edge": -12.730000000000002,
+                "log density": 5.8352784639186535
+            },
+            {
+                "% college grad": 40.22767365710301,
+                "% non-white": 32.726589829804155,
+                "District": "GA-11",
+                "Modeled D-Edge": -1.9699999999999995,
+                "log density": 7.291901410717735
+            },
+            {
+                "% college grad": 22.064606688719042,
+                "% non-white": 43.184084657040394,
+                "District": "GA-12",
+                "Modeled D-Edge": -5.940000000000001,
+                "log density": 5.572039957230401
+            },
+            {
+                "% college grad": 28.68298269162547,
+                "% non-white": 76.96635623759131,
+                "District": "GA-13",
+                "Modeled D-Edge": 24.69,
+                "log density": 7.452553251917608
+            },
+            {
+                "% college grad": 21.347156096736583,
+                "% non-white": 23.863215414213457,
+                "District": "GA-14",
+                "Modeled D-Edge": -14.82,
+                "log density": 6.117788780441477
+            },
+            {
+                "% college grad": 19.650511223156734,
+                "% non-white": 53.85099851365601,
+                "District": "GA-2",
+                "Modeled D-Edge": 0.5499999999999949,
+                "log density": 5.694102440602895
+            },
+            {
+                "% college grad": 26.814250487652277,
+                "% non-white": 29.595892679695265,
+                "District": "GA-3",
+                "Modeled D-Edge": -13.16,
+                "log density": 5.805707094378127
+            },
+            {
+                "% college grad": 40.36693071109897,
+                "% non-white": 68.64066600952461,
+                "District": "GA-4",
+                "Modeled D-Edge": 23.39,
+                "log density": 7.872988544369308
+            },
+            {
+                "% college grad": 50.60860167324449,
+                "% non-white": 60.42284644556165,
+                "District": "GA-5",
+                "Modeled D-Edge": 24.160000000000004,
+                "log density": 8.31019608188639
+            },
+            {
+                "% college grad": 57.214377127620644,
+                "% non-white": 29.584435261980445,
+                "District": "GA-6",
+                "Modeled D-Edge": 1.4100000000000001,
+                "log density": 7.38315059691616
+            },
+            {
+                "% college grad": 39.736036264370924,
+                "% non-white": 61.70427585519181,
+                "District": "GA-7",
+                "Modeled D-Edge": 15.310000000000002,
+                "log density": 7.936785236751941
+            },
+            {
+                "% college grad": 21.371711832079544,
+                "% non-white": 37.085596444857536,
+                "District": "GA-8",
+                "Modeled D-Edge": -12.630000000000003,
+                "log density": 5.275764962077525
+            },
+            {
+                "% college grad": 27.895851963708477,
+                "% non-white": 25.605944584562714,
+                "District": "GA-9",
+                "Modeled D-Edge": -18.28,
+                "log density": 6.023883333363483
+            }
+        ]
+    },
+    "height": 600,
+    "layer": [
+        {
+            "encoding": {
+                "text": {
+                    "field": "District"
+                },
+                "x": {
+                    "field": "% non-white",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "% college grad",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "dy": 10,
+                "type": "text"
+            }
+        },
+        {
+            "encoding": {
+                "color": {
+                    "field": "Modeled D-Edge",
+                    "scale": {
+                        "domain": [
+                            -24.69,
+                            24.69
+                        ],
+                        "scheme": "redblue"
+                    },
+                    "type": "quantitative"
+                },
+                "size": {
+                    "field": "log density",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "x": {
+                    "field": "% non-white",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                },
+                "y": {
+                    "field": "% college grad",
+                    "scale": {
+                        "zero": false
+                    },
+                    "type": "quantitative"
+                }
+            },
+            "mark": {
+                "tooltip": {
+                    "content": "data"
+                },
+                "type": "circle"
+            },
+            "selection": {
+                "view": {
+                    "bind": "scales",
+                    "clear": "click[event.shiftKey]",
+                    "encodings": [
+                        "x",
+                        "y"
+                    ],
+                    "type": "interval"
+                }
+            }
+        }
+    ],
+    "padding": 5,
+    "title": "GA demographic scatter",
+    "width": 600
+};
+vegaEmbed('#figure_12',vlSpec,{"renderer": "canvas"});</script>
+</figure>
+<p>It’s hard to see anything specific from these charts, though we are
+continuing to examine them as we try to understand what might be
+happening in each specific district.</p>
+</section>
+<section id="coda-2-brief-intro-to-our-methods-for-non-experts"
+class="level2">
+<h2>5. Coda #2: Brief intro to our methods (for non-experts)</h2>
+<p>This part of the post contains a general summary of the math behind
+what we’re doing here intended for non-experts. If you want even more
+technical details, check out the links at the end of this section, visit
+our Github page, or contact us directly.</p>
+<p>Our model is demographic. We use turnout data from the 2020 <a
+href="https://catalog.data.gov/dataset/current-population-survey-voting-and-registration-supplement">CPS</a>
+voter supplement (a self-reported survey); voting and turnout data from
+the 2020 <a href="https://cces.gov.harvard.edu">CES</a> (a validated
+survey); and election result data from the 2020 presidential, senate and
+house elections. The survey data from the CPS and CES is broken down by
+several demographic categories, including sex, education and
+race/ethnicity.</p>
+<p>The election results are trickier to use in the model since we don’t
+have demographic information paired with with turnout or vote choice.
+What we do know is the overall demographics of the state or house
+district. So we use the election-data to assign a likelihood to the
+<em>post-stratification</em> of our parameters across the demographics
+of the relevant region (from the micro-data <a
+href="https://www.census.gov/programs-surveys/acs/">ACS</a>).</p>
+<p>Then we look at the demographics of a particular house or
+state-legislative district (using tract-level census data from the <a
+href="https://www.census.gov/programs-surveys/acs/">ACS</a>), breaking
+it down into the same categories and then apply our model of turnout and
+voter preference to estimate the 2-party vote share we expect for a
+Democratic candidate.</p>
+<p>This is in contrast to what we call the historical model: a standard
+way to predict “partisan lean” for any district, old or new: break it
+into precincts with known voting history (usually a combination of
+recent presidential, senate and governors races) and then aggregate
+those results to estimate expected results in the district.</p>
+<p>The historical model is likely to be a pretty accurate “predictor” if
+you think the same people will vote the same way in subsequent
+elections, regardless of where the district lines lie. So why did we
+build a demographic model? Three reasons:</p>
+<ol type="1">
+<li><p>We’re interested in places where the history may be misleading,
+either because of the specific story in a district or because changing
+politics or demographics may have altered the balance of likely
+voters.<a href="#fn4" class="footnote-ref" id="fnref4"
+role="doc-noteref"><sup>4</sup></a></p></li>
+<li><p>Our demographic analysis is potentially more useful when the
+districts are new, since voting history may be less “sticky” there. For
+example, if I’m a Dem-leaning voter in a strong-D district, I might not
+have bothered voting much in the past because I figured my vote didn’t
+matter. But if I now live in a district that’s more competitive in the
+new map, I might be much more likely to turn out.</p></li>
+<li><p>We’re not as interested in predicting what will happen in each
+district, but what plausibly could happen in each district if Dems
+applied resources in the right way, or fail to when the Republicans do.
+The historical model is backward-looking, whereas our demographic model
+is forward-looking making them complementary when it comes to strategic
+thinking.</p></li>
+</ol>
+<p>Two final points. First, when it comes to potential Dem share in each
+district, we’re continuing to improve and refine our demographic model.
+The Blue Ripple web-site contains more details on <a
+href="https://blueripple.github.io/research/StateLeg/VA1/Notes/Model_Details.html">how
+it works</a> and some <a
+href="https://blueripple.github.io/research/StateLeg/VA1/post.html">prior
+results</a> of applying a similar model to state legislative districts,
+something we will also do more of in the near future. Second, for the
+historical model comparator, we use data from the excellent <a
+href="https://davesredistricting.org/maps#aboutus">“Dave’s
+Redistricting”</a>, which is also the source of our maps for the new
+districts.</p>
+<p><em>Want to read more from Blue Ripple? Visit our <a
+href="https://www.blueripplepolitics.org"><strong>website</strong></a>,
+sign up for <a href="http://eepurl.com/gzmeQ5"><strong>email
+updates</strong></a>, and follow us on <a
+href="https://twitter.com/BlueRipplePol"><strong>Twitter</strong></a>
+and <a
+href="https://www.facebook.com/blueripplepolitics"><strong>FaceBook</strong></a>.
+Folks interested in our data and modeling efforts should also check out
+our <a href="https://github.com/blueripple"><strong>Github</strong></a>
+page.</em></p>
+</section>
+</section>
+<section class="footnotes footnotes-end-of-document"
+role="doc-endnotes">
+<hr />
+<ol>
+<li id="fn1" role="doc-endnote"><p>One important note about the numbers.
+Dave’s Redistricting gives estimates of Democratic candidate votes,
+Republican candidate votes and votes for other candidates. We’ve taken
+those numbers and computed 2-party vote share for the Democratic
+candidate, that is, D Votes/(D Votes + R Votes). That makes it
+comparable with the Demographic model which also produces 2-party vote
+share.<a href="#fnref1" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+<li id="fn2" role="doc-endnote"><p>We’ve also done this modeling for the
+old districts and compared that result to the actual 2020 election
+results. See <a href="Notes/Old_Districts.html">here</a>.<a
+href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3" role="doc-endnote"><p>We use logarithms here because
+density varies tremendously over districts, from tens to hundreds of
+thousands of people per square mile. We use population-weighting because
+the resulting average more closely expresses the density of where people
+actually live. For example, consider a district made up of a
+high-density city where 90% of the population live and then large but
+low-density exurbs where the other 10% live. Most people in that
+district live at high density and we want our density to reflect that
+even though the unweighted average density (people/district size) might
+be smaller.<a href="#fnref3" class="footnote-back"
+role="doc-backlink">↩︎</a></p></li>
+<li id="fn4" role="doc-endnote"><p>We’re also interested in voter
+empowerment strategies. In particular, questions about where and among
+whom, extra turnout might make a difference. The historical model is no
+help here since it does not attempt to figure out who is voting or who
+they are voting for in a demographically specific way.<a href="#fnref4"
+class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section>
+<!--
+  <div class="br-readmore">
+  Want To read more from Blue Ripple? Visit our
+  <a href="https://blueripple.org">website</a>,
+  sign up for <a href="http://eepurl.com/gzmeQ5">email updates</a>,
+    and follow us on <a href="https://twitter.com/BlueRipplePol">Twitter</a>
+    and <a href="https://www.facebook.com/blueripplepolitics/">FaceBook</a>.
+    Folks interested in our data and modeling efforts should also check out
+    our <a href="https://github.com/blueripple">Github page</a>.
+  </div>
+-->
+<!-- page content ends here -->
+
+</div>     <!-- pure-u-1... -->
+</div>     <!-- pure-g -->
+</section> <!-- page-content -->
+<footer>
+  <div class="br-header">
+    <div class="br-header-item br-header-br" style="width: 8em">
+      <p>BLUE RIPPLE POLITICS</p>
+    </div>
+    <div class="br-header-item br-home-button-c">
+      <a href="https://www.blueripplepolitics.org">
+	<div class="br-home-button-b">HOME</div>
+      </a>
+    </div>
+  </div>
+</footer>
+<!--
+<script>
+var mindoc=function(){function e(e){return e=e.toLowerCase(),e.charAt(0).toUpperCase()+e.substr(1)}function n(e){var n=new RegExp(/^\b[a-z]\S+\b-\b\S+\b/);return n.test(e)&&(e=e.replace(/-+/g," ")),e}function t(t){return t=n(t),e(t)}function r(e,n){return!!e.className.match(new RegExp("(\\s|^)"+n+"(\\s|)"))}function a(e,n){r(e,n)||(e.className+=" "+n)}function o(e,n){if(r(e,n)){var t=new RegExp("(\\s|^)"+n+"(\\s|)");e.className=e.className.replace(t," ")}}function u(){var e,n,t={table:"pure-table pure-table-bordered"};Object.keys(t).forEach(function(r){if(e=document.getElementsByTagName(r),n=e.length,n>1)for(var o=0;n>o;o++)a(e[o],t[r])})}function c(e,n){for(var t=0,r=e.length;r>t;t++)for(var a=e[t].getElementsByTagName("a"),u=0,c=a.length;c>u;u++)a[u].addEventListener("click",function(){o(n,"hidden")})}function i(e,n){for(var t=0,r=e.length;r>t;t++)e[t].addEventListener("click",function(){o(n,"hidden")})}function d(){var e=document.createElement("li");return a(e,"pure-menu-item"),e}function l(e){var n=document.createElement("a");return n.id="menu-"+e,n.href="#",n.innerHTML=t(e),a(n,"pure-menu-link"),n}function m(e){var n=document.createDocumentFragment(),t=document.createElement("nav"),r=document.createElement("div"),o=document.createElement("ul");n.appendChild(t),t.appendChild(r),r.appendChild(o),a(r,"pure-menu"),a(o,"pure-menu-list");var u="All sections",c=d();a(c,"pure-menu-selected"),o.appendChild(c),c.appendChild(l(u));for(var i,m,s=0,f=e.length;f>s;s++)i=e[s].getAttribute("id"),m=d(),o.appendChild(m),m.appendChild(l(i));var p=document.getElementById("page-content");document.querySelector("body").insertBefore(n,p)}function s(e){var n;e.hasAttribute("pure-menu-selected")||(n=document.querySelector(".pure-menu-selected"),o(n,"pure-menu-selected"),a(e,"pure-menu-selected"))}function f(e,n){var t,u=n.getAttribute("id"),c=u.replace(/menu-/,""),i=document.getElementById(u).parentNode;s(i);for(var d in e)t=e[d],r(t,"hidden")||a(t,"hidden"),t.getAttribute("id")===c&&r(t,"hidden")&&o(t,"hidden")}function p(e){var n;for(var t in e)n=e[t],r(n,"hidden")&&o(n,"hidden")}function v(e){for(var n=document.querySelectorAll(".pure-menu-link"),t=0,r=n.length;r>t;t++)0===t?n[t].addEventListener("click",function(){p(e)}):n[t].addEventListener("click",function(){f(e,this)})}return{main:function(){if(u(),document.getElementsByClassName("level2").length>0){var e,n=[];["abstract","level2","footnotes"].forEach(function(t){e=document.getElementsByClassName(t);for(var r=0,a=e.length;a>r;r++)n.push(e[r])});var t;for(var o in n)t=n[o],r(t,"level2")||a(t,"level2"),r(t,"footnotes")&&t.setAttribute("id","footnotes");m(n),v(n);var d=document.getElementsByClassName("citation"),l=document.getElementById("references");c(d,l);var s=document.getElementsByClassName("footnoteRef"),f=document.getElementById("footnotes");i(s,f)}}}}();window.addEventListener("load",function(){mindoc.main()});
+</script>
+-->
+<!-- For debugging local scripts -->
+<!-- <script src="../build/mindoc.js"></script> -->
+</body>
+</html>

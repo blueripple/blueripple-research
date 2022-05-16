@@ -68,6 +68,7 @@ demoCompare (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (label
       encToolTips = GV.tooltips [[GV.TName cat1Name, GV.TmType GV.Nominal], [GV.TName cat2Name, GV.TmType GV.Nominal]]
       barEncoding = GV.encoding . encCat1 . encCat2 . encLabel . encCount . encCountEnd . encToolTips
       barMark = GV.mark GV.Bar []
+      config = GV.configure . GV.configuration (GV.LegendStyle [GV.LeOrient GV.LOBottom])
     in case mOverlay of
          Nothing -> FV.configuredVegaLite vc [FV.title title, stack [], barEncoding [],  barMark, vlData]
          Just (oLabel, _) ->
@@ -84,7 +85,7 @@ demoCompare (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (label
                bSpec = GV.asSpec [barEncoding [], barMark]
                oSpec = GV.asSpec [e [], m]
                resolve = GV.resolve . GV.resolution (GV.RScale [(GV.ChY, GV.Independent)])
-           in FV.configuredVegaLite vc [FV.title title, stack [], GV.layer [bSpec, oSpec], resolve [], vlData]
+           in FV.configuredVegaLite vc [FV.title title, stack [], GV.layer [bSpec, oSpec], resolve [], vlData, config []]
 
 
 demoCompareXYC :: forall rs f.(Foldable f)
@@ -114,7 +115,8 @@ demoCompareXYC labelName xName yName colorName title vc rows =
        labelSpec = GV.asSpec [labels, labelMark]
        circles = (GV.encoding . encX . encY . encC) []
        circleSpec = GV.asSpec [circles, GV.mark GV.Circle [GV.MTooltip GV.TTData]]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData]
+       config = GV.configure . GV.configuration (GV.LegendStyle [GV.LeOrient GV.LOBottom])
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData, config []]
 
 
 demoCompareXYCS :: forall rs f.(Foldable f)
@@ -150,4 +152,5 @@ demoCompareXYCS labelName xName yName colorName sizeName title vc rows =
        circles = (GV.encoding . encX . encY . encC . encS) []
        selection = (GV.selection . GV.select "view" GV.Interval [GV.Encodings [GV.ChX, GV.ChY], GV.BindScales, GV.Clear "click[event.shiftKey]"]) []
        circleSpec = GV.asSpec [selection, circles, GV.mark GV.Circle [GV.MTooltip GV.TTData]]
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData]
+       config = GV.configure . GV.configuration (GV.LegendStyle [GV.LeOrient GV.LOBottom])
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData, config []]
