@@ -1019,7 +1019,7 @@ newCongressionalMapPosts cmdLine = do
                    )
   regCDPost postInfoNC "NC" drExtantCDs_C
 
-  let postInfoNY = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  let postInfoNY = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 17) Nothing)
   regCDPost postInfoNY "NY" acsExtantCDs_C
 
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes (BR.Published $ Time.fromGregorian 2022 05 13) Nothing)

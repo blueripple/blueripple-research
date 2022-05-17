@@ -14,7 +14,7 @@ Our demographic model asks: if the voting-age citizens of this district turned o
 in other parts of the country,  what would we expect the outcome of this election to be?
 Whereas the historical model asks how we'd expect the election to turn out if the voters in this district turn out and
 vote as they have in previous elections. This points to a few possible reasons why a historically
-tossup district like PA-8 might look like a toss-up in our model -- including, but not limited to, the following:
+tossup district like PA-8 might look like a safe-R district in our model–including, but not limited to, the following:
 
 - Our model may be wrong about how we define "similar" voters. We've incorporated factors like education and race,
   but maybe we've missed key things that make voters in PA-8 different from superficially "similar" voters in other districts nationwide.
