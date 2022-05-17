@@ -417,8 +417,8 @@ aggregatePartiesF ::
     (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
     (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
 aggregatePartiesF =
-  let apF :: FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
-      apF = FMR.postMapM ap (FL.generalize $ FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
+  let apF :: Text -> FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
+      apF c = FMR.postMapM ap (FL.generalize $ FL.premap (\r -> (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
         where
           ap pvs =
             let demvM = M.lookup ET.Democratic pvs
@@ -428,13 +428,13 @@ aggregatePartiesF =
                   (Nothing, Nothing) -> Right ET.Other
                   (Just _, Nothing) -> Right ET.Democratic
                   (Nothing, Just _) -> Right ET.Republican
-                  (Just dv, Just rv) -> Left "Votes on both D and R lines"
+                  (Just dv, Just rv) -> Left $ c <> " has votes on both D and R lines!"
              in fmap (\p -> p F.&: votes F.&: V.RNil) partyE
    in FMR.concatFoldM $
         FMR.mapReduceFoldM
           (FMR.generalizeUnpack FMR.noUnpack)
           (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
-          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) apF)
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r -> fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
 
 type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
 type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ '[PUMS.Citizens]

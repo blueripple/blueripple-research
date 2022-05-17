@@ -1248,8 +1248,9 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   let extantForPost = extantBaseHV
       proposedForPost = proposedBaseHV
   elections_C <- BR.houseElectionsWithIncumbency
-  elections <- fmap (onlyState stateAbbr) $ K.ignoreCacheTime elections_C
-  flattenedElections <- fmap (addDistrict . addElexDShare) . F.filterFrame ((==2020) . F.rgetField @BR.Year)
+  elections <- fmap (onlyState stateAbbr . F.filterFrame ((==2020) . F.rgetField @BR.Year)) $ K.ignoreCacheTime elections_C
+  K.logLE K.Diagnostic $ "flattening "
+  flattenedElections <- fmap (addDistrict . addElexDShare)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
   let
       oldDistrictsNoteName = BR.Used "Old_Districts"
