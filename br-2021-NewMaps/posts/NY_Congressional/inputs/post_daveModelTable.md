@@ -3,8 +3,8 @@ Our findings in NY-11, a swingy district which includes Staten Island,
 provide a good opportunity to discuss why BR’s demographic
 model and the historical model may differ. In the old map, this
 district included Staten Island and some of Sunset Park in Brooklyn.
-The struck-down Dem map added very D-leaning Park Slope, Brooklyn into
-the district, making it a safe-D seat.  The new map, removes Park Slope
+The struck-down Dem map added very D-leaning Park Slope into
+the district, making it a safe-D seat.  The new map removes Park Slope
 and slightly changes the boundaries in southwestern Brooklyn. Under the old
 map, Democrat Max Rose won this seat in the D-wave of 2018, and promptly lost
 it to Republican Nicole Malliotakis in 2020.
