@@ -22,6 +22,13 @@ In this post, we’re focusing on Georgia. Here’s what we’ll cover:
 4. Coda #1: Demographics of the new GA districts
 5. Coda #2: Brief intro to our methods (for non-experts)
 
+A summary of our donation recommendations, including
+details of specific districts and candidates, is [here][GASquareSpace].
+Or [donate][GADonate] (via ActBlue) to all of our recommended candidates!
+
+[GASquareSpace]: https://blueripplepolitics.org/blog/2022-ga
+[GADonate]: https://secure.actblue.com/donate/br-ga2022
+
 ## 1. Dem-lean by district in GA: our demographic model vs. historical data
 
 Our “demographic” model forecasts the potential Democratic lean of each

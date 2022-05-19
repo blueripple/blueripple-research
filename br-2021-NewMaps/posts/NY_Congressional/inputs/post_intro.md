@@ -13,6 +13,12 @@ appointed district-map-drawing expert.
 
 [nyStory]: https://amsterdamnews.com/news/2022/05/05/nys-court-strikes-down-dem-controlled-redistricting-maps/
 
+Details follow.
+For a summary of our most interesting findings about NY’s new districts,
+[click here][NYSquareSpace].
+
+[NYSquareSpace]: https://blueripplepolitics.org/blog/2022-ny
+
 Last Monday, a [draft map][NYMap] was released by the special master.
 Unsurprisingly, this map
 is less favorable to Dems than their hand-tuned one. There is a
