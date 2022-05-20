@@ -130,6 +130,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
+                 , Stan.ModelBuilder.TypedExpression
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
                  , Stan.ModelBuilder.ModelParameters
