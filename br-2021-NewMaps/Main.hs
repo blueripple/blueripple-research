@@ -901,6 +901,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+--      unsafeDave r = dave r < 0.43
       brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
