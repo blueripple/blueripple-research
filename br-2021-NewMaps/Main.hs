@@ -741,12 +741,14 @@ newStateLegMapPosts cmdLine = do
       contestedNC = const True -- FIXME
   regSLDPost postInfoNC "NC" contestedNC bothHouses "StateBoth"
 -}
+  -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
   regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth"
 
+  -- MI senate is 4-year terms, all elected in *mid-term* years. So all in 2022 and none in 2024.
   let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-      contestedMI = const True -- FIXME
+      contestedMI = const True
   regSLDPost postInfoMI "MI" contestedMI True bothHouses "StateBoth"
 
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!

@@ -36,7 +36,7 @@ Here’s what we’ll cover:
 [PASLD]: https://blueripple.github.io/research/NewMaps/PA_StateLeg/post.html
 
 1. Dem-lean by district in PA: our demographic model vs. historical data
-2. Coda #1: Demographics of the new AZ districts
+2. Coda #1: Demographics of the new PA districts
 3. Coda #2: Brief intro to our methods (for non-experts)
 
 ## 1. Dem-lean by district in PA: our demographic model vs. historical data

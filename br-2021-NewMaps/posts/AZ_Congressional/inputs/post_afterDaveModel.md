@@ -27,4 +27,6 @@ With that in mind,  here are a few observations on the new AZ districts:
   districts for donors with an eye toward building for the future or as “plausible long-shots.”
   More on them below.
 
+- AZ-1 and AZ-4 are toss-ups in the demographic model and historically.
+
 Here’s a different look at the data, in a table sorted by the Dem share in our demographic model.
