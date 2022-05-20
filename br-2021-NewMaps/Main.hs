@@ -741,6 +741,12 @@ newStateLegMapPosts cmdLine = do
       contestedNC = const True -- FIXME
   regSLDPost postInfoNC "NC" contestedNC bothHouses "StateBoth"
 -}
+
+  -- GA senate is 2-year terms
+  let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+      contestedGA = const True
+  regSLDPost postInfoGA "GA" contestedGA True bothHouses "StateBoth"
+
   -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
@@ -901,22 +907,34 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
---      unsafeDave r = dave r < 0.43
+      leans r = modelDRALeans brShareRange draShareRange (share50 r) (dave r)
+      notBoring r = case leans r of
+        (SafeR, SafeD) -> True
+        (LeanR, SafeD) -> True
+        (Tossup, SafeD) -> True
+        (LeanD, SafeD) -> True
+        (SafeD, SafeR) -> True
+        (LeanD, SafeR) -> True
+        (Tossup, SafeR) -> True
+        (LeanR, SafeR) -> True
+        _ -> False
       brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
                                <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
                                      $ sortOn brDF
-                                     $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF)
+--                                     $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF)
+                                     $ filter notBoring
                                      $ FL.fold FL.list modelAndDRWith
                                    )
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
-    _ <- K.addHvega Nothing Nothing
+{-    _ <- K.addHvega Nothing Nothing
          $ diffVsChart @BRE.FracGrad "Model Delta vs Frac Grad" ("Frac Grad", (100*)) (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
     _ <- K.addHvega Nothing Nothing
          $ diffVsHispChart "Model Delta vs Frac Hispanic" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
     _ <- K.addHvega Nothing Nothing
          $ diffVsLogDensityChart "Model Delta vs Density" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
+-}
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
