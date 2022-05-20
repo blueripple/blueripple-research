@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Stan.ModelBuilder.TypedExpression
   (
@@ -34,33 +35,42 @@ import qualified Text.PrettyPrint as Pretty
 import GHC.Generics (Generic1)
 
 import Stan.ModelBuilder.Expressions as SME
-import Stan.ModelBuilder.Expressions (StanDim())
+import Stan.ModelBuilder.Expressions (StanVar(..), StanType(..))
 import Stan.ModelBuilder (DataSetGroupIntMaps)
 
-data SStanDim :: StanDim -> Type where
-  SNamedDim :: SME.IndexKey -> SStanDim NamedDim
-
 -- possible types of terms
-data EType = ENull | EInt | EReal | EVec StanDim | EMat (StanDim, StanDim) | ESqMat StanDim | EArray EType | EType :-> EType
+data EType = ENull | EInt | EReal | ECVec | ERVec | EMat | EArray EType | EType :-> EType
+
+fromStanType :: StanType -> EType
+fromStanType = \case
+  StanInt -> EInt
+  StanReal -> EReal
+  StanArray _ st -> EArray (fromStanType st)
+  StanVector _ -> ECVec
+  StanMatrix _ -> EMat
+  StanCorrMatrix _ -> EMat
+  StanCholeskyFactorCorr _ -> EMat
+  StanCovMatrix _ -> EMat
 
 -- singleton so that term types may be used at type-level
 data SType :: EType -> Type where
   SNull :: SType ENull
   SInt :: SType EInt
   SReal :: SType EReal
-  SVec :: SType EVec
+  SCVec :: SType ECVec
+  SRVec :: SType ERVec
   SMat :: SType EMat
-  SSqMat :: SType ESqMat
   SArray :: SType t -> SType (EArray t)
   (::->) :: SType arg -> SType res -> SType (arg :-> res)
+
 
 toSType :: EType -> (forall t. SType t -> r) -> r
 toSType ENull k = k SNull
 toSType EInt k = k SInt
 toSType EReal k = k SReal
-toSType EVec k = k SVec
+toSType ERVec k = k SRVec
+toSType ECVec k = k SCVec
 toSType EMat k = k SMat
-toSType ESqMat k = k SSqMat
 toSType (EArray t) k = toSType t $ \st -> k (SArray st)
 toSType (a :-> b) k = toSType a $ \sa -> toSType b $ \sb -> k (sa ::-> sb)
 
@@ -74,9 +84,9 @@ instance TestEquality SType where
   testEquality SNull SNull = Just Refl
   testEquality SInt SInt = Just Refl
   testEquality SReal SReal = Just Refl
-  testEquality SVec SVec = Just Refl
+  testEquality SCVec SCVec = Just Refl
+  testEquality SRVec SRVec = Just Refl
   testEquality SMat SMat = Just Refl
-  testEquality SSqMat SSqMat = Just Refl
   testEquality (SArray sa) (SArray sb) = do
     Refl <- testEquality sa sb
     pure Refl
@@ -86,35 +96,26 @@ instance TestEquality SType where
     return Refl
   testEquality _ _ = Nothing
 
-{-
-toEType :: SME.StanType -> EType
-toEType
+data UExpr :: EType -> Type where
+  UNamedE :: Text -> SME.StanType -> SType t -> UExpr t
 
-data TStanVar :: EType -> Type where
-  TStanInt :: SME.StanName -> TStanVar EInt
-  TStanReal :: SME.StanName -> TStanVar EReal
-  TStanVector :: SME.StanName -> SME.StanDim -> TStanVar EVec
-  TStanArray :: SME.StanName -> [SME.StanDim] -> SType t -> TStanVar (EArray t)
+makeNamed :: Text -> SME.StanType -> SType t -> UExpr t
+makeNamed = UNamedE
 
-tStanVar :: SME.StanName -> SME.StanType -> TStanVar t
-tStanVar n SME.StanInt = (SME.StanVar )
+fromVar :: SME.StanVar -> UExpr t
+fromVar (SME.StanVar n x) = case x of
+  StanInt -> UNamedE n x SInt
+  StanReal -> _
+  StanArray sds st -> _
+  StanVector sd -> _
+  StanMatrix x1 -> _
+  StanCorrMatrix sd -> _
+  StanCholeskyFactorCorr sd -> _
+  StanCovMatrix sd -> _
 
-data TStanExprF (t :: EType) a where
-  NullF :: TStanExprF ENull a
-  BareF :: Text -> SType t -> TStanExprF t a
-  AsIsF :: a -> SType t -> TStanExprF t a -- required to rewrap Declarations
---  NextToF :: a -> a -> TStanExprF a
-  LookupCtxtF :: LookupContext -> a -> SType t -> TStanExprF t a
-  NamedVarF :: StanVar -> TStanExprF t a
-  MatMultF :: StanVar -> StanVar -> StanExprF a -- yeesh.  This is too specific?
-  UseTExprF :: TExpr a -> StanExprF a
-  IndexF :: IndexKey -> StanExprF a -- pre-lookup
-  VectorizedF :: Set IndexKey -> a -> StanExprF a
-  IndexesF :: [StanDim] -> StanExprF a
-  VectorFunctionF :: Text -> a -> [a] -> StanExprF a -- function to add when the context is vectorized
-  deriving  stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
-  deriving   (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault StanExprF
--}
+
+
+
 {-
 intE :: Int -> UExpr EInt
 intE = IntE
