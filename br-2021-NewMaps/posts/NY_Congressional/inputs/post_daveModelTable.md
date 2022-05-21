@@ -9,9 +9,9 @@ and slightly changes the boundaries in southwestern Brooklyn. Under the old
 map, Democrat Max Rose won this seat in the D-wave of 2018, and promptly lost
 it to Republican Nicole Malliotakis in 2020.
 
-NY-11 looks like a R-leaning tossup
+NY-11 looks like a safe-R district
 given the voting patterns in the precincts within it,
-but our demographic model suggests it’s D+17!
+but our demographic model suggests it’s D+16!
 What might this mean? One way to answer this question is to consider the difference between the two models.
 Our demographic model asks: if the voting-age citizens of this district turned out and voted like similar people
 in other parts of the country,  what would we expect the outcome of this election to be?
@@ -32,8 +32,8 @@ tossup district like NY-11 might look so strongly D in our model–including, bu
 - Democrats in NY-11 may, in fact, have underperformed relative to their potential. Or there may have
   been demographic shifts in the district since the last election which favor Democrats. NY-11’s
   Citizen-Voting-Age-Population (CVAP) is about 45% non-White
-  (about an even mix of Hispanic and Asian CVAP, as well as a smaller but significant Black CVAP) and
-  such districts are usually good for Dem candidates.
+  (about an even mix of Hispanic and Asian CVAP, as well as a smaller but significant Black CVAP)
+  and about 35% of that CVAP graduted from college. Such districts are usually good for Dem candidates.
 
 We don't know which (if any) of these explanations is correct. But our model suggests that NY-11
 might be an easier pickup for Dems than the history indicates.
@@ -42,6 +42,7 @@ might be an easier pickup for Dems than the history indicates.
 
 - Here are our takes on the new maps in
 [Arizona][AZPost],
+[Georgia][GAPost],
 [Michigan][MIPost],
 [North Carolina][NCPost],
 [Pennsylvania][PAPost],
@@ -63,6 +64,7 @@ and [Github][Github].
 [Email]: http://eepurl.com/gzmeQ5
 
 [AZPost]: https://blueripple.github.io/research/NewMaps/AZ_Congressional/post.html
+[GAPost]: https://blueripple.github.io/research/NewMaps/GA_Congressional/post.html
 [MIPost]: https://blueripple.github.io/research/NewMaps/MI_Congressional/post.html
 [NCPost]: https://blueripple.github.io/research/NewMaps/NC_Congressional/post.html
 [PAPost]: https://blueripple.github.io/research/NewMaps/PA_Congressional/post.html

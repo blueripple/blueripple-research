@@ -1,5 +1,7 @@
 # New Maps: NY “Special-Master” Edition
 
+**Updates 5/21/2022:** This post has been updated to reflect the final map from the NY state court.
+
 NY has had a [long, strange trip][nyStory] to its current
 proposed congressional
 district map. In 2014, the New York state legislature passed
@@ -13,17 +15,22 @@ appointed district-map-drawing expert.
 
 [nyStory]: https://amsterdamnews.com/news/2022/05/05/nys-court-strikes-down-dem-controlled-redistricting-maps/
 
+
 Details follow.
 For a summary of our most interesting findings about NY’s new districts,
 [click here][NYSquareSpace].
 
 [NYSquareSpace]: https://blueripplepolitics.org/blog/2022-ny
 
-Last Monday, a [draft map][NYMap] was released by the special master.
+Last Monday, a draft map was released by the special master,
+and a slightly [different map][NYMap] was finalized by the court late
+Friday night.
 Unsurprisingly, this map
 is less favorable to Dems than their hand-tuned one. There is a
 [*lot*][mapviews]
-of disagreement, though, over how to look at this map. Quite a bit of that
+of disagreement, though, over how to look at this map (NB: these arguments
+are about the first map released by the special master, not the court’s final
+map). Quite a bit of that
 is about frame of reference.  The map is defintely worse for Ds than
 what the legislature tried to do, but seems better for Dems than the
 current map (the one used from 2012 through the last election in 2020),
@@ -33,10 +40,10 @@ In a neutral or good year for Dems, this map is better than what they had before
 But in a wave year for Rs, this map could be worse. And, of course, any state
 or district can defy the national trend.
 
-[NYMap]: https://davesredistricting.org/maps#viewmap::22a818db-e3bd-4246-95eb-381c48802da1
+[NYMap]: https://davesredistricting.org/maps#viewmap::a3a223ed-54cf-4b54-8ea3-6f9312d7c405
 [mapviews]: https://twitter.com/Nate_Cohn/status/1526246712125403140
 
-We’ve not had a lot of time with the map but here’s a quick look!
+We haven’t had much time with the map but here’s a quick look!
 
 1. Dem-lean by district in NY: our demographic model vs. historical data
 2. Why Are These Models So Different?

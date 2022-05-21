@@ -22,6 +22,13 @@ In this post, we’re focusing on Michigan. Here’s what we’ll cover:
 4. Coda #1: Demographics of the new MI districts
 5. Coda #2: Brief intro to our methods (for non-experts)
 
+A summary of our donation recommendations, including
+details of specific districts and candidates, is [here][MISquareSpace].
+Or [donate][MIDonate] (via ActBlue) to all of our recommended candidates!
+
+[MISquareSpace]: https://blueripplepolitics.org/blog/2022-mi
+[MIDonate]: https://secure.actblue.com/donate/brp-mi2022
+
 ## 1. Dem-lean by district in MI: our demographic model vs. historical data
 
 Our “demographic” model forecasts the potential Democratic lean of each
