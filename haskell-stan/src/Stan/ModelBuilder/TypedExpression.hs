@@ -101,7 +101,7 @@ instance TestEquality SType where
 type family ProductT (a :: EType) (b :: EType) :: EType where
   ProductT EInt a = a
   ProductT a EInt = a
-  ProductT EInt a = a
+  ProductT EReal a = a
   ProductT a EReal = a
   ProductT ERVec ECVec = EReal -- dot product
   ProductT EMat EMat = EMat
@@ -109,23 +109,33 @@ type family ProductT (a :: EType) (b :: EType) :: EType where
   ProductT ERVec EMat = ERVec
   ProductT a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be multiplied." )
 
+type family DivT (a :: EType) (b :: EType) :: EType where
+  DivT EInt EInt = EReal
+  DivT EInt EReal = EReal
+  DivT (EArray a) EInt = EArray (DivT a EInt)
+  DivT a EInt = a
+  DivT a EReal = a
+  DivT a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be divided." )
+
 data UExpr :: EType -> Type where
-  UNamedE :: Text -> SME.StanType -> SType t -> UExpr t
+  NamedE :: Text -> SME.StanType -> SType t -> UExpr t
   IntE :: Int -> UExpr EInt
   RealE :: Double -> UExpr EReal
   PlusE :: UExpr t -> UExpr t -> UExpr t
+  MinusE :: UExpr t -> UExpr t -> UExpr t
   ProdE :: UExpr a -> UExpr b -> UExpr (ProductT a b)
+  DivE :: UExpr a -> UExpr b -> UExpr (DivT a b)
 
 useVar :: forall r.SME.StanVar -> (forall t.UExpr t -> r) -> r
 useVar (SME.StanVar n x) k = case x of
-  StanInt -> k $ UNamedE n x SInt
-  StanReal -> k $ UNamedE n x SReal
-  StanArray _ st -> toSType (fromStanType st) (k . UNamedE n x . SArray)
-  StanVector _ -> k $ UNamedE n x SCVec
-  StanMatrix _ -> k $ UNamedE n x SMat
-  StanCorrMatrix sd -> k $ UNamedE n x SMat
-  StanCholeskyFactorCorr sd -> k $ UNamedE n x SMat
-  StanCovMatrix sd -> k $ UNamedE n x SMat
+  StanInt -> k $ NamedE n x SInt
+  StanReal -> k $ NamedE n x SReal
+  StanArray _ st -> toSType (fromStanType st) (k . NamedE n x . SArray)
+  StanVector _ -> k $ NamedE n x SCVec
+  StanMatrix _ -> k $ NamedE n x SMat
+  StanCorrMatrix sd -> k $ NamedE n x SMat
+  StanCholeskyFactorCorr sd -> k $ NamedE n x SMat
+  StanCovMatrix sd -> k $ NamedE n x SMat
 
 
 
