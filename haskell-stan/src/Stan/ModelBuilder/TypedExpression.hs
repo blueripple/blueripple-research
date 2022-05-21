@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE LambdaCase #-}
 
@@ -33,7 +34,8 @@ import qualified Data.Text as T
 import qualified Text.PrettyPrint as Pretty
 
 import GHC.Generics (Generic1)
-
+import qualified GHC.TypeLits as TE
+import GHC.TypeLits (ErrorMessage((:<>:)))
 import Stan.ModelBuilder.Expressions as SME
 import Stan.ModelBuilder.Expressions (StanVar(..), StanType(..))
 import Stan.ModelBuilder (DataSetGroupIntMaps)
@@ -96,23 +98,50 @@ instance TestEquality SType where
     return Refl
   testEquality _ _ = Nothing
 
+type family ProductT (a :: EType) (b :: EType) :: EType where
+  ProductT EInt a = a
+  ProductT a EInt = a
+  ProductT EInt a = a
+  ProductT a EReal = a
+  ProductT ERVec ECVec = EReal -- dot product
+  ProductT EMat EMat = EMat
+  ProductT EMat ECVec = ECVec
+  ProductT ERVec EMat = ERVec
+  ProductT a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be multiplied." )
+
 data UExpr :: EType -> Type where
   UNamedE :: Text -> SME.StanType -> SType t -> UExpr t
+  IntE :: Int -> UExpr EInt
+  RealE :: Double -> UExpr EReal
+  PlusE :: UExpr t -> UExpr t -> UExpr t
+  ProdE :: UExpr a -> UExpr b -> UExpr (ProductT a b)
 
-makeNamed :: Text -> SME.StanType -> SType t -> UExpr t
-makeNamed = UNamedE
+useVar :: forall r.SME.StanVar -> (forall t.UExpr t -> r) -> r
+useVar (SME.StanVar n x) k = case x of
+  StanInt -> k $ UNamedE n x SInt
+  StanReal -> k $ UNamedE n x SReal
+  StanArray _ st -> toSType (fromStanType st) (k . UNamedE n x . SArray)
+  StanVector _ -> k $ UNamedE n x SCVec
+  StanMatrix _ -> k $ UNamedE n x SMat
+  StanCorrMatrix sd -> k $ UNamedE n x SMat
+  StanCholeskyFactorCorr sd -> k $ UNamedE n x SMat
+  StanCovMatrix sd -> k $ UNamedE n x SMat
 
-fromVar :: SME.StanVar -> UExpr t
-fromVar (SME.StanVar n x) = case x of
-  StanInt -> UNamedE n x SInt
-  StanReal -> _
-  StanArray sds st -> _
-  StanVector sd -> _
-  StanMatrix x1 -> _
-  StanCorrMatrix sd -> _
-  StanCholeskyFactorCorr sd -> _
-  StanCovMatrix sd -> _
 
+
+{-
+  toSType (fromStanType x) f where
+  f :: forall u.SType u -> r
+  f = case x of
+    StanInt -> k $ UNamedE n x SInt
+    StanReal -> k $ UNamedE n x SReal
+    StanArray _ st -> k $ toSType (fromStanType st) $ UNamedE n x . SArray
+    StanVector sd -> _
+    StanMatrix x1 -> _
+    StanCorrMatrix sd -> _
+    StanCholeskyFactorCorr sd -> _
+    StanCovMatrix sd -> _
+-}
 
 
 
