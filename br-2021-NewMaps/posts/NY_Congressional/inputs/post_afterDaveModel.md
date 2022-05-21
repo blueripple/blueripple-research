@@ -19,14 +19,13 @@ With that in mind,  here are a few observations on the new NY districts:
 
 - We are much more optimistic about NY-2, NY-3 and NY-11 than the
   historical model.  We think they are all safe D.  But the historical model sees
-  them as tossups, with NY-2 and NY-3 as D-leaning and NY-11 as R-leaning.
-  historically safe D.
+  them as tossups, with NY-3 as D-leaning, NY-2 as R-leaning and NY-11 as safe-R.
 
-- Our model sees a strong D-lean in NY-1 where the historical model sees safe R.
+- Our model sees a strong D-lean in NY-1 where the historical model sees lean-R.
 
 - We are concerned about vulnerability in NY-19 which we see as a safe R district
   where the historical model sees
-  a D-leaning toss-up. Similarly, in NY-20, our model sees a
+  a D-leaning toss-up. Less urgently, in NY-20, our model sees a
   D-leaning toss-up where the historical model sees a Safe D district.
 
 - The remaining districts (NY-18 and NY-22)  are tossups in both models.
