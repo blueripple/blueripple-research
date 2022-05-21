@@ -14,7 +14,7 @@ We then compare those results to an existing model based on historical
 data to help Dem donors identify races that we think deserve support
 for “offense” or “defense”.
 
-In this post, we’re focusing on North Carolina. Here’s what we’ll cover:
+In this post, we’re focusing on Pennsylvania. Here’s what we’ll cover:
 
 1. Dem-lean by district in PA: our demographic model vs. historical data
 2. Districts worthy of Dem donor support
