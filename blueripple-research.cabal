@@ -80,6 +80,7 @@ library  haskell-stan
                , cereal  >= 0.5.7 && < 0.6
                , cereal-vector >= 0.2 && < 0.3
                , colonnade
+               , compdata >= 0.12 && < 0.14
                , constraints >= 0.12 && < 0.14
                , constraints-extras >= 0.3.0 && < 0.4
                , containers
@@ -130,6 +131,8 @@ library  haskell-stan
                  , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
+                 , Stan.ModelBuilder.TypedExpressions.Expression
+                 , Stan.ModelBuilder.TypedExpressions.Evaluate
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
                  , Stan.ModelBuilder.ModelParameters
@@ -305,6 +308,20 @@ executable haskell-stan-test
                 , relude
                 , text
                 , vector
+   mixins:  base hiding (Prelude)
+          , relude (Relude as Prelude
+          , Relude.Extra)
+   default-language: Haskell2010
+
+executable haskell-stan-expressions-test
+   ghc-options: -Wall -O
+   hs-source-dirs: haskell-stan/testExpressions
+   main-is: Main.hs
+   build-depends: base
+                , containers
+                , haskell-stan
+                , relude
+                , text
    mixins:  base hiding (Prelude)
           , relude (Relude as Prelude
           , Relude.Extra)
