@@ -15,10 +15,20 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 
-module Stan.ModelBuilder.TypedExpressions.Expression where
+module Stan.ModelBuilder.TypedExpressions.Expression
+  (
+    module Stan.ModelBuilder.TypedExpressions.Expression
+  , Nat(..)
+  , Fin(..)
+  , Vec(..)
+  )
+  where
 
-import Prelude hiding (Nat, (+))
+import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
+
+import Prelude hiding (reverse, Nat, (+))
 import qualified Control.Foldl as Fold
 import qualified Data.Comp.Multi as DC
 import qualified Data.Functor.Classes as FC
@@ -32,6 +42,15 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
 
+import Data.Type.Nat (Nat(..), SNat(..))
+import Data.Fin (Fin(..))
+import Data.Vec.Lazy (Vec(..))
+
+import qualified Data.Nat as DT
+import qualified Data.Type.Nat as DT
+import qualified Data.Fin as DT
+import qualified Data.Vec.Lazy as DT
+
 import qualified Text.PrettyPrint as Pretty
 
 import GHC.Generics (Generic1)
@@ -42,24 +61,19 @@ import Stan.ModelBuilder.Expressions (StanVar(..))
 import Stan.ModelBuilder (DataSetGroupIntMaps)
 import Frames.Streamly.CSV (accToMaybe)
 
-data Nat = Zero | Succ Nat
+-- to simplify most indexing
+n0 :: Nat = Z
+n1 :: Nat = S Z
+n2 :: Nat = S n1
+n3 :: Nat = S n2
+
 
 -- to simplify most indexing
-n0 :: Nat = Zero
-n1 :: Nat = Succ Zero
-n2 :: Nat = Succ n1
-n3 :: Nat = Succ n2
-
-data SNat :: Nat -> Type where
-  SZero :: SNat Zero
-  SSucc :: SNat n -> SNat (Succ n)
-
--- to simplify most indexing
-i0 :: SNat Zero = SZero
-i1 :: SNat (Succ Zero) = SSucc i0
-i2 :: SNat (Succ (Succ Zero)) = SSucc i1
-i3 :: SNat (Succ (Succ (Succ Zero))) = SSucc i2
-
+i0 :: SNat Z = DT.SZ
+i1 :: SNat (S Z) = DT.SS
+i2 :: SNat (S (S Z)) = DT.SS
+i3 :: SNat (S (S (S Z))) = DT.SS
+{-
 toSNat :: Nat -> (forall n. SNat n -> r) -> r
 toSNat Zero f = f SZero
 toSNat (Succ n) f = toSNat n $ f . SSucc
@@ -75,29 +89,56 @@ data Vec :: Type -> Nat -> Type where
 type family n + m where
   Zero + m = m
   Succ n + m = Succ (n + m)
-
-sLength :: Vec a n -> SNat n
-sLength VNil = SZero
-sLength (_ :> v) = SSucc (sLength v)
-
-{-
-reverse :: Vec a n -> Vec a n
-reverse = go VNil where
-  go :: Vec a k -> Vec a l -> Vec a (k + l)
-  go acc VNil = acc
-  go acc (a :> v) = go (a :> acc) v
--}
-
-type family DiffOrZero (n :: Nat) (m :: Nat) :: Nat where
-  DiffOrZero Zero Zero = Zero
-  DiffOrZero (Succ n) Zero = Succ n
-  DiffOrZero Zero (Succ m) = Zero
-  DiffOrZero (Succ n) (Succ m) = DiffOrZero n m
+  n + m = m + n
+--  m + Zero = m
+--  n + Succ m = Succ (n + m)
+--  n + Succ m = Succ n + m
 
 (+) :: Vec a n -> Vec a m -> Vec a (n + m)
 VNil + ys = ys
 (x :> xs) + ys = x :> (xs + ys)
 
+sLength :: Vec a n -> SNat n
+sLength VNil = SZero
+sLength (_ :> v) = SSucc (sLength v)
+
+vMap :: (a -> b) -> Vec a n -> Vec b n
+vMap _ VNil = VNil
+vMap f (a :> v) = f a :> vMap f v
+
+(!!!) :: Vec a n -> Fin n -> a
+(a :> v) !!! FZ = a
+(a :> v) !!! (FS m) = v !!! m
+
+take :: forall a n m.SNat m -> Vec a (m + n) -> Vec a m
+take i v = go VNil i v
+  where
+    go :: Vec a l -> SNat k -> Vec a (k + n) -> Vec a (k + l)
+    go v SZero _ = v
+    go v (SSucc q) (a :> v') = go (a :> v) q v'
+
+{-
+popRandom :: Vec a (Succ n) -> Fin (Succ n) -> (a, Vec a n)
+popRandom vOrig i = (a, v') where
+  v' = reverse vLeft + vRight
+  (a :> vLeft, vRight) = go VNil vOrig i
+  go :: Vec a m -> Vec a (Succ l) -> Fin (Succ l) -> (Vec a (Succ m), Vec a l)
+  go vAcc (a :> vR) FZ = (a :> vAcc, vR)
+  go vAcc (a :> vR) (FS i') = go (a :> vAcc) vR i'
+
+reverse :: Vec a n -> Vec a n
+reverse = go VNil where
+  go :: Vec a k -> Vec a l -> Vec a (l + k)
+  go acc VNil = acc
+  go acc (a :> v) = go (a :> acc) v
+-}
+-}
+
+type family DiffOrZero (n :: Nat) (m :: Nat) :: Nat where
+  DiffOrZero Z Z = Z
+  DiffOrZero (S n) Z = S n
+  DiffOrZero Z (S m) = Z
+  DiffOrZero (S n) (S m) = DiffOrZero n m
 -- possible types of terms
 data EType = EInt | EReal | ECVec | ERVec | EMat | ESqMat | EArray Nat EType
 
@@ -112,21 +153,21 @@ data StanType :: EType -> Type where
   StanCovMatrix :: StanType ESqMat
 
 type family DeclDimension (e :: EType) :: Nat where
-  DeclDimension EInt = Zero
-  DeclDimension EReal = Zero
-  DeclDimension ECVec = Succ Zero
-  DeclDimension ERVec = Succ Zero
-  DeclDimension EMat = Succ (Succ Zero)
-  DeclDimension ESqMat = (Succ Zero)
-  DeclDimension (EArray n t) = n + Dimension t
+  DeclDimension EInt = Z
+  DeclDimension EReal = Z
+  DeclDimension ECVec = S Z
+  DeclDimension ERVec = S Z
+  DeclDimension EMat = S (S Z)
+  DeclDimension ESqMat = (S Z)
+  DeclDimension (EArray n t) = n `DT.Plus` Dimension t
 
 type family Dimension (e :: EType) :: Nat where
-  Dimension EInt = Zero
-  Dimension EReal = Zero
-  Dimension ECVec = Succ Zero
-  Dimension ERVec = Succ Zero
-  Dimension EMat = Succ (Succ Zero)
-  Dimension (EArray n t) = n + Dimension t
+  Dimension EInt = Z
+  Dimension EReal = Z
+  Dimension ECVec = S Z
+  Dimension ERVec = S Z
+  Dimension EMat = S (S Z)
+  Dimension (EArray n t) = n `DT.Plus` Dimension t
 
 -- singleton so that term types may be used at type-level
 data SType :: EType -> Type where
@@ -135,16 +176,21 @@ data SType :: EType -> Type where
   SCVec :: SType ECVec
   SRVec :: SType ERVec
   SMat :: SType EMat
+  SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
 
-toSType :: EType -> (forall t. SType t -> r) -> r
+toSType :: forall t r.EType -> (forall t. SType t -> r) -> r
 toSType EInt k = k SInt
 toSType EReal k = k SReal
 toSType ERVec k = k SRVec
 toSType ECVec k = k SCVec
 toSType EMat k = k SMat
-toSType (EArray n t) k = toSNat n $ \sn -> toSType t $ \st -> k (SArray sn st)
-
+toSType ESqMat k = k SSqMat
+toSType (EArray n t) k = DT.reify n f
+  where
+    f :: forall n. DT.SNatI n => Proxy n -> r
+    f _ = toSType t $ \st -> k (SArray (DT.snat @n)  st)
+{-
 data (a :: k) :~: (b :: k) where
   Refl :: a :~: a
 
@@ -152,8 +198,8 @@ class TestEquality (t :: k -> Type) where
   testEquality :: t a -> t b -> Maybe (a :~: b)
 
 instance TestEquality SNat where
-  testEquality SZero SZero = Just Refl
-  testEquality (SSucc sn) (SSucc sm) = do
+  testEquality SZ SZ = Just Refl
+  testEquality (SS sn) (SS sm) = do
     Refl <- testEquality sn sm
     pure Refl
   testEquality _ _ = Nothing
@@ -169,34 +215,44 @@ instance TestEquality SType where
     Refl <- testEquality sn sm
     pure Refl
   testEquality _ _ = Nothing
+-}
 
 type family ApplyDiffOrZeroToEType (n :: Nat) (e :: EType) :: EType where
-  ApplyDiffOrZeroToEType Zero (EArray Zero t) = t
-  ApplyDiffOrZeroToEType Zero (EArray (Succ n) t) = EArray n t
+  ApplyDiffOrZeroToEType Z (EArray Z t) = t
+  ApplyDiffOrZeroToEType Z (EArray (S n) t) = EArray n t
   ApplyDiffOrZeroToEType d (EArray m t) = EArray m (Sliced d t)
   ApplyDiffOrZeroToEType _ x = x
 
 type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced _ EInt = TE.TypeError (TE.Text "Cannot slice (index) a scalar int.")
   Sliced _ EReal = TE.TypeError (TE.Text "Cannot slice (index) a scalar real.")
-  Sliced Zero ERVec = EReal
+  Sliced Z ERVec = EReal
   Sliced _ ERVec = TE.TypeError (TE.Text "Cannot slice (index) a vector at a position other than 0.")
-  Sliced Zero ECVec = EReal
+  Sliced Z ECVec = EReal
   Sliced _ ECVec = TE.TypeError (TE.Text "Cannot slice (index) a vector at a position other than 0.")
-  Sliced Zero EMat = ERVec
-  Sliced (Succ Zero) EMat = ECVec
+  Sliced Z EMat = ERVec
+  Sliced (S Z) EMat = ECVec
   Sliced _ EMat = TE.TypeError (TE.Text "Cannot slice (index) a matrix at a position other than 0 or 1.")
   Sliced n (EArray m t) = ApplyDiffOrZeroToEType (DiffOrZero m n) (EArray m t)
 
 type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
-  SliceInnerN Zero a = a
-  SliceInnerN (Succ n) a = SliceInnerN n (Sliced Zero a)
+  SliceInnerN Z a = a
+  SliceInnerN (S n) a = SliceInnerN n (Sliced Z a)
 
-type DeclIndexVec :: EType -> Type
-type DeclIndexVec et = Vec (UExprF EInt) (DeclDimension et)
+newtype DeclIndexVecF (r :: EType -> Type) (et :: EType) = DeclIndexVecF { unDeclIndexVecF :: Vec (DeclDimension et) (r EInt)}
 
-type IndexVec :: EType -> Type
-type IndexVec et = Vec (UExprF EInt) (Dimension et)
+instance TR.NFunctor DeclIndexVecF where
+  nmap nat (DeclIndexVecF v) = DeclIndexVecF $ DT.map nat v
+
+type DeclIndexVec et = DeclIndexVecF UExpr et--Vec (UExpr EInt) (DeclDimension et)
+
+newtype IndexVecF (r :: EType -> Type) (et :: EType) = IndexVecF { unIndexVecF :: Vec (Dimension et) (r EInt) }
+
+instance TR.NFunctor IndexVecF where
+  nmap nat (IndexVecF v) = IndexVecF $ DT.map nat v
+
+type IndexVec et = IndexVecF UExpr et -- (UExpr EInt) (Dimension et)
+
 
 data BinaryOp = BEqual | BAdd | BSubtract | BMultiply | BDivide | BElementWise BinaryOp | BAndEqual BinaryOp
 
@@ -250,19 +306,63 @@ type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType wh
   BinaryResultT (BElementWise _) a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be combined elementwise." )
   BinaryResultT (BAndEqual op) a b = BinaryResultT op a b
 
-data UExprF :: EType -> Type where
-  DeclareE :: StanType t -> DeclIndexVec t -> UExprF t
-  NamedE :: Text -> SType t -> UExprF t
-  IntE :: Int -> UExprF EInt
-  RealE :: Double -> UExprF EReal
-  BinaryOpE :: SBinaryOp op -> UExprF ta -> UExprF tb -> UExprF (BinaryResultT op ta tb)
-  SliceE :: SNat n -> UExprF EInt -> UExprF t -> UExprF (Sliced n t)
-  NamedIndexE :: SME.IndexKey -> UExprF EInt
+{-
+data UExpr :: EType -> Type where
+  DeclareE :: StanType t -> DeclIndexVec t -> UExpr t
+  NamedE :: Text -> SType t -> UExpr t
+  IntE :: Int -> UExpr EInt
+  RealE :: Double -> UExpr EReal
+  BinaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
+  SliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
+  NamedIndexE :: SME.IndexKey -> UExpr EInt
+-}
+
+data UExprF :: (EType -> Type) -> EType -> Type where
+  DeclareEF :: StanType t -> DeclIndexVecF r t -> UExprF r t
+  NamedEF :: Text -> SType t -> UExprF r t
+  IntEF :: Int -> UExprF r EInt
+  RealEF :: Double -> UExprF r EReal
+  BinaryOpEF :: SBinaryOp op -> r ta -> r tb -> UExprF r (BinaryResultT op ta tb)
+  SliceEF :: SNat n -> r EInt -> r t -> UExprF r (Sliced n t)
+  NamedIndexEF :: SME.IndexKey -> UExprF r EInt
+
+instance TR.NFunctor UExprF where
+  nmap nat = \case
+    DeclareEF st vec -> DeclareEF st (TR.nmap nat vec)
+    NamedEF txt st -> NamedEF txt st
+    IntEF n -> IntEF n
+    RealEF x -> RealEF x
+    BinaryOpEF sbo gta gtb -> BinaryOpEF sbo (nat gta) (nat gtb)
+    SliceEF sn g gt -> SliceEF sn (nat g) (nat gt)
+    NamedIndexEF txt -> NamedIndexEF txt
+
+type UExpr = TR.IFix UExprF
+
+declareE :: StanType t -> DeclIndexVec t -> UExpr t
+declareE st = TR.IFix . DeclareEF st
+
+namedE :: Text -> SType t -> UExpr t
+namedE name  = TR.IFix . NamedEF name
+
+intE :: Int -> UExpr EInt
+intE = TR.IFix . IntEF
+
+realE :: Double -> UExpr EReal
+realE = TR.IFix . RealEF
+
+binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
+binaryOpE op ea eb = TR.IFix $ BinaryOpEF op ea eb
+
+sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
+sliceE sn ie e = TR.IFix $ SliceEF sn ie e
+
+namedIndexE :: Text -> UExpr EInt
+namedIndexE = TR.IFix . NamedIndexEF
 
 {-
 
-indexInner :: UExprF t a -> UExprF EInt a -> UExprF (SliceInnerN (Succ Zero) t) a
-indexInner e i = SliceE SZero i e
+indexInner :: UExprF t a -> UExprF EInt a -> UExprF (SliceInnerN (S Z) t) a
+indexInner e i = SliceE SZ i e
 
 -- NB: We need the "go" here to add the SNat to the steps so GHC can convince itself that the lengths match up
 -- This will yield a compile-time error if we try to index past the end or, same same, index something scalar.
@@ -270,8 +370,8 @@ indexInner e i = SliceE SZero i e
 indexInnerN :: UExprF t a -> Vec (UExprF EInt a) n -> UExprF (SliceInnerN n t) a
 indexInnerN e v = go (sLength v) e v where
   go :: SNat n -> UExprF tb b -> Vec (UExprF EInt b) n -> UExprF (SliceInnerN n tb) b
-  go SZero e _ = e
-  go (SSucc m) e (i :> v') = go (sLength v') (indexInner e i) v'
+  go SZ e _ = e
+  go (SS m) e (i :> v') = go (sLength v') (indexInner e i) v'
 
 indexAll :: UExprF t a -> IndexVec t a -> UExprF (SliceInnerN (Dimension t) t) a
 indexAll = indexInnerN
