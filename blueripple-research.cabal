@@ -80,7 +80,6 @@ library  haskell-stan
                , cereal  >= 0.5.7 && < 0.6
                , cereal-vector >= 0.2 && < 0.3
                , colonnade
-               , compdata >= 0.12 && < 0.14
                , constraints >= 0.12 && < 0.14
                , constraints-extras >= 0.3.0 && < 0.4
                , containers
@@ -133,6 +132,9 @@ library  haskell-stan
                  , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
+                 , Stan.ModelBuilder.TypedExpressions.Types
+                 , Stan.ModelBuilder.TypedExpressions.Arithmetic
+                 , Stan.ModelBuilder.TypedExpressions.Indexing
                  , Stan.ModelBuilder.TypedExpressions.Expression
                  , Stan.ModelBuilder.TypedExpressions.Recursion
                  , Stan.ModelBuilder.TypedExpressions.Evaluate

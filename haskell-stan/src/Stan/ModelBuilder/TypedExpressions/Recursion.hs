@@ -19,8 +19,12 @@ newtype IFix (f :: (k -> Type) -> (k -> Type)) (t :: k) = IFix { unIFix :: f (IF
 type (~>)  :: (k -> Type) -> (k -> Type) -> Type
 type (f ~> g) = forall x. f x -> g x
 
---type IAlg ::  _ --(k -> Type) -> (k -> Type) -> Type
+type NatM :: (Type -> Type) -> (k -> Type) -> (k -> Type) -> Type
+type NatM m f g = forall x. f x -> m (g x)
+
+--type IAlg :: (k -> Type) -> (k -> Type) -> Type
 type IAlg f g = f g ~> g
+
 
 type ICoAlg f g = g ~> f g
 
@@ -41,3 +45,12 @@ iAna coalg = a
   where
     a :: g ~> IFix f
     a = IFix . nmap a . coalg
+
+type IAlgM m f g = NatM m (f g) g
+type ICoAlgM m f g = NatM m g (f g)
+
+iCataM :: Monad m => IAlgM m f g -> NatM m f (IFix g)
+iCataM algM = c
+  where
+    c :: NatM m g (IFix f)
+    c = algM . nmap . unIFix
