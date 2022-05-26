@@ -10,9 +10,9 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-module Stan.ModelBuilder.TypedExpressions.Arithmetic
+module Stan.ModelBuilder.TypedExpressions.Operations
   (
-    module Stan.ModelBuilder.TypedExpressions.Arithmetic
+    module Stan.ModelBuilder.TypedExpressions.Operations
   )
   where
 
@@ -26,37 +26,61 @@ import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 
 
-data BinaryOp = BEqual | BAdd | BSubtract | BMultiply | BDivide | BModulo | BElementWise BinaryOp | BAndEqual BinaryOp
+data UnaryOp = UNegate | UTranspose
+
+data SUnaryOp :: UnaryOp -> Type where
+  SNegate :: SUnaryOp UNegate
+  STranspose :: SUnaryOp UTranspose
+
+type family UnaryResultT (uo :: UnaryOp) (a :: EType) :: EType where
+  UnaryResultT UNegate a = a
+  UnaryResultT UTranspose ECVec = ERVec
+  UnaryResultT UTranspose ERVec = ECVec
+  UnaryResultT UTranspose EMat = EMat
+  UnaryResultT UTranspose ESqMat = ESqMat
+  UnaryResultT UTranspose x = TE.TypeError (TE.ShowType x :<>:  TE.Text " cannot be set transposed.")
+
+data BoolOp = BEq | BNEq | BLT | BLEq | BGT | BGEq | BAnd | BOr
+
+data SBoolOp :: BoolOp -> Type where
+  SEq :: SBoolOp BEq
+  SNEq :: SBoolOp BNEq
+  SLT :: SBoolOp BLT
+  SLEq :: SBoolOp BLEq
+  SGT :: SBoolOp BGT
+  SGEq :: SBoolOp BGEq
+  SAnd :: SBoolOp BAnd
+  SOr :: SBoolOp BOr
+
+type family BoolOpResultT (bo :: BoolOp) (a :: EType) (b :: EType) :: EType where
+  BoolOpResultT BEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BNEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BLT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BLEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BGT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BGEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolOpResultT BAnd EBool EBool = EBool
+  BoolOpResultT BAnd a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " && " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
+  BoolOpResultT BOr EBool EBool = EBool
+  BoolOpResultT BOr a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " || " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
+
+data BinaryOp = BAdd | BSubtract | BMultiply | BDivide | BPow | BModulo | BElementWise BinaryOp | BAndEqual BinaryOp
 
 data SBinaryOp :: BinaryOp -> Type where
-  SEqual :: SBinaryOp BEqual
   SAdd :: SBinaryOp BAdd
   SSubtract :: SBinaryOp BSubtract
   SMultiply :: SBinaryOp BMultiply
   SDivide :: SBinaryOp BDivide
+  SPow :: SBinaryOp BPow
   SModulo :: SBinaryOp BModulo
   SElementWise :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
 
 type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType where
-  BinaryResultT BEqual a a = a -- ?
-  BinaryResultT BEqual a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be set equal." )
   BinaryResultT BAdd a a = a
-  BinaryResultT BAdd EInt EReal = EReal
-  BinaryResultT BAdd EReal EInt = EReal
-  BinaryResultT BAdd EInt EComplex = EComplex
-  BinaryResultT BAdd EReal EComplex = EComplex
-  BinaryResultT BAdd EComplex EInt = EComplex
-  BinaryResultT BAdd EComplex EReal= EComplex
-  BinaryResultT BAdd a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be added." )
+  BinaryResultT BAdd a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be added." ))
   BinaryResultT BSubtract a a = a
-  BinaryResultT BSubtract EInt EReal = EReal
-  BinaryResultT BSubtract EReal EInt = EReal
-  BinaryResultT BSubtract EInt EComplex = EComplex
-  BinaryResultT BSubtract EReal EComplex = EComplex
-  BinaryResultT BSubtract EComplex EInt = EComplex
-  BinaryResultT BSubtract EComplex EReal= EComplex
-  BinaryResultT BSubtract a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be subtracted." )
+  BinaryResultT BSubtract a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be subtracted." ))
   BinaryResultT BMultiply EInt a = a
   BinaryResultT BMultiply a EInt = a
   BinaryResultT BMultiply EReal a = a
@@ -78,15 +102,14 @@ type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType wh
   BinaryResultT BMultiply ECVec ESqMat = TE.TypeError (TE.Text "Cannot do col-vector * matrix.  Perhaps you meant to flip the order?")
   BinaryResultT BMultiply a (EArray n b) = EArray n (BinaryResultT BMultiply a b)
   BinaryResultT BMultiply a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be multiplied." )
-  BinaryResultT BDivide EInt EInt = EReal
-  BinaryResultT BDivide EInt EReal = EReal
-  BinaryResultT BDivide EReal EInt = EReal
-  BinaryResultT BDivide EComplex EComplex = EReal
-  BinaryResultT BDivide EInt EComplex = EComplex
-  BinaryResultT BDivide EReal EComplex = EComplex
-  BinaryResultT BDivide EComplex EInt = EComplex
-  BinaryResultT BDivide EComplex EReal = EComplex
-  BinaryResultT BDivide a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be divided." )
+  BinaryResultT BDivide a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be divided." ))
+  BinaryResultT BPow EInt EInt = EReal -- Stan spec
+  BinaryResultT BPow EReal EReal = EReal
+  BinaryResultT BPow EReal EInt = EReal
+  BinaryResultT BPow EInt EReal = EReal
+  BinaryResultT BPow x y = TE.TypeError (TE.ShowType x :<>: TE.Text " ^ " :<>: TE.ShowType y :<>: TE.Text " not allowed." )
+  BinaryResultT BModulo EInt EInt = EInt
+  BinaryResultT BModulo x y = TE.TypeError (TE.ShowType x :<>: TE.Text " % " :<>: TE.ShowType y :<>: TE.Text " not allowed." )
   BinaryResultT (BElementWise op) (EArray n a) (EArray n b) = EArray n (BinaryResultT op a b)
   BinaryResultT (BElementWise op) ECVec ECVec = ECVec
   BinaryResultT (BElementWise op) ERVec ERVec = ERVec

@@ -5,6 +5,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
@@ -26,6 +27,9 @@ import           Data.Kind (Type)
 import Data.Type.Nat (Nat(..), SNat(..))
 import qualified Data.Type.Nat as DT
 
+import qualified GHC.TypeLits as TE
+import GHC.TypeLits (ErrorMessage((:<>:)))
+
 
 -- possible structure of expressions
 data EStructure = EVar | ELit | ECompound | ELookup deriving (Show)
@@ -44,7 +48,26 @@ withStructure ECompound k = k SCompound
 withStructure ELookup k = k SLookup
 
 -- possible types of terms
-data EType = EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType
+data EType = EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType | EBool
+
+type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
+  IfNumber EInt a _ = a
+  IfNumber EReal a _ = a
+  IfNumber EComplex a _ = a
+  IfNumber _ _ b = b
+
+type family IfNumbers (a :: EType) (b :: EType) (c :: k) (d :: k) where
+  IfNumbers a b c d = IfNumber a (IfNumber b c d) d
+
+type family Promoted (a :: EType) (b :: EType) :: EType where
+  Promoted a a = a
+  Promoted EInt EReal = EReal
+  Promoted EReal EInt = EReal
+  Promoted EInt EComplex = EComplex
+  Promoted EComplex EInt = EComplex
+  Promoted EReal EComplex = EComplex
+  Promoted EComplex EReal = EComplex
+  Promoted a b = TE.TypeError (TE.Text "One of " :<>: TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " isn't a promotable (number) type.")
 
 data Ty = Ty EStructure EType
 
@@ -64,6 +87,7 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
+  SBool :: SType EBool
 
 withSType :: forall t r.EType -> (forall t. SType t -> r) -> r
 withSType EInt k = k SInt
@@ -77,6 +101,7 @@ withSType (EArray n t) k = DT.reify n f
   where
     f :: forall n. DT.SNatI n => Proxy n -> r
     f _ = withSType t $ \st -> k (SArray (DT.snat @n)  st)
+withSType EBool k = k SBool
 
 data StanType :: EType -> Type where
   StanInt :: StanType EInt
@@ -88,7 +113,7 @@ data StanType :: EType -> Type where
   StanCorrMatrix :: StanType ESqMat
   StanCholeskyFactorCorr :: StanType ESqMat
   StanCovMatrix :: StanType ESqMat
-
+  StanBool :: StanType EBool
 
 {-
 data (a :: k) :~: (b :: k) where

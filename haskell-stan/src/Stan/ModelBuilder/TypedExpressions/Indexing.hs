@@ -90,7 +90,6 @@ type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced _ ERVec = TE.TypeError (TE.Text "Cannot slice (index) a row-vector at a position other than 0.")
   Sliced Z ECVec = EReal
   Sliced _ ECVec = TE.TypeError (TE.Text "Cannot slice (index) a vector at a position other than 0.")
-  Sliced _ ERVec = TE.TypeError (TE.Text "Cannot slice (index) a vector at a position other than 0.")
   Sliced Z EMat = ERVec
   Sliced (S Z) EMat = ECVec
   Sliced _ EMat = TE.TypeError (TE.Text "Cannot slice (index) a matrix at a position other than 0 or 1.")
@@ -104,14 +103,20 @@ type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
   SliceInnerN (S n) a = SliceInnerN n (Sliced Z a)
 
 
-newtype DeclIndexVecF (s :: EStructure)(r :: Ty -> Type) (et :: EType) = DeclIndexVecF { unDeclIndexVecF :: Vec (DeclDimension et) (r ('Ty s EInt))}
+newtype DeclIndexVecF (r :: EType -> Type) (et :: EType) = DeclIndexVecF { unDeclIndexVecF :: Vec (DeclDimension et) (r EInt)}
 
-instance TR.NFunctor (DeclIndexVecF s) where
-  nmap nat (DeclIndexVecF v) = DeclIndexVecF $ DT.map nat v
+instance TR.HFunctor DeclIndexVecF where
+  hfmap nat (DeclIndexVecF v) = DeclIndexVecF $ DT.map nat v
 
+instance TR.HTraversable DeclIndexVecF where
+  hmapM natM = fmap DeclIndexVecF . traverse natM . unDeclIndexVecF
+  htraverse natM = fmap DeclIndexVecF . traverse natM . unDeclIndexVecF
 
+newtype IndexVecF (r :: EType -> Type) (et :: EType) = IndexVecF { unIndexVecF :: Vec (Dimension et) (r EInt) }
 
-newtype IndexVecF (s :: EStructure) (r :: Ty -> Type) (et :: EType) = IndexVecF { unIndexVecF :: Vec (Dimension et) (r ('Ty s EInt)) }
+instance TR.HFunctor IndexVecF where
+  hfmap nat (IndexVecF v) = IndexVecF $ DT.map nat v
 
-instance TR.NFunctor (IndexVecF s) where
-  nmap nat (IndexVecF v) = IndexVecF $ DT.map nat v
+instance TR.HTraversable IndexVecF where
+  hmapM natM = fmap IndexVecF . traverse natM . unIndexVecF
+  htraverse natM = fmap IndexVecF . traverse natM . unIndexVecF

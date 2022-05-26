@@ -133,7 +133,8 @@ library  haskell-stan
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Types
-                 , Stan.ModelBuilder.TypedExpressions.Arithmetic
+                 , Stan.ModelBuilder.TypedExpressions.Operations
+                 , Stan.ModelBuilder.TypedExpressions.Functions
                  , Stan.ModelBuilder.TypedExpressions.Indexing
                  , Stan.ModelBuilder.TypedExpressions.Expression
                  , Stan.ModelBuilder.TypedExpressions.Recursion

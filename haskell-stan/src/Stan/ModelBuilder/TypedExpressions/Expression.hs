@@ -1,139 +1,254 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Stan.ModelBuilder.TypedExpressions.Expression
   (
     module Stan.ModelBuilder.TypedExpressions.Expression
-  , Nat(..)
-  , Fin(..)
-  , Vec(..)
   )
   where
 
 import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
 import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.Indexing
-import Stan.ModelBuilder.TypedExpressions.Arithmetic
-
-import Prelude hiding (Nat)
-import qualified Data.Functor.Classes as FC
-import qualified Data.Functor.Classes.Generic as FC
-import qualified Data.Functor.Foldable as Rec
-import qualified Data.Functor.Foldable.Monadic as Rec
-import qualified Data.Functor.Foldable.TH as Rec
-import           Data.Kind (Type)
-import qualified Data.Fix as Fix
-import qualified Data.Map.Strict as Map
-import qualified Data.Set as Set
-import qualified Data.Text as T
-
-import Data.Type.Nat (Nat(..), SNat(..))
-import Data.Fin (Fin(..))
-import Data.Vec.Lazy (Vec(..))
-
-import qualified Data.Nat as DT
-import qualified Data.Type.Nat as DT
-import qualified Data.Type.Nat.LE as DT
-import qualified Data.Fin as DT hiding (split)
-import qualified Data.Vec.Lazy as DT
-
-import qualified Text.PrettyPrint as Pretty
-
-import GHC.Generics (Generic1)
-import qualified GHC.TypeLits as TE
-import GHC.TypeLits (ErrorMessage((:<>:)))
+import Stan.ModelBuilder.TypedExpressions.Operations
+import Stan.ModelBuilder.TypedExpressions.Functions
 import qualified Stan.ModelBuilder.Expressions as SME
-import Stan.ModelBuilder.Expressions (StanVar(..))
-import Stan.ModelBuilder (DataSetGroupIntMaps)
-import Frames.Streamly.CSV (accToMaybe)
-import Knit.Report (moveOriginBy)
-import qualified Data.Constraint.Deferrable as DT
-import qualified Data.Type.Nat.LE as ST
-import Stan.ModelConfig (DataIndexerType(NoIndex))
-import Data.Vinyl.Functor (Lift)
+import Prelude hiding (Nat)
+import Relude.Extra
+import qualified Data.Map.Strict as Map
+import Data.Vector.Generic (unsafeCopy)
 
-type DeclIndexVec s et = DeclIndexVecF s UExpr et--Vec (UExpr EInt) (DeclDimension et)
+--data Block f = Block { blockName :: Text, statements :: [Stmt f]}
 
-type IndexVec s et = IndexVecF s UExpr et -- (UExpr EInt) (Dimension et)
+-- Statements
+data StmtF :: (EType -> Type) -> Type -> Type where
+  SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
+  SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> r et -> StmtF r a
+  SAssign :: r t -> r t -> StmtF r a
+  STarget :: r EReal -> StmtF r a
+  SSample :: r st -> Distribution st args -> ArgList r args -> StmtF r a
+  SFor :: Text -> r EInt -> r EInt -> [StmtF r a] -> StmtF r a
+  SForEach :: Text -> r t -> [StmtF r a] -> StmtF r a
+  SIfElse :: [(r EBool, StmtF r a)] -> StmtF r a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
+  SWhile :: r EBool -> [StmtF r a] -> StmtF r a
+  SFunction :: Function rt args -> ArgList (TR.K Text) args -> [StmtF r a] -> StmtF r a
+  SScope :: [StmtF r a] -> StmtF r a
 
-data UExprF :: (Ty -> Type) -> Ty -> Type where
-  DeclareEF :: StanType t -> DeclIndexVecF s r et -> UExprF r ('Ty s et)
-  NamedEF :: Text -> SType t -> UExprF r ('Ty EVar t)
-  IntEF :: Int -> UExprF r ('Ty ELit EInt)
-  RealEF :: Double -> UExprF r ('Ty ELit EReal)
-  ComplexEF :: Double -> Double -> UExprF r ('Ty ELit EComplex)
-  BinaryOpEF :: SBinaryOp op -> r ta -> r tb -> UExprF r ('Ty ECompound (BinaryResultT op (TyType ta) (TyType tb)))
-  SliceEF :: SNat n -> r ('Ty s EInt) -> r t -> UExprF r ('Ty (TyStructure t) (Sliced n (TyType t)))
-  NamedIndexEF :: SME.IndexKey -> UExprF r ('Ty ELookup EInt)
+instance Functor (StmtF f) where
+  fmap f x = case x of
+    SDeclare txt st divf -> SDeclare txt st divf
+    SDeclAssign txt st divf fet -> SDeclAssign txt st divf fet
+    SAssign ft ft' -> SAssign ft ft'
+    STarget f' -> STarget f'
+    SSample fst dis al -> SSample fst dis al
+    SFor ctr startE endE body -> SFor ctr startE endE (fmap f <$> body)
+    SForEach ctr fromE body -> SForEach ctr fromE (fmap f <$> body)
+    SIfElse x1 sf -> SIfElse (secondF (fmap f) x1) (fmap f sf)
+    SWhile cond sfs -> SWhile cond (fmap f <$> sfs)
+    SFunction func al sfs -> SFunction func al (fmap f <$> sfs)
+    SScope sfs -> SScope $ fmap f <$> sfs
 
-instance TR.NFunctor UExprF where
-  nmap nat = \case
-    DeclareEF st vec -> DeclareEF st (TR.nmap nat vec)
-    NamedEF txt st -> NamedEF txt st
-    IntEF n -> IntEF n
-    RealEF x -> RealEF x
-    ComplexEF rp ip -> ComplexEF rp ip
-    BinaryOpEF sbo gta gtb -> BinaryOpEF sbo (nat gta) (nat gtb)
-    SliceEF sn g gt -> SliceEF sn (nat g) (nat gt)
-    NamedIndexEF txt -> NamedIndexEF txt
+instance Foldable (StmtF f) where
+  foldMap f = \case
+    SDeclare txt st divf -> mempty
+    SDeclAssign txt st divf fet -> mempty
+    SAssign ft ft' -> mempty
+    STarget f' -> mempty
+    SSample fst dis al -> mempty
+    SFor txt f' f3 body -> mconcat $ fmap (foldMap f) body
+    SForEach txt ft body -> mconcat $ fmap (foldMap f) body
+    SIfElse ifConds sf -> mconcat (fmap (foldMap f . snd) ifConds) <> foldMap f sf
+    SWhile f' body -> mconcat $ fmap (foldMap f) body
+    SFunction func al body -> mconcat $ fmap (foldMap f) body
+    SScope body -> mconcat $ fmap (foldMap f) body
 
-type UExpr = TR.IFix UExprF
+instance Traversable (StmtF f) where
+  traverse g = \case
+    SDeclare txt st divf -> pure $ SDeclare txt st divf
+    SDeclAssign txt st divf fet -> pure $ SDeclAssign txt st divf fet
+    SAssign ft ft' -> pure $ SAssign ft ft'
+    STarget f -> pure $ STarget f
+    SSample fst dis al -> pure $ SSample fst dis al
+    SFor txt f f' sfs -> SFor txt f f' <$> traverse (traverse g) sfs
+    SForEach txt ft sfs -> SForEach txt ft <$> traverse (traverse g) sfs
+    SIfElse x0 sf -> SIfElse <$> traverse (\(c, s) -> pure ((,) c) <*> traverse g s) x0 <*> traverse g sf
+    SWhile f body -> SWhile f <$> traverse (traverse g) body
+    SFunction func al sfs -> SFunction func al <$> traverse (traverse g) sfs
+    SScope sfs -> SScope <$> traverse (traverse g) sfs
 
-declareE :: StanType t -> DeclIndexVec s t -> UExpr ('Ty s t)
-declareE st = TR.IFix . DeclareEF st
+instance TR.HFunctor StmtF where
+  hfmap nat = \case
+    SDeclare txt st divf -> SDeclare txt st (TR.hfmap nat divf)
+    SDeclAssign txt st divf rhe -> SDeclAssign txt st (TR.hfmap nat divf) (nat rhe)
+    SAssign lhe rhe -> SAssign (nat lhe) (nat rhe)
+    STarget rhe -> STarget (nat rhe)
+    SSample gst dis al -> SSample (nat gst) dis (TR.hfmap nat al)
+    SFor txt se ee body -> SFor txt (nat se) (nat se) (TR.hfmap nat <$> body)
+    SForEach txt gt body -> SForEach txt (nat gt) (TR.hfmap nat <$> body)
+    SIfElse x0 sf -> SIfElse (fmap (\(c, s)  -> (nat c, TR.hfmap nat s)) x0) (TR.hfmap nat sf)
+    SWhile g body -> SWhile (nat g) (TR.hfmap nat <$> body)
+    SFunction func al body -> SFunction func al (TR.hfmap nat <$> body)
+    SScope body -> SScope (TR.hfmap nat <$> body)
 
-namedE :: Text -> SType t -> UExpr ('Ty EVar t)
-namedE name  = TR.IFix . NamedEF name
+instance TR.HTraversable StmtF where
+  htraverse natM = \case
+    SDeclare txt st indexEs -> SDeclare txt st <$> TR.htraverse natM indexEs
+    SDeclAssign txt st indexEs rhe -> SDeclAssign txt st <$> TR.htraverse natM indexEs <*> natM rhe
+    SAssign lhe rhe -> SAssign <$> natM lhe <*> natM rhe
+    STarget re -> STarget <$> natM re
+    SSample ste dist al -> SSample <$> natM ste <*> pure dist <*> TR.htraverse natM al
+    SFor txt se ee body -> SFor txt <$> natM se <*> natM ee <*> traverse (TR.htraverse natM) body
+    SForEach txt at body -> SForEach txt <$> natM at <*> traverse (TR.htraverse natM) body
+    SIfElse x0 sf -> SIfElse <$> traverse (\(c, s) -> (,) <$> natM c <*> TR.htraverse natM s) x0 <*> TR.htraverse natM sf
+    SWhile cond body -> SWhile <$> natM cond <*> traverse (TR.htraverse natM) body
+    SFunction func al body -> SFunction func al <$> traverse (TR.htraverse natM) body
+    SScope body -> SScope <$> traverse (TR.htraverse natM) body
+  hmapM = TR.htraverse
 
-intE :: Int -> UExpr ('Ty ELit EInt)
-intE = TR.IFix . IntEF
+type LStmtF = StmtF LExpr
+type LStmt = TR.Fix LStmtF
 
-realE :: Double -> UExpr ('Ty ELit EReal)
-realE = TR.IFix . RealEF
+data UStmtF :: Type -> Type where
+  SU :: StmtF UExpr t -> UStmtF t
+  SContext :: (IndexLookupCtxt -> IndexLookupCtxt) -> UStmtF a -> UStmtF a
 
-complexE :: Double -> Double -> UExpr ('Ty ELit EComplex)
-complexE rp ip = TR.IFix $ ComplexEF rp ip
+type UStmt = TR.Fix UStmtF
 
-binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr ('Ty ECompound (BinaryResultT op (TyType ta) (TyType tb)))
-binaryOpE op ea eb = TR.IFix $ BinaryOpEF op ea eb
+instance Functor UStmtF where
+  fmap f = \case
+    SU sf -> SU $ fmap f sf
+    SContext g usf -> SContext g (fmap f usf)
 
-sliceE :: SNat n -> UExpr ('Ty s EInt) -> UExpr t -> UExpr ('Ty (TyStructure t) (Sliced n (TyType t))) --(Sliced n t)
-sliceE sn ie e = TR.IFix $ SliceEF sn ie e
+instance Foldable UStmtF where
+  foldMap f = \case
+    SU sf -> foldMap f sf
+    SContext g usf -> foldMap f usf
 
-namedIndexE :: Text -> UExpr ('Ty ELookup EInt)
-namedIndexE = TR.IFix . NamedIndexEF
+instance Traversable UStmtF where
+  traverse g = \case
+    SU sf -> SU <$> traverse g sf
+    SContext f usf -> SContext f <$> traverse g usf
 
-
-data LExprF :: (Ty -> Type) -> Ty -> Type where
-  LDeclareF :: StanType t -> DeclIndexVecF s r et -> LExprF r ('Ty s et)
-  LNamedF :: Text -> SType t -> LExprF r ('Ty EVar t)
-  LIntF :: Int -> LExprF r ('Ty ELit EInt)
-  LRealF :: Double -> LExprF r ('Ty ELit EReal)
-  LComplexF :: Double -> Double -> LExprF r ('Ty ELit EComplex)
-  LBinaryOpF :: SBinaryOp op -> r ta -> r tb -> LExprF r ('Ty ECompound (BinaryResultT op (TyType ta) (TyType tb)))
-  LSliceF :: SNat n -> r ('Ty s EInt) -> r t -> LExprF r ('Ty (TyStructure t) (Sliced n (TyType t)))
-
-instance TR.NFunctor LExprF where
-  nmap nat = \case
-    LDeclareF st vec -> LDeclareF st (TR.nmap nat vec)
-    LNamedF txt st -> LNamedF txt st
-    LIntF n -> LIntF n
-    LRealF x -> LRealF x
-    LComplexF rp ip -> LComplexF rp ip
-    LBinaryOpF sbo gta gtb -> LBinaryOpF sbo (nat gta) (nat gtb)
-    LSliceF sn g gt -> LSliceF sn (nat g) (nat gt)
+-- Expressions
+data LExprF :: (EType -> Type) -> EType -> Type where
+  LNamed :: Text -> SType t -> LExprF r t
+  LInt :: Int -> LExprF r EInt
+  LReal :: Double -> LExprF r EReal
+  LComplex :: Double -> Double -> LExprF r EComplex
+  LFunction :: Function rt args -> ArgList r args -> LExprF r rt
+  LDistribution :: Distribution st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
+  LBinaryOp :: SBinaryOp op -> r ta -> r tb -> LExprF r (BinaryResultT op ta tb)
+  LCond :: r EBool -> r t -> r t -> LExprF r t
+  LSlice :: SNat n -> r EInt -> r t -> LExprF r (Sliced n t)
 
 type LExpr = TR.IFix LExprF
 
+instance TR.HFunctor LExprF where
+  hfmap nat = \case
+    LNamed txt st -> LNamed txt st
+    LInt n -> LInt n
+    LReal x -> LReal x
+    LComplex rp ip -> LComplex rp ip
+    LFunction f al -> LFunction f (TR.hfmap nat al)
+    LDistribution d st al -> LDistribution d (nat st) (TR.hfmap nat al)
+    LBinaryOp sbo gta gtb -> LBinaryOp sbo (nat gta) (nat gtb)
+    LCond c ifTrue ifFalse -> LCond (nat c) (nat ifTrue) (nat ifFalse)
+    LSlice sn g gt -> LSlice sn (nat g) (nat gt)
+
+instance TR.HTraversable LExprF where
+  htraverse nat = \case
+    LNamed txt st -> pure $ LNamed txt st
+    LInt n -> pure $ LInt n
+    LReal x -> pure $ LReal x
+    LComplex x y -> pure $ LComplex x y
+    LFunction f al -> LFunction f <$> TR.htraverse nat al
+    LDistribution d st al -> LDistribution d <$> nat st <*> TR.htraverse nat al
+    LBinaryOp sbo ata atb -> LBinaryOp sbo <$> nat ata <*> nat atb
+    LCond c ifTrue ifFalse -> LCond <$> nat c <*> nat ifTrue <*> nat ifFalse
+    LSlice sn a at -> LSlice sn <$> nat a <*> nat at
+  hmapM = TR.htraverse
+
+type DeclIndexVec et = DeclIndexVecF UExpr et--Vec (UExpr EInt) (DeclDimension et)
+
+type IndexVec et = IndexVecF UExpr et -- (UExpr EInt) (Dimension et)
+
+-- UEXpr represents expressions with un-looked-up indices
+data IndexLookupCtxt = IndexLookupCtxt { declIndices :: Map SME.IndexKey (LExpr EInt), useIndices :: Map SME.IndexKey (LExpr EInt) }
+
+lookupUse :: IndexLookupCtxt -> SME.IndexKey -> Either Text (LExpr EInt)
+lookupUse (IndexLookupCtxt _ um) k =
+  case Map.lookup k um of
+    Just e -> Right e
+    Nothing -> Left $ "lookupUse: " <> k <> " not found in use map."
+
+lookupDecl :: IndexLookupCtxt -> SME.IndexKey -> Either Text (LExpr EInt)
+lookupDecl (IndexLookupCtxt dm _) k =
+  case Map.lookup k dm of
+    Just e -> Right e
+    Nothing -> Left $ "lookupDecl: " <> k <> " not found in decl map."
+
+data UExprF :: (EType -> Type) -> EType -> Type where
+  UL :: LExprF r et -> UExprF r et
+  UNamedIndex :: SME.IndexKey -> UExprF r EInt
+
+type UExpr = TR.IFix UExprF
+
+instance TR.HFunctor UExprF where
+  hfmap nat = \case
+    UL le -> UL $ TR.hfmap nat le
+    UNamedIndex txt -> UNamedIndex txt
+
+instance TR.HTraversable UExprF where
+  htraverse nat = \case
+    UL le -> UL <$> TR.htraverse nat le
+    UNamedIndex txt -> pure $ UNamedIndex txt
+  hmapM = TR.htraverse
+
+{-
+instance TR.HFoldable UExprF where
+  hfoldMap co = \case
+    DeclareEF st divf -> mempty
+    NamedEF txt st -> mempty
+    IntEF n -> mempty
+    RealEF x -> mempty
+    ComplexEF x y -> mempty
+    BinaryOpEF sbo ata atb -> co ata <> co atb
+    SliceEF sn a at -> co a <> co at
+    NamedIndexEF txt -> mempty
+-}
+
+
+namedE :: Text -> SType t -> UExpr t
+namedE name  = TR.IFix . UL . LNamed name
+
+intE :: Int -> UExpr EInt
+intE = TR.IFix . UL . LInt
+
+realE :: Double -> UExpr EReal
+realE = TR.IFix . UL . LReal
+
+complexE :: Double -> Double -> UExpr EComplex
+complexE rp ip = TR.IFix $ UL $ LComplex rp ip
+
+binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
+binaryOpE op ea eb = TR.IFix $ UL $ LBinaryOp op ea eb
+
+sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
+sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
+
+namedIndexE :: Text -> UExpr EInt
+namedIndexE = TR.IFix . UNamedIndex
 
 {-
 
