@@ -20,9 +20,10 @@ import Prelude hiding (Nat)
 import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
-import Stan.ModelBuilder.TypedExpressions.Expression
+import Stan.ModelBuilder.TypedExpressions.Expressions
 import Stan.ModelBuilder.TypedExpressions.Recursion
 
+import Control.Monad.State (modify)
 import Data.Type.Nat (Nat(..), SNat(..))
 import Data.Foldable (maximum)
 import qualified Data.Functor.Classes as FC
@@ -42,23 +43,29 @@ import qualified Data.Text as T
 --import qualified Text.PrettyPrint as Pretty
 import qualified Data.Type.Nat as DT
 import Stan.ModelBuilder.Expressions (LookupContext)
+
+type LookupM = StateT IndexLookupCtxt (Either Text)
+
 {-
-1. UStmt () -> LStmt ()
-2. LStmt () ->
+1. UCStmt -> m LStmt
+  = Fix UCStmtF -> LookupM LStmt
+  = cataM (algM :: AlgM LookupM UCStmtF LStmt)
+2. UStmtF -> LookupM (Fix LStmtF)
+  = iAnaM (iCoAlgM :: ICoAlgM LookupM LStmtF UStmtF)
+         = NatM LookupM UStmtF
 -}
 
-contextualTraverse :: IndexLookupCtxt
-                   -> (Map SME.IndexKey (LExpr EInt) -> IAlgM (Either Text) UExprF LExpr)
-                   -> UStmt
-                   -> Either Text LStmt
-contextualTraverse ilc mapToAlg us =
+alg1 :: AlgM LookupM UCStmtF LStmt
+alg1 = \case
+  UContext f sf -> modify f >> _
 
-toLExprAlg :: Map Text (LExpr EInt) -> IAlgM (Either Text) UExprF LExpr
-toLExprAlg varMap s = case s of
+{-
+toLExprAlg :: IndexLookupCtxt -> IAlgM (Either Text) UExprF LExpr
+toLExprAlg lCtxt s = case s of
   UL x -> Right $ IFix x
-  UNamedIndex ik ->  case Map.lookup key varMap of
-    Just e -> Right e
-    Nothing -> Left $ "index lookup failed for key=" <> key
+  UNamedIndex ik -> lookupUse lCtxt ik
+  UNamedSize ik -> lookupSize lCtxt ik
+-}
 {-
   DeclareEF st divf -> Right $ IFix $ LDeclareF st divf
   NamedEF txt st -> Right $ IFix $ LNamedF txt st
@@ -78,6 +85,7 @@ data IExprF :: Type -> Type where
   deriving stock (Eq, Ord, Functor, Foldable, Traversable, Generic1)
   deriving (FC.Show1, FC.Eq1, FC.Ord1) via FC.FunctorClassesDefault IExprF
 -}
+{-
 data IExpr = IExpr { atom :: Text,  indexed :: IM.IntMap Text, unusedIndices :: [Int] }
 
 writeIExpr :: IExpr -> Text
@@ -145,3 +153,4 @@ opText = \case
   SDivide -> "/"
   SElementWise sbo -> "." <> opText sbo
   SAndEqual sbo -> opText sbo <> "="
+-}

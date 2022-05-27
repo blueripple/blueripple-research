@@ -100,6 +100,7 @@ library  haskell-stan
                , massiv >= 1.0 && < 1.1
                , megaparsec >= 9.0.0 && < 10.0
                , monadic-recursion-schemes >= 0.1.11 && < 0.2
+               , mtl >= 2.2 && < 2.3
                , parser-combinators > 1.0.0 && < 2.0
                , polysemy
                , pretty >= 1.1 && < 1.2
@@ -136,7 +137,8 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.Operations
                  , Stan.ModelBuilder.TypedExpressions.Functions
                  , Stan.ModelBuilder.TypedExpressions.Indexing
-                 , Stan.ModelBuilder.TypedExpressions.Expression
+                 , Stan.ModelBuilder.TypedExpressions.Expressions
+                 , Stan.ModelBuilder.TypedExpressions.Statements
                  , Stan.ModelBuilder.TypedExpressions.Recursion
                  , Stan.ModelBuilder.TypedExpressions.Evaluate
                  , Stan.ModelBuilder.FixedEffects

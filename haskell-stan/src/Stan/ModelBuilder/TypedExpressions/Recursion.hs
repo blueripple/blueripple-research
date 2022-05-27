@@ -89,10 +89,8 @@ iAnaM coAlgM = a
     a :: NatM m g (IFix f)
     a x = fmap IFix $ coAlgM x >>= hmapM a
 
-
 class HFunctor f where
   hfmap :: (g ~> h) -> (f g ~> f h)
-
 
 class HTraversable t where
 
