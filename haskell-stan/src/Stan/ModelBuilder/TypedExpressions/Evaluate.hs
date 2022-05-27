@@ -87,6 +87,7 @@ doLookupsInStatementA = \case
   SWhileF if' sts -> SWhile <$> f if' <*> pure sts
   SFunctionF func al sts -> pure $ SFunction func al sts
   SScopeF sts -> pure $ SScope sts
+  SContextF cfM s -> SContext Nothing <$> (maybe id withStateT cfM $ f s)
   where
     f :: NatM LookupM UExpr LExpr
     f = doLookups
@@ -94,6 +95,7 @@ doLookupsInStatementA = \case
 doLookupsInStatement :: Stmt UExpr -> LookupM LStmt
 doLookupsInStatement = RS.cataM doLookupsInStatementA
 
+{-
 doLookupsInUStatementA :: UStmtF (Stmt LExpr) -> LookupM LStmt
 doLookupsInUStatementA = \case
   USF st -> pure st
@@ -104,7 +106,7 @@ doLookupsInUStatement = RS.cataM doLookupsInUStatementA
 
 doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInUStatement
-
+-}
 
 {-
 wcDoLookupsInStatementA :: WithContextF UStmt LStmt -> LookupM LStmt

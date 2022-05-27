@@ -48,6 +48,7 @@ data Stmt :: (EType -> Type) -> Type where
   SWhile :: r EBool -> [Stmt r] -> Stmt r
   SFunction :: Function rt args -> ArgList (TR.K Text) args -> [Stmt r] -> Stmt r
   SScope :: [Stmt r] -> Stmt r
+  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt r -> Stmt r -- this should not ever happen in LStmt
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
@@ -61,60 +62,14 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SWhileF :: r EBool -> [a] -> StmtF r a
   SFunctionF :: Function rt args -> ArgList (TR.K Text) args -> [a] -> StmtF r a
   SScopeF :: [a] -> StmtF r a
+  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> a -> StmtF r a
 
 type LStmt = Stmt LExpr
-
-data UStmt :: Type where
-  US :: UStmt -> UStmt
-  CS :: (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt UExpr -> UStmt
-
-data UStmtF :: Type -> Type where
-  USF :: a -> UStmtF a
-  CSF :: (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt UExpr -> UStmtF a
-
-instance Functor UStmtF where
-  fmap f = \case
-    USF st -> USF (f st)
-    CSF g a -> CSF g a
-
-instance Foldable UStmtF where
-  foldMap f = \case
-    USF st -> f st
-    CSF g a -> mempty
-
-instance Traversable UStmtF where
-  traverse g = \case
-    USF st -> USF <$> g st
-    CSF f a -> pure $ CSF f a
-
-instance RS.Recursive UStmt where
-  project = \case
-    US st -> USF st
-    CS f us -> CSF f us
-
-instance RS.Corecursive UStmt where
-  embed = \case
-    USF st -> US st
-    CSF f us -> CS f us
-
-
-
-type instance RS.Base LStmt = StmtF LExpr
-type instance RS.Base UStmt = UStmtF
+type UStmt = Stmt UExpr
 
 type instance RS.Base (Stmt f) = StmtF f
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
-
-data WithContext :: Type -> Type where
-  Extant :: WithContext a -> WithContext a
-  Change :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> WithContext a
-
-data WithContextF :: Type -> Type -> Type where
-  ExtantF :: b -> WithContextF a b
-  ChangeF :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> WithContextF a b
-
-type instance RS.Base (WithContext a) = WithContextF a
 
 {-
 declare :: Text -> StanType t -> DeclIndexVecF UExpr t -> UStmt
@@ -149,6 +104,7 @@ instance Functor (StmtF f) where
     SWhileF cond sfs -> SWhileF cond (f <$> sfs)
     SFunctionF func al sfs -> SFunctionF func al (f <$> sfs)
     SScopeF sfs -> SScopeF $ f <$> sfs
+    SContextF cf s -> SContextF cf (f s)
 
 instance Foldable (StmtF f) where
   foldMap f = \case
@@ -163,6 +119,7 @@ instance Foldable (StmtF f) where
     SWhileF f' body -> foldMap f body
     SFunctionF func al body -> foldMap f body
     SScopeF body -> foldMap f body
+    SContextF _ s -> f s
 
 instance Traversable (StmtF f) where
   traverse g = \case
@@ -177,6 +134,7 @@ instance Traversable (StmtF f) where
     SWhileF f body -> SWhileF f <$> traverse g body
     SFunctionF func al sfs -> SFunctionF func al <$> traverse g sfs
     SScopeF sfs -> SScopeF <$> traverse g sfs
+    SContextF cf s -> SContextF cf <$> g s
 
 instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
   project = \case
@@ -191,6 +149,7 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SWhile f sts -> SWhileF f sts
     SFunction func al sts -> SFunctionF func al sts
     SScope sts -> SScopeF sts
+    SContext cf s -> SContextF cf s
 
 
 instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
@@ -206,32 +165,8 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SWhileF f sts -> SWhile f sts
     SFunctionF func al sts -> SFunction func al sts
     SScopeF sts -> SScope sts
+    SContextF cf s -> SContext cf s
 
-
-instance Functor (WithContextF a) where
-  fmap f = \case
-    ExtantF wc -> ExtantF (f wc)
-    ChangeF g a -> ChangeF g a
-
-instance Foldable (WithContextF a) where
-  foldMap f = \case
-    ExtantF wc -> f wc
-    ChangeF _ _ -> mempty
-
-instance Traversable (WithContextF a) where
-  traverse g = \case
-    ExtantF wc -> ExtantF <$> g wc
-    ChangeF f a -> pure $ ChangeF f a
-
-instance RS.Recursive (WithContext a) where
-  project = \case
-    Extant st -> ExtantF st
-    Change f st -> ChangeF f st
-
-instance RS.Corecursive (WithContext a) where
-  embed = \case
-    ExtantF st -> Extant st
-    ChangeF f st -> Change f st
 
 
 
