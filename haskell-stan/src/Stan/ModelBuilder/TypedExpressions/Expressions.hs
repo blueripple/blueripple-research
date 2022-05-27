@@ -55,20 +55,6 @@ data UExprF :: (EType -> Type) -> EType -> Type where
 
 type UExpr = TR.IFix UExprF
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
-
-lookupUse :: IndexLookupCtxt -> SME.IndexKey -> Either Text (LExpr EInt)
-lookupUse (IndexLookupCtxt _ im) k =
-  case Map.lookup k im of
-    Just e -> Right e
-    Nothing -> Left $ "lookupUse: " <> k <> " not found in use map."
-
-lookupSize :: IndexLookupCtxt -> SME.IndexKey -> Either Text (LExpr EInt)
-lookupSize (IndexLookupCtxt sm _) k =
-  case Map.lookup k sm of
-    Just e -> Right e
-    Nothing -> Left $ "lookupDecl: " <> k <> " not found in decl map."
-
 
 instance TR.HFunctor LExprF where
   hfmap nat = \case

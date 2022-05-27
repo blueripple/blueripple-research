@@ -21,9 +21,12 @@ import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Expressions
+import Stan.ModelBuilder.TypedExpressions.Statements
 import Stan.ModelBuilder.TypedExpressions.Recursion
 
-import Control.Monad.State (modify)
+import qualified Data.Functor.Foldable.Monadic as RS
+
+import Control.Monad.State (modify, gets)
 import Data.Type.Nat (Nat(..), SNat(..))
 import Data.Foldable (maximum)
 import qualified Data.Functor.Classes as FC
@@ -44,7 +47,54 @@ import qualified Data.Text as T
 import qualified Data.Type.Nat as DT
 import Stan.ModelBuilder.Expressions (LookupContext)
 
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
+
 type LookupM = StateT IndexLookupCtxt (Either Text)
+
+lookupUse :: SME.IndexKey -> LookupM (LExpr EInt)
+lookupUse k = do
+  im <- gets indices
+  case Map.lookup k im of
+    Just e -> pure e
+    Nothing -> lift $ Left $ "lookupUse: " <> k <> " not found in use map."
+
+lookupSize :: SME.IndexKey -> LookupM (LExpr EInt)
+lookupSize k = do
+  sm <- gets sizes
+  case Map.lookup k sm of
+    Just e -> pure e
+    Nothing -> lift $ Left $ "lookupDecl: " <> k <> " not found in decl map."
+
+toLExprAlg :: IAlgM LookupM UExprF LExpr
+toLExprAlg = \case
+  UL x -> pure $ IFix x
+  UNamedIndex ik -> lookupUse ik
+  UNamedSize ik -> lookupSize ik
+
+doLookups :: NatM LookupM UExpr LExpr
+doLookups = iCataM toLExprAlg
+
+doLookupsInStatementA :: StmtF UExpr (Stmt LExpr) -> LookupM (Stmt LExpr)
+doLookupsInStatementA = \case
+  SDeclareF txt st divf -> SDeclare txt st <$> htraverse f divf
+  SDeclAssignF txt st divf if' -> SDeclAssign txt st <$> htraverse f divf <*> f if'
+  SAssignF if' if1 -> SAssign <$> f if' <*> f if1
+  STargetF if' -> STarget <$> f if'
+  SSampleF if' dis al -> SSample <$> f if' <*> pure dis <*> htraverse f al
+  SForF txt if' if1 sts -> SFor txt <$> f if' <*> f if1 <*> pure sts
+  SForEachF txt if' sts -> SForEach txt <$> f if' <*> pure sts
+  SIfElseF x0 st -> SIfElse <$> traverse (\(c, s) -> (,) <$> f c <*> pure s) x0 <*> pure st
+  SWhileF if' sts -> SWhile <$> f if' <*> pure sts
+  SFunctionF func al sts -> pure $ SFunction func al sts
+  SScopeF sts -> pure $ SScope sts
+  where
+    f :: NatM LookupM UExpr LExpr
+    f = doLookups
+
+doLookupsInStatement :: IndexLookupCtxt -> UStmt -> LookupM LStmt
+doLookupsInStatement ctxt = RS.cataM doLookupsInStatementA
+
+
 
 {-
 1. UCStmt -> m LStmt
@@ -55,17 +105,12 @@ type LookupM = StateT IndexLookupCtxt (Either Text)
          = NatM LookupM UStmtF
 -}
 
+{-
 alg1 :: AlgM LookupM UCStmtF LStmt
 alg1 = \case
   UContext f sf -> modify f >> _
-
-{-
-toLExprAlg :: IndexLookupCtxt -> IAlgM (Either Text) UExprF LExpr
-toLExprAlg lCtxt s = case s of
-  UL x -> Right $ IFix x
-  UNamedIndex ik -> lookupUse lCtxt ik
-  UNamedSize ik -> lookupSize lCtxt ik
 -}
+
 {-
   DeclareEF st divf -> Right $ IFix $ LDeclareF st divf
   NamedEF txt st -> Right $ IFix $ LNamedF txt st
