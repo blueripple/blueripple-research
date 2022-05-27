@@ -26,7 +26,7 @@ import Stan.ModelBuilder.TypedExpressions.Recursion
 
 import qualified Data.Functor.Foldable.Monadic as RS
 
-import Control.Monad.State (modify, gets)
+import Control.Monad.State.Strict (modify, gets, withStateT)
 import Data.Type.Nat (Nat(..), SNat(..))
 import Data.Foldable (maximum)
 import qualified Data.Functor.Classes as FC
@@ -46,8 +46,8 @@ import qualified Data.Text as T
 --import qualified Text.PrettyPrint as Pretty
 import qualified Data.Type.Nat as DT
 import Stan.ModelBuilder.Expressions (LookupContext)
+import GHC.RTS.Flags (GCFlags(oldGenFactor))
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
 
 type LookupM = StateT IndexLookupCtxt (Either Text)
 
@@ -91,9 +91,39 @@ doLookupsInStatementA = \case
     f :: NatM LookupM UExpr LExpr
     f = doLookups
 
-doLookupsInStatement :: IndexLookupCtxt -> UStmt -> LookupM LStmt
-doLookupsInStatement ctxt = RS.cataM doLookupsInStatementA
+doLookupsInStatement :: Stmt UExpr -> LookupM LStmt
+doLookupsInStatement = RS.cataM doLookupsInStatementA
 
+doLookupsInUStatementA :: UStmtF (Stmt LExpr) -> LookupM LStmt
+doLookupsInUStatementA = \case
+  USF st -> pure st
+  CSF f us -> withStateT f (doLookupsInStatement us)
+
+doLookupsInUStatement :: UStmt -> LookupM LStmt
+doLookupsInUStatement = RS.cataM doLookupsInUStatementA
+
+doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
+doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInUStatement
+
+
+{-
+wcDoLookupsInStatementA :: WithContextF UStmt LStmt -> LookupM LStmt
+wcDoLookupsInStatementA = \case
+  ExtantF st -> pure st
+  ChangeF f us -> withStateT f (doLookupsInStatement us)
+{-  ChangeF f us -> do
+    old <- get
+    modify f
+    ls <- doLookupsInStatement us
+    put old
+    return ls
+-}
+wcDoLookupsInStatement :: WithContext UStmt -> LookupM LStmt
+wcDoLookupsInStatement = RS.cataM wcDoLookupsInStatementA
+
+wcDoLookupsInStatementE :: IndexLookupCtxt -> WithContext UStmt -> Either Text LStmt
+wcDoLookupsInStatementE ctxt0  = flip evalStateT ctxt0 . wcDoLookupsInStatement
+-}
 
 
 {-

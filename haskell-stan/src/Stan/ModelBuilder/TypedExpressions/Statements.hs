@@ -62,27 +62,63 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SFunctionF :: Function rt args -> ArgList (TR.K Text) args -> [a] -> StmtF r a
   SScopeF :: [a] -> StmtF r a
 
-type UStmt = Stmt UExpr
 type LStmt = Stmt LExpr
 
+data UStmt :: Type where
+  US :: UStmt -> UStmt
+  CS :: (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt UExpr -> UStmt
+
+data UStmtF :: Type -> Type where
+  USF :: a -> UStmtF a
+  CSF :: (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt UExpr -> UStmtF a
+
+instance Functor UStmtF where
+  fmap f = \case
+    USF st -> USF (f st)
+    CSF g a -> CSF g a
+
+instance Foldable UStmtF where
+  foldMap f = \case
+    USF st -> f st
+    CSF g a -> mempty
+
+instance Traversable UStmtF where
+  traverse g = \case
+    USF st -> USF <$> g st
+    CSF f a -> pure $ CSF f a
+
+instance RS.Recursive UStmt where
+  project = \case
+    US st -> USF st
+    CS f us -> CSF f us
+
+instance RS.Corecursive UStmt where
+  embed = \case
+    USF st -> US st
+    CSF f us -> CS f us
+
+
+
+type instance RS.Base LStmt = StmtF LExpr
+type instance RS.Base UStmt = UStmtF
+
 type instance RS.Base (Stmt f) = StmtF f
---type instance RS.Base LStmt = StmtF LExpr
+
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
+
+data WithContext :: Type -> Type where
+  Extant :: WithContext a -> WithContext a
+  Change :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> WithContext a
+
+data WithContextF :: Type -> Type -> Type where
+  ExtantF :: b -> WithContextF a b
+  ChangeF :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> WithContextF a b
+
+type instance RS.Base (WithContext a) = WithContextF a
 
 {-
-data UCStmt :: Type -> Type where
---  US :: StmtF UExpr a -> UCStmtF a
-  UContext :: (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt UExpr -> UCStmtF a
-
-
-data UCStmtF :: Type -> Type where
---  US :: StmtF UExpr a -> UCStmtF a
-  UContext :: (IndexLookupCtxt -> IndexLookupCtxt) -> StmtF UExpr a -> UCStmtF a
-
-type UCStmt = TR.Fix UCStmtF
--}
-
 declare :: Text -> StanType t -> DeclIndexVecF UExpr t -> UStmt
-declare = SDeclare
+declare = US $ SDeclare
 
 declareAndAssign :: Text -> StanType t -> DeclIndexVecF UExpr t -> UExpr t -> UStmt
 declareAndAssign = SDeclAssign
@@ -98,6 +134,7 @@ sample = SSample
 
 for :: Text -> UExpr EInt -> UExpr EInt -> [UStmt] -> UStmt
 for = SFor
+-}
 
 instance Functor (StmtF f) where
   fmap f x = case x of
@@ -171,6 +208,33 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SScopeF sts -> SScope sts
 
 
+instance Functor (WithContextF a) where
+  fmap f = \case
+    ExtantF wc -> ExtantF (f wc)
+    ChangeF g a -> ChangeF g a
+
+instance Foldable (WithContextF a) where
+  foldMap f = \case
+    ExtantF wc -> f wc
+    ChangeF _ _ -> mempty
+
+instance Traversable (WithContextF a) where
+  traverse g = \case
+    ExtantF wc -> ExtantF <$> g wc
+    ChangeF f a -> pure $ ChangeF f a
+
+instance RS.Recursive (WithContext a) where
+  project = \case
+    Extant st -> ExtantF st
+    Change f st -> ChangeF f st
+
+instance RS.Corecursive (WithContext a) where
+  embed = \case
+    ExtantF st -> Extant st
+    ChangeF f st -> Change f st
+
+
+
 {-
 instance TR.HFunctor StmtF where
   hfmap nat = \case
@@ -201,18 +265,5 @@ instance TR.HTraversable StmtF where
     SScope body -> pure $ SScope body
   hmapM = TR.htraverse
 
-instance Functor UCStmtF where
-  fmap f = \case
---    US sf -> US $ fmap f sf
-    UContext g usf -> UContext g (fmap f usf)
 
-instance Foldable UCStmtF where
-  foldMap f = \case
---    US sf -> foldMap f sf
-    UContext g usf -> foldMap f usf
-
-instance Traversable UCStmtF where
-  traverse g = \case
---    US sf -> US <$> traverse g sf
-    UContext f usf -> UContext f <$> traverse g usf
 -}
