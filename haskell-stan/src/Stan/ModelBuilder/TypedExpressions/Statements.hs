@@ -47,8 +47,8 @@ data Stmt :: (EType -> Type) -> Type where
   SIfElse :: [(r EBool, Stmt r)] -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
   SWhile :: r EBool -> [Stmt r] -> Stmt r
   SFunction :: Function rt args -> ArgList (TR.K Text) args -> [Stmt r] -> Stmt r
-  SScope :: [Stmt r] -> Stmt r
-  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt r -> Stmt r -- this should not ever happen in LStmt
+  SScoped :: Bool -> [Stmt r] -> Stmt r -- also just a holder.  Which feels like a bad sign
+--  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt r -> Stmt r -- this should not ever happen in LStmt
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
@@ -61,13 +61,48 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SIfElseF :: [(r EBool, a)] -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
   SWhileF :: r EBool -> [a] -> StmtF r a
   SFunctionF :: Function rt args -> ArgList (TR.K Text) args -> [a] -> StmtF r a
-  SScopeF :: [a] -> StmtF r a
-  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> a -> StmtF r a
-
-type LStmt = Stmt LExpr
-type UStmt = Stmt UExpr
+  SScopedF :: Bool -> [a] -> StmtF r a
+--  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> a -> StmtF r a
 
 type instance RS.Base (Stmt f) = StmtF f
+
+type LStmt = Stmt LExpr
+--type UStmt = Stmt UExpr
+
+data CStmt :: Type where
+  Extant :: Stmt UExpr -> CStmt
+  Change :: (IndexLookupCtxt -> IndexLookupCtxt) -> CStmt -> CStmt
+
+data CStmtF :: Type -> Type where
+  ExtantF :: Stmt UExpr -> CStmtF a
+  ChangeF :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> CStmtF a
+
+type instance RS.Base CStmt = CStmtF
+
+instance Functor CStmtF where
+  fmap f = \case
+    ExtantF st -> ExtantF st
+    ChangeF g a -> ChangeF g (f a)
+
+instance Foldable CStmtF where
+  foldMap f = \case
+    ExtantF _ -> mempty
+    ChangeF _ a -> f a
+
+instance Traversable CStmtF where
+  traverse g = \case
+    ExtantF st -> pure $ ExtantF st
+    ChangeF f a -> ChangeF f <$> g a
+
+instance RS.Recursive CStmt where
+  project = \case
+    Extant st -> ExtantF st
+    Change f us -> ChangeF f us
+
+instance RS.Corecursive CStmt where
+  embed = \case
+    ExtantF st -> Extant st
+    ChangeF f us -> Change f us
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
 
@@ -103,23 +138,23 @@ instance Functor (StmtF f) where
     SIfElseF x1 sf -> SIfElseF (secondF f x1) (f sf)
     SWhileF cond sfs -> SWhileF cond (f <$> sfs)
     SFunctionF func al sfs -> SFunctionF func al (f <$> sfs)
-    SScopeF sfs -> SScopeF $ f <$> sfs
-    SContextF cf s -> SContextF cf (f s)
+    SScopedF b sfs -> SScopedF b $ f <$> sfs
+--    SContextF cf s -> SContextF cf (f s)
 
 instance Foldable (StmtF f) where
   foldMap f = \case
-    SDeclareF txt st divf -> mempty
-    SDeclAssignF txt st divf fet -> mempty
-    SAssignF ft ft' -> mempty
-    STargetF f' -> mempty
-    SSampleF fst dis al -> mempty
-    SForF txt f' f3 body -> foldMap f body
-    SForEachF txt ft body -> foldMap f body
+    SDeclareF {} -> mempty
+    SDeclAssignF {} -> mempty
+    SAssignF {} -> mempty
+    STargetF _ -> mempty
+    SSampleF {} -> mempty
+    SForF _ _ _ body -> foldMap f body
+    SForEachF _ _ body -> foldMap f body
     SIfElseF ifConds sf -> foldMap (f . snd) ifConds <> f sf
-    SWhileF f' body -> foldMap f body
-    SFunctionF func al body -> foldMap f body
-    SScopeF body -> foldMap f body
-    SContextF _ s -> f s
+    SWhileF _ body -> foldMap f body
+    SFunctionF _ _ body -> foldMap f body
+    SScopedF _ body -> foldMap f body
+--    SContextF _ s -> f s
 
 instance Traversable (StmtF f) where
   traverse g = \case
@@ -133,8 +168,8 @@ instance Traversable (StmtF f) where
     SIfElseF x0 sf -> SIfElseF <$> traverse (\(c, s) -> pure ((,) c) <*> g s) x0 <*> g sf
     SWhileF f body -> SWhileF f <$> traverse g body
     SFunctionF func al sfs -> SFunctionF func al <$> traverse g sfs
-    SScopeF sfs -> SScopeF <$> traverse g sfs
-    SContextF cf s -> SContextF cf <$> g s
+    SScopedF b sfs -> SScopedF b <$> traverse g sfs
+--    SContextF cf s -> SContextF cf <$> g s
 
 instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
   project = \case
@@ -148,8 +183,8 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SIfElse x0 st -> SIfElseF x0 st
     SWhile f sts -> SWhileF f sts
     SFunction func al sts -> SFunctionF func al sts
-    SScope sts -> SScopeF sts
-    SContext cf s -> SContextF cf s
+    SScoped b sts -> SScopedF b sts
+--    SContext cf s -> SContextF cf s
 
 
 instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
@@ -164,8 +199,8 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SIfElseF x0 st -> SIfElse x0 st
     SWhileF f sts -> SWhile f sts
     SFunctionF func al sts -> SFunction func al sts
-    SScopeF sts -> SScope sts
-    SContextF cf s -> SContext cf s
+    SScopedF b sts -> SScoped b sts
+--    SContextF cf s -> SContext cf s
 
 
 

@@ -12,6 +12,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Evaluate where
 import qualified Stan.ModelBuilder.Expressions as SME
@@ -74,6 +75,38 @@ toLExprAlg = \case
 doLookups :: NatM LookupM UExpr LExpr
 doLookups = iCataM toLExprAlg
 
+-- Coalgebra to unfold a statement requiring lookups from the top down so that
+-- context
+doLookupsInStatementC :: Stmt UExpr -> LookupM (StmtF LExpr (Stmt UExpr))
+doLookupsInStatementC = \case
+  SDeclare txt st divf -> SDeclareF txt st <$> htraverse f divf
+  SDeclAssign txt st divf if' -> SDeclAssignF txt st <$> htraverse f divf <*> f if'
+  SAssign if' if1 -> SAssignF <$> f if' <*> f if1
+  STarget if' -> STargetF <$> f if'
+  SSample if' dis al -> SSampleF <$> f if' <*> pure dis <*> htraverse f al
+  SFor txt if' if1 sts -> SForF txt <$> f if' <*> f if1 <*> pure sts
+  SForEach txt if' sts -> SForEachF txt <$> f if' <*> pure sts
+  SIfElse x0 st -> SIfElseF <$> traverse (\(c, s) -> (,) <$> f c <*> pure s) x0 <*> pure st
+  SWhile if' sts -> SWhileF <$> f if' <*> pure sts
+  SFunction func al sts -> pure $ SFunctionF func al sts
+  SScoped b sts -> pure $ SScopedF b sts
+  where
+    f :: NatM LookupM UExpr LExpr
+    f = doLookups
+
+doLookupsInCStatementC :: CStmt -> LookupM (StmtF LExpr CStmt)
+doLookupsInCStatementC = \case
+  Extant st -> fmap Extant <$> doLookupsInStatementC st
+  Change f cs ->  SScopedF False . pure <$> withStateT f (pure cs)
+
+doLookupsInCStatement :: CStmt -> LookupM LStmt
+doLookupsInCStatement = RS.anaM doLookupsInCStatementC
+
+doLookupsInStatementE :: IndexLookupCtxt -> CStmt -> Either Text LStmt
+doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
+
+
+{-
 doLookupsInStatementA :: StmtF UExpr (Stmt LExpr) -> LookupM (Stmt LExpr)
 doLookupsInStatementA = \case
   SDeclareF txt st divf -> SDeclare txt st <$> htraverse f divf
@@ -94,7 +127,7 @@ doLookupsInStatementA = \case
 
 doLookupsInStatement :: Stmt UExpr -> LookupM LStmt
 doLookupsInStatement = RS.cataM doLookupsInStatementA
-
+-}
 {-
 doLookupsInUStatementA :: UStmtF (Stmt LExpr) -> LookupM LStmt
 doLookupsInUStatementA = \case
