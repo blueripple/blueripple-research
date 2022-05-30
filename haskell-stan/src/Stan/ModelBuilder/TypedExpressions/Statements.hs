@@ -48,7 +48,6 @@ data Stmt :: (EType -> Type) -> Type where
   SWhile :: r EBool -> [Stmt r] -> Stmt r
   SFunction :: Function rt args -> ArgList (TR.K Text) args -> [Stmt r] -> Stmt r
   SScoped :: Bool -> [Stmt r] -> Stmt r -- also just a holder.  Which feels like a bad sign
---  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> Stmt r -> Stmt r -- this should not ever happen in LStmt
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
@@ -62,7 +61,6 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SWhileF :: r EBool -> [a] -> StmtF r a
   SFunctionF :: Function rt args -> ArgList (TR.K Text) args -> [a] -> StmtF r a
   SScopedF :: Bool -> [a] -> StmtF r a
---  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> a -> StmtF r a
 
 type instance RS.Base (Stmt f) = StmtF f
 

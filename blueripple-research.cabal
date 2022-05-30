@@ -104,6 +104,7 @@ library  haskell-stan
                , parser-combinators > 1.0.0 && < 2.0
                , polysemy
                , pretty >= 1.1 && < 1.2
+               , prettyprinter >= 1.7 && < 1.8
                , process >= 1.6 && < 1.7
                , recursion-schemes >= 5.1.2 && < 5.3
                , relude  >=1.0.0 && < 1.2
@@ -140,6 +141,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Statements
                  , Stan.ModelBuilder.TypedExpressions.Recursion
+                 , Stan.ModelBuilder.TypedExpressions.Format
                  , Stan.ModelBuilder.TypedExpressions.Evaluate
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel

@@ -102,7 +102,6 @@ type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
   SliceInnerN Z a = a
   SliceInnerN (S n) a = SliceInnerN n (Sliced Z a)
 
-
 newtype DeclIndexVecF (r :: EType -> Type) (et :: EType) = DeclIndexVecF { unDeclIndexVecF :: Vec (DeclDimension et) (r EInt)}
 
 instance TR.HFunctor DeclIndexVecF where
@@ -120,3 +119,12 @@ instance TR.HFunctor IndexVecF where
 instance TR.HTraversable IndexVecF where
   hmapM natM = fmap IndexVecF . traverse natM . unIndexVecF
   htraverse natM = fmap IndexVecF . traverse natM . unIndexVecF
+
+newtype IndexVecM (r :: EType -> Type) (et :: EType) = IndexVecM { unIndexVecM :: Vec (Dimension et) (Maybe (r EInt)) }
+
+instance TR.HFunctor IndexVecM where
+  hfmap nat (IndexVecM v) = IndexVecM $ DT.map (fmap nat) v
+
+instance TR.HTraversable IndexVecM where
+  htraverse natM = fmap IndexVecM . traverse (traverse natM) . unIndexVecM
+  hmapM = TR.htraverse

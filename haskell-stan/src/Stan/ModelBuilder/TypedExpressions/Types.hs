@@ -50,6 +50,7 @@ withStructure ELookup k = k SLookup
 -- possible types of terms
 data EType = EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType | EBool
 
+
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EInt a _ = a
   IfNumber EReal a _ = a

@@ -37,15 +37,25 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LComplex :: Double -> Double -> LExprF r EComplex
   LFunction :: Function rt args -> ArgList r args -> LExprF r rt
   LDistribution :: Distribution st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
+  LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
   LBinaryOp :: SBinaryOp op -> r ta -> r tb -> LExprF r (BinaryResultT op ta tb)
   LCond :: r EBool -> r t -> r t -> LExprF r t
   LSlice :: SNat n -> r EInt -> r t -> LExprF r (Sliced n t)
 
 type LExpr = TR.IFix LExprF
 
-type DeclIndexVec et = DeclIndexVecF UExpr et--Vec (UExpr EInt) (DeclDimension et)
 
-type IndexVec et = IndexVecF UExpr et -- (UExpr EInt) (Dimension et)
+--class ExpressionDimension (a :: (EType -> Type) -> EType -> Type) where
+--  expressionDimension :: Int
+
+--instance ExpressionDimension
+
+{-
+data IExprF :: (EType -> Type) -> EType -> Type where
+  IL :: LExprF r et -> IExprF r et
+  Slice :: SNat n -> r EInt -> r t -> IExprF r (Sliced n t)
+--  Sliced :: r t ->  IndexVecM r t -> IExprF r t
+-}
 
 -- UEXpr represents expressions with un-looked-up indices/sizes
 data UExprF :: (EType -> Type) -> EType -> Type where
@@ -64,6 +74,7 @@ instance TR.HFunctor LExprF where
     LComplex rp ip -> LComplex rp ip
     LFunction f al -> LFunction f (TR.hfmap nat al)
     LDistribution d st al -> LDistribution d (nat st) (TR.hfmap nat al)
+    LUnaryOp suo gta -> LUnaryOp suo (nat gta)
     LBinaryOp sbo gta gtb -> LBinaryOp sbo (nat gta) (nat gtb)
     LCond c ifTrue ifFalse -> LCond (nat c) (nat ifTrue) (nat ifFalse)
     LSlice sn g gt -> LSlice sn (nat g) (nat gt)
@@ -76,6 +87,7 @@ instance TR.HTraversable LExprF where
     LComplex x y -> pure $ LComplex x y
     LFunction f al -> LFunction f <$> TR.htraverse nat al
     LDistribution d st al -> LDistribution d <$> nat st <*> TR.htraverse nat al
+    LUnaryOp suo ata -> LUnaryOp suo <$> nat ata
     LBinaryOp sbo ata atb -> LBinaryOp sbo <$> nat ata <*> nat atb
     LCond c ifTrue ifFalse -> LCond <$> nat c <*> nat ifTrue <*> nat ifFalse
     LSlice sn a at -> LSlice sn <$> nat a <*> nat at

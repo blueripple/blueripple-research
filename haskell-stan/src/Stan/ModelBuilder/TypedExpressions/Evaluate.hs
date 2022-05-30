@@ -49,6 +49,22 @@ import qualified Data.Type.Nat as DT
 import Stan.ModelBuilder.Expressions (LookupContext)
 import GHC.RTS.Flags (GCFlags(oldGenFactor))
 
+{- Evaluation passes
+1a. NatM LookupM UExpr LExpr (forall x. UExpr x -> LookupM LExpr x)
+ - Do any lookups required to turn a UExpr into an LExpr
+ - Since these are each fixed-points of HFunctors (parameterized by (EType -> Type)),
+   this requires HFunctor recursion machinery.
+1b. CStmt -> LookupM LStmt
+ - CStmt has index expressions to look up within statement and context changes in the lookup environment.
+ - LStmt has all things looked up.  This is now a tree of statements with expressions.
+
+2. Optimization?
+
+3a. LExpr ~> FormattedText (expressions to Text but in HFunctor form)
+3b. LStmt -> Stmt (FormattedText) (Statement tree with expressions to statement tree with Text for expressions.)
+3c. FormattedText -> Text
+3c. Stmt (FormattedText) -> Text (Produce code for statement tree)
+-}
 
 type LookupM = StateT IndexLookupCtxt (Either Text)
 
@@ -105,76 +121,6 @@ doLookupsInCStatement = RS.anaM doLookupsInCStatementC
 doLookupsInStatementE :: IndexLookupCtxt -> CStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
 
-
-{-
-doLookupsInStatementA :: StmtF UExpr (Stmt LExpr) -> LookupM (Stmt LExpr)
-doLookupsInStatementA = \case
-  SDeclareF txt st divf -> SDeclare txt st <$> htraverse f divf
-  SDeclAssignF txt st divf if' -> SDeclAssign txt st <$> htraverse f divf <*> f if'
-  SAssignF if' if1 -> SAssign <$> f if' <*> f if1
-  STargetF if' -> STarget <$> f if'
-  SSampleF if' dis al -> SSample <$> f if' <*> pure dis <*> htraverse f al
-  SForF txt if' if1 sts -> SFor txt <$> f if' <*> f if1 <*> pure sts
-  SForEachF txt if' sts -> SForEach txt <$> f if' <*> pure sts
-  SIfElseF x0 st -> SIfElse <$> traverse (\(c, s) -> (,) <$> f c <*> pure s) x0 <*> pure st
-  SWhileF if' sts -> SWhile <$> f if' <*> pure sts
-  SFunctionF func al sts -> pure $ SFunction func al sts
-  SScopeF sts -> pure $ SScope sts
-  SContextF cfM s -> SContext Nothing <$> (maybe id withStateT cfM $ f s)
-  where
-    f :: NatM LookupM UExpr LExpr
-    f = doLookups
-
-doLookupsInStatement :: Stmt UExpr -> LookupM LStmt
-doLookupsInStatement = RS.cataM doLookupsInStatementA
--}
-{-
-doLookupsInUStatementA :: UStmtF (Stmt LExpr) -> LookupM LStmt
-doLookupsInUStatementA = \case
-  USF st -> pure st
-  CSF f us -> withStateT f (doLookupsInStatement us)
-
-doLookupsInUStatement :: UStmt -> LookupM LStmt
-doLookupsInUStatement = RS.cataM doLookupsInUStatementA
-
-doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
-doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInUStatement
--}
-
-{-
-wcDoLookupsInStatementA :: WithContextF UStmt LStmt -> LookupM LStmt
-wcDoLookupsInStatementA = \case
-  ExtantF st -> pure st
-  ChangeF f us -> withStateT f (doLookupsInStatement us)
-{-  ChangeF f us -> do
-    old <- get
-    modify f
-    ls <- doLookupsInStatement us
-    put old
-    return ls
--}
-wcDoLookupsInStatement :: WithContext UStmt -> LookupM LStmt
-wcDoLookupsInStatement = RS.cataM wcDoLookupsInStatementA
-
-wcDoLookupsInStatementE :: IndexLookupCtxt -> WithContext UStmt -> Either Text LStmt
-wcDoLookupsInStatementE ctxt0  = flip evalStateT ctxt0 . wcDoLookupsInStatement
--}
-
-
-{-
-1. UCStmt -> m LStmt
-  = Fix UCStmtF -> LookupM LStmt
-  = cataM (algM :: AlgM LookupM UCStmtF LStmt)
-2. UStmtF -> LookupM (Fix LStmtF)
-  = iAnaM (iCoAlgM :: ICoAlgM LookupM LStmtF UStmtF)
-         = NatM LookupM UStmtF
--}
-
-{-
-alg1 :: AlgM LookupM UCStmtF LStmt
-alg1 = \case
-  UContext f sf -> modify f >> _
--}
 
 {-
   DeclareEF st divf -> Right $ IFix $ LDeclareF st divf

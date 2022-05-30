@@ -65,6 +65,10 @@ instance HTraversable ArgList where
     (:>) aet al -> (:>) <$> natM aet <*> htraverse natM al
   hmapM = htraverse
 
+argsKToList :: ArgList (K a) ts -> [a]
+argsKToList ArgNil = []
+argsKToList (a :> al) = unK a : argsKToList al
+
 oneArg :: f et -> ArgList f '[et]
 oneArg e = e :> ArgNil
 
@@ -73,7 +77,6 @@ data Function :: EType -> [EType] -> Type  where
 
 data Distribution :: EType -> [EType] -> Type where
   Distribution :: Text -> SType g -> ArgTypeList args -> Distribution g args
-
 
 logit :: Function EReal '[EReal]
 logit = Function "logit" SReal (oneArgType SReal)
