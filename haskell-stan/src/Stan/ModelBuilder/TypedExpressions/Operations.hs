@@ -9,6 +9,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Stan.ModelBuilder.TypedExpressions.Operations
   (
@@ -40,6 +41,14 @@ type family UnaryResultT (uo :: UnaryOp) (a :: EType) :: EType where
   UnaryResultT UTranspose ESqMat = ESqMat
   UnaryResultT UTranspose x = TE.TypeError (TE.ShowType x :<>:  TE.Text " cannot be set transposed.")
 
+{-
+unaryResultT :: SUnaryOp op -> SType et -> SType (UnaryResultT op et)
+unaryResultT SNegate x = x
+unaryResultT STranspose SCVec = SRVec
+unaryResultT STranspose SRVec = SCVec
+unaryResultT STranspose SMat = SMat
+unaryResultT STranspose SSqMat = SSqMat
+-}
 data BoolOp = BEq | BNEq | BLT | BLEq | BGT | BGEq | BAnd | BOr
 
 data SBoolOp :: BoolOp -> Type where

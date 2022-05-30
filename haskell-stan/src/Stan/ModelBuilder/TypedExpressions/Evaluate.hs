@@ -73,14 +73,14 @@ lookupUse k = do
   im <- gets indices
   case Map.lookup k im of
     Just e -> pure e
-    Nothing -> lift $ Left $ "lookupUse: " <> k <> " not found in use map."
+    Nothing -> lift $ Left $ "lookupUse: \"" <> k <> "\" not found in use map."
 
 lookupSize :: SME.IndexKey -> LookupM (LExpr EInt)
 lookupSize k = do
   sm <- gets sizes
   case Map.lookup k sm of
     Just e -> pure e
-    Nothing -> lift $ Left $ "lookupDecl: " <> k <> " not found in decl map."
+    Nothing -> lift $ Left $ "lookupDecl: \"" <> k <> "\" not found in decl map."
 
 toLExprAlg :: IAlgM LookupM UExprF LExpr
 toLExprAlg = \case
@@ -90,6 +90,7 @@ toLExprAlg = \case
 
 doLookups :: NatM LookupM UExpr LExpr
 doLookups = iCataM toLExprAlg
+
 
 -- Coalgebra to unfold a statement requiring lookups from the top down so that
 -- context

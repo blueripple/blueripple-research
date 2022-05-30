@@ -1,14 +1,16 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Indexing
   (
@@ -41,10 +43,10 @@ n3 :: Nat = S n2
 
 
 -- to simplify most indexing
-i0 :: SNat Z = DT.SZ
-i1 :: SNat (S Z) = DT.SS
-i2 :: SNat (S (S Z)) = DT.SS
-i3 :: SNat (S (S (S Z))) = DT.SS
+s0 :: SNat Z = DT.SZ
+s1 :: SNat (S Z) = DT.SS
+s2 :: SNat (S (S Z)) = DT.SS
+s3 :: SNat (S (S (S Z))) = DT.SS
 
 popRandom :: forall n m a. (DT.SNatI n, DT.SNatI m) => Vec (DT.Plus n (S m)) a -> (a, Vec (DT.Plus n m) a)
 popRandom v = (a, vL DT.++ vR)
@@ -80,7 +82,7 @@ type family ApplyDiffOrZeroToEType (n :: Nat) (e :: EType) :: EType where
   ApplyDiffOrZeroToEType Z (EArray Z t) = t
   ApplyDiffOrZeroToEType Z (EArray (S n) t) = EArray n t
   ApplyDiffOrZeroToEType d (EArray m t) = EArray m (Sliced d t)
-  ApplyDiffOrZeroToEType _ x = x
+  ApplyDiffOrZeroToEType _ x = TE.TypeError (TE.Text "Applied DiffOrZero to type other than EArray??")
 
 type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced _ EInt = TE.TypeError (TE.Text "Cannot slice (index) a scalar int.")
@@ -128,3 +130,17 @@ instance TR.HFunctor IndexVecM where
 instance TR.HTraversable IndexVecM where
   htraverse natM = fmap IndexVecM . traverse (traverse natM) . unIndexVecM
   hmapM = TR.htraverse
+
+{-
+eTypeDim :: SType e -> Nat
+eTypeDim = \case
+  SInt -> n0
+  SReal -> n0
+  SComplex -> n0
+  SCVec -> n1
+  SRVec -> n1
+  SMat -> n2
+  SSqMat -> n2
+  SArray sn st -> DT.snatToNat sn + eTypeDim st
+  SBool -> n0
+-}

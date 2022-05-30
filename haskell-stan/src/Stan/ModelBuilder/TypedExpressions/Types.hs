@@ -10,6 +10,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Stan.ModelBuilder.TypedExpressions.Types
   (
@@ -48,7 +49,7 @@ withStructure ECompound k = k SCompound
 withStructure ELookup k = k SLookup
 
 -- possible types of terms
-data EType = EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType | EBool
+data EType = EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq)
 
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
@@ -89,6 +90,18 @@ data SType :: EType -> Type where
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
   SBool :: SType EBool
+
+sTypeToEType :: SType t -> EType
+sTypeToEType = \case
+  SInt -> EInt
+  SReal -> EReal
+  SComplex -> EComplex
+  SCVec -> ECVec
+  SRVec -> ERVec
+  SMat -> EMat
+  SSqMat -> ESqMat
+  SArray sn st -> EArray (DT.snatToNat sn) (sTypeToEType st)
+  SBool -> EBool
 
 withSType :: forall t r.EType -> (forall t. SType t -> r) -> r
 withSType EInt k = k SInt

@@ -330,6 +330,7 @@ executable haskell-stan-expressions-test
    build-depends: base
                 , containers
                 , haskell-stan
+                , prettyprinter
                 , relude
                 , text
    mixins:  base hiding (Prelude)

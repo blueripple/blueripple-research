@@ -44,18 +44,12 @@ data LExprF :: (EType -> Type) -> EType -> Type where
 
 type LExpr = TR.IFix LExprF
 
+lNamedE :: Text -> SType t -> LExpr t
+lNamedE name  = TR.IFix . LNamed name
 
---class ExpressionDimension (a :: (EType -> Type) -> EType -> Type) where
---  expressionDimension :: Int
+lIntE :: Int -> LExpr EInt
+lIntE = TR.IFix . LInt
 
---instance ExpressionDimension
-
-{-
-data IExprF :: (EType -> Type) -> EType -> Type where
-  IL :: LExprF r et -> IExprF r et
-  Slice :: SNat n -> r EInt -> r t -> IExprF r (Sliced n t)
---  Sliced :: r t ->  IndexVecM r t -> IExprF r t
--}
 
 -- UEXpr represents expressions with un-looked-up indices/sizes
 data UExprF :: (EType -> Type) -> EType -> Type where
@@ -64,7 +58,6 @@ data UExprF :: (EType -> Type) -> EType -> Type where
   UNamedSize :: SME.IndexKey -> UExprF r EInt
 
 type UExpr = TR.IFix UExprF
-
 
 instance TR.HFunctor LExprF where
   hfmap nat = \case
@@ -106,20 +99,6 @@ instance TR.HTraversable UExprF where
     UNamedSize txt -> pure $ UNamedSize txt
   hmapM = TR.htraverse
 
-{-
-instance TR.HFoldable UExprF where
-  hfoldMap co = \case
-    DeclareEF st divf -> mempty
-    NamedEF txt st -> mempty
-    IntEF n -> mempty
-    RealEF x -> mempty
-    ComplexEF x y -> mempty
-    BinaryOpEF sbo ata atb -> co ata <> co atb
-    SliceEF sn a at -> co a <> co at
-    NamedIndexEF txt -> mempty
--}
-
-
 namedE :: Text -> SType t -> UExpr t
 namedE name  = TR.IFix . UL . LNamed name
 
@@ -135,6 +114,7 @@ complexE rp ip = TR.IFix $ UL $ LComplex rp ip
 binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
 binaryOpE op ea eb = TR.IFix $ UL $ LBinaryOp op ea eb
 
+-- this is unsafe since the n can be larger than the correct dimension
 sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
 sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
 
@@ -225,8 +205,6 @@ instance ToEType SInt where
     StanCovMatrix sd -> _
 -}
 
-
-
 {-
 intE :: Int -> UExpr EInt
 intE = IntE
@@ -239,4 +217,17 @@ varE _ = VarE
 
 plusOpE :: UExpr t -> UExpr (t :-> t)
 plusOpE a = FunE ()
+-}
+
+{-
+instance TR.HFoldable UExprF where
+  hfoldMap co = \case
+    DeclareEF st divf -> mempty
+    NamedEF txt st -> mempty
+    IntEF n -> mempty
+    RealEF x -> mempty
+    ComplexEF x y -> mempty
+    BinaryOpEF sbo ata atb -> co ata <> co atb
+    SliceEF sn a at -> co a <> co at
+    NamedIndexEF txt -> mempty
 -}
