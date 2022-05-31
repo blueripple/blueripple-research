@@ -46,8 +46,13 @@ data Stmt :: (EType -> Type) -> Type where
   SForEach :: Text -> r t -> [Stmt r] -> Stmt r
   SIfElse :: [(r EBool, Stmt r)] -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
   SWhile :: r EBool -> [Stmt r] -> Stmt r
-  SFunction :: Function rt args -> ArgList (TR.K Text) args -> [Stmt r] -> Stmt r
-  SScoped :: Bool -> [Stmt r] -> Stmt r -- also just a holder.  Which feels like a bad sign
+  SBreak :: Stmt r
+  SContinue :: Stmt r
+  SFunction :: Function rt args -> ArgList (FuncArg Text) args -> [Stmt r] -> r rt -> Stmt r
+  SPrint :: ArgList r args -> Stmt r
+  SReject :: ArgList r args -> Stmt r
+  SScoped :: [Stmt r] -> Stmt r
+  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> [Stmt r] -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
@@ -59,48 +64,19 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SForEachF :: Text -> r t -> [a] -> StmtF r a
   SIfElseF :: [(r EBool, a)] -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
   SWhileF :: r EBool -> [a] -> StmtF r a
-  SFunctionF :: Function rt args -> ArgList (TR.K Text) args -> [a] -> StmtF r a
-  SScopedF :: Bool -> [a] -> StmtF r a
+  SBreakF :: StmtF r a
+  SContinueF :: StmtF r a
+  SFunctionF :: Function rt args -> ArgList (FuncArg Text) args -> [a] -> r rt -> StmtF r a
+  SPrintF :: ArgList r args -> StmtF r a
+  SRejectF :: ArgList r args -> StmtF r a
+  SScopedF :: [a] -> StmtF r a
+  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> [a] -> StmtF r a
+
 
 type instance RS.Base (Stmt f) = StmtF f
 
 type LStmt = Stmt LExpr
---type UStmt = Stmt UExpr
-
-data CStmt :: Type where
-  Extant :: Stmt UExpr -> CStmt
-  Change :: (IndexLookupCtxt -> IndexLookupCtxt) -> CStmt -> CStmt
-
-data CStmtF :: Type -> Type where
-  ExtantF :: Stmt UExpr -> CStmtF a
-  ChangeF :: (IndexLookupCtxt -> IndexLookupCtxt) -> a -> CStmtF a
-
-type instance RS.Base CStmt = CStmtF
-
-instance Functor CStmtF where
-  fmap f = \case
-    ExtantF st -> ExtantF st
-    ChangeF g a -> ChangeF g (f a)
-
-instance Foldable CStmtF where
-  foldMap f = \case
-    ExtantF _ -> mempty
-    ChangeF _ a -> f a
-
-instance Traversable CStmtF where
-  traverse g = \case
-    ExtantF st -> pure $ ExtantF st
-    ChangeF f a -> ChangeF f <$> g a
-
-instance RS.Recursive CStmt where
-  project = \case
-    Extant st -> ExtantF st
-    Change f us -> ChangeF f us
-
-instance RS.Corecursive CStmt where
-  embed = \case
-    ExtantF st -> Extant st
-    ChangeF f us -> Change f us
+type UStmt = Stmt UExpr
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
 
@@ -135,9 +111,13 @@ instance Functor (StmtF f) where
     SForEachF ctr fromE body -> SForEachF ctr fromE (f <$> body)
     SIfElseF x1 sf -> SIfElseF (secondF f x1) (f sf)
     SWhileF cond sfs -> SWhileF cond (f <$> sfs)
-    SFunctionF func al sfs -> SFunctionF func al (f <$> sfs)
-    SScopedF b sfs -> SScopedF b $ f <$> sfs
---    SContextF cf s -> SContextF cf (f s)
+    SBreakF -> SBreakF
+    SContinueF -> SContinueF
+    SFunctionF func al sfs re -> SFunctionF func al (f <$> sfs) re
+    SPrintF args -> SPrintF args
+    SRejectF args -> SPrintF args
+    SScopedF sfs -> SScopedF $ f <$> sfs
+    SContextF mf sts -> SContextF mf $  f <$> sts
 
 instance Foldable (StmtF f) where
   foldMap f = \case
@@ -150,9 +130,13 @@ instance Foldable (StmtF f) where
     SForEachF _ _ body -> foldMap f body
     SIfElseF ifConds sf -> foldMap (f . snd) ifConds <> f sf
     SWhileF _ body -> foldMap f body
-    SFunctionF _ _ body -> foldMap f body
-    SScopedF _ body -> foldMap f body
---    SContextF _ s -> f s
+    SBreakF -> mempty
+    SContinueF -> mempty
+    SFunctionF _ _ body _ -> foldMap f body
+    SPrintF _ -> mempty
+    SRejectF _ -> mempty
+    SScopedF body -> foldMap f body
+    SContextF _ body -> foldMap f body
 
 instance Traversable (StmtF f) where
   traverse g = \case
@@ -165,9 +149,13 @@ instance Traversable (StmtF f) where
     SForEachF txt ft sfs -> SForEachF txt ft <$> traverse g sfs
     SIfElseF x0 sf -> SIfElseF <$> traverse (\(c, s) -> pure ((,) c) <*> g s) x0 <*> g sf
     SWhileF f body -> SWhileF f <$> traverse g body
-    SFunctionF func al sfs -> SFunctionF func al <$> traverse g sfs
-    SScopedF b sfs -> SScopedF b <$> traverse g sfs
---    SContextF cf s -> SContextF cf <$> g s
+    SBreakF -> pure SBreakF
+    SContinueF -> pure SContinueF
+    SFunctionF func al sfs re -> SFunctionF func al <$> traverse g sfs <*> pure re
+    SPrintF args -> pure $ SPrintF args
+    SRejectF args -> pure $ SRejectF args
+    SScopedF sfs -> SScopedF <$> traverse g sfs
+    SContextF mf sfs -> SContextF mf <$> traverse g sfs
 
 instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
   project = \case
@@ -180,10 +168,13 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SForEach txt ft sts -> SForEachF txt ft sts
     SIfElse x0 st -> SIfElseF x0 st
     SWhile f sts -> SWhileF f sts
-    SFunction func al sts -> SFunctionF func al sts
-    SScoped b sts -> SScopedF b sts
---    SContext cf s -> SContextF cf s
-
+    SBreak -> SBreakF
+    SContinue -> SContinueF
+    SFunction func al sts re -> SFunctionF func al sts re
+    SPrint args -> SPrintF args
+    SReject args -> SRejectF args
+    SScoped sts -> SScopedF sts
+    SContext mf sts -> SContextF mf sts
 
 instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
   embed = \case
@@ -196,10 +187,13 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SForEachF txt ft sts -> SForEach txt ft sts
     SIfElseF x0 st -> SIfElse x0 st
     SWhileF f sts -> SWhile f sts
-    SFunctionF func al sts -> SFunction func al sts
-    SScopedF b sts -> SScoped b sts
---    SContextF cf s -> SContext cf s
-
+    SBreakF -> SBreak
+    SContinueF -> SContinue
+    SFunctionF func al sts re -> SFunction func al sts re
+    SPrintF args -> SPrint args
+    SRejectF args -> SReject args
+    SScopedF sts -> SScoped sts
+    SContextF mf sts -> SContext mf sts
 
 
 

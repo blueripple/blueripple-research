@@ -30,21 +30,21 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Hashable.Generic (HashArgs)
 
 
+logit :: Function EReal '[EReal]
+logit = Function "logit" SReal (oneArgType SReal)
+
+invLogit :: Function EReal '[EReal]
+invLogit = Function "inv_logit" SReal (oneArgType SReal)
+
+
 -- singleton for a list of arguments
 data ArgTypeList :: [EType] -> Type where
   ArgTypeNil :: ArgTypeList '[]
   (::>) :: SType et -> ArgTypeList ets -> ArgTypeList (et ': ets)
 
-
-{- ?? Maybe not poly-kinded enough?
--- list of types to parameterize a list of arguments
-data family ArgTypeList (ts :: [EType])
-data instance ArgTypeList '[] = ArgTypeNil
-data instance ArgTypeList (et ': ets) = (::>) et (ArgTypeList ets)
-
-deriving instance Eq (ArgList '[])
-deriving instance (Eq x, Eq (ArgList xs)) => Eq (ArgList (x ': xs))
--}
+argTypesToList ::  (forall t.SType t -> a) -> ArgTypeList args -> [a]
+argTypesToList _ ArgTypeNil = []
+argTypesToList f (st ::> ats) = f st : argTypesToList f ats
 
 oneArgType :: SType et -> ArgTypeList '[et]
 oneArgType st = st ::> ArgTypeNil
@@ -65,6 +65,10 @@ instance HTraversable ArgList where
     (:>) aet al -> (:>) <$> natM aet <*> htraverse natM al
   hmapM = htraverse
 
+zipArgListsWith :: (forall t. a t -> b t -> c t) -> ArgList a args -> ArgList b args -> ArgList c args
+zipArgListsWith _ ArgNil ArgNil = ArgNil
+zipArgListsWith f (a :> as) (b :> bs) = f a b :> zipArgListsWith f as bs
+
 argsKToList :: ArgList (K a) ts -> [a]
 argsKToList ArgNil = []
 argsKToList (a :> al) = unK a : argsKToList al
@@ -72,14 +76,22 @@ argsKToList (a :> al) = unK a : argsKToList al
 oneArg :: f et -> ArgList f '[et]
 oneArg e = e :> ArgNil
 
+argTypesToSTypeList :: ArgTypeList args -> ArgList SType args
+argTypesToSTypeList ArgTypeNil = ArgNil
+argTypesToSTypeList (st ::> atl) = st :> argTypesToSTypeList atl
+
 data Function :: EType -> [EType] -> Type  where
   Function :: Text -> SType r -> ArgTypeList args -> Function r args
 
 data Distribution :: EType -> [EType] -> Type where
   Distribution :: Text -> SType g -> ArgTypeList args -> Distribution g args
 
-logit :: Function EReal '[EReal]
-logit = Function "logit" SReal (oneArgType SReal)
+-- const functor for holding arguments to functions
+data FuncArg :: Type -> k -> Type where
+  Arg :: a -> FuncArg a r
+  DataArg :: a -> FuncArg a r
 
-invLogit :: Function EReal '[EReal]
-invLogit = Function "inv_logit" SReal (oneArgType SReal)
+mapFuncArg :: (a -> b) -> FuncArg a r -> FuncArg b r
+mapFuncArg f = \case
+  Arg a -> Arg $ f a
+  DataArg a -> DataArg $ f a

@@ -41,14 +41,6 @@ type family UnaryResultT (uo :: UnaryOp) (a :: EType) :: EType where
   UnaryResultT UTranspose ESqMat = ESqMat
   UnaryResultT UTranspose x = TE.TypeError (TE.ShowType x :<>:  TE.Text " cannot be set transposed.")
 
-{-
-unaryResultT :: SUnaryOp op -> SType et -> SType (UnaryResultT op et)
-unaryResultT SNegate x = x
-unaryResultT STranspose SCVec = SRVec
-unaryResultT STranspose SRVec = SCVec
-unaryResultT STranspose SMat = SMat
-unaryResultT STranspose SSqMat = SSqMat
--}
 data BoolOp = BEq | BNEq | BLT | BLEq | BGT | BGEq | BAnd | BOr
 
 data SBoolOp :: BoolOp -> Type where
@@ -62,6 +54,12 @@ data SBoolOp :: BoolOp -> Type where
   SOr :: SBoolOp BOr
 
 type family BoolOpResultT (bo :: BoolOp) (a :: EType) (b :: EType) :: EType where
+  BoolOpResultT BEq EString EString = EBool
+  BoolOpResultT BNEq EString EString = EBool
+  BoolOpResultT BLT EString EString = EBool
+  BoolOpResultT BLEq EString EString = EBool
+  BoolOpResultT BGT EString EString = EBool
+  BoolOpResultT BGEq EString EString = EBool
   BoolOpResultT BEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
   BoolOpResultT BNEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
   BoolOpResultT BLT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
@@ -88,6 +86,7 @@ data SBinaryOp :: BinaryOp -> Type where
 type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType where
   BinaryResultT BAdd a a = a
   BinaryResultT BAdd a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be added." ))
+  BinaryResultT BSubtract EString EString = TE.TypeError (TE.Text "Stan strings cannot be subtracted!")
   BinaryResultT BSubtract a a = a
   BinaryResultT BSubtract a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be subtracted." ))
   BinaryResultT BMultiply EInt a = a

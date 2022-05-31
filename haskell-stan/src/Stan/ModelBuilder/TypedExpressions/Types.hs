@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -32,24 +33,8 @@ import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 
 
--- possible structure of expressions
-data EStructure = EVar | ELit | ECompound | ELookup deriving (Show)
-
--- EStructure Singleton
-data SStructure :: EStructure -> Type where
-  SVar :: SStructure EVar
-  SLit :: SStructure ELit
-  SCompound :: SStructure ECompound
-  SLookup :: SStructure ELookup
-
-withStructure :: EStructure -> (forall s.SStructure s -> r) -> r
-withStructure EVar k = k SVar
-withStructure ELit k = k SLit
-withStructure ECompound k = k SCompound
-withStructure ELookup k = k SLookup
-
 -- possible types of terms
-data EType = EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq)
+data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq)
 
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
@@ -71,16 +56,11 @@ type family Promoted (a :: EType) (b :: EType) :: EType where
   Promoted EComplex EReal = EComplex
   Promoted a b = TE.TypeError (TE.Text "One of " :<>: TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " isn't a promotable (number) type.")
 
-data Ty = Ty EStructure EType
-
-type family TyStructure (a :: Ty) :: EStructure where
-  TyStructure ('Ty s _) = s
-
-type family TyType (a :: Ty) :: EType where
-  TyType ('Ty _ et) = et
-
 -- EType singleton
 data SType :: EType -> Type where
+  SVoid :: SType EVoid
+  SString :: SType EString
+  SBool :: SType EBool
   SInt :: SType EInt
   SReal :: SType EReal
   SComplex :: SType EComplex
@@ -89,10 +69,12 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
-  SBool :: SType EBool
 
 sTypeToEType :: SType t -> EType
 sTypeToEType = \case
+  SVoid -> EVoid
+  SString -> EString
+  SBool -> EBool
   SInt -> EInt
   SReal -> EReal
   SComplex -> EComplex
@@ -101,9 +83,11 @@ sTypeToEType = \case
   SMat -> EMat
   SSqMat -> ESqMat
   SArray sn st -> EArray (DT.snatToNat sn) (sTypeToEType st)
-  SBool -> EBool
 
 withSType :: forall t r.EType -> (forall t. SType t -> r) -> r
+withSType EVoid k = k SVoid
+withSType EString k = k SString
+withSType EBool k = k SBool
 withSType EInt k = k SInt
 withSType EReal k = k SReal
 withSType EComplex k = k SComplex
@@ -115,19 +99,48 @@ withSType (EArray n t) k = DT.reify n f
   where
     f :: forall n. DT.SNatI n => Proxy n -> r
     f _ = withSType t $ \st -> k (SArray (DT.snat @n)  st)
-withSType EBool k = k SBool
+
+sTypeName :: SType t -> Text
+sTypeName = \case
+  SVoid -> "void"
+  SString -> "string"
+  SBool -> "bool"
+  SInt -> "int"
+  SReal -> "real"
+  SComplex -> "complex"
+  SCVec -> "vector"
+  SRVec -> "row_vector"
+  SMat -> "matrix"
+  SSqMat -> "matrix"
+  SArray _ _ -> "array"
 
 data StanType :: EType -> Type where
+--  StanVoid :: StanType EVoid
+--  StanString :: StanType EString
+--  StanBool :: StanType EBool
   StanInt :: StanType EInt
   StanReal :: StanType EReal
-  StanComp :: StanType EComplex
+  StanComplex :: StanType EComplex
   StanArray :: SNat n -> StanType et -> StanType (EArray n et)
   StanVector :: StanType ECVec
+  StanRowVector :: StanType ERVec
   StanMatrix :: StanType EMat
   StanCorrMatrix :: StanType ESqMat
   StanCholeskyFactorCorr :: StanType ESqMat
   StanCovMatrix :: StanType ESqMat
-  StanBool :: StanType EBool
+
+stanTypeName :: StanType t -> Text
+stanTypeName = \case
+  StanInt -> "int"
+  StanReal -> "real"
+  StanComplex -> "complex"
+  StanArray sn st -> "array"
+  StanVector -> "vector"
+  StanRowVector -> "row_vector"
+  StanMatrix -> "matrix"
+  StanCorrMatrix -> "corr_matrix"
+  StanCholeskyFactorCorr -> "cholesky_factor_corr"
+  StanCovMatrix -> "cov_matrix"
 
 {-
 data (a :: k) :~: (b :: k) where
@@ -156,14 +169,29 @@ instance TestEquality SType where
   testEquality _ _ = Nothing
 -}
 
-
 {-
-data UExpr :: EType -> Type where
-  DeclareE :: StanType t -> DeclIndexVec t -> UExpr t
-  NamedE :: Text -> SType t -> UExpr t
-  IntE :: Int -> UExpr EInt
-  RealE :: Double -> UExpr EReal
-  BinaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
-  SliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
-  NamedIndexE :: SME.IndexKey -> UExpr EInt
+-- possible structure of expressions
+data EStructure = EVar | ELit | ECompound | ELookup deriving (Show)
+
+-- EStructure Singleton
+data SStructure :: EStructure -> Type where
+  SVar :: SStructure EVar
+  SLit :: SStructure ELit
+  SCompound :: SStructure ECompound
+  SLookup :: SStructure ELookup
+
+withStructure :: EStructure -> (forall s.SStructure s -> r) -> r
+withStructure EVar k = k SVar
+withStructure ELit k = k SLit
+withStructure ECompound k = k SCompound
+withStructure ELookup k = k SLookup
+
+
+data Ty = Ty EStructure EType
+
+type family TyStructure (a :: Ty) :: EStructure where
+  TyStructure ('Ty s _) = s
+
+type family TyType (a :: Ty) :: EType where
+  TyType ('Ty _ et) = et
 -}
