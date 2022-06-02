@@ -1,8 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
---{-# LANGUAGE DeriveFunctor #-}
---{-# LANGUAGE DeriveFoldable #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -74,9 +71,9 @@ stmtToCodeAlg = \case
   SBreakF -> Right $ "break" <> PP.semi
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats) al body re ->
-    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> f re <> PP.semi])) <$> sequence body
-  SPrintF al -> Right $ "print" <+> PP.parens (csArgList $ hfmap exprToCode al)
-  SRejectF al -> Right $ "reject" <+> PP.parens (csArgList $ hfmap exprToCode al)
+    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> f re <> PP.semi])) <$> sequence body
+  SPrintF al -> Right $ "print" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
+  SRejectF al -> Right $ "reject" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body
   SContextF mf body -> case mf of
     Just _ -> Left $ "stmtToCodeAlg: Impossible! SContext with a change function remaining!"
@@ -216,10 +213,11 @@ exprToDocAlg = K . \case
   LInt n -> Unsliced $ PP.pretty n
   LReal x -> Unsliced $ PP.pretty x
   LComplex x y -> Unsliced $ PP.parens $ PP.pretty x <+> "+" <+> "i" <> PP.pretty y -- (x + iy))
+  LString t -> Unsliced $ PP.dquotes $ PP.pretty t
   LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
   LDistribution (Distribution dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
-  LUnaryOp op e -> Unsliced $ unaryOpDoc (unK $ f e) op
+  LUnaryOp op e -> Unsliced $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
   LCond ce te fe -> Unsliced $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
   LSlice sn ie e -> sliced sn ie e
   where

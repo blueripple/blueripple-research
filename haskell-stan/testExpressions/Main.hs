@@ -1,11 +1,8 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 module Main where
 
 import Stan.ModelBuilder.TypedExpressions.Types
@@ -22,7 +19,6 @@ import Stan.ModelBuilder.Expressions (IndexKey)
 import qualified Prettyprinter.Render.Text as PP
 
 import qualified Data.Map as Map
-import Relude.Extra (under2)
 
 writeExprCode :: IndexLookupCtxt -> UExpr t -> IO ()
 writeExprCode ctxt0 ue = case flip evalStateT ctxt0 $ doLookups ue of
@@ -68,12 +64,21 @@ for loopCounter ft body = case ft of
   where
     bodyWithLoopCounterContext ik = SContext (Just $ insertUseBinding ik (lNamedE loopCounter SInt)) body :| []
 
-
 ifThen :: UExpr EBool -> UStmt -> UStmt -> UStmt
 ifThen ce sTrue = SIfElse $ (ce, sTrue) :| []
 
 ifThenElse :: NonEmpty (UExpr EBool, UStmt) -> UStmt -> UStmt
 ifThenElse = SIfElse
+
+while :: UExpr EBool -> NonEmpty UStmt -> UStmt
+while = SWhile
+
+function :: Function rt args -> ArgList (FuncArg Text) args -> (ArgList UExpr args -> (NonEmpty UStmt, UExpr rt)) -> UStmt
+function fd argNames bodyF = SFunction fd argNames bodyS ret
+  where
+    argTypes = argTypesToArgListOfTypes $ functionArgTypes fd
+    argExprs = zipArgListsWith (namedE . funcArgName) argNames argTypes
+    (bodyS, ret) = bodyF argExprs
 
 insertUseBinding :: IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
 insertUseBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
@@ -86,6 +91,9 @@ main = do
   -- build some expressions
   let
     plus = binaryOpE SAdd
+    eMinus = binaryOpE $ SElementWise SSubtract
+    times = binaryOpE SMultiply
+    tr = unaryOpE STranspose
     n = namedE "n" SInt
     l = namedE "l" SInt
     x = namedE "x" SReal
@@ -140,9 +148,21 @@ main = do
   writeStmtCode ctxt2 $ stmtFor2
   let stmtFor3 = for "k" (SpecificIn $ namedE "ys" SCVec) (one st2)
   writeStmtCode ctxt1 stmtFor3
-  let stmtFor4 = for "q" (IndexedIn "States" $ namedE "votes" SCVec) (stateS :| [st2])
+  let stmtFor4 = for "q" (IndexedIn "States" $ namedE "votes" SCVec) (stateS :| [st2, SContinue])
   writeStmtCode ctxt1 stmtFor4
   let
     eq = boolOpE SEq
     stmtIf1 = ifThen (l `eq` n) st1 st2
   writeStmtCode ctxt1 stmtIf1
+  let stmtWhile = while (l `eq` n) (st1 :| [st2, SBreak])
+  writeStmtCode ctxt1 stmtWhile
+  let
+    euclideanDistance = Function "eDist" SReal (SCVec ::> SCVec ::> SArray s0 SInt ::> ArgTypeNil)
+    eDistArgList = Arg "x1" :> Arg "x2" :> DataArg "m" :> ArgNil
+    eDistBody :: ArgList UExpr [ECVec, ECVec, EArray n1 EInt] -> (NonEmpty UStmt, UExpr EReal)
+    eDistBody (x1 :> x2 :> _ :> ArgNil) = (one $ rv `assign` (tr (x1 `eMinus` x2) `times` (x1 `eMinus` x2)), rv)
+      where rv = namedE "r" SReal
+    funcStmt = function euclideanDistance eDistArgList eDistBody
+  writeStmtCode ctxt0 funcStmt
+  writeStmtCode ctxt0 $ SPrint (stringE "example" :> l :> ArgNil)
+  writeStmtCode ctxt0 $ SReject (m :> stringE "or" :> r :> ArgNil)

@@ -115,7 +115,7 @@ instance Functor (StmtF f) where
     SContinueF -> SContinueF
     SFunctionF func al sfs re -> SFunctionF func al (f <$> sfs) re
     SPrintF args -> SPrintF args
-    SRejectF args -> SPrintF args
+    SRejectF args -> SRejectF args
     SScopedF sfs -> SScopedF $ f <$> sfs
     SContextF mf sts -> SContextF mf $  f <$> sts
 

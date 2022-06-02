@@ -42,9 +42,15 @@ data ArgTypeList :: [EType] -> Type where
   ArgTypeNil :: ArgTypeList '[]
   (::>) :: SType et -> ArgTypeList ets -> ArgTypeList (et ': ets)
 
+infixr 2 ::>
+
 argTypesToList ::  (forall t.SType t -> a) -> ArgTypeList args -> [a]
 argTypesToList _ ArgTypeNil = []
 argTypesToList f (st ::> ats) = f st : argTypesToList f ats
+
+argTypesToArgListOfTypes :: ArgTypeList args -> ArgList SType args
+argTypesToArgListOfTypes ArgTypeNil = ArgNil
+argTypesToArgListOfTypes (st ::> atl) = st :> argTypesToArgListOfTypes atl
 
 oneArgType :: SType et -> ArgTypeList '[et]
 oneArgType st = st ::> ArgTypeNil
@@ -53,6 +59,8 @@ oneArgType st = st ::> ArgTypeNil
 data ArgList ::  (EType -> Type) -> [EType] -> Type where
   ArgNil :: ArgList f '[]
   (:>) :: f et -> ArgList f ets -> ArgList f (et ': ets)
+
+infixr 2 :>
 
 instance HFunctor ArgList where
   hfmap nat = \case
@@ -83,6 +91,9 @@ argTypesToSTypeList (st ::> atl) = st :> argTypesToSTypeList atl
 data Function :: EType -> [EType] -> Type  where
   Function :: Text -> SType r -> ArgTypeList args -> Function r args
 
+functionArgTypes :: Function rt args -> ArgTypeList args
+functionArgTypes (Function _ _ al) = al
+
 data Distribution :: EType -> [EType] -> Type where
   Distribution :: Text -> SType g -> ArgTypeList args -> Distribution g args
 
@@ -90,6 +101,11 @@ data Distribution :: EType -> [EType] -> Type where
 data FuncArg :: Type -> k -> Type where
   Arg :: a -> FuncArg a r
   DataArg :: a -> FuncArg a r
+
+funcArgName :: FuncArg Text a -> Text
+funcArgName = \case
+  Arg txt -> txt
+  DataArg txt -> txt
 
 mapFuncArg :: (a -> b) -> FuncArg a r -> FuncArg b r
 mapFuncArg f = \case

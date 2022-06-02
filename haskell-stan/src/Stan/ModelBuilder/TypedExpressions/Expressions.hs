@@ -35,6 +35,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LInt :: Int -> LExprF r EInt
   LReal :: Double -> LExprF r EReal
   LComplex :: Double -> Double -> LExprF r EComplex
+  LString :: Text -> LExprF r EString
   LFunction :: Function rt args -> ArgList r args -> LExprF r rt
   LDistribution :: Distribution st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
   LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
@@ -65,6 +66,7 @@ instance TR.HFunctor LExprF where
     LInt n -> LInt n
     LReal x -> LReal x
     LComplex rp ip -> LComplex rp ip
+    LString t -> LString t
     LFunction f al -> LFunction f (TR.hfmap nat al)
     LDistribution d st al -> LDistribution d (nat st) (TR.hfmap nat al)
     LUnaryOp suo gta -> LUnaryOp suo (nat gta)
@@ -78,6 +80,7 @@ instance TR.HTraversable LExprF where
     LInt n -> pure $ LInt n
     LReal x -> pure $ LReal x
     LComplex x y -> pure $ LComplex x y
+    LString t -> pure $ LString t
     LFunction f al -> LFunction f <$> TR.htraverse nat al
     LDistribution d st al -> LDistribution d <$> nat st <*> TR.htraverse nat al
     LUnaryOp suo ata -> LUnaryOp suo <$> nat ata
@@ -110,6 +113,12 @@ realE = TR.IFix . UL . LReal
 
 complexE :: Double -> Double -> UExpr EComplex
 complexE rp ip = TR.IFix $ UL $ LComplex rp ip
+
+stringE :: Text -> UExpr EString
+stringE = TR.IFix . UL . LString
+
+unaryOpE :: SUnaryOp op -> UExpr t -> UExpr (UnaryResultT op t)
+unaryOpE op e = TR.IFix $ UL $ LUnaryOp op e
 
 binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
 binaryOpE op ea eb = TR.IFix $ UL $ LBinaryOp op ea eb
