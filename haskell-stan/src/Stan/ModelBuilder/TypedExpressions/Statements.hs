@@ -42,17 +42,17 @@ data Stmt :: (EType -> Type) -> Type where
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
   SSample :: r st -> Distribution st args -> ArgList r args -> Stmt r
-  SFor :: Text -> r EInt -> r EInt -> [Stmt r] -> Stmt r
-  SForEach :: Text -> r t -> [Stmt r] -> Stmt r
-  SIfElse :: [(r EBool, Stmt r)] -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
-  SWhile :: r EBool -> [Stmt r] -> Stmt r
+  SFor :: Text -> r EInt -> r EInt -> NonEmpty (Stmt r) -> Stmt r
+  SForEach :: Text -> r t -> NonEmpty (Stmt r) -> Stmt r
+  SIfElse :: NonEmpty (r EBool, Stmt r) -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
+  SWhile :: r EBool -> NonEmpty (Stmt r) -> Stmt r
   SBreak :: Stmt r
   SContinue :: Stmt r
-  SFunction :: Function rt args -> ArgList (FuncArg Text) args -> [Stmt r] -> r rt -> Stmt r
+  SFunction :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty (Stmt r) -> r rt -> Stmt r
   SPrint :: ArgList r args -> Stmt r
   SReject :: ArgList r args -> Stmt r
-  SScoped :: [Stmt r] -> Stmt r
-  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> [Stmt r] -> Stmt r
+  SScoped :: NonEmpty (Stmt r) -> Stmt r
+  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
@@ -60,17 +60,17 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
   SSampleF :: r st -> Distribution st args -> ArgList r args -> StmtF r a
-  SForF :: Text -> r EInt -> r EInt -> [a] -> StmtF r a
-  SForEachF :: Text -> r t -> [a] -> StmtF r a
-  SIfElseF :: [(r EBool, a)] -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
-  SWhileF :: r EBool -> [a] -> StmtF r a
+  SForF :: Text -> r EInt -> r EInt -> NonEmpty a -> StmtF r a
+  SForEachF :: Text -> r t -> NonEmpty a -> StmtF r a
+  SIfElseF :: NonEmpty (r EBool, a) -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
+  SWhileF :: r EBool -> NonEmpty a -> StmtF r a
   SBreakF :: StmtF r a
   SContinueF :: StmtF r a
-  SFunctionF :: Function rt args -> ArgList (FuncArg Text) args -> [a] -> r rt -> StmtF r a
+  SFunctionF :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty a -> r rt -> StmtF r a
   SPrintF :: ArgList r args -> StmtF r a
   SRejectF :: ArgList r args -> StmtF r a
-  SScopedF :: [a] -> StmtF r a
-  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> [a] -> StmtF r a
+  SScopedF :: NonEmpty a -> StmtF r a
+  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty a -> StmtF r a
 
 
 type instance RS.Base (Stmt f) = StmtF f

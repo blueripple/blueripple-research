@@ -114,12 +114,19 @@ complexE rp ip = TR.IFix $ UL $ LComplex rp ip
 binaryOpE :: SBinaryOp op -> UExpr ta -> UExpr tb -> UExpr (BinaryResultT op ta tb)
 binaryOpE op ea eb = TR.IFix $ UL $ LBinaryOp op ea eb
 
+boolOpE :: SBoolOp op -> UExpr ta -> UExpr tb -> UExpr (BoolResultT op ta tb)
+boolOpE bop ea eb = TR.IFix $ UL $ LBinaryOp (SBoolean bop) ea eb
+
 -- this is unsafe since the n can be larger than the correct dimension
 sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
 sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
 
 namedIndexE :: Text -> UExpr EInt
 namedIndexE = TR.IFix . UNamedIndex
+
+namedSizeE :: Text -> UExpr EInt
+namedSizeE = TR.IFix . UNamedSize
+
 
 {-
 

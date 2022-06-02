@@ -53,25 +53,25 @@ data SBoolOp :: BoolOp -> Type where
   SAnd :: SBoolOp BAnd
   SOr :: SBoolOp BOr
 
-type family BoolOpResultT (bo :: BoolOp) (a :: EType) (b :: EType) :: EType where
-  BoolOpResultT BEq EString EString = EBool
-  BoolOpResultT BNEq EString EString = EBool
-  BoolOpResultT BLT EString EString = EBool
-  BoolOpResultT BLEq EString EString = EBool
-  BoolOpResultT BGT EString EString = EBool
-  BoolOpResultT BGEq EString EString = EBool
-  BoolOpResultT BEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BNEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BLT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BLEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BGT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BGEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
-  BoolOpResultT BAnd EBool EBool = EBool
-  BoolOpResultT BAnd a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " && " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
-  BoolOpResultT BOr EBool EBool = EBool
-  BoolOpResultT BOr a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " || " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
+type family BoolResultT (bo :: BoolOp) (a :: EType) (b :: EType) :: EType where
+  BoolResultT BEq EString EString = EBool
+  BoolResultT BNEq EString EString = EBool
+  BoolResultT BLT EString EString = EBool
+  BoolResultT BLEq EString EString = EBool
+  BoolResultT BGT EString EString = EBool
+  BoolResultT BGEq EString EString = EBool
+  BoolResultT BEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BNEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BLT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BLEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BGT a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BGEq a b = IfNumbers a b EBool (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be compared." ))
+  BoolResultT BAnd EBool EBool = EBool
+  BoolResultT BAnd a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " && " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
+  BoolResultT BOr EBool EBool = EBool
+  BoolResultT BOr a b = TE.TypeError (TE.Text "\"" :<>: TE.ShowType a :<>: TE.Text " || " :<>: TE.ShowType b :<>: TE.Text "\" is not defined." )
 
-data BinaryOp = BAdd | BSubtract | BMultiply | BDivide | BPow | BModulo | BElementWise BinaryOp | BAndEqual BinaryOp
+data BinaryOp = BAdd | BSubtract | BMultiply | BDivide | BPow | BModulo | BElementWise BinaryOp | BAndEqual BinaryOp | BBoolean BoolOp
 
 data SBinaryOp :: BinaryOp -> Type where
   SAdd :: SBinaryOp BAdd
@@ -82,6 +82,7 @@ data SBinaryOp :: BinaryOp -> Type where
   SModulo :: SBinaryOp BModulo
   SElementWise :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
+  SBoolean :: SBoolOp bop -> SBinaryOp (BBoolean bop)
 
 type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType where
   BinaryResultT BAdd a a = a
@@ -127,3 +128,4 @@ type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType wh
   BinaryResultT (BElementWise op) ESqMat EMat = EMat
   BinaryResultT (BElementWise _) a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be combined elementwise." )
   BinaryResultT (BAndEqual op) a b = BinaryResultT op a b
+  BinaryResultT (BBoolean bop) a b = BoolResultT bop a b
