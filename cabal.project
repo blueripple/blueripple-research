@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ~/DataScience/Frames-streamly ~/DataScience/Frames-hvega ~/DataScience/Frames-map-reduce ~/DataScience/data-science-utils ~/DataScience/glm-haskell ~/DataScience/knit-haskell
+packages: ./ ../data-sets
 jobs: 4
 with-compiler: ghc
 --ghc 8.10.7 ??
@@ -30,38 +30,6 @@ source-repository-package
   location: https://github.com/L-as/flat
   tag: 41a040c413351e021982bb78bd00f750628f8060
 
-
--- ghc 9.2
---source-repository-package
---  type: git
---  location: https://github.com/srid/validity
---  tag: f7982549b95d0ab727950dc876ca06b1862135ba
---  subdir: validity
-
-
---source-repository-package
---  type: git
---  location: https://github.com/josephcsible/cryptonite
---  tag: 0d04e90dc33b6aeaf8a5686921d6999599429fb0
-
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/polysemy-zoo
---  tag: 0e67a55971c74589319df3e23cb8ba9f07b33cef
-
--- for Frames-streamly
---source-repository-package
---  type: git
---  location:https://github.com/hasktorch/pipes-text
---  tag: d4805e84327e266daa730d23982db3172f226cac
-
---source-repository-package
---  type: git
---  location: https://github.com/composewell/fusion-plugin
---  tag: 09f10b7f927c57f14187a978dbc0e531e5d32a21
-
-
-
 -- end ghc 9.2
 
 source-repository-package
@@ -80,15 +48,15 @@ source-repository-package
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/knit-haskell
---  tag: a1ba4f46c0f2b0ec852b35ef5a27a4cfc1e96499
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/knit-haskell
+  tag: e2ae66863861d8a677b70a4221c0df7a53ebbea4
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-map-reduce
---  tag: 539696e16607c75a3cda7464d80f6c77d4ad2203
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-map-reduce
+  tag: 544cbbbf6767eeee0f4900a2e7b6ff7e0d5758af
 
 source-repository-package
   type: git
@@ -106,10 +74,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-utils
   tag: b172acf2035b153ee3f684477ece0d52a10a662d
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-streamly
---  tag: be822885cf48595058295c1ad4a9849f7765649a
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-streamly
+  tag: 88838175c352792e0bbfdb7e66962da56e42b83f
 
 --source-repository-package
 --  type: git
@@ -123,30 +91,30 @@ source-repository-package
   location: https://gitlab.com/adamCS/Frames-serialize
   tag: 07d0edabb115687f04aacad439bf39b742742b49
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-hvega
---  tag: 22a7be1d433ff88042b9a101868ccbbeac9136d0
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-hvega
+  tag: 46c57b987624deffe06c2f66599ea4386d7e05a5
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
   tag: c10b6564524a83198389690f5c819e9405ba84f6
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/data-science-utils
---  tag: af09df26bc9f64c5a95d9d0d4ed1830e1e8e59e2
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/data-science-utils
+  tag: 99b195e34912c838b627adef6c563505e191e9f0
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hcholmod
   tag: 176736ca6cb8af78996a061df09821b78677c519
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/glm-haskell
---  tag: 5b99cc78babc62f4581ef015e621e0ae1dc4eaa8
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/glm-haskell
+  tag: 05e0a5acd1a24cff8abd4e3e9bdb191692ab9267
 
 source-repository-package
   type: git
