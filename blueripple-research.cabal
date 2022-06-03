@@ -45,13 +45,13 @@ common deps
                , hvega-utils >= 0.3.0 && < 0.4
                , hmatrix
                , knit-haskell >= 0.8.0 && < 0.11
-               , lens >= 0.4 && < 0.6
+               , lens >= 4.16 && < 6
                , lucid
                , massiv >= 1.0.0 && < 1.1
                , microlens-platform >= 0.4.0 && < 0.5
                , map-reduce-folds >= 0.1.0.1
                , optics >= 0.3 && < 0.5
-               , path >= 0.8 && < 0.9
+               , path >= 0.8 && < 0.10
                , pipes
                , polysemy >= 1.6 && < 1.8
                , polysemy-plugin
@@ -60,7 +60,7 @@ common deps
                , random-fu >= 0.2.7.3
                , random-source
                , relude >=1.0.0 && < 1.2
-               , semirings >= 0.5 && < 0.6
+               , semirings >= 0.5 && < 0.7
                , say >= 0.1.0.1 && < 0.2
                , statistics
                , streamly >= 0.8 && < 0.9
@@ -70,12 +70,12 @@ common deps
                , tsne >= 1.2 && < 1.4
                , vector >= 0.11 && < 0.13
                , vector-builder >= 0.3.7 && < 0.4
-               , vinyl >= 0.13 && < 0.15
+               , vinyl >= 0.14 && < 0.15
 
 library  haskell-stan
-  build-depends: base >= 4.13 && < 4.16
+  build-depends: base >= 4.13 && < 4.17
                , array >= 0.5.4 && < 0.6
-               , aeson >= 1.4 && < 1.6
+               , aeson >= 1.4 && < 2.1
                , bytestring >= 0.10 && < 0.12
                , cereal  >= 0.5.7 && < 0.6
                , cereal-vector >= 0.2 && < 0.3
@@ -83,7 +83,7 @@ library  haskell-stan
                , constraints >= 0.12 && < 0.14
                , constraints-extras >= 0.3.0 && < 0.4
                , containers
-               , data-fix >= 0.3.0 && < 0.3.2
+               , data-fix >= 0.3.0 && < 0.4
                , dependent-hashmap >= 0.1.0.1 && < 0.2
                , dependent-sum >= 0.7.0 && < 0.8
                , directory >= 1.3.3 && < 1.4
@@ -252,8 +252,8 @@ library
                  , BlueRipple.Utilities.FramesUtils
                  , Paths_blueripple_research
   build-depends:       base >=4.11
-                     , ad >= 3.4 && < 4.4
-                     , aeson >= 1.4 && < 1.6
+                     , ad >= 3.4 && < 4.6
+                     , aeson >= 1.4 && < 2.1
                      , blaze-colonnade
                      , bytestring >= 0.10 && < 0.12
                      , cassava >= 0.5 && < 0.6

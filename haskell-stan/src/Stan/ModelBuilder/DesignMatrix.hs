@@ -81,7 +81,7 @@ designMatrixRowPartFromMatrixRowData (SB.MatrixRowFromData name _ n rowFunc) = D
 combineRowFuncs :: Foldable f => f (Int, r -> V.Vector Double) -> (Int, r -> V.Vector Double)
 combineRowFuncs rFuncs =
   let nF = FL.premap fst FL.sum
-      fF = (\r -> V.concat . fmap ($r)) <$> FL.premap snd FL.list
+      fF = (\r -> V.concat . fmap ($ r)) <$> FL.premap snd FL.list
   in FL.fold ((,) <$> nF <*> fF) rFuncs
 -}
 
@@ -122,7 +122,7 @@ boundedEnumRowPart encodeAsZerosM name f = DesignMatrixRowPart name n vf
 rowPartFromFunctions :: Text -> [r -> Double] -> DesignMatrixRowPart r
 rowPartFromFunctions name fs = DesignMatrixRowPart name (length fs) toVec
   where
-    toVec r = V.fromList $ fmap ($r) fs
+    toVec r = V.fromList $ fmap ($ r) fs
 
 rowPartFromBoundedEnumFunctions :: forall k r.(Enum k, Bounded k, Eq k) => Maybe k -> Text -> (k -> r -> Double) -> DesignMatrixRowPart r
 rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name vecSize (V.fromList . MV.stoList . sumScaledVecs)
