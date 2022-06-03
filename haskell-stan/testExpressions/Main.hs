@@ -135,6 +135,12 @@ main = do
   writeStmtCode ctxt0 $ SContext (Just $ insertSizeBinding "States" statesLE . insertSizeBinding "Predictors" predictorsLE) (one stDeclare2)
   let stDeclAssign1 = declareAndAssign "M" StanMatrix (n ::: l ::: VNil) (namedE "q" SMat)
   writeStmtCode ctxt0 stDeclAssign1
+  writeStmtCode ctxt0 $ declareAndAssign "v1" StanVector (intE 2 ::: VNil) (vectorE [1,2])
+  writeStmtCode ctxt0 $ declareAndAssign "A" StanMatrix (intE 2 ::: intE 2 ::: VNil) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
+  writeStmtCode ctxt0 $ declareAndAssign "B" (StanArray s2 StanReal) (intE 2 ::: intE 2 ::: VNil)
+    (arrayE $ NestedVec2 ((realE 2 ::: realE 3 ::: VNil) ::: (realE 4 ::: realE 5 ::: VNil) :::  VNil))
+  writeStmtCode ctxt0 $ declareAndAssign "C" (StanArray s2 StanVector) (intE 2 ::: intE 2 ::: intE 2 ::: VNil)
+    (arrayE $ NestedVec2 ((vectorE [1,2] ::: vectorE [3,4] ::: VNil) ::: (vectorE [4,5] ::: vectorE [5, 6] ::: VNil) :::  VNil))
   let stmtTarget1 = addToTarget ue2
   writeStmtCode ctxt1 stmtTarget1
   let normalDistVec = Distribution "normal" SCVec (SCVec ::> (SCVec ::> ArgTypeNil))

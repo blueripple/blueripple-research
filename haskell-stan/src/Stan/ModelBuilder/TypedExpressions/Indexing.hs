@@ -142,6 +142,35 @@ instance TR.HTraversable IndexVecM where
   htraverse natM = fmap IndexVecM . traverse (traverse natM) . unIndexVecM
   hmapM = TR.htraverse
 
+data NestedVec :: Nat -> Type -> Type where
+  NestedVec1 :: Vec n a -> NestedVec (S Z) a
+  NestedVec2 :: Vec (S n) (Vec m a) -> NestedVec (S (S Z)) a
+  NestedVec3 :: Vec (S n) (Vec (S m) (Vec k a)) -> NestedVec (S (S (S Z))) a
+
+instance Functor (NestedVec n) where
+  fmap f = \case
+    NestedVec1 v ->  NestedVec1 $ DT.map f v
+    NestedVec2 v -> NestedVec2 $ DT.map (DT.map f) v
+    NestedVec3 v -> NestedVec3 $ DT.map (DT.map (DT.map f)) v
+
+instance Foldable (NestedVec n) where
+  foldMap f = \case
+    NestedVec1 v -> foldMap f v
+    NestedVec2 v -> mconcat $ DT.toList $ fmap (foldMap f) v
+    NestedVec3 v -> mconcat $ concatMap DT.toList $ DT.toList  $ fmap (foldMap f) <$> v
+
+instance Traversable (NestedVec n) where
+  traverse f = \case
+    NestedVec1 v -> NestedVec1 <$> DT.traverse f v
+    NestedVec2 v -> NestedVec2 <$> DT.traverse (DT.traverse f) v
+    NestedVec3 v -> NestedVec3 <$> DT.traverse (DT.traverse (DT.traverse f)) v
+
+unNest :: NestedVec n a -> ([Int], [a])
+unNest (NestedVec1 v) = ([DT.length v], DT.toList v)
+unNest (NestedVec2 v) = ([DT.length v, DT.length (DT.head v)], concatMap DT.toList $ DT.toList v)
+unNest (NestedVec3 v) = ([DT.length v, DT.length (DT.head v), DT.length (DT.head (DT.head v))], concat $ concatMap (fmap DT.toList . DT.toList) (DT.toList v))
+
+
 {-
 eTypeDim :: SType e -> Nat
 eTypeDim = \case

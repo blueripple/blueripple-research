@@ -38,6 +38,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LString :: Text -> LExprF r EString
   LVector :: [Double] -> LExprF r ECVec
   LMatrix :: [Vec n Double] -> LExprF r EMat
+  LArray :: NestedVec n (r t) -> LExprF r (EArray n t)
   LFunction :: Function rt args -> ArgList r args -> LExprF r rt
   LDistribution :: Distribution st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
   LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
@@ -71,6 +72,7 @@ instance TR.HFunctor LExprF where
     LString t -> LString t
     LVector xs -> LVector xs
     LMatrix ms -> LMatrix ms
+    LArray nv -> LArray (fmap nat nv)
     LFunction f al -> LFunction f (TR.hfmap nat al)
     LDistribution d st al -> LDistribution d (nat st) (TR.hfmap nat al)
     LUnaryOp suo gta -> LUnaryOp suo (nat gta)
@@ -87,6 +89,7 @@ instance TR.HTraversable LExprF where
     LString t -> pure $ LString t
     LVector xs -> pure $ LVector xs
     LMatrix ms -> pure $ LMatrix ms
+    LArray nv -> LArray <$> traverse nat nv
     LFunction f al -> LFunction f <$> TR.htraverse nat al
     LDistribution d st al -> LDistribution d <$> nat st <*> TR.htraverse nat al
     LUnaryOp suo ata -> LUnaryOp suo <$> nat ata
@@ -125,6 +128,12 @@ stringE = TR.IFix . UL . LString
 
 vectorE :: [Double] -> UExpr ECVec
 vectorE = TR.IFix . UL . LVector
+
+matrixE :: [Vec n Double] -> UExpr EMat
+matrixE = TR.IFix . UL . LMatrix
+
+arrayE :: NestedVec n (UExpr t) -> UExpr (EArray n t)
+arrayE = TR.IFix . UL . LArray
 
 unaryOpE :: SUnaryOp op -> UExpr t -> UExpr (UnaryResultT op t)
 unaryOpE op e = TR.IFix $ UL $ LUnaryOp op e

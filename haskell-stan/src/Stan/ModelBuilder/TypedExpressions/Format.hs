@@ -215,8 +215,9 @@ exprToDocAlg = K . \case
   LReal x -> Unsliced $ PP.pretty x
   LComplex x y -> Unsliced $ PP.parens $ PP.pretty x <+> "+" <+> "i" <> PP.pretty y -- (x + iy))
   LString t -> Unsliced $ PP.dquotes $ PP.pretty t
-  LVector xs -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate "," (show <$> xs)
-  LMatrix ms -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
+  LVector xs -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate ", " (show <$> xs)
+  LMatrix ms -> Unsliced $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
+  LArray nv -> Unsliced $ nestedVecToCode nv
   LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
   LDistribution (Distribution dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
@@ -264,7 +265,6 @@ boolOpDoc = \case
   SAnd -> "&&"
   SOr -> "||"
 
-
 opDoc :: SBinaryOp op -> CodePP
 opDoc = \case
   SAdd ->  "+"
@@ -276,3 +276,26 @@ opDoc = \case
   SElementWise sbo -> PP.dot <> opDoc sbo
   SAndEqual sbo -> opDoc sbo <> PP.equals
   SBoolean bop -> boolOpDoc bop
+
+nestedVecToCode :: NestedVec n (K IExprCode t) -> CodePP
+nestedVecToCode nv = unNestedToCode PP.braces (drop 1 $ reverse dims) itemsCode
+  where
+    f = iExprToCode . unK
+    (dims, items) = unNest nv
+    itemsCode = f <$> items
+
+-- given a way to surround a group,
+-- a set of dimensions to group in order of grouping (so reverse order of left to right indexes)
+-- items of code in one long list
+-- produce a code item with them grouped
+unNestedToCode :: (CodePP -> CodePP) -> [Int] -> [CodePP] -> CodePP
+unNestedToCode surroundF dims items = surround $ go dims items
+  where
+    rdims = reverse dims
+    surround = surroundF . PP.hsep . PP.punctuate ", "
+    group :: Int -> [CodePP] -> [CodePP] -> [CodePP]
+    group _ [] bs = bs
+    group n as bs = let (g , as') = List.splitAt n as in group n as' (bs ++ [surround g]) -- this is quadratic. Fix.
+    go :: [Int] -> [CodePP] -> [CodePP]
+    go [] as = as
+    go (x : xs) as = go xs (group x as [])
