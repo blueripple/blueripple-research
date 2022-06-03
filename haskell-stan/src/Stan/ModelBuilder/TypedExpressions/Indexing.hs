@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 module Stan.ModelBuilder.TypedExpressions.Indexing
   (
@@ -36,21 +37,30 @@ import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 
 -- to simplify most indexing
+-- term level
 n0 :: Nat = Z
 n1 :: Nat = S Z
 n2 :: Nat = S n1
 n3 :: Nat = S n2
 
+-- type level
+type N0 :: Nat
+type N0 = Z
+type N1 :: Nat
+type N1 = S Z
+type N2 :: Nat
+type N2 = S (S Z)
+type N3 :: Nat
+type N3 = S (S (S Z))
 
--- to simplify most indexing
 s0 :: SNat Z = DT.SZ
 s1 :: SNat (S Z) = DT.SS
 s2 :: SNat (S (S Z)) = DT.SS
 s3 :: SNat (S (S (S Z))) = DT.SS
 
-popRandom :: forall n m a. (DT.SNatI n, DT.SNatI m) => Vec (DT.Plus n (S m)) a -> (a, Vec (DT.Plus n m) a)
-popRandom v = (a, vL DT.++ vR)
-  where (vL, a ::: vR) = DT.split v :: (Vec n a, Vec (S m) a)
+--popRandom :: forall n m a. (DT.SNatI n, DT.SNatI m) => Vec (DT.Plus n (S m)) a -> (a, Vec (DT.Plus n m) a)
+--popRandom v = (a, vL DT.++ vR)
+--  where (vL, a ::: vR) = DT.split v :: (Vec n a, Vec (S m) a)
 
 type family DiffOrZero (n :: Nat) (m :: Nat) :: Nat where
   DiffOrZero Z Z = Z
@@ -79,8 +89,9 @@ type family Dimension (e :: EType) :: Nat where
   Dimension (EArray n t) = n `DT.Plus` Dimension t
 
 type family ApplyDiffOrZeroToEType (n :: Nat) (e :: EType) :: EType where
-  ApplyDiffOrZeroToEType Z (EArray Z t) = t
-  ApplyDiffOrZeroToEType Z (EArray (S n) t) = EArray n t
+  ApplyDiffOrZeroToEType Z (EArray Z t)  = TE.TypeError (TE.Text "Attempt to slice a zero-dimensional array.  Which means you had a zero dimensional array?")
+  ApplyDiffOrZeroToEType Z (EArray (S Z) t) = t
+  ApplyDiffOrZeroToEType Z (EArray (S (S n)) t) = EArray (S n) t
   ApplyDiffOrZeroToEType d (EArray m t) = EArray m (Sliced d t)
   ApplyDiffOrZeroToEType _ x = TE.TypeError (TE.Text "Applied DiffOrZero to type other than EArray??")
 

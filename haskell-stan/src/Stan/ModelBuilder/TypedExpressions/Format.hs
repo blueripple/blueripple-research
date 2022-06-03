@@ -41,6 +41,7 @@ import Data.List ((!!))
 import qualified Data.Vec.Lazy as DT
 import qualified Data.Type.Nat as DT
 import qualified Data.Fin as DT
+import qualified Data.Text as T
 
 import qualified Stan.ModelBuilder.Expressions as SME
 import Prelude hiding (Nat)
@@ -122,7 +123,7 @@ functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <>
       DataArg a -> "data" <+> c <+> PP.pretty a
 
     arrayIndices :: SNat n -> CodePP
-    arrayIndices sn = if n == 0 then mempty else PP.brackets (mconcat $ List.replicate n PP.comma)
+    arrayIndices sn = if n == 0 then mempty else PP.brackets (mconcat $ List.replicate (n-1) PP.comma)
       where n = fromIntegral $ DT.snatToNatural sn
 
     handleType :: SType t -> CodePP
@@ -214,6 +215,8 @@ exprToDocAlg = K . \case
   LReal x -> Unsliced $ PP.pretty x
   LComplex x y -> Unsliced $ PP.parens $ PP.pretty x <+> "+" <+> "i" <> PP.pretty y -- (x + iy))
   LString t -> Unsliced $ PP.dquotes $ PP.pretty t
+  LVector xs -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate "," (show <$> xs)
+  LMatrix ms -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
   LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
   LDistribution (Distribution dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)

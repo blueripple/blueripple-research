@@ -34,8 +34,8 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 
 
 -- possible types of terms
+-- NB: zero dimensional array will be treated as the underlying type
 data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq)
-
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EInt a _ = a
@@ -82,7 +82,9 @@ sTypeToEType = \case
   SRVec -> ERVec
   SMat -> EMat
   SSqMat -> ESqMat
-  SArray sn st -> EArray (DT.snatToNat sn) (sTypeToEType st)
+  SArray sn st -> case DT.snatToNat sn of
+    Z -> sTypeToEType st
+    S n -> EArray (S n) $ sTypeToEType st
 
 withSType :: forall t r.EType -> (forall t. SType t -> r) -> r
 withSType EVoid k = k SVoid

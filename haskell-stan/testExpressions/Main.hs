@@ -157,9 +157,10 @@ main = do
   let stmtWhile = while (l `eq` n) (st1 :| [st2, SBreak])
   writeStmtCode ctxt1 stmtWhile
   let
-    euclideanDistance = Function "eDist" SReal (SCVec ::> SCVec ::> SArray s0 SInt ::> ArgTypeNil)
+    euclideanDistance :: Function EReal [ECVec, ECVec, EArray N1 EInt]
+    euclideanDistance = Function "eDist" SReal (SCVec ::> SCVec ::> SArray s1 SInt ::> ArgTypeNil)
     eDistArgList = Arg "x1" :> Arg "x2" :> DataArg "m" :> ArgNil
-    eDistBody :: ArgList UExpr [ECVec, ECVec, EArray n1 EInt] -> (NonEmpty UStmt, UExpr EReal)
+    eDistBody :: ArgList UExpr [ECVec, ECVec, EArray N1 EInt] -> (NonEmpty UStmt, UExpr EReal)
     eDistBody (x1 :> x2 :> _ :> ArgNil) = (one $ rv `assign` (tr (x1 `eMinus` x2) `times` (x1 `eMinus` x2)), rv)
       where rv = namedE "r" SReal
     funcStmt = function euclideanDistance eDistArgList eDistBody
