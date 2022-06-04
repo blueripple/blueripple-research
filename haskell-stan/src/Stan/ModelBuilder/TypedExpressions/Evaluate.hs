@@ -110,9 +110,11 @@ doLookupsInStatementC = \case
   SBreak -> pure SBreakF
   SContinue -> pure SContinueF
   SFunction func al sts re -> SFunctionF func al sts <$> f re
+  SComment cs -> pure $ SCommentF cs
   SPrint args -> SPrintF <$> htraverse f args
   SReject args -> SRejectF <$> htraverse f args
   SScoped sts -> pure $ SScopedF sts
+  SBlock bt sts -> pure $ SBlockF bt sts
   SContext mf body -> case mf of
     Nothing -> pure $ SContextF Nothing body
     Just f -> SContextF Nothing <$> withStateT f (pure body)

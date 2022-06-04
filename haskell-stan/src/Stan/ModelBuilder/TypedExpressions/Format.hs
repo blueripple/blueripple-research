@@ -73,9 +73,12 @@ stmtToCodeAlg = \case
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats) al body re ->
     (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> f re <> PP.semi])) <$> sequence body
+  SCommentF (c :| []) -> Right $ PP.line <> "//" <+> PP.pretty c
+  SCommentF cs -> Right $ PP.line <> "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
   SRejectF al -> Right $ "reject" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body
+  SBlockF bl body -> maybe (Right mempty) (fmap (\x -> PP.pretty (stmtBlockHeader bl) <> bracketBlock x) . sequenceA) $ nonEmpty body
   SContextF mf body -> case mf of
     Just _ -> Left $ "stmtToCodeAlg: Impossible! SContext with a change function remaining!"
     Nothing -> blockCode <$> sequence body
@@ -288,6 +291,7 @@ nestedVecToCode nv = unNestedToCode PP.braces (drop 1 $ reverse dims) itemsCode
 -- a set of dimensions to group in order of grouping (so reverse order of left to right indexes)
 -- items of code in one long list
 -- produce a code item with them grouped
+-- e.g., renderAsText $ unNestedCode PP.parens [2, 3] ["a","b","c","d","e","f"] = "((a, b), (c, d), (e, f))"
 unNestedToCode :: (CodePP -> CodePP) -> [Int] -> [CodePP] -> CodePP
 unNestedToCode surroundF dims items = surround $ go dims items
   where
@@ -299,3 +303,13 @@ unNestedToCode surroundF dims items = surround $ go dims items
     go :: [Int] -> [CodePP] -> [CodePP]
     go [] as = as
     go (x : xs) as = go xs (group x as [])
+
+stmtBlockHeader :: StmtBlock -> Text
+stmtBlockHeader = \case
+  FunctionsStmts -> "functions"
+  DataStmts -> "data"
+  TDataStmts -> "transformed data"
+  ParametersStmts -> "parameters"
+  TParametersStmts -> "transformed parameters"
+  ModelStmts -> "model"
+  GeneratedQuantitiesStmts -> "generated quantities"

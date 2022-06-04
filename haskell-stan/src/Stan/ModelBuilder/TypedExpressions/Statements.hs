@@ -27,14 +27,23 @@ import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
 import qualified Stan.ModelBuilder.Expressions as SME
+import qualified Stan.ModelBuilder.BuilderTypes as SBT
+
 import Prelude hiding (Nat)
 import Relude.Extra
 import qualified Data.Map.Strict as Map
 import Data.Vector.Generic (unsafeCopy)
 
 import qualified Data.Functor.Foldable as RS
+import Stan.ModelBuilder (TransformedParametersBlock)
 
---data Block f = Block { blockName :: Text, statements :: [Stmt f]}
+data StmtBlock = FunctionsStmts
+               | DataStmts
+               | TDataStmts
+               | ParametersStmts
+               | TParametersStmts
+               | ModelStmts
+               | GeneratedQuantitiesStmts
 
 -- Statements
 data Stmt :: (EType -> Type) -> Type where
@@ -50,9 +59,11 @@ data Stmt :: (EType -> Type) -> Type where
   SBreak :: Stmt r
   SContinue :: Stmt r
   SFunction :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty (Stmt r) -> r rt -> Stmt r
+  SComment :: NonEmpty Text -> Stmt r
   SPrint :: ArgList r args -> Stmt r
   SReject :: ArgList r args -> Stmt r
   SScoped :: NonEmpty (Stmt r) -> Stmt r
+  SBlock :: StmtBlock -> [Stmt r] -> Stmt r
   SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
@@ -68,11 +79,12 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SBreakF :: StmtF r a
   SContinueF :: StmtF r a
   SFunctionF :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty a -> r rt -> StmtF r a
+  SCommentF :: NonEmpty Text -> StmtF r a
   SPrintF :: ArgList r args -> StmtF r a
   SRejectF :: ArgList r args -> StmtF r a
   SScopedF :: NonEmpty a -> StmtF r a
+  SBlockF :: StmtBlock -> [a] -> StmtF r a
   SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty a -> StmtF r a
-
 
 type instance RS.Base (Stmt f) = StmtF f
 
@@ -115,9 +127,11 @@ instance Functor (StmtF f) where
     SBreakF -> SBreakF
     SContinueF -> SContinueF
     SFunctionF func al sfs re -> SFunctionF func al (f <$> sfs) re
+    SCommentF t -> SCommentF t
     SPrintF args -> SPrintF args
     SRejectF args -> SRejectF args
     SScopedF sfs -> SScopedF $ f <$> sfs
+    SBlockF bl stmts -> SBlockF bl (f <$> stmts)
     SContextF mf sts -> SContextF mf $  f <$> sts
 
 instance Foldable (StmtF f) where
@@ -134,9 +148,11 @@ instance Foldable (StmtF f) where
     SBreakF -> mempty
     SContinueF -> mempty
     SFunctionF _ _ body _ -> foldMap f body
+    SCommentF _ -> mempty
     SPrintF _ -> mempty
     SRejectF _ -> mempty
     SScopedF body -> foldMap f body
+    SBlockF _ body -> foldMap f body
     SContextF _ body -> foldMap f body
 
 instance Traversable (StmtF f) where
@@ -153,9 +169,11 @@ instance Traversable (StmtF f) where
     SBreakF -> pure SBreakF
     SContinueF -> pure SContinueF
     SFunctionF func al sfs re -> SFunctionF func al <$> traverse g sfs <*> pure re
+    SCommentF t -> pure $ SCommentF t
     SPrintF args -> pure $ SPrintF args
     SRejectF args -> pure $ SRejectF args
     SScopedF sfs -> SScopedF <$> traverse g sfs
+    SBlockF bl stmts -> SBlockF bl <$> traverse g stmts
     SContextF mf sfs -> SContextF mf <$> traverse g sfs
 
 instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
@@ -172,9 +190,11 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SBreak -> SBreakF
     SContinue -> SContinueF
     SFunction func al sts re -> SFunctionF func al sts re
+    SComment t -> SCommentF t
     SPrint args -> SPrintF args
     SReject args -> SRejectF args
     SScoped sts -> SScopedF sts
+    SBlock bl sts -> SBlockF bl sts
     SContext mf sts -> SContextF mf sts
 
 instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
@@ -191,9 +211,11 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SBreakF -> SBreak
     SContinueF -> SContinue
     SFunctionF func al sts re -> SFunction func al sts re
+    SCommentF t -> SComment t
     SPrintF args -> SPrint args
     SRejectF args -> SReject args
     SScopedF sts -> SScoped sts
+    SBlockF bl sts -> SBlock bl sts
     SContextF mf sts -> SContext mf sts
 
 

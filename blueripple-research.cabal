@@ -140,6 +140,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.Indexing
                  , Stan.ModelBuilder.TypedExpressions.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Statements
+                 , Stan.ModelBuilder.TypedExpressions.Program
                  , Stan.ModelBuilder.TypedExpressions.Recursion
                  , Stan.ModelBuilder.TypedExpressions.Format
                  , Stan.ModelBuilder.TypedExpressions.Evaluate
