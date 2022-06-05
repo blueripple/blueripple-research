@@ -37,6 +37,80 @@ import Data.Vector.Generic (unsafeCopy)
 import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
 
+
+-- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
+declare :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UStmt
+declare vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
+
+declareAndAssign :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UExpr t -> UStmt
+declareAndAssign vn vt iDecls = SDeclAssign vn vt (DeclIndexVecF iDecls)
+
+addToTarget :: UExpr EReal -> UStmt
+addToTarget = STarget
+
+assign :: UExpr t -> UExpr t -> UStmt
+assign = SAssign
+
+sample :: UExpr t -> Distribution t args -> ArgList UExpr args -> UStmt
+sample = SSample
+
+data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
+               | IndexedLoop SME.IndexKey
+               | SpecificIn (UExpr t)
+               | IndexedIn SME.IndexKey (UExpr t)
+
+for :: Text -> ForType t -> NonEmpty UStmt -> UStmt
+for loopCounter ft body = case ft of
+  SpecificNumbered se' ee' -> SFor loopCounter se' ee' body
+  IndexedLoop ik -> SFor loopCounter (intE 1) (namedSizeE ik) $ bodyWithLoopCounterContext ik
+  SpecificIn e -> SForEach loopCounter e body
+  IndexedIn ik e -> SForEach loopCounter e $ bodyWithLoopCounterContext ik
+  where
+    bodyWithLoopCounterContext ik = SContext (Just $ insertUseBinding ik (lNamedE loopCounter SInt)) body :| []
+
+ifThen :: UExpr EBool -> UStmt -> UStmt -> UStmt
+ifThen ce sTrue = SIfElse $ (ce, sTrue) :| []
+
+ifThenElse :: NonEmpty (UExpr EBool, UStmt) -> UStmt -> UStmt
+ifThenElse = SIfElse
+
+while :: UExpr EBool -> NonEmpty UStmt -> UStmt
+while = SWhile
+
+break :: UStmt
+break = SBreak
+
+continue :: UStmt
+continue = SContinue
+
+function :: Function rt args -> ArgList (FuncArg Text) args -> (ArgList UExpr args -> (NonEmpty UStmt, UExpr rt)) -> UStmt
+function fd argNames bodyF = SFunction fd argNames bodyS ret
+  where
+    argTypes = argTypesToArgListOfTypes $ functionArgTypes fd
+    argExprs = zipArgListsWith (namedE . funcArgName) argNames argTypes
+    (bodyS, ret) = bodyF argExprs
+
+comment :: NonEmpty Text -> UStmt
+comment = SComment
+
+print :: ArgList UExpr args -> UStmt
+print = SPrint
+
+reject :: ArgList UExpr args -> UStmt
+reject = SReject
+
+scoped :: NonEmpty UStmt -> UStmt
+scoped = SScoped
+
+context :: (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty UStmt -> UStmt
+context cf = SContext (Just cf)
+
+insertUseBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
+insertUseBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
+
+insertSizeBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
+insertSizeBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt (Map.insert k ie a) b
+
 data StmtBlock = FunctionsStmts
                | DataStmts
                | TDataStmts
@@ -92,26 +166,6 @@ type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
-
-{-
-declare :: Text -> StanType t -> DeclIndexVecF UExpr t -> UStmt
-declare = US $ SDeclare
-
-declareAndAssign :: Text -> StanType t -> DeclIndexVecF UExpr t -> UExpr t -> UStmt
-declareAndAssign = SDeclAssign
-
-assign :: UExpr t -> UExpr t -> UStmt
-assign = SAssign
-
-target :: UExpr EReal -> UStmt
-target = STarget
-
-sample :: UExpr t -> Distribution t args -> ArgList UExpr args -> UStmt
-sample = SSample
-
-for :: Text -> UExpr EInt -> UExpr EInt -> [UStmt] -> UStmt
-for = SFor
--}
 
 instance Functor (StmtF f) where
   fmap f x = case x of

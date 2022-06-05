@@ -28,8 +28,9 @@ import qualified Stan.ModelBuilder.TypedExpressions.Statements as TB
 -- only generated quantitied or the generation of log-likelihoods
 newtype StanProgram = StanProgram {unStanProgram :: Array.Array SBT.StanBlock [TB.UStmt]}
 
+-- this is...precarious.  No way to check that we are using all of the array
 programToStmt :: SBT.GeneratedQuantities -> StanProgram -> TB.UStmt
-programToStmt gq p = TB.SContext Nothing $ fullProgramStmt
+programToStmt gq p = TB.SContext Nothing fullProgramStmt
   where
     stmtsArray = unStanProgram p
     fullProgramStmt  =
@@ -45,7 +46,11 @@ programToStmt gq p = TB.SContext Nothing $ fullProgramStmt
         let d = stmtsArray ! SBT.SBData
             gqd = stmtsArray ! SBT.SBDataGQ
          in TB.SBlock TB.DataStmts (d ++ if gq /= SBT.NoGQ then gqd else [])
-    tDataStmtM = let x = stmtsArray ! SBT.SBTransformedData in if null x then Nothing else Just (TB.SBlock TB.TDataStmts x)
+    tDataStmtM =
+      let
+        x = stmtsArray ! SBT.SBTransformedData
+        xGQ = stmtsArray ! SBT.SBTransformedDataGQ
+      in if null x && null xGQ then Nothing else Just (TB.SBlock TB.TDataStmts $ x ++ xGQ)
     paramsStmt = TB.SBlock TB.ParametersStmts $ stmtsArray ! SBT.SBParameters
     tParamsStmtM = let x = stmtsArray ! SBT.SBTransformedParameters in if null x then Nothing else Just (TB.SBlock TB.TParametersStmts x)
     modelStmt =
@@ -62,12 +67,20 @@ programToStmt gq p = TB.SContext Nothing $ fullProgramStmt
                 SBT.All -> Just $ TB.SBlock TB.GeneratedQuantitiesStmts $ gqs ++ lls
 
 
+-- check if the type of statement is allowed in the block then, if so, provide the modification function
+-- otherwise error
 addToBlock :: SBT.StanBlock -> TB.UStmt -> Either Text (StanProgram -> StanProgram)
 addToBlock sb s = do
-  let f sp = StanProgram $ unStanProgram sp // [(sb, unStanProgram sp ! sb ++ [s])]
-  if sb `elem` [SBT.SBData, SBT.SBDataGQ, SBT.SBParameters]
-    then case s of
-           TB.SDeclare {} -> Right f
-           TB.SComment {} -> Right f
-           _ -> Left $ "Statement other than declaration or comment in data or parameters block."
-    else Right f
+  let f sp =
+        let p = unStanProgram sp
+        in StanProgram $ p // [(sb, p ! sb ++ [s])]
+  case s of
+    TB.SFunction {} -> if sb == SBT.SBFunctions
+                       then Right f
+                       else Left "Functions and only functions can appear in the function block."
+    _ -> if sb `elem` [SBT.SBData, SBT.SBDataGQ, SBT.SBParameters]
+      then case s of
+             TB.SDeclare {} -> Right f
+             TB.SComment {} -> Right f
+             _ -> Left "Statement other than declaration or comment in data or parameters block."
+      else Right f

@@ -12,10 +12,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Format
   (
@@ -73,8 +71,8 @@ stmtToCodeAlg = \case
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats) al body re ->
     (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> f re <> PP.semi])) <$> sequence body
-  SCommentF (c :| []) -> Right $ PP.line <> "//" <+> PP.pretty c
-  SCommentF cs -> Right $ PP.line <> "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
+  SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
+  SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
   SRejectF al -> Right $ "reject" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body
