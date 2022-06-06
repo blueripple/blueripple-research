@@ -80,7 +80,7 @@ type family DeclDimension (e :: EType) :: Nat where
   DeclDimension ERVec = S Z
   DeclDimension EMat = S (S Z)
   DeclDimension ESqMat = S Z
-  DeclDimension (EArray n t) = n `DT.Plus` Dimension t
+  DeclDimension (EArray n t) = n `DT.Plus` DeclDimension t
 
 type family Dimension (e :: EType) :: Nat where
   Dimension EInt = Z

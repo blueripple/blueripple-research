@@ -28,6 +28,7 @@ import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.BuilderTypes as SBT
+import qualified Data.Vec.Lazy as Vec
 
 import Prelude hiding (Nat)
 import Relude.Extra
@@ -38,12 +39,42 @@ import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
 
 
--- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
-declare :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UStmt
-declare vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
+data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt))
 
-declareAndAssign :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UExpr t -> UStmt
-declareAndAssign vn vt iDecls = SDeclAssign vn vt (DeclIndexVecF iDecls)
+intSpec :: DeclSpec EInt
+intSpec = DeclSpec StanInt VNil
+
+realSpec :: DeclSpec EReal
+realSpec = DeclSpec StanReal VNil
+
+complexSpec :: DeclSpec EComplex
+complexSpec = DeclSpec StanComplex VNil
+
+vectorSpec :: UExpr EInt -> DeclSpec ECVec
+vectorSpec ie = DeclSpec StanVector (ie ::: VNil)
+
+matrixSpec :: UExpr EInt -> UExpr EInt -> DeclSpec EMat
+matrixSpec re ce = DeclSpec StanMatrix (re ::: ce ::: VNil)
+
+--arraySpec :: SNat n -> Vec n (UExpr EInt) -> StanType t -> Vec (Dimension t) (UExpr EInt) -> DeclSpec (EArray n t)
+--arraySpec n arrIndices t tIndices = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices)
+
+arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
+arraySpec n arrIndices (DeclSpec t tIndices) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices)
+
+
+-- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
+declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UStmt
+declare' vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
+
+declare :: Text -> DeclSpec t -> UStmt
+declare vn (DeclSpec st indices) = declare' vn st indices
+
+declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UExpr t -> UStmt
+declareAndAssign' vn vt iDecls = SDeclAssign vn vt (DeclIndexVecF iDecls)
+
+declareAndAssign :: Text -> DeclSpec t -> UExpr t -> UStmt
+declareAndAssign vn (DeclSpec vt indices) = declareAndAssign' vn vt indices
 
 addToTarget :: UExpr EReal -> UStmt
 addToTarget = STarget

@@ -76,22 +76,22 @@ main = do
   writeStmtCode ctxt0 st2
   writeStmtCode ctxt1 st2
   writeStmtCode ctxt0 $ SContext (Just $ insertUseBinding "KIndex" lk) (one st2)
-  let stDeclare1 = declare "M" StanMatrix (n ::: l ::: VNil)
+  let stDeclare1 = declare "M" (matrixSpec n l)
       nStates = namedSizeE "States"
       nPredictors = namedSizeE "Predictors"
 
-      stDeclare2 = declare "A" (StanArray s2 StanMatrix) (n ::: l ::: nStates ::: nPredictors ::: VNil)
+      stDeclare2 = declare "A" $ arraySpec s2 (n ::: l ::: VNil) (matrixSpec nStates nPredictors)
   cmnt "Declarations"
   writeStmtCode ctxt1 stDeclare1
   writeStmtCode ctxt0 $ SContext (Just $ insertSizeBinding "Predictors" predictorsLE) (one stDeclare2)
   writeStmtCode ctxt0 $ SContext (Just $ insertSizeBinding "States" statesLE . insertSizeBinding "Predictors" predictorsLE) (one stDeclare2)
-  let stDeclAssign1 = declareAndAssign "M" StanMatrix (n ::: l ::: VNil) (namedE "q" SMat)
+  let stDeclAssign1 = declareAndAssign "M" (matrixSpec l n) (namedE "q" SMat)
   writeStmtCode ctxt0 stDeclAssign1
-  writeStmtCode ctxt0 $ declareAndAssign "v1" StanVector (intE 2 ::: VNil) (vectorE [1,2])
-  writeStmtCode ctxt0 $ declareAndAssign "A" StanMatrix (intE 2 ::: intE 2 ::: VNil) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
-  writeStmtCode ctxt0 $ declareAndAssign "B" (StanArray s2 StanReal) (intE 2 ::: intE 2 ::: VNil)
+  writeStmtCode ctxt0 $ declareAndAssign "v1" (vectorSpec $ intE 2) (vectorE [1,2])
+  writeStmtCode ctxt0 $ declareAndAssign "A" (matrixSpec (intE 2) (intE 2)) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
+  writeStmtCode ctxt0 $ declareAndAssign "B" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) realSpec)
     (arrayE $ NestedVec2 ((realE 2 ::: realE 3 ::: VNil) ::: (realE 4 ::: realE 5 ::: VNil) :::  VNil))
-  writeStmtCode ctxt0 $ declareAndAssign "C" (StanArray s2 StanVector) (intE 2 ::: intE 2 ::: intE 2 ::: VNil)
+  writeStmtCode ctxt0 $ declareAndAssign "C" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) (vectorSpec $ intE 2))
     (arrayE $ NestedVec2 ((vectorE [1,2] ::: vectorE [3,4] ::: VNil) ::: (vectorE [4,5] ::: vectorE [5, 6] ::: VNil) :::  VNil))
   let stmtTarget1 = addToTarget ue2
   cmnt "Add to target, two ways."
@@ -131,4 +131,4 @@ main = do
   cmnt "print/reject"
   writeStmtCode ctxt0 $ print (stringE "example" :> l :> ArgNil)
   writeStmtCode ctxt0 $ reject (m :> stringE "or" :> r :> ArgNil)
-  writeStmtCode ctxt0 $ comment ("Multiline comment" :| ["is formatted differently!"])
+  writeStmtCode ctxt0 $ comment ("Multiline comments" :| ["are formatted differently!"])
