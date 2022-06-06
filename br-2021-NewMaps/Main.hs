@@ -907,7 +907,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-      leans r = modelDRALeans brShareRange draShareRange (share50 r) (dave r)
+      leans r = modelDRALeans brShareRange draShareRangeCD (share50 r) (dave r)
       notBoring r = case leans r of
         (SafeR, SafeD) -> True
         (LeanR, SafeD) -> True
@@ -918,7 +918,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         (Tossup, SafeR) -> True
         (LeanR, SafeR) -> True
         _ -> False
-      brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r)
+      brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
                                <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
@@ -938,7 +938,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
-      (allCDsColonnade modelVsHistoricalTableCellStyle)
+      (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
       sortedFilteredModelAndDRA
   pure ()
 
@@ -953,7 +953,7 @@ allCDsColonnade cas =
      <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
 
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
@@ -1083,14 +1083,15 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
-data NewSLDMapsPostSpec = NewSLDMapsPostSpec { stateAbbr :: Text
-                                             , districtDescription :: Text
-                                             , paths :: BR.PostPaths BR.Abs
-                                             , sldDRAnalysis :: F.Frame Redistrict.DRAnalysis
-                                             , cdDRAnalysis :: F.Frame Redistrict.DRAnalysis
-                                             , overlaps :: Map ET.DistrictType (DO.DistrictOverlaps Int)
-                                             , contested :: F.Record [ET.DistrictTypeC, ET.DistrictName] -> Bool
-                                             }
+data NewSLDMapsPostSpec = NewSLDMapsPostSpec
+                          { stateAbbr :: Text
+                          , districtDescription :: Text
+                          , paths :: BR.PostPaths BR.Abs
+                          , sldDRAnalysis :: F.Frame Redistrict.DRAnalysis
+                          , cdDRAnalysis :: F.Frame Redistrict.DRAnalysis
+                          , overlaps :: Map ET.DistrictType (DO.DistrictOverlaps Int)
+                          , contested :: F.Record [ET.DistrictTypeC, ET.DistrictName] -> Bool
+                          }
 
 
 newStateLegMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffects r)
@@ -1136,41 +1137,62 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
   let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       dra = round . (100*) . F.rgetField @TwoPartyDShare
---      inRange r = (modMid r >= 40 && modMid r <= 60) || (dra r >= 40 && dra r <= 60)
       modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
       dName = F.rgetField @ET.DistrictName
       dType = F.rgetField @ET.DistrictTypeC
       cdModelMap = FL.fold (FL.premap (\r -> (dName r, modMid r)) FL.map) modeledCDs
       cdDRAMap = FL.fold (FL.premap (\r -> (dName r, dra r)) FL.map) $ fmap addTwoPartyDShare $ cdDRAnalysis postSpec
       modelCompetitive n = brCompetitive || draCompetitive
-        where draCompetitive = fromMaybe False $ fmap (between draShareRange) $ M.lookup n cdDRAMap
+        where draCompetitive = fromMaybe False $ fmap (between draShareRangeCD) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
   let overlapsMMap (dt, dn) = M.lookup dt (overlaps postSpec) >>= (\d -> DO.overlapsOverThresholdForRowByName 0.25 d dn)
       tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC)
                => BR.CellStyle (F.Record rs) String
-      tableCAS =  modelVsHistoricalTableCellStyle <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
+      tableCAS =  modelVsHistoricalTableCellStyle brShareRange draShareRangeSLD <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
         where
           f r = Monoid.getAny $ mconcat
                 $ fmap (Monoid.Any . modelCompetitive . fst)
                 $ M.toList $ fromMaybe mempty $ overlapsMMap (dType r, dName r)
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-      rowFilter r = (contested postSpec $ F.rcast @[ET.DistrictTypeC, ET.DistrictName] r)
+      contestedCond = contested postSpec . F.rcast @[ET.DistrictTypeC, ET.DistrictName]
+      rowFilter r = contestedCond r
                     && if interestingOnly
-                       then (not $ modelDRALeans brShareRange draShareRange (share50 r) (dave r) `elem` [(SafeD, SafeD), (SafeR, SafeR)])
+                       then (not $ modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r) `elem` [(SafeD, SafeD), (SafeR, SafeR)])
                        else True
       filteredSorted = filter rowFilter sortedModelAndDRA
+      categoryFilter brs drs r = let (brLean, draLean) =  modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r)
+                                 in contestedCond r
+                                    && brLean `elem` brs
+                                    && draLean `elem` drs
+      agreedCloseFilter = categoryFilter [LeanR, Tossup, LeanD] [LeanR, Tossup, LeanD]
+      disagreeDRCloseFilter r = categoryFilter [SafeR] [LeanD, Tossup] r || categoryFilter [SafeD] [LeanR, Tossup] r
+      disagreeDRNotCloseFilter r = categoryFilter [SafeR, LeanR, Tossup] [SafeD] r || categoryFilter [SafeD, LeanD, Tossup] [SafeR] r
+      agreeOnlyDRCloseFilter r =  categoryFilter [SafeD] [Tossup, LeanD] r || categoryFilter [SafeR] [Tossup, LeanR] r
       interestingDistricts = Set.fromList $ (F.rcast @[ET.DistrictTypeC, ET.DistrictName] <$> filteredSorted)
       interestingFilter :: (F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC) => F.Record rs -> Bool
       interestingFilter r = F.rcast @[ET.DistrictTypeC, ET.DistrictName] r `Set.member` interestingDistricts
   K.logLE K.Info $ "For " <> districtDescription postSpec <> " in " <> stateAbbr postSpec
     <> " there are " <> show (length interestingDistricts) <> " interesting districts."
+  let fTable f t = do
+        let ds = filter f sortedModelAndDRA
+        when (not $ null ds)
+          $  BR.brAddRawHtmlTable
+          ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: " <> t)
+          (BHA.class_ "brTable")
+          (dmColonnadeOverlap overlapsMMap tableCAS)
+          ds
+  fTable agreedCloseFilter "Both Models Close"
+  fTable disagreeDRCloseFilter "Plausible Surprises"
+  fTable agreeOnlyDRCloseFilter "Differences of Degree"
+  fTable disagreeDRNotCloseFilter "Implausible Suprises"
   BR.brAddRawHtmlTable
-    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg (" <> districtDescription postSpec <> ") 2022: Demographic Model vs. Historical Model (DR)")
+    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: All Interesting")
     (BHA.class_ "brTable")
     (dmColonnadeOverlap overlapsMMap tableCAS)
-    filteredSorted
+    (filter interestingFilter sortedModelAndDRA)
+
   BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
   let sldByModelShare = modelShareSort sldDistLabel modeledSLDs --proposedPlusStateAndStateRace_RaceDensityNC
   _ <- K.addHvega Nothing Nothing
@@ -1214,7 +1236,7 @@ dmColonnadeOverlap olMM cas =
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeSLD (share50 r) (dave r))))
      <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . olMM . dKey))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
@@ -1348,7 +1370,7 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   BR.brAddRawHtmlTable
     ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
-    (daveModelColonnade modelVsHistoricalTableCellStyle)
+    (daveModelColonnade brShareRange draShareRangeCD $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
     sortedModelAndDRA
   BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
 --  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
@@ -1432,8 +1454,12 @@ modelShareSort labelFunc = reverse . fmap fst . sortOn snd
 
 brShareRange :: (Int, Int)
 brShareRange = (45, 55)
-draShareRange :: (Int, Int)
-draShareRange = (47, 53)
+
+draShareRangeCD :: (Int, Int)
+draShareRangeCD = (47, 53)
+
+draShareRangeSLD :: (Int, Int)
+draShareRangeSLD = (43, 57)
 
 between :: (Int, Int) -> Int -> Bool
 between (l, h) x = x >= l && x <= h
@@ -1441,8 +1467,8 @@ between (l, h) x = x >= l && x <= h
 
 modelVsHistoricalTableCellStyle :: (F.ElemOf rs BRE.ModeledShare
                                    , F.ElemOf rs TwoPartyDShare)
-                                => BR.CellStyle (F.Record rs) String
-modelVsHistoricalTableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
+                                => (Int, Int) -> (Int, Int) -> BR.CellStyle (F.Record rs) String
+modelVsHistoricalTableCellStyle brSR draSR = mconcat [longShotCS, leanRCS, leanDCS, safeDCS, longShotDRACS, leanRDRACS, leanDDRACS, safeDDRACS]
   where
     safeR (l, _) x = x <= l
     leanR (l, _) x = x < 50 && x  >= l
@@ -1450,15 +1476,15 @@ modelVsHistoricalTableCellStyle = mconcat [longShotCS, leanRCS, leanDCS, safeDCS
     safeD (_, u) x = x > u
     modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
     bordered c = "border: 3px solid " <> c
-    longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR brShareRange (modMid r) && h == "Demographic"
-    leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR brShareRange (modMid r) && h `elem` ["Demographic"]
-    leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD brShareRange (modMid r) && h `elem` ["Demographic"]
-    safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD brShareRange (modMid r) && h == "Demographic"
+    longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> safeR brSR (modMid r) && h == "Demographic"
+    leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR brSR (modMid r) && h `elem` ["Demographic"]
+    leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD brSR (modMid r) && h `elem` ["Demographic"]
+    safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD brSR (modMid r) && h == "Demographic"
     dra = round . (100*) . F.rgetField @TwoPartyDShare
-    longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> safeR draShareRange (dra r) && h == "Historical"
-    leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> leanR draShareRange (dra r) && h == "Historical"
-    leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draShareRange (dra r)&& h == "Historical"
-    safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draShareRange (dra r) && h == "Historical"
+    longShotDRACS = bordered "red" `BR.cellStyleIf` \r h -> safeR draSR (dra r) && h == "Historical"
+    leanRDRACS = bordered "pink" `BR.cellStyleIf` \r h -> leanR draSR (dra r) && h == "Historical"
+    leanDDRACS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD draSR (dra r)&& h == "Historical"
+    safeDDRACS = bordered "blue" `BR.cellStyleIf` \r h -> safeD draSR (dra r) && h == "Historical"
 
 data DistType = SafeR | LeanR | Tossup | LeanD | SafeD deriving (Eq, Ord, Show)
 distType :: Int -> Int -> Int -> DistType
@@ -1527,7 +1553,7 @@ brDistrictFramework long inc brRange draRange brModel dra =
     (SafeD, SafeD) -> "Safe D" <> ifLong "No near-term D risk"
 
 
-daveModelColonnade cas =
+daveModelColonnade brSR draSR cas =
   let state = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
@@ -1536,7 +1562,7 @@ daveModelColonnade cas =
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRange (share50 r) (dave r))))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brSR draSR (share50 r) (dave r))))
 
 
 extantModeledColonnade cas =
