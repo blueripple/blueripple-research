@@ -27,7 +27,8 @@ import qualified Stan.ModelBuilder.Expressions as SME
 import Prelude hiding (Nat)
 import Relude.Extra
 import qualified Data.Map.Strict as Map
-import Data.Vector.Generic (unsafeCopy)
+import qualified Data.Vec.Lazy as Vec
+import qualified Data.Type.Nat as DT
 
 -- Expressions
 data LExprF :: (EType -> Type) -> EType -> Type where
@@ -40,7 +41,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LMatrix :: [Vec n Double] -> LExprF r EMat
   LArray :: NestedVec n (r t) -> LExprF r (EArray n t)
   LFunction :: Function rt args -> ArgList r args -> LExprF r rt
-  LDistribution :: Distribution st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
+  LDensity :: Density st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
   LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
   LBinaryOp :: SBinaryOp op -> r ta -> r tb -> LExprF r (BinaryResultT op ta tb)
   LCond :: r EBool -> r t -> r t -> LExprF r t
@@ -74,7 +75,7 @@ instance TR.HFunctor LExprF where
     LMatrix ms -> LMatrix ms
     LArray nv -> LArray (fmap nat nv)
     LFunction f al -> LFunction f (TR.hfmap nat al)
-    LDistribution d st al -> LDistribution d (nat st) (TR.hfmap nat al)
+    LDensity d st al -> LDensity d (nat st) (TR.hfmap nat al)
     LUnaryOp suo gta -> LUnaryOp suo (nat gta)
     LBinaryOp sbo gta gtb -> LBinaryOp sbo (nat gta) (nat gtb)
     LCond c ifTrue ifFalse -> LCond (nat c) (nat ifTrue) (nat ifFalse)
@@ -91,7 +92,7 @@ instance TR.HTraversable LExprF where
     LMatrix ms -> pure $ LMatrix ms
     LArray nv -> LArray <$> traverse nat nv
     LFunction f al -> LFunction f <$> TR.htraverse nat al
-    LDistribution d st al -> LDistribution d <$> nat st <*> TR.htraverse nat al
+    LDensity d st al -> LDensity d <$> nat st <*> TR.htraverse nat al
     LUnaryOp suo ata -> LUnaryOp suo <$> nat ata
     LBinaryOp sbo ata atb -> LBinaryOp sbo <$> nat ata <*> nat atb
     LCond c ifTrue ifFalse -> LCond <$> nat c <*> nat ifTrue <*> nat ifFalse
@@ -135,6 +136,12 @@ matrixE = TR.IFix . UL . LMatrix
 arrayE :: NestedVec n (UExpr t) -> UExpr (EArray n t)
 arrayE = TR.IFix . UL . LArray
 
+functionE :: Function rt args -> ArgList UExpr args -> UExpr rt
+functionE f al = TR.IFix $ UL $ LFunction f al
+
+densityE :: Density gt args -> UExpr gt -> ArgList UExpr args -> UExpr EReal
+densityE d ge al = TR.IFix $ UL $ LDensity d ge al
+
 unaryOpE :: SUnaryOp op -> UExpr t -> UExpr (UnaryResultT op t)
 unaryOpE op e = TR.IFix $ UL $ LUnaryOp op e
 
@@ -144,7 +151,9 @@ binaryOpE op ea eb = TR.IFix $ UL $ LBinaryOp op ea eb
 boolOpE :: SBoolOp op -> UExpr ta -> UExpr tb -> UExpr (BoolResultT op ta tb)
 boolOpE bop ea eb = TR.IFix $ UL $ LBinaryOp (SBoolean bop) ea eb
 
--- this is unsafe since the n can be larger than the correct dimension
+condE :: UExpr EBool -> UExpr t -> UExpr t -> UExpr t
+condE ce te fe = TR.IFix $ UL $ LCond ce te fe
+
 sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
 sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
 
@@ -154,24 +163,24 @@ namedIndexE = TR.IFix . UNamedIndex
 namedSizeE :: Text -> UExpr EInt
 namedSizeE = TR.IFix . UNamedSize
 
-
-{-
-
-indexInner :: UExprF t a -> UExprF EInt a -> UExprF (SliceInnerN (S Z) t) a
-indexInner e i = SliceE SZ i e
+indexInner :: UExpr t -> UExpr EInt -> UExpr (SliceInnerN (S Z) t)
+indexInner e i = sliceE SZ i e
 
 -- NB: We need the "go" here to add the SNat to the steps so GHC can convince itself that the lengths match up
 -- This will yield a compile-time error if we try to index past the end or, same same, index something scalar.
 -- That is, if n > Dimension a, this cannot be compiled.
-indexInnerN :: UExprF t a -> Vec (UExprF EInt a) n -> UExprF (SliceInnerN n t) a
-indexInnerN e v = go (sLength v) e v where
-  go :: SNat n -> UExprF tb b -> Vec (UExprF EInt b) n -> UExprF (SliceInnerN n tb) b
-  go SZ e _ = e
-  go (SS m) e (i :> v') = go (sLength v') (indexInner e i) v'
+indexInnerN :: UExpr t -> Vec n (UExpr EInt) -> UExpr (SliceInnerN n t)
+indexInnerN e v = Vec.withDict v $ go e v where
+  go :: DT.SNatI m => UExpr u -> Vec m (UExpr EInt) -> UExpr (SliceInnerN m u)
+  go = go' DT.snat
+  go' :: DT.SNat k -> UExpr a -> Vec k (UExpr EInt) -> UExpr (SliceInnerN k a)
+  go' SZ e _ = e
+  go' SS e (i ::: v') = go' DT.snat (indexInner e i) v'
 
-indexAll :: UExprF t a -> IndexVec t a -> UExprF (SliceInnerN (Dimension t) t) a
+indexAll :: UExpr t -> Vec (Dimension t) (UExpr EInt) -> UExpr (SliceInnerN (Dimension t) t)
 indexAll = indexInnerN
 
+{-
 plusE :: UExprF ta a -> UExprF tb a -> UExprF (BinaryResultT BAdd ta tb) a
 plusE = BinaryOpE SAdd
 -}

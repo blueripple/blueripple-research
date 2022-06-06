@@ -93,11 +93,11 @@ main = do
     (arrayE $ NestedVec2 ((realE 2 ::: realE 3 ::: VNil) ::: (realE 4 ::: realE 5 ::: VNil) :::  VNil))
   writeStmtCode ctxt0 $ declareAndAssign "C" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) (vectorSpec $ intE 2))
     (arrayE $ NestedVec2 ((vectorE [1,2] ::: vectorE [3,4] ::: VNil) ::: (vectorE [4,5] ::: vectorE [5, 6] ::: VNil) :::  VNil))
-  let stmtTarget1 = addToTarget ue2
   cmnt "Add to target, two ways."
+  let normalDistVec = Density "normal" SCVec (SCVec ::> (SCVec ::> ArgTypeNil))
+      stmtTarget1 = addToTarget $ densityE normalDistVec v (namedE "m" SCVec :> (namedE "sd" SCVec :> ArgNil))
   writeStmtCode ctxt1 stmtTarget1
-  let normalDistVec = Distribution "normal" SCVec (SCVec ::> (SCVec ::> ArgTypeNil))
-      stmtSample = sample v normalDistVec (namedE "m" SCVec :> (namedE "sd" SCVec :> ArgNil))
+  let stmtSample = sample v normalDistVec (namedE "m" SCVec :> (namedE "sd" SCVec :> ArgNil))
   writeStmtCode ctxt1 stmtSample
   cmnt "For loops, four ways"
   let stmtFor1 = for "k" (SpecificNumbered (intE 2) n) (one st2)

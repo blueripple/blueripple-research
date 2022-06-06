@@ -94,8 +94,8 @@ data Function :: EType -> [EType] -> Type  where
 functionArgTypes :: Function rt args -> ArgTypeList args
 functionArgTypes (Function _ _ al) = al
 
-data Distribution :: EType -> [EType] -> Type where
-  Distribution :: Text -> SType g -> ArgTypeList args -> Distribution g args
+data Density :: EType -> [EType] -> Type where
+  Density :: Text -> SType g -> ArgTypeList args -> Density g args
 
 -- const functor for holding arguments to functions
 data FuncArg :: Type -> k -> Type where

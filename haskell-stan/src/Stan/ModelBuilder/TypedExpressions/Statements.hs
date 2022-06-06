@@ -33,11 +33,9 @@ import qualified Data.Vec.Lazy as Vec
 import Prelude hiding (Nat)
 import Relude.Extra
 import qualified Data.Map.Strict as Map
-import Data.Vector.Generic (unsafeCopy)
 
 import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
-
 
 data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt))
 
@@ -56,12 +54,8 @@ vectorSpec ie = DeclSpec StanVector (ie ::: VNil)
 matrixSpec :: UExpr EInt -> UExpr EInt -> DeclSpec EMat
 matrixSpec re ce = DeclSpec StanMatrix (re ::: ce ::: VNil)
 
---arraySpec :: SNat n -> Vec n (UExpr EInt) -> StanType t -> Vec (Dimension t) (UExpr EInt) -> DeclSpec (EArray n t)
---arraySpec n arrIndices t tIndices = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices)
-
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices)
-
 
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
 declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UStmt
@@ -82,7 +76,7 @@ addToTarget = STarget
 assign :: UExpr t -> UExpr t -> UStmt
 assign = SAssign
 
-sample :: UExpr t -> Distribution t args -> ArgList UExpr args -> UStmt
+sample :: UExpr t -> Density t args -> ArgList UExpr args -> UStmt
 sample = SSample
 
 data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
@@ -156,7 +150,7 @@ data Stmt :: (EType -> Type) -> Type where
   SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> r et -> Stmt r
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
-  SSample :: r st -> Distribution st args -> ArgList r args -> Stmt r
+  SSample :: r st -> Density st args -> ArgList r args -> Stmt r
   SFor :: Text -> r EInt -> r EInt -> NonEmpty (Stmt r) -> Stmt r
   SForEach :: Text -> r t -> NonEmpty (Stmt r) -> Stmt r
   SIfElse :: NonEmpty (r EBool, Stmt r) -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
@@ -176,7 +170,7 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> r et -> StmtF r a
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
-  SSampleF :: r st -> Distribution st args -> ArgList r args -> StmtF r a
+  SSampleF :: r st -> Density st args -> ArgList r args -> StmtF r a
   SForF :: Text -> r EInt -> r EInt -> NonEmpty a -> StmtF r a
   SForEachF :: Text -> r t -> NonEmpty a -> StmtF r a
   SIfElseF :: NonEmpty (r EBool, a) -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse

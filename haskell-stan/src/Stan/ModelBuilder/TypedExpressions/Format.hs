@@ -62,7 +62,7 @@ stmtToCodeAlg = \case
   SDeclAssignF txt st divf rhs -> Right $ stanDeclHead st (DT.toList $ unDeclIndexVecF divf) <+> PP.pretty txt <+> PP.equals <+> f rhs <> PP.semi
   SAssignF lhs rhs -> Right $ f lhs <+> PP.equals <+> f rhs <> PP.semi
   STargetF rhs -> Right $ "target +=" <+> f rhs
-  SSampleF lhs (Distribution dn _ _) al -> Right $ f lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList (hfmap exprToCode al))
+  SSampleF lhs (Density dn _ _) al -> Right $ f lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList (hfmap exprToCode al))
   SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> f fe <> PP.colon <> f te) <+> bracketBlock b) <$> sequenceA body
   SForEachF txt e body -> (\b -> "foreach" <+> PP.parens (PP.pretty txt <+> "in" <+> f e) <+> bracketBlock b) <$> sequence body
   SIfElseF condAndIfTrueL allFalse -> ifElseCode condAndIfTrueL allFalse
@@ -220,7 +220,7 @@ exprToDocAlg = K . \case
   LMatrix ms -> Unsliced $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
   LArray nv -> Unsliced $ nestedVecToCode nv
   LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
-  LDistribution (Distribution dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
+  LDensity (Density dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
   LUnaryOp op e -> Unsliced $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
   LCond ce te fe -> Unsliced $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
