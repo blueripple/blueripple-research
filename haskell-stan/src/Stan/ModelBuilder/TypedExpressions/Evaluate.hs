@@ -131,3 +131,6 @@ doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
 
 statementToCodeE :: IndexLookupCtxt -> UStmt -> Either Text CodePP
 statementToCodeE ctxt0 x = doLookupsInStatementE ctxt0 x >>= stmtToCodeE
+
+statementToCodeE2 :: IndexLookupCtxt -> UStmt -> Either Text CodePP
+statementToCodeE2 ctxt0 x = doLookupsInStatementE ctxt0 x >>= stmtToCodeE2

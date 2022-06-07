@@ -48,7 +48,6 @@ import qualified Data.Map.Strict as Map
 
 import qualified Prettyprinter as PP
 import Prettyprinter ((<+>))
-import Knit.Report (boundaryFrom)
 --import qualified Data.List.NonEmpty.Extra as List
 
 
@@ -58,6 +57,9 @@ type CodePP = PP.Doc ()
 -- then fold up the statements to produce code
 stmtToCodeE :: LStmt -> Either Text CodePP
 stmtToCodeE = stmtToCodeE' . lStmtToCodeStmt
+
+stmtToCodeE2 :: LStmt -> Either Text CodePP
+stmtToCodeE2 = RS.hylo stmtToCodeAlg' statementExpressionsToCodeCoalg
 
 -- unfold to put code in for all expressions
 lStmtToCodeStmt :: LStmt -> Stmt (K CodePP)
