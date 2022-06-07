@@ -76,22 +76,22 @@ main = do
   writeStmtCode ctxt0 st2
   writeStmtCode ctxt1 st2
   writeStmtCode ctxt0 $ SContext (Just $ insertUseBinding "KIndex" lk) (one st2)
-  let stDeclare1 = declare "M" (matrixSpec n l)
+  let stDeclare1 = declare "M" (matrixSpec n l [])
       nStates = namedSizeE "States"
       nPredictors = namedSizeE "Predictors"
 
-      stDeclare2 = declare "A" $ arraySpec s2 (n ::: l ::: VNil) (matrixSpec nStates nPredictors)
+      stDeclare2 = declare "A" $ arraySpec s2 (n ::: l ::: VNil) (matrixSpec nStates nPredictors [lowerM $ realE 2])
   cmnt "Declarations"
   writeStmtCode ctxt1 stDeclare1
   writeStmtCode ctxt0 $ SContext (Just $ insertSizeBinding "Predictors" predictorsLE) (one stDeclare2)
   writeStmtCode ctxt0 $ SContext (Just $ insertSizeBinding "States" statesLE . insertSizeBinding "Predictors" predictorsLE) (one stDeclare2)
-  let stDeclAssign1 = declareAndAssign "M" (matrixSpec l n) (namedE "q" SMat)
+  let stDeclAssign1 = declareAndAssign "M" (matrixSpec l n [upperM $ realE 8]) (namedE "q" SMat)
   writeStmtCode ctxt0 stDeclAssign1
-  writeStmtCode ctxt0 $ declareAndAssign "v1" (vectorSpec $ intE 2) (vectorE [1,2])
-  writeStmtCode ctxt0 $ declareAndAssign "A" (matrixSpec (intE 2) (intE 2)) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
-  writeStmtCode ctxt0 $ declareAndAssign "B" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) realSpec)
+  writeStmtCode ctxt0 $ declareAndAssign "v1" (vectorSpec (intE 2) []) (vectorE [1,2])
+  writeStmtCode ctxt0 $ declareAndAssign "A" (matrixSpec (intE 2) (intE 2) []) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
+  writeStmtCode ctxt0 $ declareAndAssign "B" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) $ realSpec [lowerM $ realE 0])
     (arrayE $ NestedVec2 ((realE 2 ::: realE 3 ::: VNil) ::: (realE 4 ::: realE 5 ::: VNil) :::  VNil))
-  writeStmtCode ctxt0 $ declareAndAssign "C" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) (vectorSpec $ intE 2))
+  writeStmtCode ctxt0 $ declareAndAssign "C" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) (vectorSpec (intE 2) [lowerM $ realE 0 , multiplierM $ realE 3]))
     (arrayE $ NestedVec2 ((vectorE [1,2] ::: vectorE [3,4] ::: VNil) ::: (vectorE [4,5] ::: vectorE [5, 6] ::: VNil) :::  VNil))
   cmnt "Add to target, two ways."
   let normalDistVec = Density "normal" SCVec (SCVec ::> (SCVec ::> ArgTypeNil))

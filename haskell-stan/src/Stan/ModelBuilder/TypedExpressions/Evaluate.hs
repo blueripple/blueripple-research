@@ -98,8 +98,8 @@ doLookups = iCataM toLExprAlg
 -- context
 doLookupsInStatementC :: Stmt UExpr -> LookupM (StmtF LExpr (Stmt UExpr))
 doLookupsInStatementC = \case
-  SDeclare txt st divf -> SDeclareF txt st <$> htraverse f divf
-  SDeclAssign txt st divf if' -> SDeclAssignF txt st <$> htraverse f divf <*> f if'
+  SDeclare txt st divf vms -> SDeclareF txt st <$> htraverse f divf <*> traverse (htraverse f) vms
+  SDeclAssign txt st divf vms if' -> SDeclAssignF txt st <$> htraverse f divf <*> traverse (htraverse f) vms <*>f if'
   SAssign if' if1 -> SAssignF <$> f if' <*> f if1
   STarget if' -> STargetF <$> f if'
   SSample if' dis al -> SSampleF <$> f if' <*> pure dis <*> htraverse f al

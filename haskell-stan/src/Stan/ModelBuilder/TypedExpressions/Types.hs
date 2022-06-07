@@ -56,6 +56,15 @@ type family Promoted (a :: EType) (b :: EType) :: EType where
   Promoted EComplex EReal = EComplex
   Promoted a b = TE.TypeError (TE.Text "One of " :<>: TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " isn't a promotable (number) type.")
 
+--Stan's modifiers (e.g. "<lower=2>" apply to the internal type in an array.)
+type family InternalType (et :: EType) :: EType where
+  InternalType (EArray _ t) = InternalType t
+  InternalType ECVec = EReal
+  InternalType ERVec = EReal
+  InternalType EMat = EReal
+  InternalType ESqMat = EReal
+  InternalType a = a
+
 -- EType singleton
 data SType :: EType -> Type where
   SVoid :: SType EVoid

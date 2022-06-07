@@ -48,53 +48,92 @@ import qualified Data.Map.Strict as Map
 
 import qualified Prettyprinter as PP
 import Prettyprinter ((<+>))
+import Knit.Report (boundaryFrom)
 --import qualified Data.List.NonEmpty.Extra as List
 
 
 type CodePP = PP.Doc ()
 
+-- we unfold to replace LExprs within statements with prettyprinted code
+-- then fold up the statements to produce code
 stmtToCodeE :: LStmt -> Either Text CodePP
-stmtToCodeE = RS.cata stmtToCodeAlg
+stmtToCodeE = stmtToCodeE' . lStmtToCodeStmt
 
-stmtToCodeAlg :: StmtF LExpr (Either Text CodePP) -> Either Text CodePP
-stmtToCodeAlg = \case
-  SDeclareF txt st divf -> Right $ stanDeclHead st (DT.toList $ unDeclIndexVecF divf) <+> PP.pretty txt <> PP.semi
-  SDeclAssignF txt st divf rhs -> Right $ stanDeclHead st (DT.toList $ unDeclIndexVecF divf) <+> PP.pretty txt <+> PP.equals <+> f rhs <> PP.semi
-  SAssignF lhs rhs -> Right $ f lhs <+> PP.equals <+> f rhs <> PP.semi
-  STargetF rhs -> Right $ "target +=" <+> f rhs
-  SSampleF lhs (Density dn _ _) al -> Right $ f lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList (hfmap exprToCode al))
-  SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> f fe <> PP.colon <> f te) <+> bracketBlock b) <$> sequenceA body
-  SForEachF txt e body -> (\b -> "foreach" <+> PP.parens (PP.pretty txt <+> "in" <+> f e) <+> bracketBlock b) <$> sequence body
+-- unfold to put code in for all expressions
+lStmtToCodeStmt :: LStmt -> Stmt (K CodePP)
+lStmtToCodeStmt = RS.ana statementExpressionsToCodeCoalg
+
+statementExpressionsToCodeCoalg :: LStmt -> StmtF (K CodePP) LStmt
+statementExpressionsToCodeCoalg = \case
+  SDeclare txt st divf vms -> SDeclareF txt st (hfmap f divf) (fmap (hfmap f) vms)
+  SDeclAssign txt st divf vms rhse -> SDeclAssignF txt st (hfmap f divf) (fmap (hfmap f) vms) (f rhse)
+  SAssign lhs rhs -> SAssignF (f lhs) (f rhs)
+  STarget rhs -> STargetF (f rhs)
+  SSample lhs d al -> SSampleF (f lhs) d (hfmap f al)
+  SFor ctr le ue body -> SForF ctr (f le) (f ue) body
+  SForEach ctr ctre body -> SForEachF ctr (f ctre) body
+  SIfElse conds ifFalseS -> SIfElseF (first f <$> conds) ifFalseS
+  SWhile c body -> SWhileF (f c) body
+  SBreak -> SBreakF
+  SContinue -> SContinueF
+  SFunction func al body re -> SFunctionF func al body (f re)
+  SComment cs -> SCommentF cs
+  SPrint al -> SPrintF (hfmap f al)
+  SReject al -> SRejectF (hfmap f al)
+  SScoped body -> SScopedF body
+  SBlock sb body -> SBlockF sb body
+  SContext ml body -> SContextF ml body
+  where
+    f = exprToCode
+
+-- fold to put the expressions and staements together
+stmtToCodeE' :: Stmt (K CodePP) -> Either Text CodePP
+stmtToCodeE' = RS.cata stmtToCodeAlg'
+
+stmtToCodeAlg' :: StmtF (K CodePP) (Either Text CodePP) -> Either Text CodePP
+stmtToCodeAlg' = \case
+  SDeclareF txt st divf vms -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <> PP.semi
+  SDeclAssignF txt st divf vms rhs -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <+> PP.equals <+> unK rhs <> PP.semi
+  SAssignF lhs rhs -> Right $ unK lhs <+> PP.equals <+> unK rhs <> PP.semi
+  STargetF rhs -> Right $ "target +=" <+> unK rhs
+  SSampleF lhs (Density dn _ _) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList al)
+  SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> unK fe <> PP.colon <> unK te) <+> bracketBlock b) <$> sequenceA body
+  SForEachF txt e body -> (\b -> "foreach" <+> PP.parens (PP.pretty txt <+> "in" <+> unK e) <+> bracketBlock b) <$> sequence body
   SIfElseF condAndIfTrueL allFalse -> ifElseCode condAndIfTrueL allFalse
-  SWhileF if' body -> (\b -> "while" <+> PP.parens (f if') <+> bracketBlock b) <$> sequence body
+  SWhileF if' body -> (\b -> "while" <+> PP.parens (unK if') <+> bracketBlock b) <$> sequence body
   SBreakF -> Right $ "break" <> PP.semi
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats) al body re ->
-    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> f re <> PP.semi])) <$> sequence body
+    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
   SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
   SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
-  SPrintF al -> Right $ "print" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
-  SRejectF al -> Right $ "reject" <+> PP.parens (csArgList $ hfmap exprToCode al) <> PP.semi
+  SPrintF al -> Right $ "print" <+> PP.parens (csArgList al) <> PP.semi
+  SRejectF al -> Right $ "reject" <+> PP.parens (csArgList al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body
   SBlockF bl body -> maybe (Right mempty) (fmap (\x -> PP.pretty (stmtBlockHeader bl) <> bracketBlock x) . sequenceA) $ nonEmpty body
   SContextF mf body -> case mf of
-    Just _ -> Left $ "stmtToCodeAlg: Impossible! SContext with a change function remaining!"
+    Just _ -> Left "stmtToCodeAlg: Impossible! SContext with a change function remaining!"
     Nothing -> blockCode <$> sequence body
-  where
-    f = unK . exprToCode
 
-indexCodeL :: [LExpr EInt] -> CodePP
+indexCodeL :: [CodePP] -> CodePP
 indexCodeL [] = ""
-indexCodeL (ie : ies) = PP.brackets $ mconcat $ PP.punctuate ", " $ go ie ies
-  where
-    go ie [] = [unK $ exprToCode ie]
-    go ie (ie' : ies') = (unK $ exprToCode ie) : go ie' ies'
+indexCodeL x = PP.brackets $ PP.hsep $ PP.punctuate "," x
 
-stanDeclHead :: StanType t -> [LExpr EInt] -> CodePP
-stanDeclHead st il = case st of
+stanDeclHead :: StanType t -> [CodePP] -> [VarModifier (K CodePP) (InternalType t)] -> CodePP
+stanDeclHead st il vms = case st of
   StanArray sn st -> let (adl, sdl) = List.splitAt (fromIntegral $ DT.snatToNatural sn) il
-                     in "array" <> indexCodeL adl <+> stanDeclHead st sdl
-  _ -> PP.pretty (stanTypeName st) <> indexCodeL il
+                     in "array" <> indexCodeL adl <+> stanDeclHead st sdl vms
+  _ -> PP.pretty (stanTypeName st)  <> indexCodeL il <> varModifiersToCode vms
+  where
+    vmToCode = \case
+      VarLower x -> "lower" <> PP.equals <> unK x
+      VarUpper x -> "upper" <> PP.equals <> unK x
+      VarOffset x -> "offset" <> PP.equals <> unK x
+      VarMultiplier x -> "multiplier" <> PP.equals <> unK x
+    varModifiersToCode vms =
+      if null vms
+      then mempty
+      else PP.langle <> (PP.hsep $ PP.punctuate ", " $ fmap vmToCode vms) <> PP.rangle
 
 -- add brackets and indent the lines of code
 bracketBlock :: NonEmpty CodePP -> CodePP
@@ -137,16 +176,13 @@ functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <>
 
     argCodeList = argsKToList $ zipArgListsWith f (argTypesToSTypeList argTypes) argNames
 
-ifElseCode :: NonEmpty (LExpr EBool, Either Text CodePP) -> Either Text CodePP -> Either Text CodePP
+ifElseCode :: NonEmpty (K CodePP EBool, Either Text CodePP) -> Either Text CodePP -> Either Text CodePP
 ifElseCode ecNE c = do
-  let f = unK . exprToCode
-      (conds, ifTrueCodeEs) = NE.unzip ecNE
-      condCode (e :| es) = "if" <+> PP.parens (f e) <> PP.space :| fmap (\le -> "else if" <+> PP.parens (f le) <> PP.space) es
+  let (conds, ifTrueCodeEs) = NE.unzip ecNE
+      condCode (e :| es) = "if" <+> PP.parens (unK e) <> PP.space :| fmap (\le -> "else if" <+> PP.parens (unK le) <> PP.space) es
       condCodeNE = condCode conds `appendList` ["else"]
   ifTrueCodes <- sequenceA (ifTrueCodeEs `appendList` [c])
-  let ecNE = NE.zipWith (\condCode ifTrueCode -> condCode <+> ifTrueCode)
-             condCodeNE
-             (fmap (bracketBlock . one) ifTrueCodes)
+  let ecNE = NE.zipWith (<+>) condCodeNE (fmap (bracketBlock . one) ifTrueCodes)
   return $ blockCode' ecNE
 
 data  IExprCode :: Type where

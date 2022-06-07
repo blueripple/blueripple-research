@@ -37,38 +37,38 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
 
-data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt))
+data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (InternalType t)]
 
-intSpec :: DeclSpec EInt
+intSpec :: [VarModifier UExpr EInt] -> DeclSpec EInt
 intSpec = DeclSpec StanInt VNil
 
-realSpec :: DeclSpec EReal
+realSpec :: [VarModifier UExpr EReal] -> DeclSpec EReal
 realSpec = DeclSpec StanReal VNil
 
-complexSpec :: DeclSpec EComplex
+complexSpec :: [VarModifier UExpr EComplex] -> DeclSpec EComplex
 complexSpec = DeclSpec StanComplex VNil
 
-vectorSpec :: UExpr EInt -> DeclSpec ECVec
+vectorSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
 vectorSpec ie = DeclSpec StanVector (ie ::: VNil)
 
-matrixSpec :: UExpr EInt -> UExpr EInt -> DeclSpec EMat
+matrixSpec :: UExpr EInt -> UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec EMat
 matrixSpec re ce = DeclSpec StanMatrix (re ::: ce ::: VNil)
 
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
-arraySpec n arrIndices (DeclSpec t tIndices) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices)
+arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
 
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
-declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UStmt
+declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (InternalType t)] -> UStmt
 declare' vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
 
 declare :: Text -> DeclSpec t -> UStmt
-declare vn (DeclSpec st indices) = declare' vn st indices
+declare vn (DeclSpec st indices vms) = declare' vn st indices vms
 
-declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> UExpr t -> UStmt
-declareAndAssign' vn vt iDecls = SDeclAssign vn vt (DeclIndexVecF iDecls)
+declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (InternalType t)] -> UExpr t -> UStmt
+declareAndAssign' vn vt iDecls vms = SDeclAssign vn vt (DeclIndexVecF iDecls) vms
 
 declareAndAssign :: Text -> DeclSpec t -> UExpr t -> UStmt
-declareAndAssign vn (DeclSpec vt indices) = declareAndAssign' vn vt indices
+declareAndAssign vn (DeclSpec vt indices vms) = declareAndAssign' vn vt indices vms
 
 addToTarget :: UExpr EReal -> UStmt
 addToTarget = STarget
@@ -136,6 +136,40 @@ insertUseBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie
 insertSizeBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
 insertSizeBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt (Map.insert k ie a) b
 
+data VarModifier :: (EType -> Type) -> EType -> Type where
+  VarLower :: r t -> VarModifier r t
+  VarUpper :: r t -> VarModifier r t
+  VarOffset :: r t -> VarModifier r t
+  VarMultiplier :: r t -> VarModifier r t
+
+lowerM :: UExpr t -> VarModifier UExpr t
+lowerM = VarLower
+
+upperM :: UExpr t -> VarModifier UExpr t
+upperM = VarUpper
+
+offsetM :: UExpr t -> VarModifier UExpr t
+offsetM = VarOffset
+
+multiplierM :: UExpr t -> VarModifier UExpr t
+multiplierM = VarMultiplier
+
+
+instance TR.HFunctor VarModifier where
+  hfmap f = \case
+    VarLower x -> VarLower $ f x
+    VarUpper x -> VarUpper $ f x
+    VarOffset x -> VarOffset $ f x
+    VarMultiplier x -> VarMultiplier $ f x
+
+instance TR.HTraversable VarModifier where
+  htraverse nat = \case
+    VarLower x -> VarLower <$> nat x
+    VarUpper x -> VarUpper <$> nat x
+    VarOffset x -> VarOffset <$> nat x
+    VarMultiplier x -> VarMultiplier <$> nat x
+  hmapM = TR.htraverse
+
 data StmtBlock = FunctionsStmts
                | DataStmts
                | TDataStmts
@@ -146,8 +180,8 @@ data StmtBlock = FunctionsStmts
 
 -- Statements
 data Stmt :: (EType -> Type) -> Type where
-  SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> Stmt r
-  SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> r et -> Stmt r
+  SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> Stmt r
+  SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> r et -> Stmt r
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
   SSample :: r st -> Density st args -> ArgList r args -> Stmt r
@@ -166,8 +200,8 @@ data Stmt :: (EType -> Type) -> Type where
   SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
-  SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> StmtF r a
-  SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> r et -> StmtF r a
+  SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> StmtF r a
+  SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> r et -> StmtF r a
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
   SSampleF :: r st -> Density st args -> ArgList r args -> StmtF r a
@@ -194,8 +228,8 @@ data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt),
 
 instance Functor (StmtF f) where
   fmap f x = case x of
-    SDeclareF txt st divf -> SDeclareF txt st divf
-    SDeclAssignF txt st divf fet -> SDeclAssignF txt st divf fet
+    SDeclareF txt st divf vms -> SDeclareF txt st divf vms
+    SDeclAssignF txt st divf vms rhse -> SDeclAssignF txt st divf vms rhse
     SAssignF ft ft' -> SAssignF ft ft'
     STargetF f' -> STargetF f'
     SSampleF fst dis al -> SSampleF fst dis al
@@ -236,8 +270,8 @@ instance Foldable (StmtF f) where
 
 instance Traversable (StmtF f) where
   traverse g = \case
-    SDeclareF txt st divf -> pure $ SDeclareF txt st divf
-    SDeclAssignF txt st divf fet -> pure $ SDeclAssignF txt st divf fet
+    SDeclareF txt st divf vms -> pure $ SDeclareF txt st divf vms
+    SDeclAssignF txt st divf vms fet -> pure $ SDeclAssignF txt st divf vms fet
     SAssignF ft ft' -> pure $ SAssignF ft ft'
     STargetF f -> pure $ STargetF f
     SSampleF fst dis al -> pure $ SSampleF fst dis al
@@ -257,8 +291,8 @@ instance Traversable (StmtF f) where
 
 instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
   project = \case
-    SDeclare txt st divf -> SDeclareF txt st divf
-    SDeclAssign txt st divf fet -> SDeclAssignF txt st divf fet
+    SDeclare txt st divf vms -> SDeclareF txt st divf vms
+    SDeclAssign txt st divf vms fet -> SDeclAssignF txt st divf vms fet
     SAssign ft ft' -> SAssignF ft ft'
     STarget f -> STargetF f
     SSample fst dis al -> SSampleF fst dis al
@@ -278,8 +312,8 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
 
 instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
   embed = \case
-    SDeclareF txt st divf -> SDeclare txt st divf
-    SDeclAssignF txt st divf fet -> SDeclAssign txt st divf fet
+    SDeclareF txt st divf vms -> SDeclare txt st divf vms
+    SDeclAssignF txt st divf vms fet -> SDeclAssign txt st divf vms fet
     SAssignF ft ft' -> SAssign ft ft'
     STargetF f -> STarget f
     SSampleF fst dis al -> SSample fst dis al
