@@ -27,7 +27,7 @@ writeExprCode ctxt0 ue = case flip evalStateT ctxt0 $ doLookups ue of
       putTextLn ""
 
 writeStmtCode :: IndexLookupCtxt -> UStmt -> IO ()
-writeStmtCode ctxt0 s = case statementToCodeE2 ctxt0 s of
+writeStmtCode ctxt0 s = case statementToCodeE ctxt0 s of
     Left txt -> putTextLn $ "doLookups failed with message: " <> txt
     Right c -> do
       PP.putDoc c

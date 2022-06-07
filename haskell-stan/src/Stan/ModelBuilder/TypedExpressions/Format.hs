@@ -53,47 +53,13 @@ import Prettyprinter ((<+>))
 
 type CodePP = PP.Doc ()
 
--- we unfold to replace LExprs within statements with prettyprinted code
+-- we replace LExprs within statements with prettyprinted code
 -- then fold up the statements to produce code
 stmtToCodeE :: LStmt -> Either Text CodePP
-stmtToCodeE = stmtToCodeE' . lStmtToCodeStmt
+stmtToCodeE = RS.hylo stmtToCodeAlg (hfmap exprToCode . RS.project)
 
-stmtToCodeE2 :: LStmt -> Either Text CodePP
-stmtToCodeE2 = RS.hylo stmtToCodeAlg' statementExpressionsToCodeCoalg
-
--- unfold to put code in for all expressions
-lStmtToCodeStmt :: LStmt -> Stmt (K CodePP)
-lStmtToCodeStmt = RS.ana statementExpressionsToCodeCoalg
-
-statementExpressionsToCodeCoalg :: LStmt -> StmtF (K CodePP) LStmt
-statementExpressionsToCodeCoalg = \case
-  SDeclare txt st divf vms -> SDeclareF txt st (hfmap f divf) (fmap (hfmap f) vms)
-  SDeclAssign txt st divf vms rhse -> SDeclAssignF txt st (hfmap f divf) (fmap (hfmap f) vms) (f rhse)
-  SAssign lhs rhs -> SAssignF (f lhs) (f rhs)
-  STarget rhs -> STargetF (f rhs)
-  SSample lhs d al -> SSampleF (f lhs) d (hfmap f al)
-  SFor ctr le ue body -> SForF ctr (f le) (f ue) body
-  SForEach ctr ctre body -> SForEachF ctr (f ctre) body
-  SIfElse conds ifFalseS -> SIfElseF (first f <$> conds) ifFalseS
-  SWhile c body -> SWhileF (f c) body
-  SBreak -> SBreakF
-  SContinue -> SContinueF
-  SFunction func al body re -> SFunctionF func al body (f re)
-  SComment cs -> SCommentF cs
-  SPrint al -> SPrintF (hfmap f al)
-  SReject al -> SRejectF (hfmap f al)
-  SScoped body -> SScopedF body
-  SBlock sb body -> SBlockF sb body
-  SContext ml body -> SContextF ml body
-  where
-    f = exprToCode
-
--- fold to put the expressions and staements together
-stmtToCodeE' :: Stmt (K CodePP) -> Either Text CodePP
-stmtToCodeE' = RS.cata stmtToCodeAlg'
-
-stmtToCodeAlg' :: StmtF (K CodePP) (Either Text CodePP) -> Either Text CodePP
-stmtToCodeAlg' = \case
+stmtToCodeAlg :: StmtF (K CodePP) (Either Text CodePP) -> Either Text CodePP
+stmtToCodeAlg = \case
   SDeclareF txt st divf vms -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <> PP.semi
   SDeclAssignF txt st divf vms rhs -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <+> PP.equals <+> unK rhs <> PP.semi
   SAssignF lhs rhs -> Right $ unK lhs <+> PP.equals <+> unK rhs <> PP.semi
@@ -106,7 +72,8 @@ stmtToCodeAlg' = \case
   SBreakF -> Right $ "break" <> PP.semi
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats) al body re ->
-    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
+    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al
+           <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
   SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
   SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList al) <> PP.semi

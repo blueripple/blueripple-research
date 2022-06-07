@@ -134,11 +134,16 @@ data StanType :: EType -> Type where
   StanComplex :: StanType EComplex
   StanArray :: SNat n -> StanType et -> StanType (EArray n et)
   StanVector :: StanType ECVec
+  StanOrdered :: StanType ECVec
+  StanPositiveOrdered :: StanType ECVec
+  StanSimplex :: StanType ECVec
+  StanUnitVector :: StanType ECVec
   StanRowVector :: StanType ERVec
   StanMatrix :: StanType EMat
   StanCorrMatrix :: StanType ESqMat
   StanCholeskyFactorCorr :: StanType ESqMat
   StanCovMatrix :: StanType ESqMat
+  StanCholeskyFactorCov :: StanType ESqMat
 
 stanTypeName :: StanType t -> Text
 stanTypeName = \case
@@ -147,11 +152,16 @@ stanTypeName = \case
   StanComplex -> "complex"
   StanArray sn st -> "array"
   StanVector -> "vector"
+  StanOrdered -> "ordered"
+  StanPositiveOrdered -> "positive_ordered"
+  StanSimplex -> "simplex"
+  StanUnitVector -> "unit_vector"
   StanRowVector -> "row_vector"
   StanMatrix -> "matrix"
   StanCorrMatrix -> "corr_matrix"
   StanCholeskyFactorCorr -> "cholesky_factor_corr"
   StanCovMatrix -> "cov_matrix"
+  StanCholeskyFactorCov -> "cholesky_factor_cov"
 
 {-
 data (a :: k) :~: (b :: k) where

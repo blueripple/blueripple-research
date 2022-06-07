@@ -36,6 +36,7 @@ import qualified Data.Map.Strict as Map
 
 import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
+import Knit.Report (boundaryFrom)
 
 data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (InternalType t)]
 
@@ -51,8 +52,35 @@ complexSpec = DeclSpec StanComplex VNil
 vectorSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
 vectorSpec ie = DeclSpec StanVector (ie ::: VNil)
 
+orderedSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
+orderedSpec ie = DeclSpec StanOrdered (ie ::: VNil)
+
+positiveOrderedSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
+positiveOrderedSpec ie = DeclSpec StanPositiveOrdered (ie ::: VNil)
+
+simplexSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
+simplexSpec ie = DeclSpec StanSimplex (ie ::: VNil)
+
+unitVectorSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ECVec
+unitVectorSpec ie = DeclSpec StanUnitVector (ie ::: VNil)
+
+rowVectorSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ERVec
+rowVectorSpec ie = DeclSpec StanRowVector (ie ::: VNil)
+
 matrixSpec :: UExpr EInt -> UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec EMat
 matrixSpec re ce = DeclSpec StanMatrix (re ::: ce ::: VNil)
+
+corrMatrixSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ESqMat
+corrMatrixSpec rce = DeclSpec StanCorrMatrix (rce ::: VNil)
+
+covMatrixSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ESqMat
+covMatrixSpec rce = DeclSpec StanCovMatrix (rce ::: VNil)
+
+choleskyFactorCorrSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ESqMat
+choleskyFactorCorrSpec rce = DeclSpec StanCholeskyFactorCorr (rce ::: VNil)
+
+choleskyFactorCovSpec :: UExpr EInt -> [VarModifier UExpr EReal] -> DeclSpec ESqMat
+choleskyFactorCovSpec rce = DeclSpec StanCholeskyFactorCov (rce ::: VNil)
 
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
@@ -252,7 +280,7 @@ instance Foldable (StmtF f) where
     SDeclareF {} -> mempty
     SDeclAssignF {} -> mempty
     SAssignF {} -> mempty
-    STargetF _ -> mempty
+    STargetF {} -> mempty
     SSampleF {} -> mempty
     SForF _ _ _ body -> foldMap f body
     SForEachF _ _ body -> foldMap f body
@@ -262,8 +290,8 @@ instance Foldable (StmtF f) where
     SContinueF -> mempty
     SFunctionF _ _ body _ -> foldMap f body
     SCommentF _ -> mempty
-    SPrintF _ -> mempty
-    SRejectF _ -> mempty
+    SPrintF {} -> mempty
+    SRejectF {} -> mempty
     SScopedF body -> foldMap f body
     SBlockF _ body -> foldMap f body
     SContextF _ body -> foldMap f body
@@ -331,37 +359,45 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SBlockF bl sts -> SBlock bl sts
     SContextF mf sts -> SContext mf sts
 
-
-
-{-
 instance TR.HFunctor StmtF where
   hfmap nat = \case
-    SDeclare txt st divf -> SDeclare txt st (TR.hfmap nat divf)
-    SDeclAssign txt st divf rhe -> SDeclAssign txt st (TR.hfmap nat divf) (nat rhe)
-    SAssign lhe rhe -> SAssign (nat lhe) (nat rhe)
-    STarget rhe -> STarget (nat rhe)
-    SSample gst dis al -> SSample (nat gst) dis (TR.hfmap nat al)
-    SFor txt se ee body -> SFor txt (nat se) (nat se) body
-    SForEach txt gt body -> SForEach txt (nat gt) (body)
-    SIfElse x0 sf -> SIfElse (firstF nat x0) sf
-    SWhile g body -> SWhile (nat g) body
-    SFunction func al body -> SFunction func al body
-    SScope body -> SScope body
+    SDeclareF txt st divf vms -> SDeclareF txt st (TR.hfmap nat divf) (fmap (TR.hfmap nat) vms)
+    SDeclAssignF txt st divf vms rhe -> SDeclAssignF txt st (TR.hfmap nat divf) (fmap (TR.hfmap nat) vms) (nat rhe)
+    SAssignF lhe rhe -> SAssignF (nat lhe) (nat rhe)
+    STargetF rhe -> STargetF (nat rhe)
+    SSampleF gst dis al -> SSampleF (nat gst) dis (TR.hfmap nat al)
+    SForF txt se ee body -> SForF txt (nat se) (nat se) body
+    SForEachF txt gt body -> SForEachF txt (nat gt) body
+    SIfElseF x0 sf -> SIfElseF (firstF nat x0) sf
+    SWhileF g body -> SWhileF (nat g) body
+    SBreakF -> SBreakF
+    SContinueF -> SContinueF
+    SFunctionF func al body re -> SFunctionF func al body (nat re)
+    SCommentF x -> SCommentF x
+    SPrintF args -> SPrintF (TR.hfmap nat args)
+    SRejectF args -> SRejectF (TR.hfmap nat args)
+    SScopedF body -> SScopedF body
+    SBlockF bl body -> SBlockF bl body
+    SContextF mf body -> SContextF mf body
 
 instance TR.HTraversable StmtF where
   htraverse natM = \case
-    SDeclare txt st indexEs -> SDeclare txt st <$> TR.htraverse natM indexEs
-    SDeclAssign txt st indexEs rhe -> SDeclAssign txt st <$> TR.htraverse natM indexEs <*> natM rhe
-    SAssign lhe rhe -> SAssign <$> natM lhe <*> natM rhe
-    STarget re -> STarget <$> natM re
-    SSample ste dist al -> SSample <$> natM ste <*> pure dist <*> TR.htraverse natM al
-    SFor txt se ee body -> SFor txt <$> natM se <*> natM ee <*> pure body
-    SForEach txt at body -> SForEach txt <$> natM at <*> pure body
-    SIfElse x0 sf -> SIfElse <$> traverse (\(c, s) -> (,) <$> natM c <*> pure s) x0 <*> pure sf
-    SWhile cond body -> SWhile <$> natM cond <*> pure body
-    SFunction func al body -> pure $ SFunction func al body
-    SScope body -> pure $ SScope body
+    SDeclareF txt st indexEs vms -> SDeclareF txt st <$> TR.htraverse natM indexEs <*> traverse (TR.htraverse natM) vms
+    SDeclAssignF txt st indexEs vms rhe -> SDeclAssignF txt st <$> TR.htraverse natM indexEs <*> traverse (TR.htraverse natM) vms <*> natM rhe
+    SAssignF lhe rhe -> SAssignF <$> natM lhe <*> natM rhe
+    STargetF re -> STargetF <$> natM re
+    SSampleF ste dist al -> SSampleF <$> natM ste <*> pure dist <*> TR.htraverse natM al
+    SForF txt se ee body -> SForF txt <$> natM se <*> natM ee <*> pure body
+    SForEachF txt at body -> SForEachF txt <$> natM at <*> pure body
+    SIfElseF x0 sf -> SIfElseF <$> traverse (\(c, s) -> (,) <$> natM c <*> pure s) x0 <*> pure sf
+    SWhileF cond body -> SWhileF <$> natM cond <*> pure body
+    SBreakF -> pure SBreakF
+    SContinueF -> pure SContinueF
+    SFunctionF func al body re -> SFunctionF func al body <$> natM re
+    SCommentF x -> pure $ SCommentF x
+    SPrintF args -> SPrintF <$> TR.htraverse natM args
+    SRejectF args -> SRejectF <$> TR.htraverse natM args
+    SScopedF body -> pure $ SScopedF body
+    SBlockF bl body -> pure $ SBlockF bl body
+    SContextF mf body -> pure $ SContextF mf body
   hmapM = TR.htraverse
-
-
--}
