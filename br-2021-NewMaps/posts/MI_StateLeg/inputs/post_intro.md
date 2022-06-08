@@ -109,3 +109,17 @@ district in hopes of winning. But we do think it might be worth longer-term
 investment, or at least some work understanding how the history of this
 particular area is so different from demographic expectations. Why has
 this density and level of education not led to a more competitive district?
+
+In order to simplify the results we’ve split them into four categories:
+
+1. “Both Models Close” lists districts where both models agree that the race is close. These are always good places for donors.
+2. “Plausible Surprises” includes districts whiche are historically close and where our model suggests an outcome different
+  from the historical expectation. These might be interesting as long-shot picks, bench-building or for purposes of defense in a tough year.
+3. “Differences of degree” lists districts where our models agree but we think it’s less close than the historical model. We’re less interested
+  in driving donations to these districts since we think they are safe or out of reach, especially in this cycle.
+4. “Implausible Suprises” includes districts where we disagree strongly with the historical model but the difference is so large as to be more
+  likely a place where the model is a bad fit and the historical model does not leave much room for a supriose outcome.
+
+We ignore the remaining districts, ones where both models consider the district safe for either Ds or Rs. While there might be great
+long term reasons to invest in candidates there, we don’t see the value in the near-term.  Even for bench-building work, we’d much rather see
+it in districts on the “plausible suprises” list. Also, some categories in some states are empty, so we omit those tables altogether.
