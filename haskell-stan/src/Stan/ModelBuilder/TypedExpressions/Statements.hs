@@ -38,7 +38,7 @@ import qualified Data.Functor.Foldable as RS
 import Stan.ModelBuilder (TransformedParametersBlock)
 import Knit.Report (boundaryFrom)
 
-data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (InternalType t)]
+data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (ScalarType t)]
 
 intSpec :: [VarModifier UExpr EInt] -> DeclSpec EInt
 intSpec = DeclSpec StanInt VNil
@@ -86,13 +86,13 @@ arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
 
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
-declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (InternalType t)] -> UStmt
+declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (ScalarType t)] -> UStmt
 declare' vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
 
 declare :: Text -> DeclSpec t -> UStmt
 declare vn (DeclSpec st indices vms) = declare' vn st indices vms
 
-declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (InternalType t)] -> UExpr t -> UStmt
+declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (ScalarType t)] -> UExpr t -> UStmt
 declareAndAssign' vn vt iDecls vms = SDeclAssign vn vt (DeclIndexVecF iDecls) vms
 
 declareAndAssign :: Text -> DeclSpec t -> UExpr t -> UStmt
@@ -208,8 +208,8 @@ data StmtBlock = FunctionsStmts
 
 -- Statements
 data Stmt :: (EType -> Type) -> Type where
-  SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> Stmt r
-  SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> r et -> Stmt r
+  SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> Stmt r
+  SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> Stmt r
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
   SSample :: r st -> Density st args -> ArgList r args -> Stmt r
@@ -228,8 +228,8 @@ data Stmt :: (EType -> Type) -> Type where
   SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
-  SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> StmtF r a
-  SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (InternalType et)] -> r et -> StmtF r a
+  SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> StmtF r a
+  SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> StmtF r a
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
   SSampleF :: r st -> Density st args -> ArgList r args -> StmtF r a
@@ -252,7 +252,7 @@ type instance RS.Base (Stmt f) = StmtF f
 type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indices :: Map SME.IndexKey (LExpr EInt) }
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indexes :: Map SME.IndexKey (LExpr EInt) }
 
 instance Functor (StmtF f) where
   fmap f x = case x of

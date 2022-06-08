@@ -21,14 +21,26 @@ import qualified Prettyprinter.Render.Text as PP
 
 writeExprCode :: IndexLookupCtxt -> UExpr t -> IO ()
 writeExprCode ctxt0 ue = case flip evalStateT ctxt0 $ doLookups ue of
-    Left txt -> putTextLn $ "doLookups failed with message: " <> txt
+    Left txt -> do
+      putTextLn $ "doLookups failed with message: " <> txt
+      case flip evalStateT ctxt0 $ doLookupsE ue of
+        Left err2 -> putTextLn $ "Yikes! Cannot even make no-lookup tree: " <> err2
+        Right ee -> do
+          PP.putDoc $ unK $ eExprToCode ee
+          putTextLn ""
     Right le -> do
       PP.putDoc $ unK $ exprToCode le
       putTextLn ""
 
 writeStmtCode :: IndexLookupCtxt -> UStmt -> IO ()
 writeStmtCode ctxt0 s = case statementToCodeE ctxt0 s of
-    Left txt -> putTextLn $ "doLookups failed with message: " <> txt
+    Left txt -> do
+      putTextLn $ "doLookups failed with message: " <> txt
+      case eStatementToCodeE ctxt0 s of
+        Left err2 -> putTextLn $ "Yikes! Cannot even make no-lookup tree: " <> err2
+        Right ec -> do
+          PP.putDoc ec
+          putTextLn ""
     Right c -> do
       PP.putDoc c
       putTextLn ""

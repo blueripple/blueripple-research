@@ -88,7 +88,7 @@ indexCodeL :: [CodePP] -> CodePP
 indexCodeL [] = ""
 indexCodeL x = PP.brackets $ PP.hsep $ PP.punctuate "," x
 
-stanDeclHead :: StanType t -> [CodePP] -> [VarModifier (K CodePP) (InternalType t)] -> CodePP
+stanDeclHead :: StanType t -> [CodePP] -> [VarModifier (K CodePP) (ScalarType t)] -> CodePP
 stanDeclHead st il vms = case st of
   StanArray sn st -> let (adl, sdl) = List.splitAt (fromIntegral $ DT.snatToNatural sn) il
                      in "array" <> indexCodeL adl <+> stanDeclHead st sdl vms

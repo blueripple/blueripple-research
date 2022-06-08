@@ -1,18 +1,16 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.TypedExpressions.Evaluate where
 import qualified Stan.ModelBuilder.Expressions as SME
@@ -27,15 +25,17 @@ import Stan.ModelBuilder.TypedExpressions.Recursion
 import Stan.ModelBuilder.TypedExpressions.Format
 
 import qualified Data.Functor.Foldable.Monadic as RS
+import qualified Data.Functor.Foldable as RS
 
-import Control.Monad.State.Strict (modify, gets, withStateT)
+import Control.Monad.State.Strict (modify, withStateT)
 import Data.Type.Nat (Nat(..), SNat(..))
 import Data.Foldable (maximum)
 import qualified Data.Functor.Classes as FC
 import qualified Data.Functor.Classes.Generic as FC
 import qualified Data.Functor.Foldable as Rec
 import qualified Data.Functor.Foldable.Monadic as Rec
-import GHC.Generics (Generic1)
+
+import qualified Control.Error as X
 
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as Map
@@ -45,11 +45,11 @@ import          Data.List ((!!),(++))
 import qualified Data.Fix as Fix
 import qualified Data.Text as T
 
---import qualified Text.PrettyPrint as Pretty
+
+import qualified Prettyprinter as PP
 import qualified Data.Type.Nat as DT
 import Stan.ModelBuilder.Expressions (LookupContext)
-import GHC.RTS.Flags (GCFlags(oldGenFactor))
-import Knit.Report (boundaryFrom)
+
 
 {- Evaluation passes
 1a. NatM LookupM UExpr LExpr (forall x. UExpr x -> LookupM LExpr x)
@@ -70,64 +70,124 @@ import Knit.Report (boundaryFrom)
 
 type LookupM = StateT IndexLookupCtxt (Either Text)
 
-lookupUse :: SME.IndexKey -> LookupM (LExpr EInt)
-lookupUse k = do
-  im <- gets indices
+lookupIndex :: SME.IndexKey -> LookupM (LExpr EInt)
+lookupIndex k = do
+  im <- gets indexes
   case Map.lookup k im of
     Just e -> pure e
-    Nothing -> lift $ Left $ "lookupUse: \"" <> k <> "\" not found in use map."
+    Nothing -> lift $ Left $ "lookupIndex: \"" <> k <> "\" not found in index map."
 
 lookupSize :: SME.IndexKey -> LookupM (LExpr EInt)
 lookupSize k = do
   sm <- gets sizes
   case Map.lookup k sm of
     Just e -> pure e
-    Nothing -> lift $ Left $ "lookupDecl: \"" <> k <> "\" not found in decl map."
+    Nothing -> lift $ Left $ "lookupSize: \"" <> k <> "\" not found in size map."
 
 toLExprAlg :: IAlgM LookupM UExprF LExpr
 toLExprAlg = \case
   UL x -> pure $ IFix x
-  UNamedIndex ik -> lookupUse ik
+  UNamedIndex ik -> lookupIndex ik
   UNamedSize ik -> lookupSize ik
 
 doLookups :: NatM LookupM UExpr LExpr
 doLookups = iCataM toLExprAlg
 
-
--- Coalgebra to unfold a statement requiring lookups from the top down so that
--- context
-doLookupsInStatementC :: Stmt UExpr -> LookupM (StmtF LExpr (Stmt UExpr))
-doLookupsInStatementC = \case
-  SDeclare txt st divf vms -> SDeclareF txt st <$> htraverse f divf <*> traverse (htraverse f) vms
-  SDeclAssign txt st divf vms if' -> SDeclAssignF txt st <$> htraverse f divf <*> traverse (htraverse f) vms <*>f if'
-  SAssign if' if1 -> SAssignF <$> f if' <*> f if1
-  STarget if' -> STargetF <$> f if'
-  SSample if' dis al -> SSampleF <$> f if' <*> pure dis <*> htraverse f al
-  SFor txt if' if1 sts -> SForF txt <$> f if' <*> f if1 <*> pure sts
-  SForEach txt if' sts -> SForEachF txt <$> f if' <*> pure sts
-  SIfElse x0 st -> SIfElseF <$> traverse (\(c, s) -> (,) <$> f c <*> pure s) x0 <*> pure st
-  SWhile if' sts -> SWhileF <$> f if' <*> pure sts
-  SBreak -> pure SBreakF
-  SContinue -> pure SContinueF
-  SFunction func al sts re -> SFunctionF func al sts <$> f re
-  SComment cs -> pure $ SCommentF cs
-  SPrint args -> SPrintF <$> htraverse f args
-  SReject args -> SRejectF <$> htraverse f args
-  SScoped sts -> pure $ SScopedF sts
-  SBlock bt sts -> pure $ SBlockF bt sts
-  SContext mf body -> case mf of
-    Nothing -> pure $ SContextF Nothing body
-    Just f -> SContextF Nothing <$> withStateT f (pure body)
-  where
-    f :: NatM LookupM UExpr LExpr
-    f = doLookups
-
-
 doLookupsInCStatement :: UStmt -> LookupM LStmt
-doLookupsInCStatement = RS.anaM doLookupsInStatementC
+doLookupsInCStatement = RS.anaM (htraverse doLookups . RS.project)-- doLookupsInStatementC
 
 doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
 
 statementToCodeE :: IndexLookupCtxt -> UStmt -> Either Text CodePP
 statementToCodeE ctxt0 x = doLookupsInStatementE ctxt0 x >>= stmtToCodeE
+
+data EExprF :: (EType -> Type) -> EType -> Type where
+  EL :: LExprF r t -> EExprF r t
+  EE :: Text -> EExprF r t
+
+instance HFunctor EExprF where
+  hfmap nat = \case
+    EL x -> EL $ hfmap nat x
+    EE t -> EE t
+
+instance HTraversable EExprF where
+  htraverse natM = \case
+    EL x -> EL <$> htraverse natM x
+    EE t -> pure $ EE t
+  hmapM = htraverse
+
+type EExpr = IFix EExprF
+
+lExprToEExpr :: LExpr t -> EExpr t
+lExprToEExpr = iCata (IFix . EL)
+
+lookupIndexE :: SME.IndexKey -> LookupM (EExpr EInt)
+lookupIndexE k =  do
+  im <- gets indexes
+  case Map.lookup k im of
+    Just e -> pure $ lExprToEExpr e
+    Nothing -> pure $ IFix $ EE $ "<index: " <> k <> ">"
+
+lookupSizeE :: SME.IndexKey -> LookupM (EExpr EInt)
+lookupSizeE k =  do
+  im <- gets sizes
+  case Map.lookup k im of
+    Just e -> pure $ lExprToEExpr e
+    Nothing -> pure $ IFix $ EE $ "<size: " <> k <> ">"
+
+type EStmt = Stmt EExpr
+
+doLookupsEInStatement :: UStmt -> LookupM EStmt
+doLookupsEInStatement = RS.anaM (htraverse doLookupsE . RS.project)
+
+doLookupsEInStatementE :: IndexLookupCtxt -> UStmt -> Either Text EStmt
+doLookupsEInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsEInStatement
+
+doLookupsE :: NatM LookupM UExpr EExpr
+doLookupsE = iCataM $ \case
+  UL x -> pure $ IFix $ EL x
+  UNamedIndex ik -> lookupIndexE ik
+  UNamedSize ik -> lookupSizeE ik
+
+
+eExprToIExprCode :: EExpr ~> K IExprCode
+eExprToIExprCode = iCata $ \case
+  EL x -> exprToDocAlg x
+  EE t -> K $ Unsliced $ PP.pretty t
+
+eExprToCode :: EExpr ~> K CodePP
+eExprToCode = K . iExprToCode . unK . eExprToIExprCode
+
+eStmtToCode :: EStmt -> Either Text CodePP
+eStmtToCode = RS.hylo stmtToCodeAlg (hfmap eExprToCode . RS.project)
+
+eStatementToCodeE :: IndexLookupCtxt -> UStmt -> Either Text CodePP
+eStatementToCodeE ctxt0 x = doLookupsEInStatementE ctxt0 x >>= eStmtToCode
+
+
+{-
+g :: NatM LookupM UExpr EExpr --UExpr t -> LookupM (EExpr t)
+g = \case
+  UL x -> _
+
+  iCataM $ \case
+  UL x ->
+
+--h :: NatM LookupM UExpr (EExprF UExpr)
+--h = iCataM _
+--  UL x -> pure $ IFix $ EL x
+
+
+toEExprAlg :: IAlgM LookupM UExprF EExpr
+toEExprAlg = \case
+  UL x -> pure $ EL x
+  UNamedIndex ik -> lookupUseE ik
+  UNamedSize ik -> lookupSizeE ik
+
+doLookupsE :: NatM LookupM UExpr EExpr
+doLookupsE = iCataM toEExprAlg
+
+--doLookupsEInCStatement :: UStmt -> LookupM EStmt
+--doLookupsEInCStatement = RS.anaM (htraverse )
+-}
