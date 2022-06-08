@@ -93,8 +93,16 @@ toLExprAlg = \case
 doLookups :: NatM LookupM UExpr LExpr
 doLookups = iCataM toLExprAlg
 
+
+handleContext :: StmtF r a -> LookupM (StmtF r a)
+handleContext = \case
+  SContextF mf body -> case mf of
+    Nothing -> pure $ SContextF Nothing body
+    Just f -> SContextF Nothing <$> withStateT f (pure body)
+  x -> pure x
+
 doLookupsInCStatement :: UStmt -> LookupM LStmt
-doLookupsInCStatement = RS.anaM (htraverse doLookups . RS.project)-- doLookupsInStatementC
+doLookupsInCStatement = RS.anaM (\x ->  htraverse doLookups (RS.project x) >>= handleContext)
 
 doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
@@ -139,7 +147,7 @@ lookupSizeE k =  do
 type EStmt = Stmt EExpr
 
 doLookupsEInStatement :: UStmt -> LookupM EStmt
-doLookupsEInStatement = RS.anaM (htraverse doLookupsE . RS.project)
+doLookupsEInStatement = RS.anaM (\x -> htraverse doLookupsE (RS.project x) >>= handleContext)
 
 doLookupsEInStatementE :: IndexLookupCtxt -> UStmt -> Either Text EStmt
 doLookupsEInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsEInStatement

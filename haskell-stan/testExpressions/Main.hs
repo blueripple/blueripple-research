@@ -73,6 +73,7 @@ main = do
     statesLE = lNamedE "N_States" SInt
     predictorsLE = lNamedE "K_Predictors" SInt
     ctxt2 = insertSizeBinding "States" statesLE . insertSizeBinding "Predictors" predictorsLE $ ctxt0
+  cmnt "Next one should fail with useful error tree"
   writeExprCode ctxt0 ue2
   writeExprCode ctxt1 ue2
   let
@@ -81,13 +82,15 @@ main = do
     c = namedE "c" SInt
     ue3 = sliceE s0 c $ sliceE s0 r m
   writeExprCode ctxt0 ue3
-  let st1 = assign ue1 ue1
   cmnt "Assignments"
-  writeStmtCode ctxt0 st1
-  let st2 = assign x (x `plus` (y `plus` vAtk))
-  writeStmtCode ctxt0 st2
-  writeStmtCode ctxt1 st2
-  writeStmtCode ctxt0 $ SContext (Just $ insertUseBinding "KIndex" lk) (one st2)
+  cmnt "simple, no context"
+  writeStmtCode ctxt0 $ assign ue1 ue1
+  cmnt "missing lookup"
+  writeStmtCode ctxt0 $ assign x (x `plus` (y `plus` vAtk))
+  cmnt "with context"
+  writeStmtCode ctxt1 $ assign x (x `plus` (y `plus` vAtk))
+  cmnt "context added in tree"
+  writeStmtCode ctxt0 $ SContext (Just $ insertUseBinding "KIndex" lk) (one $ assign x (x `plus` (y `plus` vAtk)))
   let stDeclare1 = declare "M" (matrixSpec n l [])
       nStates = namedSizeE "States"
       nPredictors = namedSizeE "Predictors"
@@ -112,23 +115,23 @@ main = do
   let stmtSample = sample v normalDistVec (namedE "m" SCVec :> (namedE "sd" SCVec :> ArgNil))
   writeStmtCode ctxt1 stmtSample
   cmnt "For loops, four ways"
-  let stmtFor1 = for "k" (SpecificNumbered (intE 2) n) (one st2)
+  let stmtFor1 = for "k" (SpecificNumbered (intE 2) n) (one $ assign x (x `plus` (y `plus` vAtk)))
   writeStmtCode ctxt1 stmtFor1
   let
     stateS = assign (sliceE s0 (namedIndexE "States") $ namedE "w" SCVec) (realE 2)
     stmtFor2 = for "q" (IndexedLoop "States") (one stateS)
   writeStmtCode ctxt2 $ stmtFor2
-  let stmtFor3 = for "k" (SpecificIn $ namedE "ys" SCVec) (one st2)
+  let stmtFor3 = for "k" (SpecificIn $ namedE "ys" SCVec) (one $ assign x (x `plus` (y `plus` vAtk)))
   writeStmtCode ctxt1 stmtFor3
-  let stmtFor4 = for "q" (IndexedIn "States" $ namedE "votes" SCVec) (stateS :| [st2, SContinue])
+  let stmtFor4 = for "q" (IndexedIn "States" $ namedE "votes" SCVec) (stateS :| [assign x (x `plus` (y `plus` vAtk)), SContinue])
   writeStmtCode ctxt1 stmtFor4
   cmnt "Conditionals"
   let
     eq = boolOpE SEq
-    stmtIf1 = ifThen (l `eq` n) st1 st2
+    stmtIf1 = ifThen (l `eq` n) (assign ue1 ue1) (assign x (x `plus` (y `plus` vAtk)))
   writeStmtCode ctxt1 stmtIf1
   cmnt "While loops"
-  let stmtWhile = while (l `eq` n) (st1 :| [st2, SBreak])
+  let stmtWhile = while (l `eq` n) (assign ue1 ue1 :| [assign x (x `plus` (y `plus` vAtk)), SBreak])
   writeStmtCode ctxt1 stmtWhile
   cmnt "Functions"
   let
