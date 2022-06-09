@@ -60,7 +60,8 @@ import Stan.ModelBuilder.Expressions (LookupContext)
  - CStmt has index expressions to look up within statement and context changes in the lookup environment.
  - LStmt has all things looked up.  This is now a tree of statements with expressions.
 
-2. Optimization?
+2a. (Runtime) error checks?
+2b. Optimization (vectorization? CSE? Loop splitting or consolidating?)
 
 3a. LExpr ~> FormattedText (expressions to Text but in HFunctor form)
 3b. LStmt -> Stmt (FormattedText) (Statement tree with expressions to statement tree with Text for expressions.)
@@ -102,7 +103,7 @@ handleContext = \case
   x -> pure x
 
 doLookupsInCStatement :: UStmt -> LookupM LStmt
-doLookupsInCStatement = RS.anaM (\x ->  htraverse doLookups (RS.project x) >>= handleContext)
+doLookupsInCStatement = RS.anaM (\x -> htraverse doLookups (RS.project x) >>= handleContext)
 
 doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
@@ -135,14 +136,14 @@ lookupIndexE k =  do
   im <- gets indexes
   case Map.lookup k im of
     Just e -> pure $ lExprToEExpr e
-    Nothing -> pure $ IFix $ EE $ "<index: " <> k <> ">"
+    Nothing -> pure $ IFix $ EE $ "#index: " <> k <> "#"
 
 lookupSizeE :: SME.IndexKey -> LookupM (EExpr EInt)
 lookupSizeE k =  do
   im <- gets sizes
   case Map.lookup k im of
     Just e -> pure $ lExprToEExpr e
-    Nothing -> pure $ IFix $ EE $ "<size: " <> k <> ">"
+    Nothing -> pure $ IFix $ EE $ "#size: " <> k <> "#"
 
 type EStmt = Stmt EExpr
 

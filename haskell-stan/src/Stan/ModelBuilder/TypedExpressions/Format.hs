@@ -224,12 +224,14 @@ exprToDocAlg = K . \case
   LVector xs -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate ", " (show <$> xs)
   LMatrix ms -> Unsliced $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
   LArray nv -> Unsliced $ nestedVecToCode nv
+  LIntRange le ue -> Unsliced $ unK (f le) <> PP.colon <> unK (f ue)
   LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
   LDensity (Density dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
   LUnaryOp op e -> Unsliced $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
   LCond ce te fe -> Unsliced $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
   LSlice sn ie e -> sliced sn ie e
+  LIndex sn ie e -> indexed sn ie e
   where
     f :: K IExprCode ~> K CodePP
     f = K . iExprToCode . unK
@@ -248,6 +250,17 @@ exprToDocAlg = K . \case
       Unsliced c -> Sliced c $ slice sn kei ke $ IM.empty
       Oped _ c -> Sliced (PP.parens c) $ slice sn kei ke $ IM.empty
       Sliced c im -> Sliced c $ slice sn kei ke im
+    index :: SNat n -> K IExprCode (EArray (S Z) EInt) -> K IExprCode d -> IM.IntMap IExprCode -> IM.IntMap IExprCode
+    index sn kei ke im = im'
+      where
+        newIndex :: Int = fromIntegral $ DT.snatToNatural sn
+        skip = IM.size $ IM.filterWithKey (\k _ -> k <= newIndex) im
+        im' = IM.insert (newIndex + skip) (unK kei) im
+    indexed :: SNat n -> K IExprCode (EArray (S Z) EInt) -> K IExprCode t -> IExprCode
+    indexed sn kei ke = case unK ke of
+      Unsliced c -> Sliced c $ index sn kei ke $ IM.empty
+      Oped _ c -> Sliced (PP.parens c) $ index sn kei ke $ IM.empty
+      Sliced c im -> Sliced c $ index sn kei ke im
 
 exprToIExprCode :: LExpr ~> K IExprCode
 exprToIExprCode = iCata exprToDocAlg

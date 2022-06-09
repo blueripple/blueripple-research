@@ -119,6 +119,26 @@ type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
   SliceInnerN Z a = a
   SliceInnerN (S n) a = SliceInnerN n (Sliced Z a)
 
+type family IfLessOrEq (n :: Nat) (m :: Nat) (a :: EType) (b :: EType) :: EType where
+  IfLessOrEq Z Z a _ = a
+  IfLessOrEq Z (S n) a _ = a
+  IfLessOrEq (S n) Z _ b = b
+  IfLessOrEq (S n) (S m) a b = IfLessOrEq n m a b
+
+type family Indexed (n :: Nat) (a :: EType) :: EType where
+  Indexed Z ECVec = ECVec
+  Indexed _ ECVec = TE.TypeError (TE.Text "Attempt to index a vector at a position other than 0.")
+  Indexed Z ERVec = ERVec
+  Indexed _ ERVec = TE.TypeError (TE.Text "Attempt to index a row_vector at a position other than 0.")
+  Indexed Z EMat = EMat
+  Indexed (S Z) EMat = EMat
+  Indexed _ EMat = TE.TypeError (TE.Text "Attempt to index a matrix at a position other than 0 or 1.")
+  Indexed Z ESqMat = EMat
+  Indexed (S Z) ESqMat = EMat
+  Indexed _ ESqMat = TE.TypeError (TE.Text "Attempt to index a (square) matrix at a position other than 0 or 1.")
+  Indexed n (EArray m t) = IfLessOrEq (Dimension (EArray m t)) n (EArray m t) (TE.TypeError (TE.Text "Attempt to index an array at too high an index."))
+  Indexed _ _ = TE.TypeError (TE.Text "Cannot index a scalar.")
+
 newtype DeclIndexVecF (r :: EType -> Type) (et :: EType) = DeclIndexVecF {unDeclIndexVecF :: Vec (DeclDimension et) (r EInt)}
 
 instance TR.HFunctor DeclIndexVecF where

@@ -45,7 +45,6 @@ writeStmtCode ctxt0 s = case statementToCodeE ctxt0 s of
       PP.putDoc c
       putTextLn ""
 
-
 main :: IO ()
 main = do
   -- build some expressions
@@ -103,6 +102,7 @@ main = do
   let stDeclAssign1 = declareAndAssign "M" (matrixSpec l n [upperM $ realE 8]) (namedE "q" SMat)
   writeStmtCode ctxt0 stDeclAssign1
   writeStmtCode ctxt0 $ declareAndAssign "v1" (vectorSpec (intE 2) []) (vectorE [1,2])
+  writeStmtCode ctxt0 $ declareAndAssign "v2" (vectorSpec (intE 2) []) (indexE s0 (intRangeE (intE 2) (intE 3)) v)
   writeStmtCode ctxt0 $ declareAndAssign "A" (matrixSpec (intE 2) (intE 2) []) (matrixE [(2 ::: 3 ::: VNil), (4 ::: 5 ::: VNil)])
   writeStmtCode ctxt0 $ declareAndAssign "B" (arraySpec s2 (intE 2 ::: intE 2 ::: VNil) $ realSpec [lowerM $ realE 0])
     (arrayE $ NestedVec2 ((realE 2 ::: realE 3 ::: VNil) ::: (realE 4 ::: realE 5 ::: VNil) :::  VNil))
