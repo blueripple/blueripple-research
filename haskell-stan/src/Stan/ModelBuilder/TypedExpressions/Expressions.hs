@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Expressions
   (
@@ -29,6 +30,7 @@ import Relude.Extra
 import qualified Data.Map.Strict as Map
 import qualified Data.Vec.Lazy as Vec
 import qualified Data.Type.Nat as DT
+import qualified Data.GADT.Compare as DT
 
 -- Expressions
 data LExprF :: (EType -> Type) -> EType -> Type where
@@ -40,7 +42,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LVector :: [Double] -> LExprF r ECVec
   LMatrix :: [Vec n Double] -> LExprF r EMat
   LArray :: NestedVec n (r t) -> LExprF r (EArray n t)
-  LIntRange :: r EInt -> r EInt -> LExprF r (EArray (S Z) EInt)
+  LIntRange :: Maybe (r EInt) -> Maybe (r EInt) -> LExprF r (EArray (S Z) EInt)  -- NB: unexported since we only use for indexing
   LFunction :: Function rt args -> ArgList r args -> LExprF r rt
   LDensity :: Density st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
   LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
@@ -48,6 +50,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LCond :: r EBool -> r t -> r t -> LExprF r t
   LSlice :: SNat n -> r EInt -> r t -> LExprF r (Sliced n t)
   LIndex :: SNat n -> r (EArray (S Z) EInt) -> r t -> LExprF r (Indexed n t)
+--  LRangeIndex :: SNat n -> Maybe (r EInt) -> Maybe (r EInt) -> r t -> LExprF r (Indexed n t)
 
 type LExpr = TR.IFix LExprF
 
@@ -57,11 +60,11 @@ lNamedE name  = TR.IFix . LNamed name
 lIntE :: Int -> LExpr EInt
 lIntE = TR.IFix . LInt
 
-
 -- UEXpr represents expressions with un-looked-up indices/sizes
 data UExprF :: (EType -> Type) -> EType -> Type where
   UL :: LExprF r et -> UExprF r et
-  UNamedIndex :: SME.IndexKey -> UExprF r EInt
+  UNamedIndex :: SME.IndexKey -> UExprF r (EArray (S Z) EInt)
+--  UNamedSlice :: SME.IndexKey -> UExprF r EInt
   UNamedSize :: SME.IndexKey -> UExprF r EInt
 
 type UExpr = TR.IFix UExprF
@@ -76,7 +79,7 @@ instance TR.HFunctor LExprF where
     LVector xs -> LVector xs
     LMatrix ms -> LMatrix ms
     LArray nv -> LArray (fmap nat nv)
-    LIntRange le ue -> LIntRange (nat le) (nat ue)
+    LIntRange leM ueM -> LIntRange (fmap nat leM) (fmap nat ueM)
     LFunction f al -> LFunction f (TR.hfmap nat al)
     LDensity d st al -> LDensity d (nat st) (TR.hfmap nat al)
     LUnaryOp suo gta -> LUnaryOp suo (nat gta)
@@ -84,6 +87,8 @@ instance TR.HFunctor LExprF where
     LCond c ifTrue ifFalse -> LCond (nat c) (nat ifTrue) (nat ifFalse)
     LSlice sn g gt -> LSlice sn (nat g) (nat gt)
     LIndex n re e -> LIndex n (nat re) (nat e)
+--    LRangeIndex n le ue e -> LRangeIndex n (fmap nat le) (fmap nat ue) (nat e)
+
 
 instance TR.HTraversable LExprF where
   htraverse nat = \case
@@ -95,7 +100,7 @@ instance TR.HTraversable LExprF where
     LVector xs -> pure $ LVector xs
     LMatrix ms -> pure $ LMatrix ms
     LArray nv -> LArray <$> traverse nat nv
-    LIntRange le ue -> LIntRange <$> nat le <*> nat ue
+    LIntRange leM ueM -> LIntRange <$> traverse nat leM <*> traverse nat ueM
     LFunction f al -> LFunction f <$> TR.htraverse nat al
     LDensity d st al -> LDensity d <$> nat st <*> TR.htraverse nat al
     LUnaryOp suo ata -> LUnaryOp suo <$> nat ata
@@ -103,18 +108,21 @@ instance TR.HTraversable LExprF where
     LCond c ifTrue ifFalse -> LCond <$> nat c <*> nat ifTrue <*> nat ifFalse
     LSlice sn a at -> LSlice sn <$> nat a <*> nat at
     LIndex n re e -> LIndex n <$> nat re <*> nat e
+--    LRangeIndex n le ue e -> LRangeIndex n <$> traverse nat le <*> traverse nat ue <*> nat e
   hmapM = TR.htraverse
 
 instance TR.HFunctor UExprF where
   hfmap nat = \case
     UL le -> UL $ TR.hfmap nat le
     UNamedIndex txt -> UNamedIndex txt
+--    UNamedSlice txt -> UNamedSlice txt
     UNamedSize txt -> UNamedSize txt
 
 instance TR.HTraversable UExprF where
   htraverse nat = \case
     UL le -> UL <$> TR.htraverse nat le
     UNamedIndex txt -> pure $ UNamedIndex txt
+--    UNamedSlice txt -> pure $ UNamedSlice txt
     UNamedSize txt -> pure $ UNamedSize txt
   hmapM = TR.htraverse
 
@@ -142,9 +150,6 @@ matrixE = TR.IFix . UL . LMatrix
 arrayE :: NestedVec n (UExpr t) -> UExpr (EArray n t)
 arrayE = TR.IFix . UL . LArray
 
-intRangeE :: UExpr EInt -> UExpr EInt -> UExpr (EArray (S Z) EInt)
-intRangeE le ue = TR.IFix $ UL $ LIntRange le ue
-
 functionE :: Function rt args -> ArgList UExpr args -> UExpr rt
 functionE f al = TR.IFix $ UL $ LFunction f al
 
@@ -169,7 +174,10 @@ sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
 indexE :: SNat n -> UExpr (EArray (S Z) EInt) -> UExpr t -> UExpr (Indexed n t)
 indexE sn ie e = TR.IFix $ UL $ LIndex sn ie e
 
-namedIndexE :: Text -> UExpr EInt
+rangeIndexE :: SNat n -> Maybe (UExpr EInt) -> Maybe (UExpr EInt) -> UExpr t -> UExpr (Indexed n t)
+rangeIndexE n leM ueM = indexE n (TR.IFix $ UL $ LIntRange leM ueM)
+
+namedIndexE :: Text -> UExpr (EArray (S Z) EInt)
 namedIndexE = TR.IFix . UNamedIndex
 
 namedSizeE :: Text -> UExpr EInt
@@ -192,6 +200,29 @@ sliceInnerN e v = Vec.withDict v $ go e v where
 sliceAll :: UExpr t -> Vec (Dimension t) (UExpr EInt) -> UExpr (SliceInnerN (Dimension t) t)
 sliceAll = sliceInnerN
 
+-- Expression to Expression transformations
+{- Can't figure this out! The nested type-family is not resolving and the nats are annoying
+   Doing at the term-level.  Which...yuck.
+embedSlicesAlg :: forall z.LExprF LExpr z -> LExpr z
+embedSlicesAlg x = case x of
+  LSlice sn ie (TR.IFix (LIndex sm re e)) ->
+    DT.withSNat sn $ DT.withSNat sm $ case DT.cmpNat of
+    DT.GEQ -> TR.IFix $ LSlice sn (TR.IFix (LSlice SZ ie re)) e
+--    DT.GGT -> LIndex
+  x -> TR.IFix x
+{-
+  where
+    embedIf :: _ --forall n m u.SNat n -> SNat m -> LExpr EInt -> LExpr (EArray (S Z) EInt) -> LExpr u -> LExpr (Sliced n u)
+    embedIf sn sm ie re e = DT.withSNat sn  $ DT.withSNat sm $ (embedIf' @n @m) ie re e
+    embedIf' :: forall n m u.(DT.SNatI n, DT.SNatI m) =>  LExpr EInt -> LExpr (EArray (S Z) EInt) -> LExpr u -> LExpr (Sliced n u)
+    embedIf' ie re e = undefined IFix $ case DT.cmpNat of
+      DT.GEQ -> LSlice (DT.snat @n) (IFix (LSlice Z ie re)) e
+      DT.GGT -> LIndex (DT.snat @m) re (LSlice (DT.snat @n) ie e)
+      DT.GLT -> case DT.snat @m of
+        DT.SZ -> undefined
+        DT.SS -> LIndex DT.snat (LSlice (DT.snat @n) ie e)
+-}
+-}
 {-
 plusE :: UExprF ta a -> UExprF tb a -> UExprF (BinaryResultT BAdd ta tb) a
 plusE = BinaryOpE SAdd

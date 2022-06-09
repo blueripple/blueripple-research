@@ -71,7 +71,7 @@ import Stan.ModelBuilder.Expressions (LookupContext)
 
 type LookupM = StateT IndexLookupCtxt (Either Text)
 
-lookupIndex :: SME.IndexKey -> LookupM (LExpr EInt)
+lookupIndex :: SME.IndexKey -> LookupM (LExpr (EArray (S Z) EInt))
 lookupIndex k = do
   im <- gets indexes
   case Map.lookup k im of
@@ -131,7 +131,7 @@ type EExpr = IFix EExprF
 lExprToEExpr :: LExpr t -> EExpr t
 lExprToEExpr = iCata (IFix . EL)
 
-lookupIndexE :: SME.IndexKey -> LookupM (EExpr EInt)
+lookupIndexE :: SME.IndexKey -> LookupM (EExpr (EArray (S Z) EInt))
 lookupIndexE k =  do
   im <- gets indexes
   case Map.lookup k im of
@@ -163,7 +163,7 @@ doLookupsE = iCataM $ \case
 eExprToIExprCode :: EExpr ~> K IExprCode
 eExprToIExprCode = iCata $ \case
   EL x -> exprToDocAlg x
-  EE t -> K $ Unsliced $ PP.pretty t
+  EE t -> K $ Bare $ PP.pretty t
 
 eExprToCode :: EExpr ~> K CodePP
 eExprToCode = K . iExprToCode . unK . eExprToIExprCode
