@@ -73,6 +73,8 @@ import Path (Rel, Abs, Dir, File)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
+import Stan.ModelBuilder (binomialLogitDistWithConstants)
+import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -1083,6 +1085,107 @@ addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
+
+dave :: F.ElemOf rs TwoPartyDShare => F.Record rs -> Int
+dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+
+share50 :: F.ElemOf rs BRE.ModeledShare => F.Record rs -> Int
+share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+
+
+--contestedCond :: (F.ElemOf rs ET.DistrictTypeC, F.ElemOf rs ET.DistrictName)
+--              => (F.Record [ET.DistrictTypeC, ET.DistrictName] -> Bool) -> F.Record rs -> Bool
+--contestedCond f = f . F.rcast @[ET.DistrictTypeC, ET.DistrictName]
+
+{-
+rowFilter :: (F.ElemOf rs ET.DistrictTypeC, F.ElemOf rs ET.DistrictName, F.ElemOf rs TwoPartyDShare, F.ElemOf rs BRE.ModeledShare)
+          => Bool
+          -> (F.Record rs -> Bool)
+          -> F.Record rs
+          -> Bool
+rowFilter interestingOnly cc r
+  = cc r
+    && if interestingOnly
+       then (not $ modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r) `elem` [(SafeD, SafeD), (SafeR, SafeR)])
+       else True
+-}
+
+--filteredSorted = filter rowFilter sortedModelAndDRA
+categoryFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) =>  (F.Record rs -> Bool) -> [DistType] -> [DistType] -> F.Record rs -> Bool
+categoryFilter cc brs drs r = let (brLean, draLean) =  modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r)
+                           in cc r
+                              && brLean `elem` brs
+                              && draLean `elem` drs
+
+agreedCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) => (F.Record rs -> Bool) -> F.Record rs -> Bool
+agreedCloseFilter cc = categoryFilter cc [LeanR, Tossup, LeanD] [LeanR, Tossup, LeanD]
+
+disagreeDRCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) => (F.Record rs -> Bool) -> F.Record rs -> Bool
+disagreeDRCloseFilter cc r = categoryFilter cc [SafeR] [LeanD, Tossup] r || categoryFilter cc [SafeD] [LeanR, Tossup] r
+
+disagreeDRNotCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) => (F.Record rs -> Bool) -> F.Record rs -> Bool
+disagreeDRNotCloseFilter cc r = categoryFilter cc [SafeR, LeanR, Tossup] [SafeD] r || categoryFilter cc [SafeD, LeanD, Tossup] [SafeR] r
+
+agreeOnlyDRCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) => (F.Record rs -> Bool) -> F.Record rs -> Bool
+agreeOnlyDRCloseFilter cc r =  categoryFilter cc [SafeD] [Tossup, LeanD] r || categoryFilter cc [SafeR] [Tossup, LeanR] r
+
+safeSafeFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare) => (F.Record rs -> Bool) -> F.Record rs -> Bool
+safeSafeFilter cc r = categoryFilter cc [SafeD] [SafeD] r || categoryFilter cc [SafeR] [SafeR] r
+
+data CategorizedDistricts f rs
+  = CategorizedDistricts
+    { bothClose :: f (F.Record rs)
+    , plausibleSurprise :: f (F.Record rs)
+    , diffOfDegree :: f (F.Record rs)
+    , implausibleSurprise :: f (F.Record rs)
+    , safeSafe :: f (F.Record rs)
+    }
+
+
+categorizeDistricts ::  (K.KnitEffects r, Foldable f
+                        , F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare
+                        , F.ElemOf rs ET.DistrictName
+                        )
+                    => (F.Record rs -> Bool) -> f (F.Record rs) -> K.Sem r (CategorizedDistricts [] rs)
+categorizeDistricts cc allDists = do
+  let length = FL.fold FL.length
+  let bothCloseFld = FL.prefilter (agreedCloseFilter cc) FL.list
+      plausibleFld = FL.prefilter (disagreeDRCloseFilter cc) FL.list
+      diffOfDegreeFld = FL.prefilter (agreeOnlyDRCloseFilter cc) FL.list
+      implausibleFld = FL.prefilter (disagreeDRCloseFilter cc) FL.list
+      safeSafeFld = FL.prefilter (safeSafeFilter cc) FL.list
+      restFld = FL.prefilter (not . cc) FL.list
+      allFld = (\c r bc ps dd is ss -> (c, r, CategorizedDistricts bc ps dd is ss))
+               <$> FL.length
+               <*> restFld
+               <*> bothCloseFld
+               <*> plausibleFld
+               <*> diffOfDegreeFld
+               <*> implausibleFld
+               <*> safeSafeFld
+      (countAll, uninteresting, categorized) = FL.fold allFld allDists
+      checkTotal =
+        let cnt x = length (x categorized)
+        in (countAll - length uninteresting == cnt bothClose + cnt plausibleSurprise + cnt diffOfDegree + cnt implausibleSurprise + cnt safeSafe)
+  when checkTotal $ K.logLE K.Info $ "Categorized Districts: count matches"
+  let findOverlaps a b = let f = Set.fromList . FL.fold (FL.premap (F.rgetField @ET.DistrictName) FL.list)  in Set.intersection (f a) (f b)
+      reportOverlaps na nb a b = do
+        let ols = findOverlaps a b
+        when (not $ Set.null ols) $ K.logLE K.Warning $ "Overlaps in district categorization between " <> na <> " and " <> nb <> ": " <> show ols
+  reportOverlaps "Both Close" "Plausible" (bothClose categorized) (plausibleSurprise categorized)
+  reportOverlaps "Both Close" "Diff Of Degree" (bothClose categorized) (diffOfDegree categorized)
+  reportOverlaps "Both Close" "Implausible" (bothClose categorized) (implausibleSurprise categorized)
+  reportOverlaps "Both Close" "Safe Safe" (bothClose categorized) (safeSafe categorized)
+  reportOverlaps "Plausible" "Diff of Degree" (plausibleSurprise categorized) (diffOfDegree categorized)
+  reportOverlaps "Plausible" "Implausble" (plausibleSurprise categorized) (implausibleSurprise categorized)
+  reportOverlaps "Plausible" "Safe" (plausibleSurprise categorized) (safeSafe categorized)
+  reportOverlaps "Diff of Degree" "Implausible" (diffOfDegree categorized) (implausibleSurprise categorized)
+  reportOverlaps "Diff of Degree" "Safe Safe" (diffOfDegree categorized) (safeSafe categorized)
+  reportOverlaps "Implausible" "Safe Safe" (implausibleSurprise categorized) (safeSafe categorized)
+  return categorized
+
+
+
 data NewSLDMapsPostSpec = NewSLDMapsPostSpec
                           { stateAbbr :: Text
                           , districtDescription :: Text
@@ -1137,7 +1240,6 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
   when (not $ null modelDRAMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in model/DRA join. " <> show modelDRAMissing
   let modMid = round . (100*). MT.ciMid . F.rgetField @BRE.ModeledShare
       dra = round . (100*) . F.rgetField @TwoPartyDShare
-      modelAndDRAInRange = {- F.filterFrame inRange -} modelDRA
       dName = F.rgetField @ET.DistrictName
       dType = F.rgetField @ET.DistrictTypeC
       cdModelMap = FL.fold (FL.premap (\r -> (dName r, modMid r)) FL.map) modeledCDs
@@ -1145,7 +1247,7 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       modelCompetitive n = brCompetitive || draCompetitive
         where draCompetitive = fromMaybe False $ fmap (between draShareRangeCD) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
-      sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDRAInRange
+      sortedModelAndDRA = reverse $ sortOn share50 $ FL.fold FL.list modelDRA
   let overlapsMMap (dt, dn) = M.lookup dt (overlaps postSpec) >>= (\d -> DO.overlapsOverThresholdForRowByName 0.25 d dn)
       tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC)
                => BR.CellStyle (F.Record rs) String
@@ -1154,14 +1256,15 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
           f r = Monoid.getAny $ mconcat
                 $ fmap (Monoid.Any . modelCompetitive . fst)
                 $ M.toList $ fromMaybe mempty $ overlapsMMap (dType r, dName r)
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+--      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+--      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
       contestedCond = contested postSpec . F.rcast @[ET.DistrictTypeC, ET.DistrictName]
       rowFilter r = contestedCond r
                     && if interestingOnly
                        then (not $ modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r) `elem` [(SafeD, SafeD), (SafeR, SafeR)])
                        else True
       filteredSorted = filter rowFilter sortedModelAndDRA
+{-
       categoryFilter brs drs r = let (brLean, draLean) =  modelDRALeans brShareRange draShareRangeSLD (share50 r) (dave r)
                                  in contestedCond r
                                     && brLean `elem` brs
@@ -1170,29 +1273,31 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       disagreeDRCloseFilter r = categoryFilter [SafeR] [LeanD, Tossup] r || categoryFilter [SafeD] [LeanR, Tossup] r
       disagreeDRNotCloseFilter r = categoryFilter [SafeR, LeanR, Tossup] [SafeD] r || categoryFilter [SafeD, LeanD, Tossup] [SafeR] r
       agreeOnlyDRCloseFilter r =  categoryFilter [SafeD] [Tossup, LeanD] r || categoryFilter [SafeR] [Tossup, LeanR] r
+-}
+
       interestingDistricts = Set.fromList $ (F.rcast @[ET.DistrictTypeC, ET.DistrictName] <$> filteredSorted)
       interestingFilter :: (F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC) => F.Record rs -> Bool
       interestingFilter r = F.rcast @[ET.DistrictTypeC, ET.DistrictName] r `Set.member` interestingDistricts
   K.logLE K.Info $ "For " <> districtDescription postSpec <> " in " <> stateAbbr postSpec
     <> " there are " <> show (length interestingDistricts) <> " interesting districts."
-  let fTable f t = do
-        let ds = filter f sortedModelAndDRA
+  categorized <- categorizeDistricts (contested postSpec) sortedModelAndDRA
+  let fTable ds t = do
         when (not $ null ds)
           $  BR.brAddRawHtmlTable
           ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: " <> t)
           (BHA.class_ "brTable")
           (dmColonnadeOverlap overlapsMMap tableCAS)
           ds
-  fTable agreedCloseFilter "Both Models Close"
-  fTable disagreeDRCloseFilter "Plausible Surprises"
-  fTable agreeOnlyDRCloseFilter "Differences of Degree"
-  fTable disagreeDRNotCloseFilter "Implausible Suprises"
-  BR.brAddRawHtmlTable
+  fTable (bothClose categorized) "Both Models Close"
+  fTable (plausibleSurprise categorized) "Plausible Surprises"
+  fTable (diffOfDegree categorized) "Differences of Degree"
+  fTable (implausibleSurprise categorized) "Implausible Suprises"
+{-  BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: All Interesting")
     (BHA.class_ "brTable")
     (dmColonnadeOverlap overlapsMMap tableCAS)
     (filter interestingFilter sortedModelAndDRA)
-
+-}
   BR.brAddPostMarkDownFromFile (paths postSpec) "_afterModelDRATable"
   let sldByModelShare = modelShareSort sldDistLabel modeledSLDs --proposedPlusStateAndStateRace_RaceDensityNC
   _ <- K.addHvega Nothing Nothing

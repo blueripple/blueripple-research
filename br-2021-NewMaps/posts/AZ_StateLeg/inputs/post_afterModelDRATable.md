@@ -4,27 +4,12 @@ that either party could potentially close with some focused energy,
 resources, and strategic thinking and all models have some uncertainty which we acknowledge
 by widening the range an extra point on both sides.
 
-With those preliminaries in mind,
-here are a few observations on the new AZ state-house districts:
-
-1. Unexpected findings – pickup opportunities for Dem donors (3)
-
-    - Our model shows strong D performance is possible in AZ-14, AZ-27, and AZ-29
-    though the historical model sees them as safe R.
-    AZ-14 and AZ-27 (but not AZ-29) overlap with Congressional districts which are also competitive,
-    making donations to them even more useful.
-
-2. Unexpected findings – potential defense opportunities for Dem donors (3)
-
-   - There are also places where we are concerned that historically safe-looking districts might be in need of
-   defense. In particular, AZ-23 looks R+5 in our model but D+8 historically.
-   In AZ-18 and AZ-21 where we see a tossup vs the historical D+10. All of these overlap competitive Congressional
-   districts.
-
-3. Expected findings – known high-priority races for Dem Donors (5)
-
-    - AZ-2, AZ-4, AZ-9, AZ-13, and AZ-16 all look like races D’s can win.  Ranging from D+1 to R+3 historically
-    and D+3 to R+3 in our model. All of these districts also overlap with competitive Congressional districts.
+From our point of view, AZ state-leg is a simple for donors: give to all 3 candidates
+in each of AZ-2, AZ-4, AZ-9, AZ-12, AZ-13, AZ-27, AZ-29. We might also throw in AZ-14
+because it is just barely “implausible” and it has overlap with Arizona’s 5th congressional
+district where there is a slim possibility that the Dem candidate, Javier Ramos, can pull
+off an upset if the formerly-Republican independent can siphon enough votes from the
+incumbent Republican.
 
 ## 2. Coda #1: Demographics of new AZ districts
 One thing we haven’t seen discussed very much is how redistricting in AZ

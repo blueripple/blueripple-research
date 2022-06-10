@@ -42,12 +42,34 @@ The new AZ map has 30 State-Legislative districts. AZ is unusual in that
 the upper and lower state-house seats use the same districts: one state senator
 and two state representatives are elected in each district.
 Our “demographic” model forecasts the potential Democratic lean of each
-new district based on attributes like race, education, age, and
-population density, with some adjustments to fit past results in each state.
-In the table below,
+new district based on the district makeup in terms of race/ethnicity,
+educational-attainment, and population density. The model uses
+national-level and state-level data
+(from surveys and 2020 election results), using the national data
+to bolster the local when data there is sparse.
+
+In the tables below,
 we compare our predictions to a “historical” model (from the excellent
 [Dave’s Redistricting (DR) web-site][DavesR]) built up from precinct-level
-results in prior elections[^voteShare]. The “BR Stance” column uses a combination
+results in prior elections[^voteShare].
+
+In order to simplify the results we’ve split them into four categories:
+
+1. *Both Models Close* lists districts where both models agree that the race is close. These are always good places for donors.
+2. *Plausible Surprises*–there are none of these in AZ this year!–
+   includes districts which are historically close and where our model suggests an outcome different
+  from the historical expectation. These might be interesting as long-shot picks, bench-building or for purposes of defense in a tough year.
+3. *Differences of Degree* lists districts where our models agree but we think it’s less close than the historical model. We’re less interested
+  in driving donations to these districts since we think they are safe or out of reach, especially in this cycle.
+4. *Implausible Suprises* includes districts where we disagree strongly with the historical model and the difference is so large as to be more
+  likely a place where the model is a bad fit. The historical model does not leave much room for a suprise outcome. This includes places where
+  our models agree on the likely outcome but the historical model is safe enough that we don’t think our model should be cause for concern.
+
+We ignore the remaining districts, ones where both models consider the district safe for either Ds or Rs. While there might be great
+long term reasons to invest in candidates there, we don’t see the value in the near-term.  Even for bench-building work, we’d much rather see
+it in districts on the “plausible suprises” list. Also, some categories in some states are empty, so we omit those tables altogether.
+
+The “BR Stance” column uses a combination
 of the models to classify districts into categories that we use to make donation
 recommendations.
 We also include significant overlaps (by population) with AZ’s congressional
@@ -72,15 +94,16 @@ us that a different outcome is more likely than we might otherwise think.
 This can cut both ways:
 In AZ-14 our model sees a tossup in a place that is historically R+10. We think that makes
 that district worth a longer look, especially if a strong candidate is running and/or there is
-strong local organizing.  Conversely, in AZ-18, we see R+1 where the historical model sees D+10.
+strong local organizing.  Conversely, we see AZ-18 as a tossup but the historical model sees D+10.
 There, we think it might be important to make sure the D candidate is well supported because the
 demographics might support a stronger than expected R performance.
 
-And some notes specific to AZ:
+Some notes specific to AZ:
 
 - Our model struggles to predict the voter turnout and preference
   of voters whose race/ethnicity is other than Black, Hispanic, Asian and White-non-Hispanic.
-  There are not a lot of such voters in the survey data which results in large uncertainties. For
+  There are not a lot of such voters in the survey data which results in large uncertainties
+  in the model. For
   districts where such voters are a large fraction of the population (e.g., AZ-6), we are not
   suprised to see the model diverge strongly from the historical result and we would trust
   history over our model, especially in a safe district.
@@ -92,17 +115,3 @@ And some notes specific to AZ:
   In this case, what you think is correct depends on whether you think the Dems can return to
   their pre-2020 levels of support from Hispanic voters or instead that 2020 is an indication
   of things to come.
-
-In order to simplify the results we’ve split them into four categories:
-
-1. “Both Models Close” lists districts where both models agree that the race is close. These are always good places for donors.
-2. “Plausible Surprises” includes districts whiche are historically close and where our model suggests an outcome different
-  from the historical expectation. These might be interesting as long-shot picks, bench-building or for purposes of defense in a tough year.
-3. “Differences of degree” lists districts where our models agree but we think it’s less close than the historical model. We’re less interested
-  in driving donations to these districts since we think they are safe or out of reach, especially in this cycle.
-4. “Implausible Suprises” includes districts where we disagree strongly with the historical model but the difference is so large as to be more
-  likely a place where the model is a bad fit and the historical model does not leave much room for a supriose outcome.
-
-We ignore the remaining districts, ones where both models consider the district safe for either Ds or Rs. While there might be great
-long term reasons to invest in candidates there, we don’t see the value in the near-term.  Even for bench-building work, we’d much rather see
-it in districts on the “plausible suprises” list. Also, some categories in some states are empty, so we omit those tables altogether.
