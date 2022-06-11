@@ -14,6 +14,8 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -O0 #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant <$>" #-}
 
 module Main where
 
@@ -937,18 +939,21 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     _ <- K.addHvega Nothing Nothing
          $ diffVsLogDensityChart "Model Delta vs Density" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
 -}
-    let fTable ds t = do
+    let fTable t ds = do
           when (not $ null ds)
             $  BR.brAddRawHtmlTable
             ("Dem Vote Share: " <> t)
             (BHA.class_ "brTable")
             (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
             ds
-    categorized <- categorizeDistricts (const True) brShareRange draShareRangeCD sortedFilteredModelAndDRA
+    categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories2 sortedFilteredModelAndDRA
+    traverse (uncurry fTable) categorized
+{-
     fTable (bothClose categorized) "Both Close"
     fTable (plausibleSurprise categorized) "Plausible Surprises"
     fTable (diffOfDegree categorized) "Differences of Degree"
     fTable (implausibleSurprise categorized) "Implausible Suprises"
+-}
     BR.brAddRawHtmlTable
       ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
       (BHA.class_ "brTable")
@@ -1134,27 +1139,52 @@ categoryFilter cc brRange draRange brs drs r =
      && brLean `elem` brs
      && draLean `elem` drs
 
-agreedCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+bothCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                   => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
-agreedCloseFilter cc brR draR = categoryFilter cc brR draR [LeanR, Tossup, LeanD] [LeanR, Tossup, LeanD]
+bothCloseFilter cc brR draR = categoryFilter cc brR draR [LeanR, Tossup, LeanD] [LeanR, Tossup, LeanD]
 
-disagreeDRCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
-                  => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
-disagreeDRCloseFilter cc brR draR r = categoryFilter cc brR draR [SafeD] [Tossup, LeanR] r
+plausibleSurpriseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                        => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+plausibleSurpriseFilter cc brR draR r = categoryFilter cc brR draR [SafeD] [Tossup, LeanR] r
                                       || categoryFilter cc brR draR [SafeR] [Tossup, LeanD] r
 
-disagreeDRNotCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+implausibleSurpriseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                   => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
-disagreeDRNotCloseFilter cc brR draR r = categoryFilter cc brR draR [SafeR, LeanR, Tossup] [SafeD] r
+implausibleSurpriseFilter cc brR draR r = categoryFilter cc brR draR [SafeR, LeanR, Tossup] [SafeD] r
                                          || categoryFilter cc brR draR  [SafeD, LeanD, Tossup] [SafeR] r
 
-agreeOnlyDRCloseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+demographicallyFavorableFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                               => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+demographicallyFavorableFilter cc brR draR = categoryFilter cc brR draR [SafeD] [LeanD, Tossup, LeanR]
+
+demographicallyUnfavorableFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                               => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+demographicallyUnfavorableFilter cc brR draR = categoryFilter cc brR draR [SafeR] [LeanD, Tossup, LeanR]
+
+
+
+diffOfDegreeFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                   => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
-agreeOnlyDRCloseFilter cc brR draR r = categoryFilter cc brR draR [SafeD] [LeanD] r || categoryFilter cc brR draR [SafeR] [LeanR] r
+diffOfDegreeFilter cc brR draR r = categoryFilter cc brR draR [SafeD] [LeanD] r || categoryFilter cc brR draR [SafeR] [LeanR] r
 
 safeSafeFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                   => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
 safeSafeFilter cc brR draR r = categoryFilter cc brR draR [SafeD] [SafeD] r || categoryFilter cc brR draR [SafeR] [SafeR] r
+
+
+dCategories1 =
+  [DistrictCategory "Both Close" bothCloseFilter
+  ,DistrictCategory "Plausible Surprises" plausibleSurpriseFilter
+  ,DistrictCategory "Difference of Degree" diffOfDegreeFilter
+  , DistrictCategory "Implausible Surprises" implausibleSurpriseFilter
+  ]
+
+dCategories2 =
+  [DistrictCategory "Both Close" bothCloseFilter
+  ,DistrictCategory "Demographically Favorable" demographicallyFavorableFilter
+  ,DistrictCategory "Demographically Unfavorable" demographicallyUnfavorableFilter
+  , DistrictCategory "Implausible Surprises" implausibleSurpriseFilter
+  ]
 
 data CategorizedDistricts f rs
   = CategorizedDistricts
@@ -1175,10 +1205,10 @@ categorizeDistricts :: forall f rs r. (K.KnitEffects r, Foldable f
                     => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> f (F.Record rs) -> K.Sem r (CategorizedDistricts [] rs)
 categorizeDistricts cc brR draR allDists = do
   let length = FL.fold FL.length
-  let bothCloseFld = FL.prefilter (agreedCloseFilter cc brR draR) FL.list
-      plausibleFld = FL.prefilter (disagreeDRCloseFilter cc brR draR) FL.list
-      diffOfDegreeFld = FL.prefilter (agreeOnlyDRCloseFilter cc brR draR) FL.list
-      implausibleFld = FL.prefilter (disagreeDRNotCloseFilter cc brR draR) FL.list
+      bothCloseFld = FL.prefilter (bothCloseFilter cc brR draR) FL.list
+      plausibleFld = FL.prefilter (plausibleSurpriseFilter cc brR draR) FL.list
+      diffOfDegreeFld = FL.prefilter (diffOfDegreeFilter cc brR draR) FL.list
+      implausibleFld = FL.prefilter (implausibleSurpriseFilter cc brR draR) FL.list
       safeSafeFld = FL.prefilter (safeSafeFilter cc brR draR) FL.list
       restFld = FL.prefilter (not . cc) FL.list
       allFld = (\c r bc ps dd is ss -> (c, r, CategorizedDistricts bc ps dd is ss))
@@ -1213,6 +1243,52 @@ categorizeDistricts cc brR draR allDists = do
   reportOverlaps "Diff of Degree" "Implausible" (diffOfDegree categorized) (implausibleSurprise categorized)
   reportOverlaps "Diff of Degree" "Safe Safe" (diffOfDegree categorized) (safeSafe categorized)
   reportOverlaps "Implausible" "Safe Safe" (implausibleSurprise categorized) (safeSafe categorized)
+  return categorized
+
+
+data DistrictCategory rs where
+  DistrictCategory :: (F.ElemOf rs TwoPartyDShare, F.ElemOf rs BRE.ModeledShare)
+                   => Text -> ((F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool) -> DistrictCategory rs
+
+districtCategoryName :: DistrictCategory rs -> Text
+districtCategoryName (DistrictCategory n _) = n
+
+districtCategoryCriteria :: (F.ElemOf rs TwoPartyDShare, F.ElemOf rs BRE.ModeledShare)
+                         =>  DistrictCategory rs -> (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+districtCategoryCriteria (DistrictCategory _ f) = f
+
+categorizeDistricts' :: forall f rs r. (K.KnitEffects r
+                                       , Foldable f
+                                       , F.ElemOf rs TwoPartyDShare
+                                       , F.ElemOf rs BRE.ModeledShare
+                                       , F.ElemOf rs ET.DistrictTypeC
+                                       , F.ElemOf rs ET.DistrictName
+                                       )
+                    => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> [DistrictCategory rs] -> f (F.Record rs) ->  K.Sem r ([(Text, [F.Record rs])])
+categorizeDistricts' cc brR draR cats allDists = do
+  let length = FL.fold FL.length
+      catFld c =  (,) <$> pure (districtCategoryName c) <*> FL.prefilter (districtCategoryCriteria c cc brR draR) FL.list
+      catsFld = traverse catFld cats
+      restFld = FL.prefilter (not . cc) FL.list
+      allFld = (,,) <$> FL.length <*> catsFld <*> restFld
+      (countAll, categorized, uninteresting) = FL.fold allFld allDists
+      checkTotal = countAll - length uninteresting == FL.fold (FL.premap (length . snd) FL.sum) categorized
+  when (not checkTotal) $ K.logLE K.Info "Categorized Districts: count matches"
+  let findOverlaps :: (Foldable g)
+                   => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [ET.DistrictTypeC, ET.DistrictName])
+      findOverlaps a b =
+        let f :: Foldable h => h (F.Record rs) -> Set (F.Record [ET.DistrictTypeC, ET.DistrictName])
+            f = Set.fromList . FL.fold (FL.premap (F.rcast @[ET.DistrictTypeC, ET.DistrictName]) FL.list)
+        in Set.intersection (f a) (f b)
+      reportOverlaps (na, a) (nb, b) = do
+        let ols = findOverlaps a b
+        when (not $ Set.null ols) $ K.logLE K.Warning $ "Overlaps in district categorization between " <> na <> " and " <> nb <> ": " <> show ols
+      allPairs = go categorized []
+        where
+          go [] y = y
+          go [_] y = y
+          go (x : xs) y = go xs (((x,) <$> xs) ++ y)
+  traverse_ (uncurry reportOverlaps) allPairs
   return categorized
 
 
