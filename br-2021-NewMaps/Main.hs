@@ -942,23 +942,17 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     let fTable t ds = do
           when (not $ null ds)
             $  BR.brAddRawHtmlTable
-            ("Dem Vote Share: " <> t)
+            (t)
             (BHA.class_ "brTable")
             (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-            ds
+            (sortOn (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds)
     categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories2 sortedFilteredModelAndDRA
-    traverse (uncurry fTable) categorized
-{-
-    fTable (bothClose categorized) "Both Close"
-    fTable (plausibleSurprise categorized) "Plausible Surprises"
-    fTable (diffOfDegree categorized) "Differences of Degree"
-    fTable (implausibleSurprise categorized) "Implausible Suprises"
--}
-    BR.brAddRawHtmlTable
-      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
-      (BHA.class_ "brTable")
-      (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-      sortedFilteredModelAndDRA
+    traverse_ (uncurry fTable) categorized
+--    BR.brAddRawHtmlTable
+--      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
+--      (BHA.class_ "brTable")
+--      (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+--      sortedFilteredModelAndDRA
   pure ()
 
 allCDsColonnade cas =
@@ -1181,9 +1175,9 @@ dCategories1 =
 
 dCategories2 =
   [DistrictCategory "Both Close" bothCloseFilter
-  ,DistrictCategory "Demographically Favorable" demographicallyFavorableFilter
-  ,DistrictCategory "Demographically Unfavorable" demographicallyUnfavorableFilter
-  , DistrictCategory "Implausible Surprises" implausibleSurpriseFilter
+  ,DistrictCategory "Demographically Favorable Toss-ups" demographicallyFavorableFilter
+  ,DistrictCategory "Demographically Unfavorable Toss-ups" demographicallyUnfavorableFilter
+  , DistrictCategory "Demographically Surprising But Historically Safe" implausibleSurpriseFilter
   ]
 
 data CategorizedDistricts f rs
@@ -1261,6 +1255,7 @@ categorizeDistricts' :: forall f rs r. (K.KnitEffects r
                                        , Foldable f
                                        , F.ElemOf rs TwoPartyDShare
                                        , F.ElemOf rs BRE.ModeledShare
+                                       , F.ElemOf rs BR.StateAbbreviation
                                        , F.ElemOf rs ET.DistrictTypeC
                                        , F.ElemOf rs ET.DistrictName
                                        )
@@ -1275,10 +1270,10 @@ categorizeDistricts' cc brR draR cats allDists = do
       checkTotal = countAll - length uninteresting == FL.fold (FL.premap (length . snd) FL.sum) categorized
   when (not checkTotal) $ K.logLE K.Info "Categorized Districts: count matches"
   let findOverlaps :: (Foldable g)
-                   => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [ET.DistrictTypeC, ET.DistrictName])
+                   => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
       findOverlaps a b =
-        let f :: Foldable h => h (F.Record rs) -> Set (F.Record [ET.DistrictTypeC, ET.DistrictName])
-            f = Set.fromList . FL.fold (FL.premap (F.rcast @[ET.DistrictTypeC, ET.DistrictName]) FL.list)
+        let f :: Foldable h => h (F.Record rs) -> Set (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
+            f = Set.fromList . FL.fold (FL.premap (F.rcast @[BR.StateAbbreviation,ET.DistrictTypeC, ET.DistrictName]) FL.list)
         in Set.intersection (f a) (f b)
       reportOverlaps (na, a) (nb, b) = do
         let ols = findOverlaps a b
@@ -1289,6 +1284,7 @@ categorizeDistricts' cc brR draR cats allDists = do
           go [_] y = y
           go (x : xs) y = go xs (((x,) <$> xs) ++ y)
   traverse_ (uncurry reportOverlaps) allPairs
+  traverse_ (\(t,c) -> K.logLE K.Info $ t <> " has " <> show (length c) <> " districts.") categorized
   return categorized
 
 
