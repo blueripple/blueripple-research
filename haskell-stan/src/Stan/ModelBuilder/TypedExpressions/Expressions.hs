@@ -129,6 +129,23 @@ instance TR.HTraversable UExprF where
 namedE :: Text -> SType t -> UExpr t
 namedE name  = TR.IFix . UL . LNamed name
 
+-- we shouldn't export this constructor.
+-- You should only be able to make via the function below.
+data Var :: EType -> Type where
+  Var :: Text -> EType -> UExpr t -> Var t
+
+varName :: Var t -> Text
+varName (Var n _ _) = n
+
+varType :: Var t -> EType
+varType (Var _ et _) = et
+
+varE :: Var t -> UExpr t
+varE (Var _ _ ue) = ue
+
+var :: Text -> StanType t -> Var t
+var t st = let et = eTypeFromStanType st in Var t et (withSType et $ \s -> (namedE t s))
+
 intE :: Int -> UExpr EInt
 intE = TR.IFix . UL . LInt
 

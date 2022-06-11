@@ -35,7 +35,7 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
-data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq)
+data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Show)
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EInt a _ = a
@@ -163,6 +163,23 @@ stanTypeName = \case
   StanCovMatrix -> "cov_matrix"
   StanCholeskyFactorCov -> "cholesky_factor_cov"
 
+eTypeFromStanType :: StanType t -> EType
+eTypeFromStanType = \case
+  StanInt -> EInt
+  StanReal -> EReal
+  StanComplex -> EComplex
+  StanArray sn st -> EArray (DT.snatToNat sn) (eTypeFromStanType st)
+  StanVector -> ECVec
+  StanOrdered -> ECVec
+  StanPositiveOrdered -> ECVec
+  StanSimplex -> ECVec
+  StanUnitVector -> ECVec
+  StanRowVector -> ERVec
+  StanMatrix -> EMat
+  StanCorrMatrix -> ESqMat
+  StanCholeskyFactorCorr -> ESqMat
+  StanCovMatrix -> ESqMat
+  StanCholeskyFactorCov -> ESqMat
 {-
 data (a :: k) :~: (b :: k) where
   Refl :: a :~: a

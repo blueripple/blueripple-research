@@ -77,6 +77,7 @@ stmtToCodeAlg = \case
            <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
   SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
   SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
+  SProfileF t -> Right $ "profile" <> PP.parens (PP.dquotes $ PP.pretty t)
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList al) <> PP.semi
   SRejectF al -> Right $ "reject" <+> PP.parens (csArgList al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body

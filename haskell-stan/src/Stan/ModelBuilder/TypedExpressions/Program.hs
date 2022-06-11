@@ -28,6 +28,9 @@ import qualified Stan.ModelBuilder.TypedExpressions.Statements as TB
 -- only generated quantitied or the generation of log-likelihoods
 newtype StanProgram = StanProgram {unStanProgram :: Array.Array SBT.StanBlock [TB.UStmt]}
 
+emptyStanProgram :: StanProgram
+emptyStanProgram = StanProgram $ Array.listArray (minBound, maxBound) $ repeat []
+
 -- this is...precarious.  No way to check that we are using all of the array
 programToStmt :: SBT.GeneratedQuantities -> StanProgram -> TB.UStmt
 programToStmt gq p = TB.SContext Nothing fullProgramStmt
@@ -69,8 +72,8 @@ programToStmt gq p = TB.SContext Nothing fullProgramStmt
 
 -- check if the type of statement is allowed in the block then, if so, provide the modification function
 -- otherwise error
-addToBlock :: SBT.StanBlock -> TB.UStmt -> Either Text (StanProgram -> StanProgram)
-addToBlock sb s = do
+addStmtToBlock :: SBT.StanBlock -> TB.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtToBlock sb s = do
   let f sp =
         let p = unStanProgram sp
         in StanProgram $ p // [(sb, p ! sb ++ [s])]
@@ -84,3 +87,9 @@ addToBlock sb s = do
              TB.SComment {} -> Right f
              _ -> Left "Statement other than declaration or comment in data or parameters block."
       else Right f
+
+addStmtsToBlock :: Traversable f => SBT.StanBlock -> f TB.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtsToBlock b stmts = do
+  fs <- traverse (addStmtToBlock b) stmts
+  let g sp = foldl' (\sp f -> f sp) sp fs
+  return g

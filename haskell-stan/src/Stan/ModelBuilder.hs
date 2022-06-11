@@ -1,19 +1,15 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
---{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder
 (
@@ -26,6 +22,11 @@ where
 
 import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
+import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+
 import Stan.ModelBuilder.Expressions
 import Stan.ModelBuilder.Distributions
 import Stan.ModelBuilder.BuilderTypes
@@ -363,7 +364,7 @@ buildGQJSONFromDataM = do
 
 data VariableScope = GlobalScope | ModelScope | GQScope deriving (Show, Eq, Ord)
 
-newtype DeclarationMap = DeclarationMap (Map SME.StanName SME.StanType) deriving (Show)
+newtype DeclarationMap = DeclarationMap (Map SME.StanName TE.EType) deriving (Show)
 data ScopedDeclarations = ScopedDeclarations { currentScope :: VariableScope
                                              , globalScope :: NonEmpty DeclarationMap
                                              , modelScope :: NonEmpty DeclarationMap
@@ -389,7 +390,7 @@ setDeclarationsNE dmNE GQScope sd = sd { gqScope = dmNE}
 declarationsInScope :: ScopedDeclarations -> NonEmpty DeclarationMap
 declarationsInScope sd = declarationsNE (currentScope sd) sd
 
-addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM md gq SME.StanVar
+addVarInScope :: SME.StanName -> TE.StanType t -> StanBuilderM md gq (TE.UExpr t)
 addVarInScope sn st = do
   let newSD sd = do
         _ <- alreadyDeclared sd (SME.StanVar sn st)
@@ -424,8 +425,8 @@ varLookupAllScopes sd sn =
       Left _ -> varLookupInScope sd GQScope sn
 
 
-alreadyDeclared :: ScopedDeclarations -> SME.StanVar -> Either Text ()
-alreadyDeclared sd (SME.StanVar sn st) =
+alreadyDeclared :: ScopedDeclarations -> TE.Var t -> Either Text ()
+alreadyDeclared sd (TE.Var sn ue) =
   case varLookup sd sn of
     Right (StanVar _ st') ->  if st == st'
                               then Left $ sn <> " already declared (with same type)!"
@@ -492,7 +493,7 @@ data BuilderState md gq = BuilderState { declaredVars :: !ScopedDeclarations
                                        , constModelJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
                                        , constGQJSON :: JSONSeriesFold ()
                                        , hasFunctions :: !(Set.Set Text)
-                                       , code :: !StanCode
+                                       , code :: !TE.StanProgram
                                        }
 
 dumpBuilderState :: BuilderState md gq -> Text
@@ -678,7 +679,7 @@ initialBuilderState modelRowInfos gqRowInfos =
   mempty
   mempty
   Set.empty
-  emptyStanCode
+  TE.emptyStanProgram
 
 type RowInfoMakers d = DHash.DHashMap RowTypeTag (GroupIndexAndIntMapMakers d)
 
@@ -1120,7 +1121,7 @@ isDeclaredAllScopes sn  = do
 
 
 -- return True if variable is new, False if already declared
-declare :: SME.StanName -> SME.StanType -> StanBuilderM md gq Bool
+declare :: SME.StanName -> TE.StanType t -> StanBuilderM md gq Bool
 declare sn st = do
   let sv = SME.StanVar sn st
   sd <- declaredVars <$> get
@@ -1130,7 +1131,7 @@ declare sn st = do
                                  then return False
                                  else stanBuildError $ "Attempt to re-declare \"" <> sn <> "\" with different type. Previous=" <> show st' <> "; new=" <> show st
 
-stanDeclare' :: SME.StanName -> SME.StanType -> Text -> Maybe StanExpr -> StanBuilderM md gq SME.StanVar
+stanDeclare' :: SME.StanName -> TE.StanType t -> Text -> Maybe StanExpr -> StanBuilderM md gq (TE.UExpr t)
 stanDeclare' sn st sc mRHS = do
   isNew <- declare sn st
   let sv = SME.StanVar sn st
@@ -1316,12 +1317,16 @@ add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) sc rowDim = do
   addUseBindingToDataSet rtt colDimName colDimVar
   addColumnJson rtt wdName (SME.StanMatrix (rowDim, SME.NamedDim colDimName)) sc vecF
 
-modifyCode' :: (StanCode -> StanCode) -> BuilderState md gq -> BuilderState md gq
+modifyCode' :: (TE.StanProgram -> TE.StanProgram) -> BuilderState md gq -> BuilderState md gq
 modifyCode' f bs = let newCode = f $ code bs in bs { code = newCode }
 
-modifyCode :: (StanCode -> StanCode) -> StanBuilderM md gq ()
+modifyCode :: (TE.StanProgram -> TE.StanProgram) -> StanBuilderM md gq ()
 modifyCode f = modify $ modifyCode' f
 
+modifyCodeE :: Either Text (TE.StanProgram -> TE.StanProgram) -> StanBuilderM md gq ()
+modifyCodeE fE = stanBuildEither fE >>= modifyCode
+
+{-
 setBlock' :: StanBlock -> StanCode -> StanCode
 setBlock' b (StanCode _ blocks) = StanCode b blocks
 
@@ -1391,15 +1396,16 @@ profile tag x = do
   b <- getBlock
   addLine $ profileStmt (stanProfileName b <> ": " <> tag)
   bracketed 2 x
-
-profileStanBlock :: StanBlock -> (WithIndent -> WithIndent) -> StanBuilderM md gq ()
-profileStanBlock b f = modifyCode g where
-  g :: StanCode -> StanCode
-  g (StanCode curBlock blocks) = StanCode curBlock blocks' where
-    blocks' = blocks Array.// [(b, newBlock)] --profileStmt (show b) <> ";\n" <> blocks Array.! b)]
-    (WithIndent c i) = blocks Array.! b
-    c' = profileStmt (stanProfileName b) <> ";\n" <> c
-    newBlock = WithIndent c' i
+-}
+-- place profiling statement at beginning of the block
+profileStanBlock :: StanBlock -> StanBuilderM md gq ()
+profileStanBlock b = modifyCode g where
+  g :: TE.StanProgram -> TE.StanProgram
+  g sp = newProgram
+    where
+      curBlock = TE.unStanProgram sp Array.! b
+      newBlock = TE.profile (stanProfileName b) : curBlock
+      newProgram = TE.StanProgram $ TE.unStanProgram sp Array.// [(b, newBlock)]
 
 stanProfileName :: StanBlock -> Text
 stanProfileName SBFunctions = "functions"
@@ -1413,6 +1419,7 @@ stanProfileName SBModel = "model"
 stanProfileName SBGeneratedQuantities = "generated quantities"
 stanProfileName SBLogLikelihood = "generated quantities (LL)"
 
+{-
 stanForLoop :: Text -- counter
             -> Maybe Text -- start, if not 1
             -> Text -- end, if
@@ -1456,19 +1463,20 @@ stanPrint ps =
         StanLiteral x -> "\"" <> x <> "\""
         StanExpression x -> x
   in addStanLine $ "print(" <> T.intercalate ", " (fmap f ps) <> ")"
-
+-}
 underscoredIf :: Text -> Text
 underscoredIf t = if T.null t then "" else "_" <> t
 
+{-
 stanIndented :: StanBuilderM md gq a -> StanBuilderM md gq a
 stanIndented = indented 2
-
+-}
 varScopeBlock :: StanBlock -> StanBuilderM md gq ()
 varScopeBlock sb = case sb of
   SBModel -> modify (modifyDeclaredVars $ changeVarScope ModelScope)
   SBGeneratedQuantities -> modify (modifyDeclaredVars $ changeVarScope GQScope)
   _ -> modify (modifyDeclaredVars $ changeVarScope GlobalScope)
-
+{-
 inBlock :: StanBlock -> StanBuilderM md gq a -> StanBuilderM md gq a
 inBlock b m = do
   oldBlock <- getBlock
@@ -1526,7 +1534,7 @@ stanModelAsText gq sm =
 
 --modelFile :: T.Text -> T.Text
 --modelFile modelNameT = modelNameT <> ".stan"
-
+-}
 -- The file is either not there, there but the same, or there but different so we
 -- need an available file name to proceed
 data ModelState = New | Same | Updated T.Text deriving (Show)
