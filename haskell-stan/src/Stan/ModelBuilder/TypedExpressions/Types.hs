@@ -180,6 +180,24 @@ eTypeFromStanType = \case
   StanCholeskyFactorCorr -> ESqMat
   StanCovMatrix -> ESqMat
   StanCholeskyFactorCov -> ESqMat
+
+sTypeFromStanType :: StanType t -> SType t
+sTypeFromStanType = \case
+  StanInt -> SInt
+  StanReal -> SReal
+  StanComplex -> SComplex
+  StanArray sn st -> SArray sn (sTypeFromStanType st)
+  StanVector -> SCVec
+  StanOrdered -> SCVec
+  StanPositiveOrdered -> SCVec
+  StanSimplex -> SCVec
+  StanUnitVector -> SCVec
+  StanRowVector -> SRVec
+  StanMatrix -> SMat
+  StanCorrMatrix -> SSqMat
+  StanCholeskyFactorCorr -> SSqMat
+  StanCovMatrix -> SSqMat
+  StanCholeskyFactorCov -> SSqMat
 {-
 data (a :: k) :~: (b :: k) where
   Refl :: a :~: a

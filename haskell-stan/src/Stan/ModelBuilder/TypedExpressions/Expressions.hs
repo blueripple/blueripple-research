@@ -144,7 +144,7 @@ varE :: Var t -> UExpr t
 varE (Var _ _ ue) = ue
 
 var :: Text -> StanType t -> Var t
-var t st = let et = eTypeFromStanType st in Var t et (withSType et $ \s -> (namedE t s))
+var n st = Var n (eTypeFromStanType st) $ namedE n $ sTypeFromStanType st
 
 intE :: Int -> UExpr EInt
 intE = TR.IFix . UL . LInt
