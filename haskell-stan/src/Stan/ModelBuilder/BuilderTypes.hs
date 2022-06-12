@@ -15,7 +15,9 @@ where
 import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
 import Stan.ModelBuilder.Expressions
-import Stan.ModelBuilder.Distributions
+import Stan.ModelBuilder.Distributions ()
+
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 
 import Prelude hiding (All)
 import qualified Control.Foldl as Foldl
@@ -87,12 +89,7 @@ data StanBlock = SBFunctions
                | SBGeneratedQuantities
                | SBLogLikelihood deriving (Show, Eq, Ord, Enum, Bounded, Array.Ix)
 
-data WithIndent = WithIndent Text Int
-
-data StanCode = StanCode { curBlock :: StanBlock
-                         , blocks :: Array.Array StanBlock WithIndent
-                         }
-
+--data WithIndent = WithIndent Text Int
 
 data JSONSeriesFold row where
   JSONSeriesFold :: Stan.StanJSONF row Aeson.Series -> JSONSeriesFold row
@@ -196,7 +193,7 @@ data IndexMap r k = IndexMap
 data RowInfo d r = RowInfo
                    {
                      toFoldable    :: ToFoldable d r
-                   , expressionBindings :: Map SME.IndexKey SME.StanExpr
+                   , expressionBindings :: Map TE.IndexKey TE.IndexArray
                    , groupIndexes  :: GroupIndexes r
                    , groupIntMapBuilders  :: GroupIntMapBuilders r
                    , jsonSeries    :: JSONSeriesFold r

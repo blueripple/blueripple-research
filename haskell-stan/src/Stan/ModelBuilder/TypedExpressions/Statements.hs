@@ -26,8 +26,7 @@ import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
-import qualified Stan.ModelBuilder.Expressions as SME
-import qualified Stan.ModelBuilder.BuilderTypes as SBT
+--import qualified Stan.ModelBuilder.BuilderTypes as SBT
 import qualified Data.Vec.Lazy as Vec
 
 import Prelude hiding (Nat)
@@ -35,9 +34,11 @@ import Relude.Extra
 import qualified Data.Map.Strict as Map
 
 import qualified Data.Functor.Foldable as RS
-import Knit.Report (boundaryFrom)
 
 data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (ScalarType t)]
+
+declType :: DeclSpec t -> StanType t
+declType (DeclSpec st _ _) = st
 
 intSpec :: [VarModifier UExpr EInt] -> DeclSpec EInt
 intSpec = DeclSpec StanInt VNil
@@ -84,6 +85,9 @@ choleskyFactorCovSpec rce = DeclSpec StanCholeskyFactorCov (rce ::: VNil)
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
 
+intArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec (EArray (S Z) EInt)
+intArraySpec se cs = arraySpec s1 (se ::: VNil) (intSpec cs)
+
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
 declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (ScalarType t)] -> UStmt
 declare' vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
@@ -107,9 +111,9 @@ sample :: UExpr t -> Density t args -> ArgList UExpr args -> UStmt
 sample = SSample
 
 data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
-               | IndexedLoop SME.IndexKey
+               | IndexedLoop IndexKey
                | SpecificIn (UExpr t)
-               | IndexedIn SME.IndexKey (UExpr t)
+               | IndexedIn IndexKey (UExpr t)
 
 for :: Text -> ForType t -> (UExpr EInt -> NonEmpty UStmt) -> UStmt
 for loopCounter ft bodyF = case ft of
@@ -161,10 +165,10 @@ scoped = SScoped
 context :: (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty UStmt -> UStmt
 context cf = SContext (Just cf)
 
-insertIndexBinding :: SME.IndexKey -> LExpr (EArray (S Z) EInt) -> IndexLookupCtxt -> IndexLookupCtxt
+insertIndexBinding :: IndexKey -> LExpr (EArray (S Z) EInt) -> IndexLookupCtxt -> IndexLookupCtxt
 insertIndexBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
 
-insertSizeBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
+insertSizeBinding :: IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
 insertSizeBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt (Map.insert k ie a) b
 
 data VarModifier :: (EType -> Type) -> EType -> Type where
@@ -256,8 +260,14 @@ type instance RS.Base (Stmt f) = StmtF f
 
 type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
+type IndexArray = LExpr (EArray (S Z) EInt)
+type IndexKey = Text
+type IndexSizeMap = Map IndexKey (LExpr EInt)
+type IndexArrayMap = Map IndexKey IndexArray
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indexes :: Map SME.IndexKey (LExpr (EArray (S Z) EInt)) }
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map IndexKey (LExpr EInt), indexes :: Map IndexKey IndexArray }
+emptyLookupCtxt :: IndexLookupCtxt
+emptyLookupCtxt = IndexLookupCtxt mempty mempty
 
 instance Functor (StmtF f) where
   fmap f x = case x of

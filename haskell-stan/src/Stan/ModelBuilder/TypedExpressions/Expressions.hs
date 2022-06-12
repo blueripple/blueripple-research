@@ -57,6 +57,12 @@ type LExpr = TR.IFix LExprF
 lNamedE :: Text -> SType t -> LExpr t
 lNamedE name  = TR.IFix . LNamed name
 
+namedLIndex :: Text -> LExpr (EArray (S Z) EInt)
+namedLIndex t = lNamedE t (SArray s1 SInt)
+
+namedLSize :: Text -> LExpr EInt
+namedLSize t = lNamedE t SInt
+
 lIntE :: Int -> LExpr EInt
 lIntE = TR.IFix . LInt
 
@@ -125,6 +131,7 @@ instance TR.HTraversable UExprF where
 --    UNamedSlice txt -> pure $ UNamedSlice txt
     UNamedSize txt -> pure $ UNamedSize txt
   hmapM = TR.htraverse
+
 
 namedE :: Text -> SType t -> UExpr t
 namedE name  = TR.IFix . UL . LNamed name
