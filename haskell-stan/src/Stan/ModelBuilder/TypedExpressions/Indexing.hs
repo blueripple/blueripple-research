@@ -30,6 +30,11 @@ import qualified GHC.TypeLits as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
 import Stan.ModelBuilder.TypedExpressions.Types
 import Prelude hiding (Nat)
+import Data.Functor.Classes (eq1)
+import Data.Type.Equality ((:~:)(Refl), (:~~:)(HRefl), TestEquality(testEquality))
+import Data.GADT.Compare (GEq(geq))
+import Type.Reflection (Typeable(..),typeRep)
+import qualified Data.Monoid as Mon
 
 -- to simplify most indexing
 -- term level
@@ -169,9 +174,9 @@ instance TR.HTraversable IndexVecM where
   hmapM = TR.htraverse
 
 data NestedVec :: Nat -> Type -> Type where
-  NestedVec1 :: Vec n a -> NestedVec (S Z) a
-  NestedVec2 :: Vec (S n) (Vec m a) -> NestedVec (S (S Z)) a
-  NestedVec3 :: Vec (S n) (Vec (S m) (Vec k a)) -> NestedVec (S (S (S Z))) a
+  NestedVec1 :: Vec (S n) a -> NestedVec (S Z) a
+  NestedVec2 :: Vec (S n) (Vec (S m) a) -> NestedVec (S (S Z)) a
+  NestedVec3 :: Vec (S n) (Vec (S m) (Vec (S k) a)) -> NestedVec (S (S (S Z))) a
 
 instance Functor (NestedVec n) where
   fmap f = \case
@@ -190,6 +195,45 @@ instance Traversable (NestedVec n) where
     NestedVec1 v -> NestedVec1 <$> DT.traverse f v
     NestedVec2 v -> NestedVec2 <$> DT.traverse (DT.traverse f) v
     NestedVec3 v -> NestedVec3 <$> DT.traverse (DT.traverse (DT.traverse f)) v
+
+nestedVecHead :: NestedVec n a -> a
+nestedVecHead (NestedVec1 (a ::: _)) = a
+nestedVecHead (NestedVec2 ((a ::: _) ::: _)) = a
+nestedVecHead (NestedVec3 (((a ::: _) ::: _) ::: _)) = a
+
+eqSizeNestedVec :: NestedVec n a -> NestedVec m b -> Maybe (n :~: m)
+eqSizeNestedVec (NestedVec1 _) (NestedVec1 _) = Just Refl
+eqSizeNestedVec (NestedVec2 _) (NestedVec2 _) = Just Refl
+eqSizeNestedVec (NestedVec3 _) (NestedVec3 _) = Just Refl
+eqSizeNestedVec _ _ = Nothing
+
+eqNestedVec :: (a -> a -> Bool) -> NestedVec n a -> NestedVec n a -> Bool
+eqNestedVec f nva nvb =
+  let (sa, eltsA) = unNest nva
+      (sb, eltsB) = unNest nvb
+      eltsSame = getAll $ mconcat $ All <$> zipWith f eltsA eltsB
+  in sa == sb && eltsSame
+
+eqVecLength :: Vec n a -> Vec m b -> Maybe (n :~: m)
+eqVecLength = go
+  where
+    go :: forall n m a b.Vec n a -> Vec m b -> Maybe (n :~: m)
+    go VNil VNil = Just Refl
+    go (_ ::: as) (_ ::: bs) = case go as bs of
+      Just Refl -> Just Refl
+      Nothing -> Nothing
+    go _ _ = Nothing
+
+eqVecEltType :: forall a b m n.(Typeable a, Typeable b) => Vec n a -> Vec m b -> Maybe (a :~: b)
+eqVecEltType _ _ = testEquality (typeRep @a) (typeRep @b)
+
+eqVec :: (Typeable a, Typeable b, Eq a) => Vec n a -> Vec m b -> Bool
+eqVec v1 v2 = case eqVecLength v1 v2 of
+  Just Refl -> case eqVecEltType v1 v2 of
+    Just Refl -> DT.toList v1 == DT.toList v2
+    Nothing -> False
+  Nothing -> False
+
 
 unNest :: NestedVec n a -> ([Int], [a])
 unNest (NestedVec1 v) = ([DT.length v], DT.toList v)

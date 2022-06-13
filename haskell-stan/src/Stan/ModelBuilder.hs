@@ -36,6 +36,8 @@ import Stan.ModelBuilder.BuilderTypes
 
 import Prelude hiding (All)
 import qualified Control.Foldl as Foldl
+import qualified Control.Exception as X
+import qualified GHC.IO.Exception as X
 import qualified Data.Aeson as Aeson
 import qualified Data.Array as Array
 import qualified Data.Constraint.Extras.TH as CE
@@ -61,13 +63,10 @@ import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Type.Reflection as Reflection
 import qualified Data.GADT.Show as GADT
-import Frames.Streamly.TH (declareColumnType)
-import Text.Printf (errorMissingArgument)
 import Stan.ModelConfig (InputDataType(..))
-import Knit.Report (crimson, getting)
-import qualified Data.Hashable.Lifted as Hashable
 import qualified Stan.ModelConfig as SC
-import Stan.ModelBuilder.TypedExpressions.Statements (IndexLookupCtxt)
+import qualified Data.Massiv.Array.Unsafe as X
+import qualified Stan.ModelBuilder.TypedExpressions.Format as TE
 
 {-
 stanCodeToStanModel :: StanCode -> StanModel
@@ -338,7 +337,7 @@ buildGroupIndexes = do
         let dsName = dataSetName rtt
             indexName = groupIndexVarName rtt gtt --dsName <> "_" <> gName
         addFixedIntJson' (inputDataType rtt) ("J_" <> gName) (Just 1) gSize
-        _ <- addColumnMJson rtt indexName (TE.intArraySpec (TE.namedSizeE dsName) [TE.lowerM 1]) mIntF
+        _ <- addColumnMJson rtt indexName (TE.intArraySpec (TE.namedSizeE dsName) [TE.lowerM $ TE.intE 1]) mIntF
 --        _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ "J_" <> gName
         return Nothing
@@ -426,7 +425,9 @@ addVarInScope sn st = do
   bs <- get
   case modifyDeclaredVarsA newSD bs of
     Left errMsg -> stanBuildError errMsg
-    Right newBS -> put newBS >> return $ TE.namedE sn (TE.sTypeFromStanType st)
+    Right newBS -> do
+      put newBS
+      pure $ TE.namedE sn (TE.sTypeFromStanType st)
 
 varLookupInScope :: ScopedDeclarations -> VariableScope -> SME.StanName -> Either Text TE.EType
 varLookupInScope sd sc sn = go $ toList dNE where
@@ -453,7 +454,7 @@ alreadyDeclared sd sn st =
   case varLookup sd sn of
     Right et ->  if et == TE.eTypeFromStanType st
                  then Left $ sn <> " already declared (with same type= " <> show et <> ")!"
-                 else Left $ sn <> " (" <> show TE.eTypeFromStanType  st
+                 else Left $ sn <> " (" <> show (TE.eTypeFromStanType st)
                       <> ")already declared (with different type="<> show et <> ")!"
     Left _ -> pure ()
 
@@ -462,7 +463,7 @@ alreadyDeclaredAllScopes sd sn st =
   case varLookupAllScopes sd sn of
     Right et ->  if et == TE.eTypeFromStanType st
                  then Left $ sn <> " already declared (with same type= " <> show et <> ")!"
-                 else Left $ sn <> " (" <> show TE.eTypeFromStanType  st
+                 else Left $ sn <> " (" <> show (TE.eTypeFromStanType st)
                       <> ")already declared (with different type="<> show et <> ")!"
     Left _ -> pure ()
 {-
@@ -525,7 +526,7 @@ data BuilderState md gq = BuilderState { declaredVars :: !ScopedDeclarations
 dumpBuilderState :: BuilderState md gq -> Text
 dumpBuilderState bs = -- (BuilderState dvs ibs ris js hf c) =
   "Declared Vars: " <> show (declaredVars bs)
-  <> "\n index-bindings: " <> show (indexBindings bs)
+  <> "\n index-bindings: " <> TE.printLookupCtxt (indexBindings bs)
   <> "\n model row-info-keys: " <> show (DHash.keys $ modelRowBuilders bs)
   <> "\n gq row-info-keys: " <> show (DHash.keys $ gqRowBuilders bs)
   <> "\n functions: " <> show (hasFunctions bs)
@@ -983,7 +984,7 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
 --      xWalkType = SME.StanArray [SME.NamedDim $ dataSetName rttFrom] SME.StanInt
 --      xWalkVar = SME.StanVar xWalkName xWalkType
       xWalkF = toGroupToIndexE . fromToGroup
-  addColumnMJson rttFrom xWalkName (TE.intArraySpec (TE.namedSizeE $ dataSetName rttFrom) [TE.lowerM 1]) xWalkF
+  addColumnMJson rttFrom xWalkName (TE.intArraySpec (TE.namedSizeE $ dataSetName rttFrom) [TE.lowerM $ TE.intE 1]) xWalkF
 --  addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
 --  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   addUseBindingToDataSet rttFrom xWalkIndexKey xWalkName
@@ -1106,9 +1107,9 @@ addUseBindingToDataSet' rtt key e = do
                                        $ "addUseBindingToDataSet: key="
                                        <> show key
                                        <> "\nAttempt to add different use binding to already-bound key. Old expression="
-                                       <> show oldExpr
+                                       <> TE.exprToText oldExpr
                                        <> "; new expression="
-                                       <> show newExpr
+                                       <> TE.exprToText newExpr
       f :: forall x. RowInfos x -> Either Text (RowInfos x)
       f rowInfos = do
         (RowInfo tf ebs gis gimbs js) <- maybeToRight dataNotFoundErr $ DHash.lookup rtt rowInfos
@@ -1582,14 +1583,9 @@ renameAndWriteIfNotSame gq p modelDir modelName = do
         let newName = fileName modelDir (modelName <> "_o" <> T.pack (show n))
         newExists <- Dir.doesFileExist newName
         if newExists then findAvailableName modelDir modelName (n + 1) else return $ T.pack newName
-      pStmt = TE.programToStmt gq p
-  newModel <- case TE.statementToCodeE TE.emptyLookupCtxt $ pStmt of
-    Left err -> do
-      putTextLn $ "index size/name lookups failed when making code from tree: " <> err
-      case flip evalStateT TE.emptylookupCtxt $ TE.doLookupsE pStmt of
-        Left err2 -> "Yikes.  Cannot make error tree: " <> err2
-        Right ee -> PP.putDoc $ TE.unK $ TE.eExprToCode ee
-    Right x -> return $ PP.putDoc $ TE.unK $ TE.exprToCode x
+  newModel <- case TE.programAsText gq p of
+    Right x -> pure x
+    Left msg -> X.throwIO $ X.userError $ toString msg
   exists <- Dir.doesFileExist curFile
   if exists then (do
     extant <- T.readFile curFile

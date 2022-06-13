@@ -1,5 +1,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
@@ -7,11 +10,14 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module Stan.ModelBuilder.TypedExpressions.Expressions
   (
@@ -28,9 +34,17 @@ import qualified Stan.ModelBuilder.Expressions as SME
 import Prelude hiding (Nat)
 import Relude.Extra
 import qualified Data.Map.Strict as Map
+import qualified Data.Monoid as Mon
 import qualified Data.Vec.Lazy as Vec
 import qualified Data.Type.Nat as DT
 import qualified Data.GADT.Compare as DT
+
+import Data.Type.Equality ((:~:)(Refl),TestEquality(testEquality))
+import Data.GADT.Compare (GEq(geq))
+import Data.Typeable (typeRep)
+import Knit.Report (openCubic)
+import Text.Megaparsec.Error.Builder (elabel)
+
 
 -- Expressions
 data LExprF :: (EType -> Type) -> EType -> Type where
@@ -50,9 +64,133 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LCond :: r EBool -> r t -> r t -> LExprF r t
   LSlice :: SNat n -> r EInt -> r t -> LExprF r (Sliced n t)
   LIndex :: SNat n -> r (EArray (S Z) EInt) -> r t -> LExprF r (Indexed n t)
+--  deriving (Typeable)
 --  LRangeIndex :: SNat n -> Maybe (r EInt) -> Maybe (r EInt) -> r t -> LExprF r (Indexed n t)
 
+
 type LExpr = TR.IFix LExprF
+
+eqLExpr :: LExpr ta -> LExpr tb -> Bool
+eqLExpr la lb = case eqLExprType la lb of
+  Just Refl -> eqLExprOf la lb
+  Nothing -> False
+
+-- This returns some false negatives, but will certainly work on identical epxressions
+eqLExprType :: LExpr ta -> LExpr tb -> Maybe (ta :~: tb)
+eqLExprType = go
+  where
+    go :: LExpr ta -> LExpr tb -> Maybe (ta :~: tb)
+    go (TR.IFix (LNamed _ sta)) (TR.IFix (LNamed _ stb)) = testEquality sta stb
+    go (TR.IFix (LInt _)) (TR.IFix (LInt _)) = Just Refl
+    go (TR.IFix (LReal _)) (TR.IFix (LReal _)) = Just Refl
+    go (TR.IFix (LComplex _ _)) (TR.IFix (LComplex _ _)) = Just Refl
+    go (TR.IFix (LString _)) (TR.IFix (LString _)) = Just Refl
+    go (TR.IFix (LVector _)) (TR.IFix (LVector _)) = Just Refl
+    go (TR.IFix (LMatrix _)) (TR.IFix (LMatrix _)) = Just Refl
+    go (TR.IFix (LArray nv)) (TR.IFix (LArray nv')) = do
+      Refl <- eqSizeNestedVec nv nv'
+      Refl <- go (nestedVecHead nv) (nestedVecHead nv')
+      pure Refl
+    go (TR.IFix (LIntRange _ _)) (TR.IFix (LIntRange _ _)) = Just Refl
+    go (TR.IFix (LFunction (Function _ sta _) _)) (TR.IFix (LFunction (Function _ stb _) _)) = testEquality sta stb
+    go (TR.IFix (LDensity _ _ _)) (TR.IFix (LDensity _ _ _)) = Just Refl
+    go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = do
+      Refl <- testEquality opa opb
+      Refl <- go ea eb
+      pure Refl
+    go (TR.IFix (LBinaryOp opa lhsa rhsa)) (TR.IFix (LBinaryOp opb lhsb rhsb)) = do
+      Refl <- testEquality opa opb
+      Refl <- go lhsa lhsb
+      Refl <- go rhsa rhsb
+      pure Refl
+    go (TR.IFix (LCond _ ea _)) (TR.IFix (LCond _ eb _)) = do
+      Refl <- go ea eb
+      pure Refl
+    go (TR.IFix (LIndex sna _ ea)) (TR.IFix (LIndex snb _ eb)) = do
+      let eqSNatWith :: DT.SNatI n => DT.SNat m -> Maybe (n :~: m)
+          eqSNatWith sm = DT.withSNat sm DT.eqNat
+          eqSNat :: DT.SNat n -> DT.SNat m -> Maybe (n :~: m)
+          eqSNat sn sm = DT.withSNat sn $ eqSNatWith sm
+      Refl <- eqSNat sna snb
+      Refl <- go ea eb
+      return Refl
+    go _ _ = Nothing
+
+eqLExprOf :: LExpr ta -> LExpr ta -> Bool
+eqLExprOf = go
+  where
+    go :: LExpr ta -> LExpr ta -> Bool
+    go (TR.IFix (LNamed na _)) (TR.IFix (LNamed nb _)) = na == nb
+    go (TR.IFix (LInt n)) (TR.IFix (LInt m)) = n == m
+    go (TR.IFix (LReal x)) (TR.IFix (LReal y)) = x == y
+    go (TR.IFix (LComplex xr xi)) (TR.IFix (LComplex yr yi)) = xr == yr && xi == yi
+    go (TR.IFix (LString sa)) (TR.IFix (LString sb)) = sa == sb
+    go (TR.IFix (LVector xs)) (TR.IFix (LVector ys)) = xs == ys
+    go (TR.IFix (LMatrix vs)) (TR.IFix (LMatrix vs')) = getAll $ mconcat $ All <$> zipWith eqVec vs vs'
+    go (TR.IFix (LArray nv)) (TR.IFix (LArray nv')) = case eqSizeNestedVec nv nv' of
+      Just Refl -> eqNestedVec eqLExprOf nv nv'
+      Nothing -> False
+    go (TR.IFix (LIntRange mla mua)) (TR.IFix (LIntRange mlb mub)) =
+      let cm :: Maybe (LExpr EInt) -> Maybe (LExpr EInt) -> Bool
+          cm Nothing Nothing = True
+          cm (Just a) (Just b) = go a b
+          cm _ _ = False
+      in cm mla mlb && cm mua mub
+    go (TR.IFix (LFunction (Function fna _ ata) ala)) (TR.IFix (LFunction (Function fnb _ atb) alb)) =
+      let eqArgs = case testEquality ata atb of
+            Just Refl -> eqArgLists go ala alb
+            Nothing -> False
+      in fna == fnb && eqArgs
+    go (TR.IFix (LDensity (Density dna gta ata) ga ala)) (TR.IFix (LDensity (Density dnb gtb atb) gb alb)) =
+      let eqGivens = case testEquality gta gtb of
+            Just Refl -> True
+            Nothing -> False
+          eqArgs =  case testEquality ata atb of
+            Just Refl -> eqArgLists go ala alb
+            Nothing -> False
+      in dna == dnb && eqGivens && eqArgs
+    go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = case testEquality opa opb of
+      Just Refl -> case eqLExprType ea eb of
+        Just Refl -> go ea eb
+        Nothing -> False
+      Nothing -> False
+    go (TR.IFix (LBinaryOp opa lhsa rhsa)) (TR.IFix (LBinaryOp opb lhsb rhsb)) = case testEquality opa opb of
+      Just Refl -> case eqLExprType lhsa lhsb of
+        Just Refl -> case eqLExprType rhsa rhsb of
+          Just Refl -> go lhsa lhsb && go rhsa rhsb
+          Nothing -> False
+        Nothing -> False
+      Nothing -> False
+    go (TR.IFix (LCond ca lhsa rhsa)) (TR.IFix (LCond cb lhsb rhsb)) = go ca cb && go lhsa lhsb && go rhsa rhsb
+    go (TR.IFix (LIndex _ iea ea)) (TR.IFix (LIndex _ ieb eb)) =
+      go iea ieb && case eqLExprType ea eb of
+                      Just Refl -> go ea eb
+                      Nothing -> False
+    go _ _ = False
+
+--eqLExprF (LArray nv) (LArray nv') = unNest nv == unNest nv'
+
+{-
+
+eqLExpr :: (forall t.LExprF t a -> LExprF t b -> Bool) -> LExpr a -> LExpr b -> Bool
+eqLExpr f la lb = f (TR.unIFix la) (TR.unIFix lb)
+
+instance GEq LExpr where
+  geq (TR.IFix (LNamed t st)) (TR.IFix (LNamed t' st')) = if t == t' then geq st st' else Nothing
+  geq (TR.IFix (LInt n)) (TR.IFix (LInt m)) = if m == n then Just Refl else Nothing
+  geq (TR.IFix (LReal x)) (TR.IFix (LReal y)) = if x == y then Just Refl else Nothing
+  geq (TR.IFix (LString t)) (TR.IFix (LString t')) = if t == t' then Just Refl else Nothing
+  geq (TR.IFix (LVector v)) (TR.IFix (LVector v')) = if v == v' then Just Refl else Nothing
+  geq (TR.IFix (LMatrix v)) (TR.IFix (LMatrix v')) = if fmap Vec.toList v == fmap Vec.toList v' then Just Refl else Nothing
+  geq (TR.IFix (LArray nv)) (TR.IFix (LArray nv')) = do
+    let (sizesA, eas) = unNest nv
+        (sizesB, ebs) = unNest nv'
+    Refl <- if sizesA == sizesB then Just Refl else Nothing
+    _ $ zipWith geq eas ebs
+-}
+
+
+
 
 lNamedE :: Text -> SType t -> LExpr t
 lNamedE name  = TR.IFix . LNamed name
@@ -223,6 +361,8 @@ sliceInnerN e v = Vec.withDict v $ go e v where
 
 sliceAll :: UExpr t -> Vec (Dimension t) (UExpr EInt) -> UExpr (SliceInnerN (Dimension t) t)
 sliceAll = sliceInnerN
+
+
 
 -- Expression to Expression transformations
 {- Can't figure this out! The nested type-family is not resolving and the nats are annoying

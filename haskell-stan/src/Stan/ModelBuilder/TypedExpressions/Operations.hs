@@ -10,6 +10,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Operations
   (
@@ -25,13 +26,18 @@ import           Data.Kind (Type)
 
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
-
+import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 
 data UnaryOp = UNegate | UTranspose
 
 data SUnaryOp :: UnaryOp -> Type where
   SNegate :: SUnaryOp UNegate
   STranspose :: SUnaryOp UTranspose
+
+instance TestEquality SUnaryOp where
+  testEquality SNegate SNegate = Just Refl
+  testEquality STranspose STranspose = Just Refl
+  testEquality _ _ = Nothing
 
 type family UnaryResultT (uo :: UnaryOp) (a :: EType) :: EType where
   UnaryResultT UNegate a = a
@@ -52,6 +58,17 @@ data SBoolOp :: BoolOp -> Type where
   SGEq :: SBoolOp BGEq
   SAnd :: SBoolOp BAnd
   SOr :: SBoolOp BOr
+
+instance TestEquality SBoolOp where
+  testEquality SEq SEq = Just Refl
+  testEquality SNEq SNEq = Just Refl
+  testEquality SLT SLT = Just Refl
+  testEquality SLEq SLEq = Just Refl
+  testEquality SGT SGT = Just Refl
+  testEquality SGEq SGEq = Just Refl
+  testEquality SAnd SAnd = Just Refl
+  testEquality SOr SOr = Just Refl
+  testEquality _ _ = Nothing
 
 type family BoolResultT (bo :: BoolOp) (a :: EType) (b :: EType) :: EType where
   BoolResultT BEq EString EString = EBool
@@ -83,6 +100,24 @@ data SBinaryOp :: BinaryOp -> Type where
   SElementWise :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SBoolean :: SBoolOp bop -> SBinaryOp (BBoolean bop)
+
+instance TestEquality SBinaryOp where
+  testEquality SAdd SAdd = Just Refl
+  testEquality SSubtract SSubtract = Just Refl
+  testEquality SMultiply SMultiply = Just Refl
+  testEquality SDivide SDivide = Just Refl
+  testEquality SPow SPow = Just Refl
+  testEquality SModulo SModulo = Just Refl
+  testEquality (SElementWise opa) (SElementWise opb) = case testEquality opa opb of
+    Just Refl -> Just Refl
+    Nothing -> Nothing
+  testEquality (SAndEqual opa) (SAndEqual opb) = case testEquality opa opb of
+    Just Refl -> Just Refl
+    Nothing -> Nothing
+  testEquality (SBoolean bopa) (SBoolean bopb) = case testEquality @SBoolOp bopa bopb of
+    Just Refl -> Just Refl
+    Nothing -> Nothing
+  testEquality _ _ = Nothing
 
 type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType where
   BinaryResultT BAdd a a = a

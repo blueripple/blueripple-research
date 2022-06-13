@@ -22,18 +22,25 @@ import qualified Data.Array as Array
 import qualified Data.List.NonEmpty as NE
 import Relude.Extra
 import qualified Stan.ModelBuilder.BuilderTypes as SBT
-import qualified Stan.ModelBuilder.TypedExpressions.Statements as TB
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Evaluate as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Format as TE
+
+import qualified Prettyprinter.Render.Text as PP
+import qualified Prettyprinter as PP
+
 
 -- the StanBlock type has more sections so we can selectively add and remove things which are for
 -- only generated quantitied or the generation of log-likelihoods
-newtype StanProgram = StanProgram {unStanProgram :: Array.Array SBT.StanBlock [TB.UStmt]}
+newtype StanProgram = StanProgram {unStanProgram :: Array.Array SBT.StanBlock [TE.UStmt]}
 
 emptyStanProgram :: StanProgram
 emptyStanProgram = StanProgram $ Array.listArray (minBound, maxBound) $ repeat []
 
 -- this is...precarious.  No way to check that we are using all of the array
-programToStmt :: SBT.GeneratedQuantities -> StanProgram -> TB.UStmt
-programToStmt gq p = TB.SContext Nothing fullProgramStmt
+programToStmt :: SBT.GeneratedQuantities -> StanProgram -> TE.UStmt
+programToStmt gq p = TE.SContext Nothing fullProgramStmt
   where
     stmtsArray = unStanProgram p
     fullProgramStmt  =
@@ -44,52 +51,65 @@ programToStmt gq p = TB.SContext Nothing fullProgramStmt
           ss5 = ss4 ++ [modelStmt]
           ss6 = ss5 ++ maybe [] pure gqStmtM
       in s :| ss6
-    functionsStmtM = let x = stmtsArray ! SBT.SBFunctions in if null x then Nothing else Just (TB.SBlock TB.FunctionsStmts x)
+    functionsStmtM = let x = stmtsArray ! SBT.SBFunctions in if null x then Nothing else Just (TE.SBlock TE.FunctionsStmts x)
     dataStmt =
         let d = stmtsArray ! SBT.SBData
             gqd = stmtsArray ! SBT.SBDataGQ
-         in TB.SBlock TB.DataStmts (d ++ if gq /= SBT.NoGQ then gqd else [])
+         in TE.SBlock TE.DataStmts (d ++ if gq /= SBT.NoGQ then gqd else [])
     tDataStmtM =
       let
         x = stmtsArray ! SBT.SBTransformedData
         xGQ = stmtsArray ! SBT.SBTransformedDataGQ
-      in if null x && null xGQ then Nothing else Just (TB.SBlock TB.TDataStmts $ x ++ xGQ)
-    paramsStmt = TB.SBlock TB.ParametersStmts $ stmtsArray ! SBT.SBParameters
-    tParamsStmtM = let x = stmtsArray ! SBT.SBTransformedParameters in if null x then Nothing else Just (TB.SBlock TB.TParametersStmts x)
+      in if null x && null xGQ then Nothing else Just (TE.SBlock TE.TDataStmts $ x ++ xGQ)
+    paramsStmt = TE.SBlock TE.ParametersStmts $ stmtsArray ! SBT.SBParameters
+    tParamsStmtM = let x = stmtsArray ! SBT.SBTransformedParameters in if null x then Nothing else Just (TE.SBlock TE.TParametersStmts x)
     modelStmt =
         let ms = stmtsArray ! SBT.SBModel
             gqms = stmtsArray ! SBT.SBGeneratedQuantities
-         in TB.SBlock TB.ModelStmts $ ms ++ if gq /= SBT.NoGQ then gqms else []
+         in TE.SBlock TE.ModelStmts $ ms ++ if gq /= SBT.NoGQ then gqms else []
     gqStmtM =
         let gqs = stmtsArray ! SBT.SBGeneratedQuantities
             lls = stmtsArray ! SBT.SBLogLikelihood
          in case gq of
                 SBT.NoGQ -> Nothing
-                SBT.NoLL -> Just $ TB.SBlock TB.GeneratedQuantitiesStmts gqs
-                SBT.OnlyLL -> Just $ TB.SBlock TB.GeneratedQuantitiesStmts lls
-                SBT.All -> Just $ TB.SBlock TB.GeneratedQuantitiesStmts $ gqs ++ lls
+                SBT.NoLL -> Just $ TE.SBlock TE.GeneratedQuantitiesStmts gqs
+                SBT.OnlyLL -> Just $ TE.SBlock TE.GeneratedQuantitiesStmts lls
+                SBT.All -> Just $ TE.SBlock TE.GeneratedQuantitiesStmts $ gqs ++ lls
 
 
 -- check if the type of statement is allowed in the block then, if so, provide the modification function
 -- otherwise error
-addStmtToBlock :: SBT.StanBlock -> TB.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtToBlock :: SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
 addStmtToBlock sb s = do
   let f sp =
         let p = unStanProgram sp
         in StanProgram $ p // [(sb, p ! sb ++ [s])]
   case s of
-    TB.SFunction {} -> if sb == SBT.SBFunctions
+    TE.SFunction {} -> if sb == SBT.SBFunctions
                        then Right f
                        else Left "Functions and only functions can appear in the function block."
     _ -> if sb `elem` [SBT.SBData, SBT.SBDataGQ, SBT.SBParameters]
       then case s of
-             TB.SDeclare {} -> Right f
-             TB.SComment {} -> Right f
+             TE.SDeclare {} -> Right f
+             TE.SComment {} -> Right f
              _ -> Left "Statement other than declaration or comment in data or parameters block."
       else Right f
 
-addStmtsToBlock :: Traversable f => SBT.StanBlock -> f TB.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtsToBlock :: Traversable f => SBT.StanBlock -> f TE.UStmt -> Either Text (StanProgram -> StanProgram)
 addStmtsToBlock b stmts = do
   fs <- traverse (addStmtToBlock b) stmts
   let g sp = foldl' (\sp f -> f sp) sp fs
   return g
+
+programAsText :: SBT.GeneratedQuantities -> StanProgram -> Either Text Text
+programAsText gq p = do
+  let pStmt = programToStmt gq p
+  case TE.statementToCodeE TE.emptyLookupCtxt pStmt of
+    Right x -> pure $ PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
+    Left err ->
+      let msg = "Lookup error when building code from tree: " <> err <> "\n"
+            <> "Tree with failed lookups between hashes follows.\n"
+            <> case TE.eStatementToCodeE TE.emptyLookupCtxt pStmt of
+                 Left err2 -> "Yikes! Can't build error tree: " <> err2 <> "\n"
+                 Right x -> PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
+      in Left msg

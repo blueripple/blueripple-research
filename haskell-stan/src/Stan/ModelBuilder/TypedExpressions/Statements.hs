@@ -266,8 +266,10 @@ type IndexSizeMap = Map IndexKey (LExpr EInt)
 type IndexArrayMap = Map IndexKey IndexArray
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map IndexKey (LExpr EInt), indexes :: Map IndexKey IndexArray }
+
 emptyLookupCtxt :: IndexLookupCtxt
 emptyLookupCtxt = IndexLookupCtxt mempty mempty
+
 
 instance Functor (StmtF f) where
   fmap f x = case x of

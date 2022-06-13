@@ -26,12 +26,13 @@ import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
 import Prelude hiding (Nat)
 import           Data.Kind (Type)
 
+import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 import Data.Type.Nat (Nat(..), SNat(..))
 import qualified Data.Type.Nat as DT
 
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
-
+--import Data.GADT.Compare (GEq(geq))
 
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
@@ -78,6 +79,20 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
+
+instance Eq (SType t) where
+  SVoid == SVoid = True
+  SString == SString = True
+  SBool == SBool = True
+  SInt == SInt = True
+  SReal == SReal = True
+  SComplex == SComplex = True
+  SCVec == SCVec = True
+  SRVec == SRVec = True
+  SMat == SMat = True
+  SSqMat == SSqMat = True
+  SArray n st == SArray n' st' = (DT.snatToNat n == DT.snatToNat n') && (st == st')
+
 
 sTypeToEType :: SType t -> EType
 sTypeToEType = \case
@@ -198,32 +213,24 @@ sTypeFromStanType = \case
   StanCholeskyFactorCorr -> SSqMat
   StanCovMatrix -> SSqMat
   StanCholeskyFactorCov -> SSqMat
-{-
-data (a :: k) :~: (b :: k) where
-  Refl :: a :~: a
-
-class TestEquality (t :: k -> Type) where
-  testEquality :: t a -> t b -> Maybe (a :~: b)
-
-instance TestEquality SNat where
-  testEquality SZ SZ = Just Refl
-  testEquality (SS sn) (SS sm) = do
-    Refl <- testEquality sn sm
-    pure Refl
-  testEquality _ _ = Nothing
 
 instance TestEquality SType where
+  testEquality SVoid SVoid = Just Refl
+  testEquality SString SString = Just Refl
+  testEquality SBool SBool = Just Refl
   testEquality SInt SInt = Just Refl
   testEquality SReal SReal = Just Refl
+  testEquality SComplex SComplex = Just Refl
   testEquality SCVec SCVec = Just Refl
   testEquality SRVec SRVec = Just Refl
   testEquality SMat SMat = Just Refl
+  testEquality SSqMat SSqMat = Just Refl
   testEquality (SArray sn sa) (SArray sm sb) = do
     Refl <- testEquality sa sb
     Refl <- testEquality sn sm
     pure Refl
   testEquality _ _ = Nothing
--}
+
 
 {-
 -- possible structure of expressions

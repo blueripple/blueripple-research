@@ -28,7 +28,7 @@ import           Data.Kind (Type)
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Hashable.Generic (HashArgs)
-
+import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 
 logit :: Function EReal '[EReal]
 logit = Function "logit" SReal (oneArgType SReal)
@@ -43,6 +43,24 @@ data ArgTypeList :: [EType] -> Type where
   (::>) :: SType et -> ArgTypeList ets -> ArgTypeList (et ': ets)
 
 infixr 2 ::>
+
+instance TestEquality ArgTypeList where
+  testEquality ArgTypeNil ArgTypeNil = Just Refl
+  testEquality (sta ::> as) (stb ::> bs) = do
+    Refl <- testEquality sta stb
+    Refl <- testEquality as bs
+    pure Refl
+  testEquality _ _ = Nothing
+
+eqArgTypeList :: ArgTypeList es -> ArgTypeList es' -> Bool
+eqArgTypeList = go
+  where
+    go :: ArgTypeList es -> ArgTypeList es' -> Bool
+    go ArgTypeNil ArgTypeNil = True
+    go (sta ::> as) (stb ::> bs) = case testEquality sta stb of
+      Just Refl -> go as bs
+      Nothing -> False
+    go _ _ = False
 
 argTypesToList ::  (forall t.SType t -> a) -> ArgTypeList args -> [a]
 argTypesToList _ ArgTypeNil = []
@@ -76,6 +94,18 @@ instance HTraversable ArgList where
 zipArgListsWith :: (forall t. a t -> b t -> c t) -> ArgList a args -> ArgList b args -> ArgList c args
 zipArgListsWith _ ArgNil ArgNil = ArgNil
 zipArgListsWith f (a :> as) (b :> bs) = f a b :> zipArgListsWith f as bs
+
+eqArgLists :: forall (t ::EType -> Type) es. (forall a.t a -> t a -> Bool) -> ArgList t es -> ArgList t es -> Bool
+eqArgLists f a b = getAll $ mconcat $ All <$> argsKToList (zipArgListsWith (\x y -> K $ f x y) a b)
+
+{-
+eqArgLists :: forall (t ::EType -> Type) es es'. (forall a.t a -> t a -> Bool) -> ArgList t es -> ArgList t es' -> Bool
+eqArgLists f = go
+  where
+    go :: ArgList t ls -> ArgList t ls' -> Bool
+    go ArgNil ArgNil = True
+    go (x :> xs) (y :> ys) = f x y && go xs ys
+-}
 
 argsKToList :: ArgList (K a) ts -> [a]
 argsKToList ArgNil = []

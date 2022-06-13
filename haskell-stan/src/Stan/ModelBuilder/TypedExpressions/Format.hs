@@ -49,6 +49,7 @@ import qualified Data.Map.Strict as Map
 import qualified Prettyprinter as PP
 import Prettyprinter ((<+>))
 import qualified Data.GADT.Compare as DT
+import qualified Prettyprinter.Render.Text as PP
 --import qualified Data.List.NonEmpty.Extra as List
 
 
@@ -332,3 +333,13 @@ stmtBlockHeader = \case
   TParametersStmts -> "transformed parameters"
   ModelStmts -> "model"
   GeneratedQuantitiesStmts -> "generated quantities"
+
+exprToText :: LExpr t -> Text
+exprToText = PP.renderStrict . PP.layoutSmart PP.defaultLayoutOptions . unK . exprToCode
+
+printLookupCtxt :: IndexLookupCtxt -> Text
+printLookupCtxt (IndexLookupCtxt s i) = "sizes: " <> T.intercalate ", " (printF <$> Map.toList s)
+                                        <> "indexes: " <> T.intercalate ", " (printF <$> Map.toList i)
+  where
+    printF :: forall t.(Text, LExpr t) -> Text
+    printF (ik, le) = "("<> ik <> ", " <> exprToText le  <> ")"
