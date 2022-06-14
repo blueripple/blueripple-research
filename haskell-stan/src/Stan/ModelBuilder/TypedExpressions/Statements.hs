@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Stan.ModelBuilder.TypedExpressions.Statements
   (
@@ -26,8 +27,11 @@ import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
+import Stan.ModelBuilder.TypedExpressions.StanFunctions
 --import qualified Stan.ModelBuilder.BuilderTypes as SBT
 import qualified Data.Vec.Lazy as Vec
+
+import Control.Monad.Writer.Strict as W
 
 import Prelude hiding (Nat)
 import Relude.Extra
@@ -107,8 +111,24 @@ addToTarget = STarget
 assign :: UExpr t -> UExpr t -> UStmt
 assign = SAssign
 
+opAssign :: (ta ~ BinaryResultT bop ta tb) => SBinaryOp bop -> UExpr ta -> UExpr tb -> UStmt
+opAssign op ea eb = assign ea $ binaryOpE op ea eb
+
+plusEq :: (ta ~ BinaryResultT BAdd ta tb) => UExpr ta -> UExpr tb -> UStmt
+plusEq = opAssign SAdd
+
+divEq :: (ta ~ BinaryResultT BDivide ta tb) => UExpr ta -> UExpr tb -> UStmt
+divEq = opAssign SDivide
+
+data DensityWithArgs g where
+  DensityWithArgs :: Density g args -> ArgList UExpr args -> DensityWithArgs g
+
 sample :: UExpr t -> Density t args -> ArgList UExpr args -> UStmt
 sample = SSample
+
+sampleW :: UExpr t -> DensityWithArgs t  -> UStmt
+sampleW ue (DensityWithArgs d al)= SSample ue d al
+
 
 data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
                | IndexedLoop IndexKey
@@ -189,6 +209,37 @@ offsetM = VarOffset
 multiplierM :: UExpr t -> VarModifier UExpr t
 multiplierM = VarMultiplier
 
+newtype CodeWriter a = CodeWriter { unCodeWriter :: W.Writer [UStmt] a } deriving (Functor, Applicative, Monad, W.MonadWriter [UStmt])
+
+writerNE :: CodeWriter a -> Maybe (NonEmpty UStmt, a)
+writerNE cw = do
+  let (stmts, a) = writerL cw
+  stmtsNE <- nonEmpty stmts
+  return (stmtsNE, a)
+
+writerNE' :: CodeWriter a -> Maybe (NonEmpty UStmt)
+writerNE' = fmap fst . writerNE
+
+writerL :: CodeWriter a -> ([UStmt], a)
+writerL (CodeWriter w) = (stmts, a)
+  where (a, stmts) = W.runWriter w
+
+writerL' :: CodeWriter a -> [UStmt]
+writerL' = fst . writerL
+
+addStmt :: UStmt -> CodeWriter ()
+addStmt = W.tell . pure
+
+declareW :: Text -> DeclSpec t -> CodeWriter (UExpr t)
+declareW t ds = do
+  addStmt $ declare t ds
+  return $ namedE t (sTypeFromStanType $ declType ds)
+
+declareRHSW :: Text -> DeclSpec t -> UExpr t -> CodeWriter (UExpr t)
+declareRHSW t ds rhs = do
+  addStmt $ declareAndAssign t ds rhs
+  return $ namedE t (sTypeFromStanType $ declType ds)
+
 
 instance TR.HFunctor VarModifier where
   hfmap f = \case
@@ -260,12 +311,16 @@ type instance RS.Base (Stmt f) = StmtF f
 
 type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
-type IndexArray = LExpr (EArray (S Z) EInt)
+type IndexArrayU = UExpr (EArray (S Z) EInt)
+type IndexArrayL = LExpr (EArray (S Z) EInt)
 type IndexKey = Text
 type IndexSizeMap = Map IndexKey (LExpr EInt)
-type IndexArrayMap = Map IndexKey IndexArray
+type IndexArrayMap = Map IndexKey IndexArrayL
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map IndexKey (LExpr EInt), indexes :: Map IndexKey IndexArray }
+indexSize :: IndexArrayU -> UExpr EInt
+indexSize = functionE (array_num_elements s1 SInt) . oneArg
+
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: IndexSizeMap, indexes :: IndexArrayMap }
 
 emptyLookupCtxt :: IndexLookupCtxt
 emptyLookupCtxt = IndexLookupCtxt mempty mempty

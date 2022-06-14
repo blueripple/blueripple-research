@@ -12,6 +12,8 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use camelCase" #-}
 
 module Stan.ModelBuilder.TypedExpressions.Functions
   (
@@ -29,13 +31,6 @@ import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Hashable.Generic (HashArgs)
 import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
-
-logit :: Function EReal '[EReal]
-logit = Function "logit" SReal (oneArgType SReal)
-
-invLogit :: Function EReal '[EReal]
-invLogit = Function "inv_logit" SReal (oneArgType SReal)
-
 
 -- singleton for a list of arguments
 data ArgTypeList :: [EType] -> Type where
@@ -118,14 +113,21 @@ argTypesToSTypeList :: ArgTypeList args -> ArgList SType args
 argTypesToSTypeList ArgTypeNil = ArgNil
 argTypesToSTypeList (st ::> atl) = st :> argTypesToSTypeList atl
 
+--
 data Function :: EType -> [EType] -> Type  where
-  Function :: Text -> SType r -> ArgTypeList args -> Function r args
+  Function :: Text -- name
+           -> SType r -- return type
+           -> ArgTypeList args -- argument types
+           -> Function r args
 
 functionArgTypes :: Function rt args -> ArgTypeList args
 functionArgTypes (Function _ _ al) = al
 
 data Density :: EType -> [EType] -> Type where
-  Density :: Text -> SType g -> ArgTypeList args -> Density g args
+  Density :: Text -- name
+          -> SType g -- givens type
+          -> ArgTypeList args -- argument types
+          -> Density g args
 
 -- const functor for holding arguments to functions
 data FuncArg :: Type -> k -> Type where

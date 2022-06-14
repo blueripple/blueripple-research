@@ -98,8 +98,12 @@ data SBinaryOp :: BinaryOp -> Type where
   SPow :: SBinaryOp BPow
   SModulo :: SBinaryOp BModulo
   SElementWise :: SBinaryOp op -> SBinaryOp (BElementWise op)
-  SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
+--  SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SBoolean :: SBoolOp bop -> SBinaryOp (BBoolean bop)
+
+type family CanAndEqual (bo :: BinaryOp) :: BinaryOp where
+  CanAndEqual (BBoolean _) =  (TE.TypeError (TE.Text "Cannot AndEqual a boolean operator. That is, something like =/= makes no sense."))
+  CanAndEqual a = a
 
 instance TestEquality SBinaryOp where
   testEquality SAdd SAdd = Just Refl
@@ -111,9 +115,9 @@ instance TestEquality SBinaryOp where
   testEquality (SElementWise opa) (SElementWise opb) = case testEquality opa opb of
     Just Refl -> Just Refl
     Nothing -> Nothing
-  testEquality (SAndEqual opa) (SAndEqual opb) = case testEquality opa opb of
-    Just Refl -> Just Refl
-    Nothing -> Nothing
+--  testEquality (SAndEqual opa) (SAndEqual opb) = case testEquality opa opb of
+--    Just Refl -> Just Refl
+--    Nothing -> Nothing
   testEquality (SBoolean bopa) (SBoolean bopb) = case testEquality @SBoolOp bopa bopb of
     Just Refl -> Just Refl
     Nothing -> Nothing
@@ -146,6 +150,11 @@ type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType wh
   BinaryResultT BMultiply ECVec ESqMat = TE.TypeError (TE.Text "Cannot do col-vector * matrix.  Perhaps you meant to flip the order?")
   BinaryResultT BMultiply a (EArray n b) = EArray n (BinaryResultT BMultiply a b)
   BinaryResultT BMultiply a b = TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be multiplied." )
+  BinaryResultT BDivide ECVec a = IfNumber a ECVec (TE.TypeError (TE.ShowType ECVec :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be divided." ))
+  BinaryResultT BDivide ERVec a = IfNumber a ERVec (TE.TypeError (TE.ShowType ERVec :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be divided." ))
+  BinaryResultT BDivide EMat a = IfNumber a EMat (TE.TypeError (TE.ShowType EMat :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be divided." ))
+  BinaryResultT BDivide ESqMat a = IfNumber a ESqMat (TE.TypeError (TE.ShowType ESqMat :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be divided." ))
+  BinaryResultT BDivide (EArray n t) a = IfNumber a (BinaryResultT BDivide t a) (TE.TypeError (TE.ShowType (EArray n t) :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be divided." ))
   BinaryResultT BDivide a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be divided." ))
   BinaryResultT BPow EInt EInt = EReal -- Stan spec
   BinaryResultT BPow EReal EReal = EReal

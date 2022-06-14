@@ -193,7 +193,7 @@ data IndexMap r k = IndexMap
 data RowInfo d r = RowInfo
                    {
                      toFoldable    :: ToFoldable d r
-                   , expressionBindings :: Map TE.IndexKey TE.IndexArray
+                   , expressionBindings :: TE.IndexArrayMap
                    , groupIndexes  :: GroupIndexes r
                    , groupIntMapBuilders  :: GroupIntMapBuilders r
                    , jsonSeries    :: JSONSeriesFold r

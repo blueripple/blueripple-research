@@ -40,18 +40,19 @@ import qualified Stan.SamplerCSV as SCSV
 import qualified System.Directory as Dir
 import qualified System.Environment as Env
 import qualified Relude.Extra as Relude
+import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
 
 makeDefaultModelRunnerConfig :: forall st cd r. SC.KnitStan st cd r
   => SC.RunnerInputNames
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
-  -> Maybe (SB.GeneratedQuantities, SB.StanModel)
+  -> Maybe (SB.GeneratedQuantities, TE.StanProgram)
   -> SC.StanMCParameters
   -> Maybe CS.StancConfig
   -> K.Sem r SC.ModelRunnerConfig
 makeDefaultModelRunnerConfig runnerInputNames modelM stanMCParameters mStancConfig = do
   let doOnlyLL = case modelM of
         Nothing -> False
-        Just (_, m) ->  SB.genLogLikelihoodBlock m /= T.empty
+        Just (_, p) ->  TE.programHasLLBlock p
       stanMakeConfig mr = do
         writeModel runnerInputNames mr modelM
         stanMakeNoGQConfig' <- K.liftKnit $ CS.makeDefaultMakeConfig (toString $ SC.modelPath mr runnerInputNames)
@@ -86,7 +87,7 @@ writeModel ::  K.KnitEffects r
   => SC.RunnerInputNames
   -> SC.ModelRun
   -- | Assume model file exists when Nothing.  Otherwise generate from this and use.
-  -> Maybe (SB.GeneratedQuantities, SB.StanModel)
+  -> Maybe (SB.GeneratedQuantities, TE.StanProgram)
   -> K.Sem r ()
 writeModel runnerInputNames modelRun modelM = do
   let modelDir = SC.rinModelDir runnerInputNames

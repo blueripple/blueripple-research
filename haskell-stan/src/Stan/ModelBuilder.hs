@@ -858,7 +858,7 @@ addFunctionsOnce functionsName fCode = do
   if functionsName `Set.member` fsNames
     then return ()
     else (do
-             fCode
+             inBlock SBFunctions fCode
              modify $ modifyFunctionNames $ Set.insert functionsName
          )
 
@@ -1085,24 +1085,24 @@ addDeclBinding' k e = modify $ modifyIndexBindings f where
 addDeclBinding :: IndexKey -> SME.StanName -> StanBuilderM md gq ()
 addDeclBinding k = addDeclBinding' k . TE.namedLSize
 
-addUseBinding' :: IndexKey -> TE.IndexArray -> StanBuilderM md gq ()
+addUseBinding' :: IndexKey -> TE.IndexArrayL -> StanBuilderM md gq ()
 addUseBinding' k e = modify $ modifyIndexBindings f where
   f lc = lc { TE.indexes = Map.insert k e $ TE.indexes lc }
 
 addUseBinding :: IndexKey -> SME.StanName -> StanBuilderM md gq ()
 addUseBinding k = addUseBinding' k . TE.namedLIndex
 
-getUseBinding :: IndexKey -> StanBuilderM md gq TE.IndexArray
+getUseBinding :: IndexKey -> StanBuilderM md gq TE.IndexArrayL
 getUseBinding k = do
   ubm  <- gets (TE.indexes . indexBindings)
   case Map.lookup k ubm of
     Just e -> return e
     Nothing -> stanBuildError $ "getUseBinding: k=" <> show k <> " not found in use-binding map"
 
-addUseBindingToDataSet' :: forall r md gq.RowTypeTag r -> IndexKey -> TE.IndexArray -> StanBuilderM md gq ()
+addUseBindingToDataSet' :: forall r md gq.RowTypeTag r -> IndexKey -> TE.IndexArrayL -> StanBuilderM md gq ()
 addUseBindingToDataSet' rtt key e = do
   let dataNotFoundErr = "addUseBindingToDataSet: Data-set \"" <> dataSetName rtt <> "\" not found in StanBuilder.  Maybe you haven't added it yet?"
-      bindingChanged newExpr oldExpr = when (newExpr /= oldExpr)
+      bindingChanged newExpr oldExpr = when (not $ TE.eqLExpr newExpr oldExpr)
                                        $ Left
                                        $ "addUseBindingToDataSet: key="
                                        <> show key
@@ -1265,7 +1265,7 @@ addLengthJson :: (Typeable md, Typeable gq)
               => RowTypeTag r -> Text -> SME.IndexKey -> StanBuilderM md gq (TE.UExpr TE.EInt)
 addLengthJson rtt name iKey = do
   addDeclBinding iKey name
-  addJsonOnce rtt name (TE.intSpec [TE.lowerM 1]) (Stan.namedF name Foldl.length)
+  addJsonOnce rtt name (TE.intSpec [TE.lowerM $ TE.intE 1]) (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: SME.StanName -> Text -> Text
 nameSuffixMsg n dsName = "name=\"" <> show n <> "\" data-set=\"" <> show dsName <> "\""

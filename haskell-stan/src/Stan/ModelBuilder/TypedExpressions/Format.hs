@@ -297,7 +297,7 @@ opDoc = \case
   SPow -> "^"
   SModulo -> "%"
   SElementWise sbo -> PP.dot <> opDoc sbo
-  SAndEqual sbo -> opDoc sbo <> PP.equals
+--  SAndEqual sbo -> opDoc sbo <> PP.equals
   SBoolean bop -> boolOpDoc bop
 
 nestedVecToCode :: NestedVec n (K IExprCode t) -> CodePP

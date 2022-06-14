@@ -38,6 +38,9 @@ newtype StanProgram = StanProgram {unStanProgram :: Array.Array SBT.StanBlock [T
 emptyStanProgram :: StanProgram
 emptyStanProgram = StanProgram $ Array.listArray (minBound, maxBound) $ repeat []
 
+programHasLLBlock :: StanProgram -> Bool
+programHasLLBlock p = null (unStanProgram p Array.! SBT.SBGeneratedQuantities)
+
 -- this is...precarious.  No way to check that we are using all of the array
 programToStmt :: SBT.GeneratedQuantities -> StanProgram -> TE.UStmt
 programToStmt gq p = TE.SContext Nothing fullProgramStmt
