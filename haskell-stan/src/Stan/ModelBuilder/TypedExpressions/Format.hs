@@ -23,6 +23,7 @@ module Stan.ModelBuilder.TypedExpressions.Format
 
 import Stan.ModelBuilder.TypedExpressions.Recursion
 import Stan.ModelBuilder.TypedExpressions.Types
+import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
@@ -126,7 +127,7 @@ blockCode' (c :| cs) = c <> PP.vsep cs
 appendList :: NonEmpty a -> [a] -> NonEmpty a
 appendList (a :| as) as' = a :| (as ++ as')
 
-functionArgs:: ArgTypeList args -> ArgList (FuncArg Text) args -> CodePP
+functionArgs:: TypeList args -> TypedList (FuncArg Text) args -> CodePP
 functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <> PP.space) argCodeList
   where
     handleFA :: CodePP -> FuncArg Text t -> CodePP
@@ -146,7 +147,7 @@ functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <>
     f :: SType t -> FuncArg Text t -> K CodePP t
     f st fa = K $ handleFA (handleType st) fa
 
-    argCodeList = argsKToList $ zipArgListsWith f (argTypesToSTypeList argTypes) argNames
+    argCodeList = typedKToList $ zipTypedListsWith f (typeListToSTypeList argTypes) argNames
 
 ifElseCode :: NonEmpty (K CodePP EBool, Either Text CodePP) -> Either Text CodePP -> Either Text CodePP
 ifElseCode ecNE c = do
@@ -213,8 +214,8 @@ withLeadingEmpty im = imWLE where
 iExprToCode :: IExprCode -> CodePP
 iExprToCode = RS.cata iExprToDocAlg
 
-csArgList :: ArgList (K CodePP) args -> CodePP
-csArgList = mconcat . PP.punctuate (PP.comma <> PP.space) . argsKToList
+csArgList :: TypedList (K CodePP) args -> CodePP
+csArgList = mconcat . PP.punctuate (PP.comma <> PP.space) . typedKToList
 
 -- I am not sure about/do not understand the quantified constraint here.
 exprToDocAlg :: IAlg LExprF (K IExprCode) -- LExprF ~> K IExprCode

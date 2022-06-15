@@ -24,11 +24,11 @@ module Stan.ModelBuilder.TypedExpressions.Statements
 import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
 import Stan.ModelBuilder.TypedExpressions.Expressions
 import Stan.ModelBuilder.TypedExpressions.Types
+import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
 import Stan.ModelBuilder.TypedExpressions.StanFunctions
---import qualified Stan.ModelBuilder.BuilderTypes as SBT
 import qualified Data.Vec.Lazy as Vec
 
 import Control.Monad.Writer.Strict as W
@@ -111,6 +111,8 @@ addToTarget = STarget
 assign :: UExpr t -> UExpr t -> UStmt
 assign = SAssign
 
+-- doing it this way avoids using Stans += syntax.  I just expand.
+-- to do otherwise I would have to add a constructor to Stmt
 opAssign :: (ta ~ BinaryResultT bop ta tb) => SBinaryOp bop -> UExpr ta -> UExpr tb -> UStmt
 opAssign op ea eb = assign ea $ binaryOpE op ea eb
 
@@ -121,9 +123,9 @@ divEq :: (ta ~ BinaryResultT BDivide ta tb) => UExpr ta -> UExpr tb -> UStmt
 divEq = opAssign SDivide
 
 data DensityWithArgs g where
-  DensityWithArgs :: Density g args -> ArgList UExpr args -> DensityWithArgs g
+  DensityWithArgs :: Density g args -> TypedList UExpr args -> DensityWithArgs g
 
-sample :: UExpr t -> Density t args -> ArgList UExpr args -> UStmt
+sample :: UExpr t -> Density t args -> TypedList UExpr args -> UStmt
 sample = SSample
 
 sampleW :: UExpr t -> DensityWithArgs t  -> UStmt
@@ -160,11 +162,11 @@ break = SBreak
 continue :: UStmt
 continue = SContinue
 
-function :: Function rt args -> ArgList (FuncArg Text) args -> (ArgList UExpr args -> (NonEmpty UStmt, UExpr rt)) -> UStmt
+function :: Function rt args -> TypedList (FuncArg Text) args -> (TypedList UExpr args -> (NonEmpty UStmt, UExpr rt)) -> UStmt
 function fd argNames bodyF = SFunction fd argNames bodyS ret
   where
-    argTypes = argTypesToArgListOfTypes $ functionArgTypes fd
-    argExprs = zipArgListsWith (namedE . funcArgName) argNames argTypes
+    argTypes = typeListToTypedListOfTypes $ functionArgTypes fd
+    argExprs = zipTypedListsWith (namedE . funcArgName) argNames argTypes
     (bodyS, ret) = bodyF argExprs
 
 comment :: NonEmpty Text -> UStmt
@@ -173,10 +175,10 @@ comment = SComment
 profile :: Text -> UStmt
 profile = SProfile
 
-print :: ArgList UExpr args -> UStmt
+print :: TypedList UExpr args -> UStmt
 print = SPrint
 
-reject :: ArgList UExpr args -> UStmt
+reject :: TypedList UExpr args -> UStmt
 reject = SReject
 
 scoped :: NonEmpty UStmt -> UStmt
@@ -270,18 +272,18 @@ data Stmt :: (EType -> Type) -> Type where
   SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> Stmt r
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
-  SSample :: r st -> Density st args -> ArgList r args -> Stmt r
+  SSample :: r st -> Density st args -> TypedList r args -> Stmt r
   SFor :: Text -> r EInt -> r EInt -> NonEmpty (Stmt r) -> Stmt r
   SForEach :: Text -> r t -> NonEmpty (Stmt r) -> Stmt r
   SIfElse :: NonEmpty (r EBool, Stmt r) -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
   SWhile :: r EBool -> NonEmpty (Stmt r) -> Stmt r
   SBreak :: Stmt r
   SContinue :: Stmt r
-  SFunction :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty (Stmt r) -> r rt -> Stmt r
+  SFunction :: Function rt args -> TypedList (FuncArg Text) args -> NonEmpty (Stmt r) -> r rt -> Stmt r
   SComment :: NonEmpty Text -> Stmt r
   SProfile :: Text -> Stmt r
-  SPrint :: ArgList r args -> Stmt r
-  SReject :: ArgList r args -> Stmt r
+  SPrint :: TypedList r args -> Stmt r
+  SReject :: TypedList r args -> Stmt r
   SScoped :: NonEmpty (Stmt r) -> Stmt r
   SBlock :: StmtBlock -> [Stmt r] -> Stmt r
   SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
@@ -291,18 +293,18 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> StmtF r a
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
-  SSampleF :: r st -> Density st args -> ArgList r args -> StmtF r a
+  SSampleF :: r st -> Density st args -> TypedList r args -> StmtF r a
   SForF :: Text -> r EInt -> r EInt -> NonEmpty a -> StmtF r a
   SForEachF :: Text -> r t -> NonEmpty a -> StmtF r a
   SIfElseF :: NonEmpty (r EBool, a) -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
   SWhileF :: r EBool -> NonEmpty a -> StmtF r a
   SBreakF :: StmtF r a
   SContinueF :: StmtF r a
-  SFunctionF :: Function rt args -> ArgList (FuncArg Text) args -> NonEmpty a -> r rt -> StmtF r a
+  SFunctionF :: Function rt args -> TypedList (FuncArg Text) args -> NonEmpty a -> r rt -> StmtF r a
   SCommentF :: NonEmpty Text -> StmtF r a
   SProfileF :: Text -> StmtF r a
-  SPrintF :: ArgList r args -> StmtF r a
-  SRejectF :: ArgList r args -> StmtF r a
+  SPrintF :: TypedList r args -> StmtF r a
+  SRejectF :: TypedList r args -> StmtF r a
   SScopedF :: NonEmpty a -> StmtF r a
   SBlockF :: StmtBlock -> [a] -> StmtF r a
   SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty a -> StmtF r a
@@ -318,7 +320,7 @@ type IndexSizeMap = Map IndexKey (LExpr EInt)
 type IndexArrayMap = Map IndexKey IndexArrayL
 
 indexSize :: IndexArrayU -> UExpr EInt
-indexSize = functionE (array_num_elements s1 SInt) . oneArg
+indexSize = functionE (array_num_elements s1 SInt) . oneTyped
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: IndexSizeMap, indexes :: IndexArrayMap }
 

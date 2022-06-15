@@ -98,11 +98,10 @@ data SBinaryOp :: BinaryOp -> Type where
   SPow :: SBinaryOp BPow
   SModulo :: SBinaryOp BModulo
   SElementWise :: SBinaryOp op -> SBinaryOp (BElementWise op)
---  SAndEqual :: SBinaryOp op -> SBinaryOp (BElementWise op)
   SBoolean :: SBoolOp bop -> SBinaryOp (BBoolean bop)
 
 type family CanAndEqual (bo :: BinaryOp) :: BinaryOp where
-  CanAndEqual (BBoolean _) =  (TE.TypeError (TE.Text "Cannot AndEqual a boolean operator. That is, something like =/= makes no sense."))
+  CanAndEqual (BBoolean _) =  TE.TypeError (TE.Text "Cannot AndEqual a boolean operator. That is, something like =/= makes no sense.")
   CanAndEqual a = a
 
 instance TestEquality SBinaryOp where
@@ -115,9 +114,6 @@ instance TestEquality SBinaryOp where
   testEquality (SElementWise opa) (SElementWise opb) = case testEquality opa opb of
     Just Refl -> Just Refl
     Nothing -> Nothing
---  testEquality (SAndEqual opa) (SAndEqual opb) = case testEquality opa opb of
---    Just Refl -> Just Refl
---    Nothing -> Nothing
   testEquality (SBoolean bopa) (SBoolean bopb) = case testEquality @SBoolOp bopa bopb of
     Just Refl -> Just Refl
     Nothing -> Nothing

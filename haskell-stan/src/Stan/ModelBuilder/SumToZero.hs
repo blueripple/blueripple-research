@@ -1,18 +1,12 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.SumToZero where
 
@@ -21,6 +15,7 @@ import qualified Data.Map as Map
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
@@ -29,30 +24,30 @@ import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import Data.Maybe (fromJust)
 
 qSumToZeroQRF :: TE.Function TE.ECVec '[TE.EInt]
-qSumToZeroQRF = TE.Function "Q_sum_to_zero_QR" TE.SCVec (TE.oneArgType TE.SInt)
+qSumToZeroQRF = TE.Function "Q_sum_to_zero_QR" TE.SCVec (TE.oneType TE.SInt)
 
-qSumToZeroQRBody :: TE.ArgList TE.UExpr '[TE.EInt] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
-qSumToZeroQRBody (n TE.:> TE.ArgNil) = fromJust $ TE.writerNE $ do
+qSumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.EInt] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
+qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
   qr <- TE.declareW "Q_r" (TE.vectorSpec (TE.intE 2 `TE.timesE` n) [])
   let
     xp1 x = x `TE.plusE` TE.realE 1
     fBody i =
       let nmi = n `TE.minusE` i
-      in TE.assign (TE.sliceE TE.s0 i qr) (TE.negateE $ TE.functionE TE.sqrt (TE.oneArg $ nmi `TE.divideE` (xp1 nmi)))
-      :| [TE.assign (TE.sliceE TE.s0 (i `TE.plusE` n) qr) (TE.functionE TE.inv_sqrt (TE.oneArg $ nmi `TE.timesE` (xp1 nmi)))]
+      in TE.assign (TE.sliceE TE.s0 i qr) (TE.negateE $ TE.functionE TE.sqrt (TE.oneTyped $ nmi `TE.divideE` (xp1 nmi)))
+      :| [TE.assign (TE.sliceE TE.s0 (i `TE.plusE` n) qr) (TE.functionE TE.inv_sqrt (TE.oneTyped $ nmi `TE.timesE` (xp1 nmi)))]
   TE.addStmt $ TE.for "i" (TE.SpecificNumbered (TE.intE 1) n) fBody
   return qr
 
 sumToZeroQRF :: TE.Function TE.ECVec '[TE.ECVec, TE.ECVec]
-sumToZeroQRF = TE.Function "sum_to_zero_QR" TE.SCVec (TE.SCVec TE.::> TE.SCVec TE.::> TE.ArgTypeNil)
+sumToZeroQRF = TE.Function "sum_to_zero_QR" TE.SCVec (TE.SCVec TE.::> TE.SCVec TE.::> TE.TypeNil)
 
 
-sumToZeroQRBody :: TE.ArgList TE.UExpr '[TE.ECVec, TE.ECVec] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
-sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.ArgNil) = fromJust $ TE.writerNE $ do
-  n <- TE.declareRHSW "N" (TE.intSpec []) (TE.functionE TE.vector_size (TE.oneArg x_raw) `TE.plusE` TE.intE 1)
+sumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.ECVec, TE.ECVec] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
+sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
+  n <- TE.declareRHSW "N" (TE.intSpec []) (TE.functionE TE.vector_size (TE.oneTyped x_raw) `TE.plusE` TE.intE 1)
   x <- TE.declareW "x" (TE.vectorSpec n [])
   x_aux <- TE.declareRHSW "x_aux" (TE.realSpec []) (TE.realE 0)
-  x_sigma <- TE.declareRHSW "x_sigma" (TE.realSpec []) (TE.functionE TE.inv_sqrt (TE.oneArg $ TE.intE 1 `TE.minusE` (TE.realE 1 `TE.divideE` n)))
+  x_sigma <- TE.declareRHSW "x_sigma" (TE.realSpec []) (TE.functionE TE.inv_sqrt (TE.oneTyped $ TE.intE 1 `TE.minusE` (TE.realE 1 `TE.divideE` n)))
   let fBody i =
         let ati = TE.sliceE TE.s0 i
             atiPlusN = TE.sliceE TE.s0 (i `TE.plusE` n)
@@ -65,8 +60,8 @@ sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.ArgNil) = fromJust $ TE.writerNE $ do
 sumToZeroFunctions :: SB.StanBuilderM env d ()
 sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
   SB.addStmtsToCode
-    $ [TE.function qSumToZeroQRF (TE.Arg "N" TE.:> TE.ArgNil) qSumToZeroQRBody
-      , TE.function sumToZeroQRF (TE.Arg "x_raw" TE.:> TE.Arg "Q_r" TE.:> TE.ArgNil) sumToZeroQRBody
+    $ [TE.function qSumToZeroQRF (TE.Arg "N" TE.:> TE.TNil) qSumToZeroQRBody
+      , TE.function sumToZeroQRF (TE.Arg "x_raw" TE.:> TE.Arg "Q_r" TE.:> TE.TNil) sumToZeroQRBody
       ]
 {-
   SB.declareStanFunction "vector Q_sum_to_zero_QR(int N)" $ do
@@ -92,11 +87,11 @@ sumToZeroQR :: SB.StanName -> TE.UExpr TE.EInt -> SB.StanBuilderM env d (TE.UExp
 sumToZeroQR varName vecSizeE = do
   sumToZeroFunctions
   qr_v <- SB.inBlock SB.SBTransformedData
-    $ SB.stanDeclareRHS ("Q_r_" <> varName) (TE.vectorSpec (TE.intE 2 `TE.timesE` vecSizeE) []) $ TE.functionE qSumToZeroQRF (TE.oneArg vecSizeE)
+    $ SB.stanDeclareRHS ("Q_r_" <> varName) (TE.vectorSpec (TE.intE 2 `TE.timesE` vecSizeE) []) $ TE.functionE qSumToZeroQRF (TE.oneTyped vecSizeE)
   v_stz <- SB.inBlock SB.SBParameters
     $ SB.stanDeclare (varName <> "_stz") (TE.vectorSpec (vecSizeE `TE.minusE` TE.intE 1) [])
   SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS varName (TE.vectorSpec vecSizeE []) $ TE.functionE sumToZeroQRF (v_stz TE.:> qr_v TE.:> TE.ArgNil)
+    $ SB.stanDeclareRHS varName (TE.vectorSpec vecSizeE []) $ TE.functionE sumToZeroQRF (v_stz TE.:> qr_v TE.:> TE.TNil)
 {-
 --  let vDim = SB.dimToText sd
   SB.inBlock SB.SBTransformedData $ do
@@ -121,7 +116,7 @@ softSumToZero :: SB.StanName -> TE.UExpr TE.EInt -> TE.DensityWithArgs TE.EReal 
 softSumToZero varName vecSize dw = do
   v <- SB.inBlock SB.SBParameters $ SB.stanDeclare varName (TE.vectorSpec vecSize [])
   SB.inBlock SB.SBModel $ SB.addStmtToCode
-    $ TE.functionE TE.vector_sum (TE.oneArg v) `TE.sampleW` dw
+    $ TE.functionE TE.vector_sum (TE.oneTyped v) `TE.sampleW` dw
   pure ()
 
 {-
@@ -140,13 +135,13 @@ weightedSoftSumToZero varName wgtIndex prior = do
   let vecSpec = TE.vectorSpec vecSize []
   v <- SB.inBlock SB.SBParameters $ SB.stanDeclare varName vecSpec
   weights <- SB.inBlock SB.SBTransformedData $ do
-    w <- SB.stanDeclareRHS (varName <> "_wgts") vecSpec $ TE.functionE TE.rep_vector (TE.realE 0 TE.:> vecSize TE.:> TE.ArgNil)
+    w <- SB.stanDeclareRHS (varName <> "_wgts") vecSpec $ TE.functionE TE.rep_vector (TE.realE 0 TE.:> vecSize TE.:> TE.TNil)
     let fb n = TE.sliceE TE.s0 n (TE.indexE TE.s0 wgtIndex w) `TE.plusEq` TE.intE 1 :| []
     SB.addStmtToCode $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) vecSize) fb
     SB.addStmtToCode $ w `TE.divEq` vecSize
     pure w
   SB.inBlock SB.SBModel $ SB.addStmtToCode
-    $ TE.functionE TE.dot (v TE.:> weights TE.:> TE.ArgNil) `TE.sampleW` prior
+    $ TE.functionE TE.dot (v TE.:> weights TE.:> TE.TNil) `TE.sampleW` prior
   pure ()
 {-
 weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()

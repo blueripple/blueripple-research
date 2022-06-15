@@ -27,6 +27,7 @@ module Stan.ModelBuilder.TypedExpressions.Expressions
 
 import qualified Stan.ModelBuilder.TypedExpressions.Recursion as TR
 import Stan.ModelBuilder.TypedExpressions.Types
+import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
@@ -57,8 +58,8 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LMatrix :: [Vec n Double] -> LExprF r EMat
   LArray :: NestedVec n (r t) -> LExprF r (EArray n t)
   LIntRange :: Maybe (r EInt) -> Maybe (r EInt) -> LExprF r (EArray (S Z) EInt)  -- NB: unexported since we only use for indexing
-  LFunction :: Function rt args -> ArgList r args -> LExprF r rt
-  LDensity :: Density st args -> r st -> ArgList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
+  LFunction :: Function rt args -> TypedList r args -> LExprF r rt
+  LDensity :: Density st args -> r st -> TypedList r args -> LExprF r EReal -- e.g., binomial_lupmf(st | ns, p)
   LUnaryOp :: SUnaryOp op -> r t -> LExprF r (UnaryResultT op t)
   LBinaryOp :: SBinaryOp op -> r ta -> r tb -> LExprF r (BinaryResultT op ta tb)
   LCond :: r EBool -> r t -> r t -> LExprF r t
@@ -215,10 +216,10 @@ matrixE = TR.IFix . UL . LMatrix
 arrayE :: NestedVec n (UExpr t) -> UExpr (EArray n t)
 arrayE = TR.IFix . UL . LArray
 
-functionE :: Function rt args -> ArgList UExpr args -> UExpr rt
+functionE :: Function rt args -> TypedList UExpr args -> UExpr rt
 functionE f al = TR.IFix $ UL $ LFunction f al
 
-densityE :: Density gt args -> UExpr gt -> ArgList UExpr args -> UExpr EReal
+densityE :: Density gt args -> UExpr gt -> TypedList UExpr args -> UExpr EReal
 densityE d ge al = TR.IFix $ UL $ LDensity d ge al
 
 unaryOpE :: SUnaryOp op -> UExpr t -> UExpr (UnaryResultT op t)
@@ -354,7 +355,7 @@ eqLExprOf = go
       in cm mla mlb && cm mua mub
     go (TR.IFix (LFunction (Function fna _ ata) ala)) (TR.IFix (LFunction (Function fnb _ atb) alb)) =
       let eqArgs = case testEquality ata atb of
-            Just Refl -> eqArgLists go ala alb
+            Just Refl -> eqTypedLists go ala alb
             Nothing -> False
       in fna == fnb && eqArgs
     go (TR.IFix (LDensity (Density dna gta ata) ga ala)) (TR.IFix (LDensity (Density dnb gtb atb) gb alb)) =
@@ -362,7 +363,7 @@ eqLExprOf = go
             Just Refl -> True
             Nothing -> False
           eqArgs =  case testEquality ata atb of
-            Just Refl -> eqArgLists go ala alb
+            Just Refl -> eqTypedLists go ala alb
             Nothing -> False
       in dna == dnb && eqGivens && eqArgs
     go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = case testEquality opa opb of

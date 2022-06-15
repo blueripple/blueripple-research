@@ -136,6 +136,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Types
+                 , Stan.ModelBuilder.TypedExpressions.TypedList
                  , Stan.ModelBuilder.TypedExpressions.Operations
                  , Stan.ModelBuilder.TypedExpressions.Functions
                  , Stan.ModelBuilder.TypedExpressions.Indexing
@@ -148,7 +149,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.GroupModel
                  , Stan.ModelBuilder.ModelParameters
-                 , Stan.ModelBuilder.StanFunctionBuilder
+--                 , Stan.ModelBuilder.StanFunctionBuilder
                  , Stan.ModelBuilder.SumToZero
                  , Stan.RScriptBuilder
                  , Stan.Frames

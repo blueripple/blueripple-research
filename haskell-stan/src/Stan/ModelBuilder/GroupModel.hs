@@ -23,22 +23,36 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.SumToZero as STZ
 import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
-type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
-type BetaPrior md gq = SB.StanVar -> SB.StanBuilderM md gq ()
+import Stan.ModelBuilder.TypedExpressions.Types as TE
+import Stan.ModelBuilder.TypedExpressions.Statements as TE
+import Stan.ModelBuilder.TypedExpressions.Functions as TE
+import Stan.ModelBuilder.TypedExpressions.Expressions as TE
+--import Data.Hashable.Generic (HashArgs)
 
-data HierarchicalParameterization md gq = Centered (BetaPrior md gq)-- beta prior
-                                        | NonCentered (BetaPrior md gq) (SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq ()) -- raw prior and declaration of transformed
+data HyperParameter :: TE.EType -> Type where
+  HyperParameter :: SB.StanName (TE.DeclSpec t) (TE.DensityWithArgs t)
 
-data GroupModel md gq = BinarySymmetric SB.StanExpr -- epsilon prior
-                      | BinaryHierarchical HyperParameters (HierarchicalParameterization md gq)
-                      | NonHierarchical STZ.SumToZero SB.StanExpr -- beta prior
-                      | Hierarchical STZ.SumToZero HyperParameters (HierarchicalParameterization md gq)
+type HyperParameters es = TE.ArgList HyperParameter es
 
-groupModel :: SB.StanVar -> GroupModel md gq -> SB.StanBuilderM md gq SB.StanVar
-groupModel bv gm = do
+--type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
+type BetaPrior t = TE.DensityWithArgs t
+
+data HierarchicalParameterization :: EType -> Type where
+  Centered :: BetaPrior t -> HierarchicalParameterization t -- beta prior
+  NonCentered :: BetaPrior t -> (TE.UExpr t -> TE.UExpr t -> UStmt) ->  HierarchicalParameterization t -- raw prior and declaration of transformed
+
+-- hyper-parameter types, beta type
+data GroupModel :: [EType] -> EType -> Type  where
+  BinarySymmetric :: TE.DensityWithArgs TE.EReal -> GroupModel TE.EReal '[]
+  BinaryHierarchical :: HyperParameters ts -> HierarchicalParameterization t -> GroupModel t ts
+  NonHierarchical :: STZ.SumToZero -> BetaPrior t -> GroupModel t '[] -- beta prior
+  Hierarchical :: STZ.SumToZero -> HyperParameters es -> HierarchicalParameterization t -> GroupModel t ts
+
+groupModel :: SB.StanName -> TE.DeclSpec t -> GroupModel t ts -> SB.StanBuilderM md gq (TE.UExpr t)
+groupModel vn vds gm = do
   gmRes <- groupModel' [bv] gm
   case gmRes of
-    (x:[]) -> return x
+    [x] -> return x
     _ -> SB.stanBuildError "groupModel: Returned a number of variables /= 1.  This should never happen!"
 
 groupModel' :: [SB.StanVar] -> GroupModel md gq -> SB.StanBuilderM md gq [SB.StanVar]
