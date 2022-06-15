@@ -35,15 +35,16 @@ import Data.Hashable.Generic (HashArgs)
 import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 
 
---
 data Function :: EType -> [EType] -> Type  where
   Function :: Text -- name
            -> SType r -- return type
            -> TypeList args -- argument types
            -> Function r args
+  IdentityFunction :: SType t -> Function t '[t]
 
 functionArgTypes :: Function rt args -> TypeList args
 functionArgTypes (Function _ _ al) = al
+functionArgTypes (IdentityFunction t) = t ::> TypeNil
 
 data Density :: EType -> [EType] -> Type where
   Density :: Text -- name

@@ -7,6 +7,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.GroupModel
   (
@@ -23,189 +24,125 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.SumToZero as STZ
 import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
-import Stan.ModelBuilder.TypedExpressions.Types as TE
-import Stan.ModelBuilder.TypedExpressions.Statements as TE
-import Stan.ModelBuilder.TypedExpressions.Functions as TE
-import Stan.ModelBuilder.TypedExpressions.Expressions as TE
---import Data.Hashable.Generic (HashArgs)
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
+import Stan.ModelBuilder.TypedExpressions.Recursion (hfmap, htraverse)
+import qualified Stan.ModelBuilder as TE
+import Data.Vec.Lazy (Vec(..))
 
-data HyperParameter :: TE.EType -> Type where
-  HyperParameter :: SB.StanName (TE.DeclSpec t) (TE.DensityWithArgs t)
 
-type HyperParameters es = TE.ArgList HyperParameter es
+-- parameterized by the type of the hyper parameter
+data Parameter :: TE.EType -> Type where
+  HyperParameter :: SB.StanName -> TE.DeclSpec t ->  TE.DensityWithArgs t -> Parameter t
+  ExtantParameter :: TE.UExpr t -> Parameter t
 
---type HyperParameters = Map SB.StanVar (Text, SB.StanVar -> SB.StanExpr) -- var, constraint for declaration, var -> prior
-type BetaPrior t = TE.DensityWithArgs t
+type Parameters ts = TE.TypedList Parameter ts
 
-data HierarchicalParameterization :: EType -> Type where
-  Centered :: BetaPrior t -> HierarchicalParameterization t -- beta prior
-  NonCentered :: BetaPrior t -> (TE.UExpr t -> TE.UExpr t -> UStmt) ->  HierarchicalParameterization t -- raw prior and declaration of transformed
+exprListToParameters :: TE.ExprList ts  -> Parameters ts
+exprListToParameters = hfmap ExtantParameter
 
--- hyper-parameter types, beta type
-data GroupModel :: [EType] -> EType -> Type  where
-  BinarySymmetric :: TE.DensityWithArgs TE.EReal -> GroupModel TE.EReal '[]
-  BinaryHierarchical :: HyperParameters ts -> HierarchicalParameterization t -> GroupModel t ts
-  NonHierarchical :: STZ.SumToZero -> BetaPrior t -> GroupModel t '[] -- beta prior
-  Hierarchical :: STZ.SumToZero -> HyperParameters es -> HierarchicalParameterization t -> GroupModel t ts
+data Parameterization :: TE.EType -> Type where
+  UnTransformedP :: Parameters ts -> TE.Density t ts -> Parameterization t
+  TransformedSameP :: Parameters qs
+                   -> TE.Density t qs
+                   -> Parameters ts
+                   -> (TE.ExprList ts -> TE.UExpr t -> TE.UExpr t)
+                   -> Parameterization t
+  TransformedDiffP :: TE.DeclSpec q
+                   -> Parameters qs
+                   -> TE.Density q qs
+                   -> Parameters ts
+                   -> (TE.ExprList ts -> TE.UExpr q -> TE.UExpr t)
+                   -> Parameterization t
 
-groupModel :: SB.StanName -> TE.DeclSpec t -> GroupModel t ts -> SB.StanBuilderM md gq (TE.UExpr t)
-groupModel vn vds gm = do
-  gmRes <- groupModel' [bv] gm
-  case gmRes of
-    [x] -> return x
-    _ -> SB.stanBuildError "groupModel: Returned a number of variables /= 1.  This should never happen!"
+simpleP :: TE.DensityWithArgs t -> Parameterization t
+simpleP (TE.DensityWithArgs d dArgs) = UnTransformedP (exprListToParameters dArgs) d
 
-groupModel' :: [SB.StanVar] -> GroupModel md gq -> SB.StanBuilderM md gq [SB.StanVar]
-groupModel' bvs (BinarySymmetric priorE) = do
-  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  traverse_ declareOne bvs
-  let bPriorM v = SB.addExprLine "Stan.GroupModel.groupModel'" $ SB.var v `SB.eq` priorE
-  traverse (\bv -> groupBetaPrior bPriorM bv) bvs
-  return bvs
+centeredHP :: Parameters ts -> TE.Density t ts -> Parameterization t
+centeredHP = UnTransformedP
 
-groupModel' bvs (BinaryHierarchical hps (Centered bPriorM)) = do
-  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  addHyperParameters hps
-  traverse_ declareOne bvs
-  traverse (\bv -> groupBetaPrior bPriorM bv) bvs
-  return bvs
+nonCenteredHP :: Parameters ts -> TE.DensityWithArgs t -> (TE.ExprList ts -> TE.UExpr t -> TE.UExpr t) -> Parameterization t
+nonCenteredHP hps (TE.DensityWithArgs d dargs) ncF = TransformedSameP (exprListToParameters dargs) d hps ncF
 
-groupModel' bvs (BinaryHierarchical hps (NonCentered rPriorM nonCenteredF)) = do
-  let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
-  brvs <- traverse declareRaw bvs
---  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
-  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
-  traverse_ declareBeta bvs
-  addHyperParameters hps
-  traverse (\brv -> groupBetaPrior rPriorM brv) brvs
-  return bvs
+hierarchicalCenteredFixedMeanNormal :: TE.SType t -> Double -> Parameter TE.EReal -> Parameterization t
+hierarchicalCenteredFixedMeanNormal st mean sigmaP =
+  centeredHP (ExtantParameter (TE.realE mean) TE.:> sigmaP TE.:> TE.TNil) $ TE.normalDensity st
 
-groupModel' bvs (NonHierarchical stz priorE) = do
-  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  when (stz /= STZQR) $ traverse_ declareOne bvs --do { SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""; return ()}
-  traverse_ (\bv -> STZ.sumToZero bv stz) bvs
-  let bPriorM v = SB.addExprLine "Stan.GroupModel.groupModel'" $ SB.var v `SB.eq` priorE
-  traverse_ (\bv -> groupBetaPrior bPriorM bv) bvs
-  return bvs
+-- THis seems more complex than it should be.
+hierarchicalNonCenteredFixedMeanNormal :: forall t. TE.DeclSpec t -> Double -> Parameter TE.EReal -> Parameterization t
+hierarchicalNonCenteredFixedMeanNormal ds mean sigmaP =
+  nonCenteredHP (ExtantParameter (TE.realE mean) TE.:> sigmaP TE.:> TE.TNil) nd ncF
+  where
+    nd = TE.DensityWithArgs (TE.normalDensity $ TE.sTypeFromStanType $ TE.declType ds) (TE.realE 0 TE.:> TE.realE 1 TE.:> TE.TNil)
+    ncF ::  TE.TypedList TE.UExpr '[TE.EReal, TE.EReal] -> TE.UExpr t -> TE.UExpr t
+    ncF (m TE.:> sd TE.:> TE.TNil) x = case TE.sTypeFromStanType (TE.declType ds) of
+      TE.SReal -> m `TE.plusE` (sd `TE.timesE` x)
+      TE.SCVec -> case TE.declDims ds of
+        (vecSizeE ::: VNil) -> TE.functionE TE.rep_vector (m TE.:> vecSizeE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
+      TE.SMat -> case TE.declDims ds of
+        (rowsE ::: colsE ::: VNil) -> TE.functionE TE.rep_matrix (m TE.:> rowsE TE.:> colsE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
+      TE.SSqMat -> case TE.declDims ds of
+        (nE ::: VNil) -> TE.functionE TE.rep_sq_matrix (m TE.:> nE TE.:> nE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
+      _ -> undefined
 
-groupModel' bvs (Hierarchical stz hps (Centered bPriorM)) = do
-  let declareOne (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  addHyperParameters hps
-  traverse_ declareOne bvs
-  traverse_ (\bv -> STZ.sumToZero bv stz) bvs
-  traverse_ (\bv -> groupBetaPrior bPriorM bv) bvs
-  return bvs
 
-groupModel' bvs (Hierarchical stz hps (NonCentered rPriorM nonCenteredF)) = do
-  let declareRaw (SB.StanVar bn bt) = SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName bn) bt ""
-  brvs <- traverse declareRaw bvs
-  traverse (\brv -> STZ.sumToZero brv stz) brvs -- ?
---  let declareBeta (SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" (nonCenteredF $ SB.name $ rawName bn)
-  let declareBeta bv@(SB.StanVar bn bt) = SB.inBlock SB.SBTransformedParameters $ nonCenteredF bv (SB.StanVar (rawName bn) bt)
-  traverse_ declareBeta bvs
-  addHyperParameters hps
-  traverse_ (\brv -> groupBetaPrior rPriorM brv) brvs
-  return bvs
+groupModel :: TE.NamedDeclSpec t -> Parameterization t  -> SB.StanBuilderM md gq (TE.UExpr t)
+groupModel (TE.NamedDeclSpec n ds) (UnTransformedP ps d) = do
+  pEs <- addHyperParameters ps
+  v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n ds
+  SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sample v d pEs
+  return v
+
+groupModel (TE.NamedDeclSpec n ds) (TransformedSameP pd d pt tF) = do
+  pEs <- addHyperParameters pd
+  vRaw <- SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName n) ds
+  SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sample vRaw d pEs
+  tEs <- addHyperParameters pt
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS n ds $ tF tEs vRaw
+
+groupModel (TE.NamedDeclSpec n ds) (TransformedDiffP dq pd d pt tF) = do
+  pEs <- addHyperParameters pd
+  vRaw <- SB.inBlock SB.SBParameters $ SB.stanDeclare (rawName n) dq
+  SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sample vRaw d pEs
+  tEs <- addHyperParameters pt
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS n ds $ tF tEs vRaw
+
+-- declare and add given priors for hyper parameters. Do nothing for extant.
+addHyperParameters :: Parameters es -> SB.StanBuilderM md gq (TE.TypedList TE.UExpr es)
+addHyperParameters hps = do
+  let f :: Parameter t -> SB.StanBuilderM md gq (TE.UExpr t)
+      f (HyperParameter n ds pDens) = do
+        v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n ds
+        SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sampleW v pDens
+        return v
+      f (ExtantParameter p) = pure p
+  htraverse f hps
 
 rawName :: Text -> Text
 rawName t = t <> "_raw"
 
--- some notes:
--- The array of vectors is vectorizing over those vectors, so you can think of it as an array of columns
--- The matrix version is looping over columns and setting each to the prior.
-groupBetaPrior :: BetaPrior md gq -> SB.StanVar -> SB.StanBuilderM md gq ()
-groupBetaPrior f v = SB.inBlock SB.SBModel $ f v
-
-{-
-groupBetaPrior :: SB.StanVar -> IndexedPrior -> SB.StanBuilderM md gq ()
-groupBetaPrior bv@(SB.StanVar bn bt) (IndexedPrior priorE mSet) = do
-  let loopsFromDims = SB.loopOverNamedDims
-      vectorizing x = maybe (SB.vectorizedOne x) (SB.vectorized . Set.insert x) mSet
-  SB.inBlock SB.SBModel $ case bt of
-    SB.StanReal -> SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
-    SB.StanVector (SB.NamedDim ik) -> SB.addExprLine "groupBetaPrior" $ vectorizing ik $ (SB.var bv) `SB.vectorSample` priorE
-    SB.StanVector _ -> SB.addExprLine "groupBetaPrior" $ SB.name bn `SB.vectorSample` priorE
-    SB.StanArray dims SB.StanReal -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.var bv `SB.vectorSample` priorE
-    SB.StanArray dims (SB.StanVector (SB.NamedDim ik)) -> loopsFromDims dims $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne ik (SB.var bv) `SB.vectorSample` priorE
-    SB.StanMatrix (SB.NamedDim rowKey, colDim) -> loopsFromDims [colDim] $ SB.addExprLine "groupBetaPrior" $ SB.vectorizedOne rowKey (SB.var bv) `SB.vectorSample` priorE
-    _ -> SB.stanBuildError $ "groupBetaPrior: " <> bn <> " has type " <> show bt <> "which is not real scalar, vector, or array of real."
--}
-addHyperParameters :: HyperParameters -> SB.StanBuilderM md gq ()
-addHyperParameters hps = do
-   let f ((SB.StanVar sn st), (t, eF)) = do
-         v <- SB.inBlock SB.SBParameters $ SB.stanDeclare sn st t
-         SB.inBlock SB.SBModel $  SB.addExprLine "groupModel.addHyperParameters" $ eF v --SB.var v `SB.vectorSample` e
-   traverse_ f $ Map.toList hps
-
-hierarchicalCenteredFixedMeanNormal :: Double -> SB.StanName -> SB.StanExpr -> SumToZero -> GroupModel md gq
-hierarchicalCenteredFixedMeanNormal mean sigmaName sigmaPrior stz = Hierarchical stz hpps (Centered bp) where
-  hpps = one (SB.StanVar sigmaName SB.StanReal, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  bp v = SB.addExprLine "Stan.GroupModel.hierarchicalCenteredFixedNormal"
-    $ SB.var v `SB.vectorSample` SB.normal (Just $ SB.scalar $ show mean) (SB.name sigmaName)
-
-hierarchicalNonCenteredFixedMeanNormal :: Double -> SB.StanVar -> SB.StanExpr -> SumToZero -> GroupModel md gq
-hierarchicalNonCenteredFixedMeanNormal mean sigmaVar sigmaPrior stz = Hierarchical stz hpps (NonCentered rp ncF) where
-  hpps = one (sigmaVar, ("<lower=0>",\v -> SB.var v `SB.vectorSample` sigmaPrior))
-  rp v = SB.addExprLine "Stan.GroupModel.hierarchicalNonCenteredFixedMeanNormal" $ SB.var v `SB.vectorSample` SB.stdNormal
-  ncF (SB.StanVar sn st) brv = do
-    SB.stanDeclareRHS sn st "" $ SB.var brv `SB.times` SB.var sigmaVar
-    return ()
-
-{-
-populationBeta :: PopulationModelParameterization -> SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d SB.StanVar
-populationBeta NonCentered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
-  rbv <- SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
-  SB.inBlock SB.SBModel $ do
-     let sigmaPriorL =  SB.name sn `SB.vectorSample` sigmaPriorE
-         betaRawPriorL = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.addExprLines "rescaledSumToZero (No sum)" [sigmaPriorL, betaRawPriorL]
-  return rbv
-
-populationBeta Centered beta@(SB.StanVar bn bt) sn sigmaPriorE = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare sn SB.StanReal "<lower=0>"
-  SB.inBlock SB.SBModel $ do
-     let sigmaPriorL =  SB.name sn `SB.vectorSample` sigmaPriorE
-         betaRawPriorL = SB.name bn `SB.vectorSample` SB.normal Nothing (SB.name sn)
-     SB.addExprLines "rescaledSumToZero (No sum)" [sigmaPriorL, betaRawPriorL]
-  return beta
-
-
-rescaledSumToZero :: SumToZero -> PopulationModelParameterization -> SB.StanVar ->  SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()
-rescaledSumToZero STZNone pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
-  (SB.StanVar bn bt) <- populationBeta pmp beta sigmaName sigmaPriorE
-  SB.inBlock SB.SBParameters $ SB.stanDeclare bn bt ""
-  return ()
-{-
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
-  SB.inBlock SB.SBModel $ do
-     let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
-  return ()
--}
-rescaledSumToZero (STZSoft prior) pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
-  bv <- populationBeta pmp beta sigmaName sigmaPriorE
-  softSumToZero bv {- (SB.StanVar (rawName bn) bt) -} prior
-{-
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
-  SB.inBlock SB.SBModel $ do
-     let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
-  return ()
--}
-rescaledSumToZero (STZSoftWeighted gV prior) pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
-  bv <- populationBeta pmp beta sigmaName sigmaPriorE
-  weightedSoftSumToZero bv {-(SB.StanVar (rawName bn) bt) -}  gV prior
-{-
-  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
-  SB.inBlock SB.SBModel $ do
-     let betaRawPrior = SB.name (rawName bn) `SB.vectorSample` SB.stdNormal
-     SB.addExprLines "rescaledSumToZero (No sum)" [betaRawPrior]
-  return ()
--}
-rescaledSumToZero STZQR pmp beta@(SB.StanVar bn bt) sigmaName sigmaPriorE = do
-  bv <- populationBeta pmp beta sigmaName sigmaPriorE
-  sumToZeroQR bv
---  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS bn bt "" $ SB.name sn `SB.times` SB.name (rawName bn)
-  return ()
--}
+-- we have some sum-to-zero options for vectors
+withSumToZero :: STZ.SumToZero -> TE.NamedDeclSpec TE.ECVec -> Parameterization TE.ECVec  -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+withSumToZero stz nds p = do
+  case stz of
+    STZ.STZNone -> groupModel nds p
+    STZ.STZSoft dw -> do
+      v <- groupModel nds p
+      STZ.softSumToZero v dw
+      return v
+    STZ.STZSoftWeighted gi dw -> do
+      let (TE.NamedDeclSpec n _) = nds
+      v <- groupModel nds p
+      STZ.weightedSoftSumToZero n v gi dw
+      return v
+    STZ.STZQR -> do -- yikes
+      let (TE.NamedDeclSpec n (TE.DeclSpec _ (vecSizeE ::: VNil) cs)) = nds
+          vecSizeMinusOneE = vecSizeE `TE.minusE` TE.intE 1
+          nds' = TE.NamedDeclSpec (n <> "_stz") $ TE.vectorSpec vecSizeMinusOneE cs
+      v <- groupModel nds' p
+      STZ.sumToZeroQR n v

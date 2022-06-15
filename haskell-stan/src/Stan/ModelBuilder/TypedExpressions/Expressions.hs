@@ -216,6 +216,8 @@ matrixE = TR.IFix . UL . LMatrix
 arrayE :: NestedVec n (UExpr t) -> UExpr (EArray n t)
 arrayE = TR.IFix . UL . LArray
 
+type ExprList = TypedList UExpr
+
 functionE :: Function rt args -> TypedList UExpr args -> UExpr rt
 functionE f al = TR.IFix $ UL $ LFunction f al
 

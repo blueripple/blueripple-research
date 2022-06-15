@@ -38,11 +38,17 @@ import Relude.Extra
 import qualified Data.Map.Strict as Map
 
 import qualified Data.Functor.Foldable as RS
+import qualified Stan.ModelBuilder.Expressions as SB
 
 data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (ScalarType t)]
 
+data NamedDeclSpec t = NamedDeclSpec SB.StanName (DeclSpec t)
+
 declType :: DeclSpec t -> StanType t
 declType (DeclSpec st _ _) = st
+
+declDims :: DeclSpec t -> Vec (DeclDimension t) (UExpr EInt)
+declDims (DeclSpec _ dims _) = dims
 
 intSpec :: [VarModifier UExpr EInt] -> DeclSpec EInt
 intSpec = DeclSpec StanInt VNil

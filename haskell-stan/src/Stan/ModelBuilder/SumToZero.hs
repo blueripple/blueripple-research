@@ -57,85 +57,36 @@ sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
   TE.addStmt $ TE.sliceE TE.s0 n x `TE.assign` x_aux
   return $ x_sigma `TE.timesE` x
 
-sumToZeroFunctions :: SB.StanBuilderM env d ()
+sumToZeroFunctions :: SB.StanBuilderM md gq ()
 sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
   SB.addStmtsToCode
     $ [TE.function qSumToZeroQRF (TE.Arg "N" TE.:> TE.TNil) qSumToZeroQRBody
       , TE.function sumToZeroQRF (TE.Arg "x_raw" TE.:> TE.Arg "Q_r" TE.:> TE.TNil) sumToZeroQRBody
       ]
-{-
-  SB.declareStanFunction "vector Q_sum_to_zero_QR(int N)" $ do
-    SB.addStanLine "vector [2*N] Q_r"
-    SB.stanForLoop "i" Nothing "N" $ const $ do
-      SB.addStanLine "Q_r[i] = -sqrt((N-i)/(N-i+1.0))"
-      SB.addStanLine "Q_r[i+N] = inv_sqrt((N-i) * (N-i+1))"
-    SB.addStanLine "return Q_r"
 
-  SB.declareStanFunction "vector sum_to_zero_QR(vector x_raw, vector Q_r)" $ do
-    SB.addStanLine "int N = num_elements(x_raw) + 1"
-    SB.addStanLine "vector [N] x"
-    SB.addStanLine "real x_aux = 0"
-    SB.addStanLine "real x_sigma = inv_sqrt(1 - inv(N))"
-    SB.stanForLoop "i" Nothing "N-1" $ const $ do
-      SB.addStanLine "x[i] = x_aux + x_raw[i] * Q_r[i]"
-      SB.addStanLine "x_aux = x_aux + x_raw[i] * Q_r[i+N]"
-    SB.addStanLine "x[N] = x_aux"
-    SB.addStanLine "return (x_sigma * x)"
--}
-
-sumToZeroQR :: SB.StanName -> TE.UExpr TE.EInt -> SB.StanBuilderM env d (TE.UExpr TE.ECVec)
-sumToZeroQR varName vecSizeE = do
+sumToZeroQR :: SB.StanName -> TE.UExpr TE.ECVec -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+sumToZeroQR vName v_stz = do
   sumToZeroFunctions
+  let vecSizeE = TE.functionE TE.vector_size (TE.oneTyped v_stz) `TE.plusE` TE.intE 1
   qr_v <- SB.inBlock SB.SBTransformedData
-    $ SB.stanDeclareRHS ("Q_r_" <> varName) (TE.vectorSpec (TE.intE 2 `TE.timesE` vecSizeE) []) $ TE.functionE qSumToZeroQRF (TE.oneTyped vecSizeE)
-  v_stz <- SB.inBlock SB.SBParameters
-    $ SB.stanDeclare (varName <> "_stz") (TE.vectorSpec (vecSizeE `TE.minusE` TE.intE 1) [])
+    $ SB.stanDeclareRHS ("Q_r_" <> vName) (TE.vectorSpec (TE.intE 2 `TE.timesE` vecSizeE) []) $ TE.functionE qSumToZeroQRF (TE.oneTyped vecSizeE)
+--  v_stz <- SB.inBlock SB.SBParameters
+--    $ SB.stanDeclare (vName <> "_stz") (TE.vectorSpec (vecSizeE `TE.minusE` TE.intE 1) [])
   SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS varName (TE.vectorSpec vecSizeE []) $ TE.functionE sumToZeroQRF (v_stz TE.:> qr_v TE.:> TE.TNil)
-{-
---  let vDim = SB.dimToText sd
-  SB.inBlock SB.SBTransformedData $ do
-    let dim = SB.scalar "2" `SB.times` SB.stanDimToExpr sd
-    TE.stanDeclareRHS ("Q_r_" <> TE.varName v) (SB.StanVector $ SB.ExprDim dim) ""
-      $ SB.function "Q_sum_to_zero_QR" (one $ SB.declaration $ SB.stanDimToExpr sd)
---    $ SB.addStanLine $ "vector[2*" <> vDim <> "] Q_r_" <> varName <> " = Q_sum_to_zero_QR(" <> vDim <> ")"
-  SB.inBlock SB.SBParameters $ do
-    let dim = SB.stanDimToExpr sd `SB.minus` SB.scalar "1"
-    SB.stanDeclare (varName <> "_stz") (SB.StanVector $ SB.ExprDim dim) ""
---    $ SB.addStanLine $ "vector[" <> vDim <> " - 1] " <> varName <> "_stz"
-  SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS varName st "" $ SB.function "sum_to_zero_QR" (SB.name (varName <> "_stz") :| [SB.name ("Q_r_" <> varName)])
---  SB.inBlock SB.SBModel
---    $ SB.addExprLines "sumToZeroQR" $ [SB.name varName `SB.vectorSample` SD.stdNormal]
---    $ SB.addStanLine $ varName <> "_stz ~ normal(0, 1)"
-  return ()
--}
---sumToZeroQR (SB.StanVar varName _) = SB.stanBuildError $ "Non vector type given to sumToZeroQR (varName=" <> varName <> ")"
+    $ SB.stanDeclareRHS vName (TE.vectorSpec vecSizeE []) $ TE.functionE sumToZeroQRF (v_stz TE.:> qr_v TE.:> TE.TNil)
 
-softSumToZero :: SB.StanName -> TE.UExpr TE.EInt -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM env d ()
-softSumToZero varName vecSize dw = do
-  v <- SB.inBlock SB.SBParameters $ SB.stanDeclare varName (TE.vectorSpec vecSize [])
-  SB.inBlock SB.SBModel $ SB.addStmtToCode
-    $ TE.functionE TE.vector_sum (TE.oneTyped v) `TE.sampleW` dw
-  pure ()
+softSumToZero :: TE.UExpr TE.ECVec -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()
+softSumToZero v dw = SB.inBlock SB.SBModel $ SB.addStmtToCode
+  $ TE.functionE TE.vector_sum (TE.oneTyped v) `TE.sampleW` dw
 
-{-
-softSumToZero :: SB.StanVar -> SB.StanExpr -> SB.StanBuilderM env d ()
-softSumToZero sv@(SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) sumToZeroPrior = do
-  SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
-  SB.inBlock SB.SBModel $ do
-    let expr = SB.vectorized (one k) (SB.function "sum" (one $ SB.var sv)) `SB.vectorSample` sumToZeroPrior
-    SB.addExprLines "softSumToZero" [expr]
-softSumToZero (SB.StanVar varName _) _ = SB.stanBuildError $ "Non vector type given to softSumToZero (varName=" <> varName <> ")"
--}
-
-weightedSoftSumToZero :: SB.StanName -> TE.IndexArrayU -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM env d ()
-weightedSoftSumToZero varName wgtIndex prior = do
+-- up to user to insure IndexArray and vector have same size
+weightedSoftSumToZero :: SB.StanName -> TE.UExpr TE.ECVec -> TE.IndexArrayU -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()
+weightedSoftSumToZero vName v wgtIndex prior = do
   let vecSize = TE.indexSize wgtIndex
   let vecSpec = TE.vectorSpec vecSize []
-  v <- SB.inBlock SB.SBParameters $ SB.stanDeclare varName vecSpec
+--  v <- SB.inBlock SB.SBParameters $ SB.stanDeclare varName vecSpec
   weights <- SB.inBlock SB.SBTransformedData $ do
-    w <- SB.stanDeclareRHS (varName <> "_wgts") vecSpec $ TE.functionE TE.rep_vector (TE.realE 0 TE.:> vecSize TE.:> TE.TNil)
+    w <- SB.stanDeclareRHS (vName <> "_wgts") vecSpec $ TE.functionE TE.rep_vector (TE.realE 0 TE.:> vecSize TE.:> TE.TNil)
     let fb n = TE.sliceE TE.s0 n (TE.indexE TE.s0 wgtIndex w) `TE.plusEq` TE.intE 1 :| []
     SB.addStmtToCode $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) vecSize) fb
     SB.addStmtToCode $ w `TE.divEq` vecSize
@@ -143,32 +94,16 @@ weightedSoftSumToZero varName wgtIndex prior = do
   SB.inBlock SB.SBModel $ SB.addStmtToCode
     $ TE.functionE TE.dot (v TE.:> weights TE.:> TE.TNil) `TE.sampleW` prior
   pure ()
+
+data SumToZero = STZNone
+               | STZSoft (TE.DensityWithArgs TE.EReal)
+               | STZSoftWeighted TE.IndexArrayU (TE.DensityWithArgs TE.EReal)
+               | STZQR
+
 {-
-weightedSoftSumToZero :: SB.StanVar -> SB.StanName -> SB.StanExpr -> SB.StanBuilderM env d ()
-weightedSoftSumToZero sv@(SB.StanVar varName st@(SB.StanVector (SB.NamedDim k))) gn sumToZeroPrior = do
---  let dSize = SB.dimToText sd
-  SB.inBlock SB.SBParameters $ SB.stanDeclare varName st ""
-  weightsV <- SB.inBlock SB.SBTransformedData $ do
-    weightsV' <- SB.stanDeclareRHS (varName <> "_weights") (SB.StanVector (SB.NamedDim k)) "<lower=0>"
-      $ SB.function "rep_vector" (SB.scalar "0" :| [SB.stanDimToExpr $ SB.NamedDim k])
-    SB.stanForLoopB "n" Nothing k
-      $ SB.addExprLine "weightedSoftSumToZero"
-      $ SB.var sv `SB.plusEq` (SB.scalar "1") --[" <> gn <> "[n]] += 1"
---      $ SB.binOp "+=" (SB.indexBy (SB.name $ varName <> "_weights") gn) (SB.scalar "1") --[" <> gn <> "[n]] += 1"
-    SB.addStanLine $ varName <> "_weights /= N"
-    return weightsV'
-  SB.inBlock SB.SBModel $ do
---    let expr = SB.function "dot_product" (SB.name varName :| [SB.name $ varName <> "_weights"]) `SB.vectorSample` sumToZeroPrior
-    let expr = SB.vectorized (one k) (SB.function "dot_product" (SB.var sv :| [SB.var weightsV])) `SB.vectorSample` sumToZeroPrior
-    SB.addExprLines "softSumToZero" [expr]
---    SB.addStanLine $ "dot_product(" <> varName <> ", " <> varName <> "_weights) ~ normal(0, " <> show sumToZeroSD <> ")"
-weightedSoftSumToZero (SB.StanVar varName _) _ _ = SB.stanBuildError $ "Non-vector (\"" <> varName <> "\") given to weightedSoftSumToZero"
+sumToZero :: TE.UExpr TE.ECVec -> SumToZero -> SB.StanBuilderM md gq (Maybe (TE.UExpr TE.ECVec))
+sumToZero _ STZNone = pure Nothing
+sumToZero v (STZSoft p) = Nothing <$ softSumToZero v p
+sumToZero v (STZSoftWeighted vName gi p) = Nothing <$ weightedSoftSumToZero vName v gi p
+sumToZero v (STZQR vName) = Just <$> sumToZeroQR vName v
 -}
-
-data SumToZero = STZNone | STZSoft (TE.DensityWithArgs TE.EReal) | STZSoftWeighted TE.IndexArrayU (TE.DensityWithArgs TE.EReal) | STZQR
-
-sumToZero :: SB.StanName -> TE.UExpr TE.EInt -> SumToZero -> SB.StanBuilderM env d (Maybe (TE.UExpr TE.ECVec))
-sumToZero _ _ STZNone = pure Nothing
-sumToZero vecName vecSize (STZSoft p) = Nothing <$ softSumToZero vecName vecSize p
-sumToZero vecName _ (STZSoftWeighted gi p) = Nothing <$ weightedSoftSumToZero vecName gi p
-sumToZero vecName vecSize STZQR = Just <$> sumToZeroQR vecName vecSize

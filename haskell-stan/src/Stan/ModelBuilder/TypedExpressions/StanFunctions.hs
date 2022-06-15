@@ -23,6 +23,9 @@ module Stan.ModelBuilder.TypedExpressions.StanFunctions
 import Stan.ModelBuilder.TypedExpressions.Types
 import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Functions
+import Stan.ModelBuilder.TypedExpressions.Expressions
+import Stan.ModelBuilder.TypedExpressions.Indexing
+import Data.Vec.Lazy (Vec)
 
 
 
@@ -60,7 +63,18 @@ matrix_sum :: Function EReal '[EMat]
 matrix_sum = Function "sum" SReal (oneType SMat)
 
 rep_vector :: Function ECVec '[EReal, EInt]
-rep_vector = Function "sum" SCVec (SReal ::> SInt ::> TypeNil)
+rep_vector = Function "rep_vector" SCVec (SReal ::> SInt ::> TypeNil)
 
 dot :: Function EReal '[ECVec, ECVec]
 dot = Function "dot" SReal (SCVec ::> SCVec ::> TypeNil)
+
+rep_matrix :: Function EMat '[EReal, EInt, EInt]
+rep_matrix = Function "rep_matrix" SMat (SReal ::> SInt ::> SInt ::> TypeNil)
+
+-- ugh. Should only take one parameter but stan has no such function.
+rep_sq_matrix :: Function ESqMat '[EReal, EInt, EInt]
+rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> SInt ::> TypeNil)
+
+--
+normalDensity :: SType t -> Density t '[EReal, EReal]
+normalDensity st = Density "normal" st (SReal ::> SReal ::> TypeNil)
