@@ -73,8 +73,9 @@ hierarchicalCenteredFixedMeanNormal :: TE.SType t -> Double -> Parameter TE.ERea
 hierarchicalCenteredFixedMeanNormal st mean sigmaP =
   centeredHP (ExtantParameter (TE.realE mean) TE.:> sigmaP TE.:> TE.TNil) $ TE.normalDensity st
 
--- THis seems more complex than it should be.
-hierarchicalNonCenteredFixedMeanNormal :: forall t. TE.DeclSpec t -> Double -> Parameter TE.EReal -> Parameterization t
+-- THis seems more complex than it should be. The constraint helps.
+hierarchicalNonCenteredFixedMeanNormal :: forall t. (TE.TypeOneOf t '[TE.EReal, TE.ECVec, TE.EMat, TE.ESqMat])
+                                       => TE.DeclSpec t -> Double -> Parameter TE.EReal -> Parameterization t
 hierarchicalNonCenteredFixedMeanNormal ds mean sigmaP =
   nonCenteredHP (ExtantParameter (TE.realE mean) TE.:> sigmaP TE.:> TE.TNil) nd ncF
   where
@@ -87,9 +88,8 @@ hierarchicalNonCenteredFixedMeanNormal ds mean sigmaP =
       TE.SMat -> case TE.declDims ds of
         (rowsE ::: colsE ::: VNil) -> TE.functionE TE.rep_matrix (m TE.:> rowsE TE.:> colsE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
       TE.SSqMat -> case TE.declDims ds of
-        (nE ::: VNil) -> TE.functionE TE.rep_sq_matrix (m TE.:> nE TE.:> nE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
-      _ -> undefined
-
+        (nE ::: VNil) -> TE.functionE TE.rep_sq_matrix (m TE.:> nE TE.:> TE.TNil) `TE.plusE` (sd `TE.timesE` x)
+--      _ -> undefined
 
 groupModel :: TE.NamedDeclSpec t -> Parameterization t  -> SB.StanBuilderM md gq (TE.UExpr t)
 groupModel (TE.NamedDeclSpec n ds) (UnTransformedP ps d) = do
@@ -113,15 +113,15 @@ groupModel (TE.NamedDeclSpec n ds) (TransformedDiffP dq pd d pt tF) = do
   SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS n ds $ tF tEs vRaw
 
 -- declare and add given priors for hyper parameters. Do nothing for extant.
+addParameter :: Parameter t -> SB.StanBuilderM md gq (TE.UExpr t)
+addParameter (HyperParameter n ds pDens) = do
+  v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n ds
+  SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sampleW v pDens
+  return v
+addParameter (ExtantParameter p) = pure p
+
 addHyperParameters :: Parameters es -> SB.StanBuilderM md gq (TE.TypedList TE.UExpr es)
-addHyperParameters hps = do
-  let f :: Parameter t -> SB.StanBuilderM md gq (TE.UExpr t)
-      f (HyperParameter n ds pDens) = do
-        v <- SB.inBlock SB.SBParameters $ SB.stanDeclare n ds
-        SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.sampleW v pDens
-        return v
-      f (ExtantParameter p) = pure p
-  htraverse f hps
+addHyperParameters = htraverse addParameter
 
 rawName :: Text -> Text
 rawName t = t <> "_raw"

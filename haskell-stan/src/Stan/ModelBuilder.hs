@@ -1186,10 +1186,17 @@ stanDeclare' sn ds mRHS = do
 -}
 
 stanDeclare :: SME.StanName -> TE.DeclSpec t -> StanBuilderM md gq (TE.UExpr t)
-stanDeclare sn st = stanDeclare' sn st Nothing
+stanDeclare sn ds = stanDeclare' sn ds Nothing
+
+stanDeclareN :: TE.NamedDeclSpec t -> StanBuilderM md gq (TE.UExpr t)
+stanDeclareN (TE.NamedDeclSpec sn ds) = stanDeclare' sn ds Nothing
 
 stanDeclareRHS :: SME.StanName -> TE.DeclSpec t -> TE.UExpr t -> StanBuilderM md gq (TE.UExpr t)
 stanDeclareRHS sn st rhs = stanDeclare' sn st (Just rhs)
+
+stanDeclareRHSN :: TE.NamedDeclSpec t -> TE.UExpr t -> StanBuilderM md gq (TE.UExpr t)
+stanDeclareRHSN (TE.NamedDeclSpec sn ds) rhs = stanDeclare' sn ds (Just rhs)
+
 
 checkName :: SME.StanName -> StanBuilderM md gq ()
 checkName sn = do

@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.TypedExpressions.StanFunctions
   (
@@ -26,55 +27,72 @@ import Stan.ModelBuilder.TypedExpressions.Functions
 import Stan.ModelBuilder.TypedExpressions.Expressions
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Data.Vec.Lazy (Vec)
-
+import qualified GHC.TypeLits as TE
+import GHC.TypeLits (ErrorMessage((:<>:)))
 
 
 logit :: Function EReal '[EReal]
-logit = Function "logit" SReal (oneType SReal)
+logit = simpleFunction "logit" SReal (oneType SReal)
 
 invLogit :: Function EReal '[EReal]
-invLogit = Function "inv_logit" SReal (oneType SReal)
+invLogit = simpleFunction "inv_logit" SReal (oneType SReal)
 
 sqrt :: Function EReal '[EReal]
-sqrt = Function "sqrt" SReal (oneType SReal)
+sqrt = simpleFunction "sqrt" SReal (oneType SReal)
 
 inv_sqrt :: Function EReal '[EReal]
-inv_sqrt = Function "inv_sqrt" SReal (oneType SReal)
+inv_sqrt = simpleFunction "inv_sqrt" SReal (oneType SReal)
 
 inv :: Function EReal '[EReal]
-inv = Function "inv" SReal (oneType SReal)
+inv = simpleFunction "inv" SReal (oneType SReal)
 
 array_num_elements :: SNat n -> SType t -> Function EInt '[EArray n t]
-array_num_elements sn st = Function "inv" SInt (oneType $ SArray sn st)
+array_num_elements sn st = simpleFunction "inv" SInt (oneType $ SArray sn st)
 
 vector_size :: Function EInt '[ECVec]
-vector_size = Function "size" SInt (oneType SCVec)
+vector_size = simpleFunction "size" SInt (oneType SCVec)
 
 row_vector_size :: Function EInt '[ERVec]
-row_vector_size = Function "size" SInt (oneType SRVec)
+row_vector_size = simpleFunction "size" SInt (oneType SRVec)
 
 vector_sum :: Function EReal '[ECVec]
-vector_sum = Function "sum" SReal (oneType SCVec)
+vector_sum = simpleFunction "sum" SReal (oneType SCVec)
 
 row_vector_sum :: Function EReal '[ERVec]
-row_vector_sum = Function "sum" SReal (oneType SRVec)
+row_vector_sum = simpleFunction "sum" SReal (oneType SRVec)
 
 matrix_sum :: Function EReal '[EMat]
-matrix_sum = Function "sum" SReal (oneType SMat)
+matrix_sum = simpleFunction "sum" SReal (oneType SMat)
 
 rep_vector :: Function ECVec '[EReal, EInt]
-rep_vector = Function "rep_vector" SCVec (SReal ::> SInt ::> TypeNil)
+rep_vector = simpleFunction "rep_vector" SCVec (SReal ::> SInt ::> TypeNil)
 
 dot :: Function EReal '[ECVec, ECVec]
-dot = Function "dot" SReal (SCVec ::> SCVec ::> TypeNil)
+dot = simpleFunction "dot" SReal (SCVec ::> SCVec ::> TypeNil)
+
+
+type family RepArgs (t :: EType) :: [EType] where
+  RepArgs ECVec = [EReal, EInt]
+  RepArgs EMat = [EReal, EInt, EInt]
+  RepArgs ESqMat = [EReal, EInt]
+  RepArgs t = TE.TypeError (TE.Text "Cannot fill " :<>: TE.ShowType t :<>: TE.Text " like a container (e.g., vector, matrix)")
+
+-- this might not be so useful because GHC/Haskell cannot neccessarily see through the constraints
+rep_container :: (TypeOneOf t '[ECVec, EMat, ESqMat]) => SType t -> Function t (RepArgs t)
+rep_container st = case st of
+  SCVec -> rep_vector
+  SMat -> rep_matrix
+  SSqMat -> rep_sq_matrix
+  _ -> undefined -- TO silence the warning.  But the constraint and type family in return should mean this never gets called
 
 rep_matrix :: Function EMat '[EReal, EInt, EInt]
-rep_matrix = Function "rep_matrix" SMat (SReal ::> SInt ::> SInt ::> TypeNil)
+rep_matrix = simpleFunction "rep_matrix" SMat (SReal ::> SInt ::> SInt ::> TypeNil)
 
--- ugh. Should only take one parameter but stan has no such function.
-rep_sq_matrix :: Function ESqMat '[EReal, EInt, EInt]
-rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> SInt ::> TypeNil)
-
+rep_sq_matrix :: Function ESqMat '[EReal, EInt]
+rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> TypeNil) f
+  where
+    f :: TypedList u '[EReal, EInt] -> TypedList u '[EReal, EInt, EInt]
+    f (a :> b :> TNil) = a :> b :> b :> TNil
 --
 normalDensity :: SType t -> Density t '[EReal, EReal]
 normalDensity st = Density "normal" st (SReal ::> SReal ::> TypeNil)

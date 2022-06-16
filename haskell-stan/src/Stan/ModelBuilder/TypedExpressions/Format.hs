@@ -74,10 +74,10 @@ stmtToCodeAlg = \case
   SWhileF if' body -> (\b -> "while" <+> PP.parens (unK if') <+> bracketBlock b) <$> sequence body
   SBreakF -> Right $ "break" <> PP.semi
   SContinueF -> Right $ "continue" <> PP.semi
-  SFunctionF (Function fname rt ats) al body re ->
-    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs ats al
+  SFunctionF (Function fname rt ats rF) al body re ->
+    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs (applyTypedListFunctionToTypeList rF ats) (rF al)
            <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
-  SFunctionF (IdentityFunction _) _ _ _ -> Left "Attempt to declare Identity function!"
+  SFunctionF (IdentityFunction _) _ _ _ -> Left "Attempt to *declare* Identity function!"
   SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
   SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
   SProfileF t -> Right $ "profile" <> PP.parens (PP.dquotes $ PP.pretty t)
@@ -230,7 +230,7 @@ exprToDocAlg = K . \case
   LMatrix ms -> Bare $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
   LArray nv -> Bare $ nestedVecToCode nv
   LIntRange leM ueM -> Oped $ maybe mempty (unK . f) leM <> PP.colon <> maybe mempty (unK . f) ueM
-  LFunction (Function fn _ _) al -> Bare $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
+  LFunction (Function fn _ _ rF) al -> Bare $ PP.pretty fn <> PP.parens (csArgList $ hfmap f $ rF al)
   LFunction (IdentityFunction _) (arg :> TNil) -> Bare $ unK $ f arg
   LDensity (Density dn _ _) k al -> Bare $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
   LBinaryOp sbo le re -> Oped $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)

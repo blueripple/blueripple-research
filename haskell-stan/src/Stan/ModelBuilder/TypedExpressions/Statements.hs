@@ -105,11 +105,17 @@ declare' vn vt iDecls = SDeclare vn vt (DeclIndexVecF iDecls)
 declare :: Text -> DeclSpec t -> UStmt
 declare vn (DeclSpec st indices vms) = declare' vn st indices vms
 
+declareN :: NamedDeclSpec t -> UStmt
+declareN (NamedDeclSpec n ds) = declare n ds
+
 declareAndAssign' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (ScalarType t)] -> UExpr t -> UStmt
 declareAndAssign' vn vt iDecls vms = SDeclAssign vn vt (DeclIndexVecF iDecls) vms
 
 declareAndAssign :: Text -> DeclSpec t -> UExpr t -> UStmt
 declareAndAssign vn (DeclSpec vt indices vms) = declareAndAssign' vn vt indices vms
+
+declareAndAssignN :: NamedDeclSpec t -> UExpr t -> UStmt
+declareAndAssignN (NamedDeclSpec vn (DeclSpec vt indices vms)) = declareAndAssign' vn vt indices vms
 
 addToTarget :: UExpr EReal -> UStmt
 addToTarget = STarget

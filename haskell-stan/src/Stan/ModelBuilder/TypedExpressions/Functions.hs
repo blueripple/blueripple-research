@@ -36,14 +36,18 @@ import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
 
 
 data Function :: EType -> [EType] -> Type  where
-  Function :: Text -- name
-           -> SType r -- return type
-           -> TypeList args -- argument types
-           -> Function r args
+  Function :: Text
+           -> SType t
+           -> TypeList args
+           -> (forall u.TypedList u args -> TypedList u args') -- allows remapping of args at function application
+           -> Function t args
   IdentityFunction :: SType t -> Function t '[t]
 
+simpleFunction :: Text -> SType t -> TypeList args -> Function t args
+simpleFunction fn st args = Function fn st args id
+
 functionArgTypes :: Function rt args -> TypeList args
-functionArgTypes (Function _ _ al) = al
+functionArgTypes (Function _ _ al _) = al
 functionArgTypes (IdentityFunction t) = t ::> TypeNil
 
 data Density :: EType -> [EType] -> Type where

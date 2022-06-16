@@ -110,3 +110,10 @@ oneTyped e = e :> TNil
 typeListToSTypeList :: TypeList args -> TypedList SType args
 typeListToSTypeList TypeNil = TNil
 typeListToSTypeList (st ::> atl) = st :> typeListToSTypeList atl
+
+typedSTypeListToTypeList :: TypedList SType args -> TypeList args
+typedSTypeListToTypeList TNil = TypeNil
+typedSTypeListToTypeList (st :> xs) = st ::> typedSTypeListToTypeList xs
+
+applyTypedListFunctionToTypeList :: (forall u.TypedList u args -> TypedList u args') -> TypeList args -> TypeList args'
+applyTypedListFunctionToTypeList f = typedSTypeListToTypeList . f . typeListToSTypeList

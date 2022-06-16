@@ -1,5 +1,7 @@
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
@@ -11,7 +13,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Stan.ModelBuilder.TypedExpressions.Types
   (
@@ -37,6 +38,19 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
 data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Show)
+
+-- A mechanism to limit the types we can use in functions via a constraint
+type TypeOneOf et ets = TypeOneOf' et ets (TypeOneOfB et ets)
+
+type family TypeOneOfB (et :: EType) (ets :: [EType]) :: Bool where
+  TypeOneOfB _ '[] = False
+  TypeOneOfB et (et ': t) = True
+  TypeOneOfB et (h ': t) = TypeOneOfB et t
+
+type family TypeOneOf' (et :: EType) (ets :: [EType]) (mem :: Bool) :: Constraint where
+  TypeOneOf' et ets 'True = ()
+  TypeOneOf' et ets 'False = TE.TypeError (TE.ShowType et :<>: TE.Text " is not a member of " :<>: TE.ShowType ets)
+
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EInt a _ = a

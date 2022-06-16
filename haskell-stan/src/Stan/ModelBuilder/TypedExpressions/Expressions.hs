@@ -311,7 +311,7 @@ eqLExprType = go
       Refl <- go (nestedVecHead nv) (nestedVecHead nv')
       pure Refl
     go (TR.IFix (LIntRange _ _)) (TR.IFix (LIntRange _ _)) = Just Refl
-    go (TR.IFix (LFunction (Function _ sta _) _)) (TR.IFix (LFunction (Function _ stb _) _)) = testEquality sta stb
+    go (TR.IFix (LFunction (Function _ sta _ _) _)) (TR.IFix (LFunction (Function _ stb _ _) _)) = testEquality sta stb
     go (TR.IFix (LDensity _ _ _)) (TR.IFix (LDensity _ _ _)) = Just Refl
     go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = do
       Refl <- testEquality opa opb
@@ -355,9 +355,11 @@ eqLExprOf = go
           cm (Just a) (Just b) = go a b
           cm _ _ = False
       in cm mla mlb && cm mua mub
-    go (TR.IFix (LFunction (Function fna _ ata) ala)) (TR.IFix (LFunction (Function fnb _ atb) alb)) =
-      let eqArgs = case testEquality ata atb of
-            Just Refl -> eqTypedLists go ala alb
+    go (TR.IFix (LFunction (Function fna _ ata aRF) ala)) (TR.IFix (LFunction (Function fnb _ atb bRF) alb)) =
+      let eqArgs = case testEquality ata atb of -- given lists are same
+            Just Refl -> case testEquality (applyTypedListFunctionToTypeList aRF ata) (applyTypedListFunctionToTypeList bRF atb) of -- reqwritten lists are same
+              Just Refl -> eqTypedLists go (aRF ala) (aRF alb) -- given args are same
+              Nothing -> False
             Nothing -> False
       in fna == fnb && eqArgs
     go (TR.IFix (LDensity (Density dna gta ata) ga ala)) (TR.IFix (LDensity (Density dnb gtb atb) gb alb)) =

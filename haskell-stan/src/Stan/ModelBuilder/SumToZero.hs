@@ -24,7 +24,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import Data.Maybe (fromJust)
 
 qSumToZeroQRF :: TE.Function TE.ECVec '[TE.EInt]
-qSumToZeroQRF = TE.Function "Q_sum_to_zero_QR" TE.SCVec (TE.oneType TE.SInt)
+qSumToZeroQRF = TE.simpleFunction "Q_sum_to_zero_QR" TE.SCVec (TE.oneType TE.SInt)
 
 qSumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.EInt] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
 qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
@@ -39,7 +39,7 @@ qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
   return qr
 
 sumToZeroQRF :: TE.Function TE.ECVec '[TE.ECVec, TE.ECVec]
-sumToZeroQRF = TE.Function "sum_to_zero_QR" TE.SCVec (TE.SCVec TE.::> TE.SCVec TE.::> TE.TypeNil)
+sumToZeroQRF = TE.simpleFunction "sum_to_zero_QR" TE.SCVec (TE.SCVec TE.::> TE.SCVec TE.::> TE.TypeNil)
 
 
 sumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.ECVec, TE.ECVec] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)

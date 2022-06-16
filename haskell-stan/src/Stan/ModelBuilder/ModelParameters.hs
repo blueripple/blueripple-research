@@ -14,13 +14,10 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.GroupModel as SGM
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 
-intercept :: forall md gq. (Typeable md, Typeable gq) => Text -> SME.StanExpr -> SB.StanBuilderM md gq SB.StanVar
-intercept iName alphaPriorE = do
-  iVar <- SB.inBlock SB.SBParameters $ SB.stanDeclare iName SB.StanReal ""
-  let interceptE = SB.var iVar `SME.vectorSample` alphaPriorE
-  SB.inBlock SB.SBModel $ SB.addExprLine "intercept" interceptE
-  return iVar
+intercept :: forall t md gq. (Typeable md, Typeable gq) => TE.NamedDeclSpec t -> TE.DensityWithArgs t -> SB.StanBuilderM md gq (TE.UExpr t)
+intercept (TE.NamedDeclSpec n ds) alphaPriorD = SGM.addParameter $ SGM.HyperParameter n ds alphaPriorD
 
 --data Prior = SimplePrior SB.StanExpr
 --           | FunctionPrior (SME.StanVar -> SME.StanExpr)
