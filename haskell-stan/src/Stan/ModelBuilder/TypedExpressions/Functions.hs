@@ -43,6 +43,14 @@ data Function :: EType -> [EType] -> Type  where
            -> Function t args
   IdentityFunction :: SType t -> Function t '[t]
 
+-- Can't pattern match on the arg-mapping function in "where" or "let" since then args' would escape its scope.
+-- But we can do this
+withFunction :: (forall args'. Text -> SType t -> TypeList args -> (forall u.TypedList u args -> TypedList u args') -> r)
+                -> Function t args
+                -> r
+withFunction f (Function t st tl g) = f t st tl g
+withFunction f (IdentityFunction st) = f "" st (st ::> TypeNil) id
+
 simpleFunction :: Text -> SType t -> TypeList args -> Function t args
 simpleFunction fn st args = Function fn st args id
 
@@ -52,9 +60,18 @@ functionArgTypes (IdentityFunction t) = t ::> TypeNil
 
 data Density :: EType -> [EType] -> Type where
   Density :: Text -- name
-          -> SType g -- givens type
+          -> SType t -- givens type
           -> TypeList args -- argument types
-          -> Density g args
+          -> (forall u.TypedList u args -> TypedList u args') -- allows remapping of args at function applicatio
+          -> Density t args
+
+withDensity :: (forall args' . Text -> SType t -> TypeList args -> (forall u.TypedList u args -> TypedList u args') -> r)
+            -> Density t args
+            -> r
+withDensity f (Density dn st tl g) = f dn st tl g
+
+simpleDensity :: Text -> SType t -> TypeList ts -> Density t ts
+simpleDensity t st tl = Density t st tl id
 
 -- const functor for holding arguments to functions
 data FuncArg :: Type -> k -> Type where

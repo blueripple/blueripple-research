@@ -44,6 +44,12 @@ data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [Va
 
 data NamedDeclSpec t = NamedDeclSpec SB.StanName (DeclSpec t)
 
+declName :: NamedDeclSpec t -> SB.StanName
+declName (NamedDeclSpec n _) = n
+
+decl :: NamedDeclSpec t -> DeclSpec t
+decl (NamedDeclSpec _ ds) = ds
+
 declType :: DeclSpec t -> StanType t
 declType (DeclSpec st _ _) = st
 
@@ -136,6 +142,9 @@ divEq = opAssign SDivide
 
 data DensityWithArgs g where
   DensityWithArgs :: Density g args -> TypedList UExpr args -> DensityWithArgs g
+
+withDWA :: (forall args.Density g args -> TypedList UExpr args -> r) -> DensityWithArgs g -> r
+withDWA f (DensityWithArgs d args) = f d args
 
 sample :: UExpr t -> Density t args -> TypedList UExpr args -> UStmt
 sample = SSample

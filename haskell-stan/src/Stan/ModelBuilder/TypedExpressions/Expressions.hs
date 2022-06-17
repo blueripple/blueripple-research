@@ -312,6 +312,7 @@ eqLExprType = go
       pure Refl
     go (TR.IFix (LIntRange _ _)) (TR.IFix (LIntRange _ _)) = Just Refl
     go (TR.IFix (LFunction (Function _ sta _ _) _)) (TR.IFix (LFunction (Function _ stb _ _) _)) = testEquality sta stb
+    go (TR.IFix (LFunction (IdentityFunction sta) _)) (TR.IFix (LFunction (IdentityFunction stb) _)) = testEquality sta stb
     go (TR.IFix (LDensity _ _ _)) (TR.IFix (LDensity _ _ _)) = Just Refl
     go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = do
       Refl <- testEquality opa opb
@@ -362,12 +363,15 @@ eqLExprOf = go
               Nothing -> False
             Nothing -> False
       in fna == fnb && eqArgs
-    go (TR.IFix (LDensity (Density dna gta ata) ga ala)) (TR.IFix (LDensity (Density dnb gtb atb) gb alb)) =
+    go (TR.IFix (LFunction (IdentityFunction _) _)) (TR.IFix (LFunction (IdentityFunction _) _)) = True
+    go (TR.IFix (LDensity (Density dna gta ata aRF) ga ala)) (TR.IFix (LDensity (Density dnb gtb atb bRF) gb alb)) =
       let eqGivens = case testEquality gta gtb of
             Just Refl -> True
             Nothing -> False
           eqArgs =  case testEquality ata atb of
-            Just Refl -> eqTypedLists go ala alb
+            Just Refl -> case testEquality (applyTypedListFunctionToTypeList aRF ata) (applyTypedListFunctionToTypeList bRF atb) of -- reqwritten lists are same
+              Just Refl -> eqTypedLists go ala alb
+              Nothing -> False
             Nothing -> False
       in dna == dnb && eqGivens && eqArgs
     go (TR.IFix (LUnaryOp opa ea)) (TR.IFix (LUnaryOp opb eb)) = case testEquality opa opb of

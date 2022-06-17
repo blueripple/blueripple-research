@@ -26,6 +26,7 @@ import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Functions
 import Stan.ModelBuilder.TypedExpressions.Expressions
 import Stan.ModelBuilder.TypedExpressions.Indexing
+
 import Data.Vec.Lazy (Vec)
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
@@ -95,4 +96,10 @@ rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> TypeNil) f
     f (a :> b :> TNil) = a :> b :> b :> TNil
 --
 normalDensity :: SType t -> Density t '[EReal, EReal]
-normalDensity st = Density "normal" st (SReal ::> SReal ::> TypeNil)
+normalDensity st = simpleDensity "normal" st (SReal ::> SReal ::> TypeNil)
+
+lkjDensity :: Density ESqMat '[EReal]
+lkjDensity = simpleDensity "lkj_corr_cholesky" SSqMat (SReal ::> TypeNil)
+
+multi_normal_cholesky :: Density ECVec '[ECVec, ECVec, ESqMat]
+multi_normal_cholesky = simpleDensity "multi_normal_cholesky" SCVec (SCVec ::> SCVec ::> SSqMat ::> TypeNil)

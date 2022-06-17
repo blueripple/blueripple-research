@@ -14,16 +14,25 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.GroupModel as SGM
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import Frames.Streamly.CSV (formatWithShowCSV)
+import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
+import Data.Hashable.Generic (HashArgs)
 
-intercept :: forall t md gq. (Typeable md, Typeable gq) => TE.NamedDeclSpec t -> TE.DensityWithArgs t -> SB.StanBuilderM md gq (TE.UExpr t)
-intercept (TE.NamedDeclSpec n ds) alphaPriorD = SGM.addParameter $ SGM.HyperParameter n ds alphaPriorD
+addParameter :: forall t md gq. (Typeable md, Typeable gq) => TE.NamedDeclSpec t -> TE.DensityWithArgs t -> SB.StanBuilderM md gq (TE.UExpr t)
+addParameter (TE.NamedDeclSpec n ds) alphaPriorD = SGM.addParameter $ SGM.HyperParameter n ds alphaPriorD
+
+intercept :: forall md gq. (Typeable md, Typeable gq) => TE.NamedDeclSpec TE.EReal -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq (TE.UExpr TE.EReal)
+intercept = addParameter
 
 --data Prior = SimplePrior SB.StanExpr
 --           | FunctionPrior (SME.StanVar -> SME.StanExpr)
-
+{-
 data Parameterization = Centered
                       | NonCentered (SME.StanVar -> SME.StanExpr) --deriving (Eq, Show)
+
 
 isReal :: Text -> SB.StanVar ->  SB.StanBuilderM md gq ()
 isReal _ (SME.StanVar _ SME.StanReal) = return ()
@@ -63,40 +72,36 @@ vectorNonCenteredF ik mu tau lCorr = do
       f v = SB.vectorizedOne ik $ repMu `SB.plus` (dpmE `SB.times` SB.var v)
   return f
 
-addParameter :: Text
-             -> SME.StanType
-             -> Text
-             -> SME.PossiblyVectorized SME.StanExpr
-             -> SB.StanBuilderM md gq SME.StanVar
-addParameter pName pType pConstraint pvp = do
-  pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare pName pType pConstraint
-  SB.inBlock SB.SBModel
-    $ SB.addExprLine "addParameter"
-    $ case pvp of
-        SME.UnVectorized e -> SB.var pv `SB.vectorSample` e
-        SME.Vectorized iks e -> SB.vectorized iks $ SB.var pv `SB.vectorSample` e
-  return pv
 
 lkjCorrelationMatrixParameter :: Text -> SME.IndexKey -> Double -> SB.StanBuilderM md gq SB.StanVar
 lkjCorrelationMatrixParameter name lkjDim lkjParameter = addParameter name lkjType "" lkjPrior
   where
     lkjType = SB.StanCholeskyFactorCorr $ SME.NamedDim lkjDim
     lkjPrior = SME.Vectorized (one lkjDim) $ SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
+-}
 
-addTransformedParameter :: Text
-                        -> SB.StanType
-                        -> Text
-                        -> SME.PossiblyVectorized (SB.StanVar -> SB.StanExpr)
-                        -> SME.PossiblyVectorized SME.StanExpr
-                        -> SB.StanBuilderM md gq SB.StanVar
-addTransformedParameter name sType rawConstraint fromRawF rawPrior = do
-  rawV <- addParameter (name <> "_raw") sType rawConstraint rawPrior
-  SB.inBlock SB.SBTransformedParameters
-    $ SB.stanDeclareRHS name sType ""
-    $ case fromRawF of
-        SME.UnVectorized f -> f rawV
-        SME.Vectorized iks f -> SME.vectorized iks $ f rawV
+addTransformedParameter :: TE.NamedDeclSpec
+                        -> Maybe [TE.VarModifier TE.UExpr t]
+                        -> TE.DensityWithArgs t
+                        -> (TE.UExpr t -> TE.UExpr t)
+                        -> SB.StanBuilderM md gq (TE.UExpr t)
+addTransformedParameter nds rawCsM rawPrior fromRawF = groupModel nds p where
+  TE.DensityWithArgs dRaw pRaw = rawPrior
+  TE.NamedDeclSpec n ds@(TE.DeclSpec st cs) = nds
+  rawDS = maybe ds (TE.DeclSpec st) rawCsM
+  p = SGM.TransformedDiffP rawDS pRaw dRaw TE.TNil (const fromRawF)
 
+addHierarchicalScalar :: TE.NamedDeclSpec
+                      -> SGM.Parameters args
+                      -> TE.Density t args
+
+{-
+  do
+  let (TE.NamedDeclSpec n ds@(TE.DeclSpec st cs)) = nds
+      rawDS = maybe ds (TE.DeclSpec st) rawCsM
+  rawV <- addParameter (TE.NamedDeclSpec (name <> "_raw") rawDS) rawPrior
+  SB.inBlock SB.SBTransformedParameters $ SB.stanDeclareRHS name ds $ fromRawF rawV
+-}
 addHierarchicalScalar :: Text
                       -> SB.GroupTypeTag k
                       -> Parameterization

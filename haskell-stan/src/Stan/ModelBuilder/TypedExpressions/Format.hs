@@ -67,7 +67,7 @@ stmtToCodeAlg = \case
   SDeclAssignF txt st divf vms rhs -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <+> PP.equals <+> unK rhs <> PP.semi
   SAssignF lhs rhs -> Right $ unK lhs <+> PP.equals <+> unK rhs <> PP.semi
   STargetF rhs -> Right $ "target +=" <+> unK rhs
-  SSampleF lhs (Density dn _ _) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList al)
+  SSampleF lhs (Density dn _ _ rF) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList $ rF al)
   SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> unK fe <> PP.colon <> unK te) <+> bracketBlock b) <$> sequenceA body
   SForEachF txt e body -> (\b -> "foreach" <+> PP.parens (PP.pretty txt <+> "in" <+> unK e) <+> bracketBlock b) <$> sequence body
   SIfElseF condAndIfTrueL allFalse -> ifElseCode condAndIfTrueL allFalse
@@ -232,7 +232,7 @@ exprToDocAlg = K . \case
   LIntRange leM ueM -> Oped $ maybe mempty (unK . f) leM <> PP.colon <> maybe mempty (unK . f) ueM
   LFunction (Function fn _ _ rF) al -> Bare $ PP.pretty fn <> PP.parens (csArgList $ hfmap f $ rF al)
   LFunction (IdentityFunction _) (arg :> TNil) -> Bare $ unK $ f arg
-  LDensity (Density dn _ _) k al -> Bare $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
+  LDensity (Density dn _ _ rF) k al -> Bare $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f $ rF al))
   LBinaryOp sbo le re -> Oped $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
   LUnaryOp op e -> Bare $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
   LCond ce te fe -> Bare $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
