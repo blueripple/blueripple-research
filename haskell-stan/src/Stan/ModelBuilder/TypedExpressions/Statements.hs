@@ -38,13 +38,15 @@ import Relude.Extra
 import qualified Data.Map.Strict as Map
 
 import qualified Data.Functor.Foldable as RS
-import qualified Stan.ModelBuilder.Expressions as SB
+--import qualified Stan.ModelBuilder.Expressions as SB
+
+type StanName = Text
 
 data DeclSpec t = DeclSpec (StanType t) (Vec (DeclDimension t) (UExpr EInt)) [VarModifier UExpr (ScalarType t)]
 
-data NamedDeclSpec t = NamedDeclSpec SB.StanName (DeclSpec t)
+data NamedDeclSpec t = NamedDeclSpec StanName (DeclSpec t)
 
-declName :: NamedDeclSpec t -> SB.StanName
+declName :: NamedDeclSpec t -> StanName
 declName (NamedDeclSpec n _) = n
 
 decl :: NamedDeclSpec t -> DeclSpec t
@@ -336,7 +338,7 @@ type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
 type IndexArrayU = UExpr (EArray (S Z) EInt)
 type IndexArrayL = LExpr (EArray (S Z) EInt)
-type IndexKey = Text
+--type IndexKey = Text
 type IndexSizeMap = Map IndexKey (LExpr EInt)
 type IndexArrayMap = Map IndexKey IndexArrayL
 

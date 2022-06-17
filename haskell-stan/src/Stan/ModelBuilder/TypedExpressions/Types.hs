@@ -37,7 +37,7 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
-data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Show)
+data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Ord, Show)
 
 -- A mechanism to limit the types we can use in functions via a constraint
 type TypeOneOf et ets = TypeOneOf' et ets (TypeOneOfB et ets)

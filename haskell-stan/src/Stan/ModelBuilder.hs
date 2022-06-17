@@ -24,6 +24,7 @@ import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import Stan.ModelBuilder.TypedExpressions.Statements (StanName)
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Evaluate as TE
@@ -385,7 +386,7 @@ buildGQJSONFromDataM = do
 
 data VariableScope = GlobalScope | ModelScope | GQScope deriving (Show, Eq, Ord)
 
-newtype DeclarationMap = DeclarationMap (Map SME.StanName TE.EType) deriving (Show)
+newtype DeclarationMap = DeclarationMap (Map TE.StanName TE.EType) deriving (Show)
 data ScopedDeclarations = ScopedDeclarations { currentScope :: VariableScope
                                              , globalScope :: NonEmpty DeclarationMap
                                              , modelScope :: NonEmpty DeclarationMap
@@ -412,7 +413,7 @@ setDeclarationsNE dmNE GQScope sd = sd { gqScope = dmNE}
 declarationsInScope :: ScopedDeclarations -> NonEmpty DeclarationMap
 declarationsInScope sd = declarationsNE (currentScope sd) sd
 
-addVarInScope :: SME.StanName -> TE.StanType t -> StanBuilderM md gq (TE.UExpr t)
+addVarInScope :: TE.StanName -> TE.StanType t -> StanBuilderM md gq (TE.UExpr t)
 addVarInScope sn st = do
   let newSD sd = do
         _ <- alreadyDeclared sd sn st
@@ -429,7 +430,7 @@ addVarInScope sn st = do
       put newBS
       pure $ TE.namedE sn (TE.sTypeFromStanType st)
 
-varLookupInScope :: ScopedDeclarations -> VariableScope -> SME.StanName -> Either Text TE.EType
+varLookupInScope :: ScopedDeclarations -> VariableScope -> TE.StanName -> Either Text TE.EType
 varLookupInScope sd sc sn = go $ toList dNE where
   dNE = declarationsNE sc sd
   go [] = Left $ "\"" <> sn <> "\" not declared/in scope (stan scope=" <> show sc <> ")."
@@ -437,10 +438,10 @@ varLookupInScope sd sc sn = go $ toList dNE where
     Nothing -> go xs
     Just et -> pure et
 
-varLookup :: ScopedDeclarations -> SME.StanName -> Either Text TE.EType
+varLookup :: ScopedDeclarations -> TE.StanName -> Either Text TE.EType
 varLookup sd = varLookupInScope sd (currentScope sd)
 
-varLookupAllScopes :: ScopedDeclarations -> SME.StanName -> Either Text TE.EType
+varLookupAllScopes :: ScopedDeclarations -> TE.StanName -> Either Text TE.EType
 varLookupAllScopes sd sn =
   case varLookupInScope sd GlobalScope sn of
     Right x -> Right x
@@ -449,7 +450,7 @@ varLookupAllScopes sd sn =
       Left _ -> varLookupInScope sd GQScope sn
 
 
-alreadyDeclared :: ScopedDeclarations -> SME.StanName -> TE.StanType t  -> Either Text ()
+alreadyDeclared :: ScopedDeclarations -> TE.StanName -> TE.StanType t  -> Either Text ()
 alreadyDeclared sd sn st =
   case varLookup sd sn of
     Right et ->  if et == TE.eTypeFromStanType st
@@ -458,7 +459,7 @@ alreadyDeclared sd sn st =
                       <> ")already declared (with different type="<> show et <> ")!"
     Left _ -> pure ()
 
-alreadyDeclaredAllScopes :: ScopedDeclarations -> SME.StanName -> TE.StanType t -> Either Text ()
+alreadyDeclaredAllScopes :: ScopedDeclarations -> TE.StanName -> TE.StanType t -> Either Text ()
 alreadyDeclaredAllScopes sd sn st =
   case varLookupAllScopes sd sn of
     Right et ->  if et == TE.eTypeFromStanType st
@@ -467,7 +468,7 @@ alreadyDeclaredAllScopes sd sn st =
                       <> ")already declared (with different type="<> show et <> ")!"
     Left _ -> pure ()
 {-
-addVarInScope :: SME.StanName -> SME.StanType -> StanBuilderM env d SME.StanVar
+addVarInScope :: TE.StanName -> SME.StanType -> StanBuilderM env d SME.StanVar
 addVarInScope sn st = do
   let sv = SME.StanVar sn st
       newDVs dvs = do
@@ -950,11 +951,11 @@ addGQDataSet name toFoldable = do
   return rtt
 -}
 
-dataSetCrosswalkName :: RowTypeTag rFrom -> RowTypeTag rTo -> SME.StanName
+dataSetCrosswalkName :: RowTypeTag rFrom -> RowTypeTag rTo -> TE.StanName
 dataSetCrosswalkName rttFrom rttTo = "XWalk_" <> dataSetName rttFrom <> "_" <> dataSetName rttTo
 {-# INLINEABLE dataSetCrosswalkName #-}
 
-crosswalkIndexKey :: RowTypeTag rTo -> SME.StanName
+crosswalkIndexKey :: RowTypeTag rTo -> TE.StanName
 crosswalkIndexKey rttTo = "XWalkTo_" <> dataSetName rttTo
 {-# INLINEABLE crosswalkIndexKey #-}
 
@@ -1082,14 +1083,14 @@ addDeclBinding' :: IndexKey -> TE.LExpr TE.EInt -> StanBuilderM md gq ()
 addDeclBinding' k e = modify $ modifyIndexBindings f where
   f lc = lc { TE.sizes = Map.insert k e $ TE.sizes lc}
 
-addDeclBinding :: IndexKey -> SME.StanName -> StanBuilderM md gq ()
+addDeclBinding :: IndexKey -> TE.StanName -> StanBuilderM md gq ()
 addDeclBinding k = addDeclBinding' k . TE.namedLSize
 
 addUseBinding' :: IndexKey -> TE.IndexArrayL -> StanBuilderM md gq ()
 addUseBinding' k e = modify $ modifyIndexBindings f where
   f lc = lc { TE.indexes = Map.insert k e $ TE.indexes lc }
 
-addUseBinding :: IndexKey -> SME.StanName -> StanBuilderM md gq ()
+addUseBinding :: IndexKey -> TE.StanName -> StanBuilderM md gq ()
 addUseBinding k = addUseBinding' k . TE.namedLIndex
 
 getUseBinding :: IndexKey -> StanBuilderM md gq TE.IndexArrayL
@@ -1123,7 +1124,7 @@ addUseBindingToDataSet' rtt key e = do
              GQData -> modifyGQRowInfosA f bs
   put bs'
 
-addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> SME.StanName -> StanBuilderM md gq ()
+addUseBindingToDataSet :: RowTypeTag r -> IndexKey -> TE.StanName -> StanBuilderM md gq ()
 addUseBindingToDataSet rtt key = addUseBindingToDataSet' rtt key . TE.namedLIndex
 
 indexBindingScope :: StanBuilderM md gq a -> StanBuilderM md gq a
@@ -1133,14 +1134,14 @@ indexBindingScope x = do
   modify (modifyIndexBindings $ const curIB)
   return a
 
-isDeclared :: SME.StanName -> StanBuilderM md gq Bool
+isDeclared :: TE.StanName -> StanBuilderM md gq Bool
 isDeclared sn  = do
   sd <- declaredVars <$> get
   case varLookup sd sn of
     Left _ -> return False
     Right _ -> return True
 
-isDeclaredAllScopes :: SME.StanName -> StanBuilderM md gq Bool
+isDeclaredAllScopes :: TE.StanName -> StanBuilderM md gq Bool
 isDeclaredAllScopes sn  = do
   sd <- declaredVars <$> get
   case varLookupAllScopes sd sn of
@@ -1149,7 +1150,7 @@ isDeclaredAllScopes sn  = do
 
 
 -- return True if variable is new, False if already declared
-declare :: SME.StanName -> TE.StanType t -> StanBuilderM md gq Bool
+declare :: TE.StanName -> TE.StanType t -> StanBuilderM md gq Bool
 declare sn st = do
 --  let sv = SME.StanVar sn st
   sd <- declaredVars <$> get
@@ -1160,7 +1161,7 @@ declare sn st = do
                 else stanBuildError $ "Attempt to re-declare \"" <> sn <> "\" with different type. Previous="
                      <> show et <> "; new=" <> show (TE.eTypeFromStanType st)
 
-stanDeclare' :: SME.StanName -> TE.DeclSpec t -> Maybe (TE.UExpr t) -> StanBuilderM md gq (TE.UExpr t)
+stanDeclare' :: TE.StanName -> TE.DeclSpec t -> Maybe (TE.UExpr t) -> StanBuilderM md gq (TE.UExpr t)
 stanDeclare' sn ds mRHS = do
   isNew <- declare sn $ TE.declType ds
   if isNew
@@ -1185,33 +1186,33 @@ stanDeclare' sn ds mRHS = do
   return sv
 -}
 
-stanDeclare :: SME.StanName -> TE.DeclSpec t -> StanBuilderM md gq (TE.UExpr t)
+stanDeclare :: TE.StanName -> TE.DeclSpec t -> StanBuilderM md gq (TE.UExpr t)
 stanDeclare sn ds = stanDeclare' sn ds Nothing
 
 stanDeclareN :: TE.NamedDeclSpec t -> StanBuilderM md gq (TE.UExpr t)
 stanDeclareN (TE.NamedDeclSpec sn ds) = stanDeclare' sn ds Nothing
 
-stanDeclareRHS :: SME.StanName -> TE.DeclSpec t -> TE.UExpr t -> StanBuilderM md gq (TE.UExpr t)
+stanDeclareRHS :: TE.StanName -> TE.DeclSpec t -> TE.UExpr t -> StanBuilderM md gq (TE.UExpr t)
 stanDeclareRHS sn st rhs = stanDeclare' sn st (Just rhs)
 
 stanDeclareRHSN :: TE.NamedDeclSpec t -> TE.UExpr t -> StanBuilderM md gq (TE.UExpr t)
 stanDeclareRHSN (TE.NamedDeclSpec sn ds) rhs = stanDeclare' sn ds (Just rhs)
 
 
-checkName :: SME.StanName -> StanBuilderM md gq ()
+checkName :: TE.StanName -> StanBuilderM md gq ()
 checkName sn = do
   dvs <- declaredVars <$> get
   _ <- stanBuildEither $ varLookup dvs sn
   pure ()
 
-typeForName :: SME.StanName -> StanBuilderM md gq TE.EType
+typeForName :: TE.StanName -> StanBuilderM md gq TE.EType
 typeForName sn = do
   dvs <- declaredVars <$> get
   stanBuildEither $ varLookup dvs sn
 
 addJson :: forall t r md gq. (Typeable md, Typeable gq)
         => RowTypeTag r
-        -> SME.StanName
+        -> TE.StanName
         -> TE.DeclSpec t
         -> Stan.StanJSONF r Aeson.Series
         -> StanBuilderM md gq (TE.UExpr t)
@@ -1241,7 +1242,7 @@ addJson rtt name ds fld = do
 -- maybe work on a cleaner way...
 addJsonOnce :: (Typeable md, Typeable gq)
                  => RowTypeTag r
-                 -> SME.StanName
+                 -> TE.StanName
                  -> TE.DeclSpec t
                  -> Stan.StanJSONF r Aeson.Series
                  -> StanBuilderM md gq (TE.UExpr t)
@@ -1274,7 +1275,7 @@ addLengthJson rtt name iKey = do
   addDeclBinding iKey name
   addJsonOnce rtt name (TE.intSpec [TE.lowerM $ TE.intE 1]) (Stan.namedF name Foldl.length)
 
-nameSuffixMsg :: SME.StanName -> Text -> Text
+nameSuffixMsg :: TE.StanName -> Text -> Text
 nameSuffixMsg n dsName = "name=\"" <> show n <> "\" data-set=\"" <> show dsName <> "\""
 
 addColumnJson :: (Typeable md, Typeable gq, Aeson.ToJSON x)

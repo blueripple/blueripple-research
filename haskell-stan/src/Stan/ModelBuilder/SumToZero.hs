@@ -64,7 +64,7 @@ sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
       , TE.function sumToZeroQRF (TE.Arg "x_raw" TE.:> TE.Arg "Q_r" TE.:> TE.TNil) sumToZeroQRBody
       ]
 
-sumToZeroQR :: SB.StanName -> TE.UExpr TE.ECVec -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+sumToZeroQR :: TE.StanName -> TE.UExpr TE.ECVec -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
 sumToZeroQR vName v_stz = do
   sumToZeroFunctions
   let vecSizeE = TE.functionE TE.vector_size (TE.oneTyped v_stz) `TE.plusE` TE.intE 1
@@ -80,7 +80,7 @@ softSumToZero v dw = SB.inBlock SB.SBModel $ SB.addStmtToCode
   $ TE.functionE TE.vector_sum (TE.oneTyped v) `TE.sampleW` dw
 
 -- up to user to insure IndexArray and vector have same size
-weightedSoftSumToZero :: SB.StanName -> TE.UExpr TE.ECVec -> TE.IndexArrayU -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()
+weightedSoftSumToZero :: TE.StanName -> TE.UExpr TE.ECVec -> TE.IndexArrayU -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()
 weightedSoftSumToZero vName v wgtIndex prior = do
   let vecSize = TE.indexSize wgtIndex
   let vecSpec = TE.vectorSpec vecSize []

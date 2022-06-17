@@ -27,14 +27,13 @@ import qualified Data.Fix as Fix
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Text as T
-
+import Stan.ModelBuilder.TypedExpressions.Statements (StanName)
 import qualified Text.PrettyPrint as Pretty
 
 import GHC.Generics (Generic1)
 import Data.ByteString.Lazy (foldlChunks)
-import Knit.Report (perspectiveX1)
 
-type StanName = Text
+--type StanName = Text
 type IndexKey = Text
 type DataConstraint = Text
 --type DataSetKey = Text

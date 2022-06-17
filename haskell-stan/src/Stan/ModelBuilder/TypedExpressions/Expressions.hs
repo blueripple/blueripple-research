@@ -31,7 +31,7 @@ import Stan.ModelBuilder.TypedExpressions.TypedList
 import Stan.ModelBuilder.TypedExpressions.Indexing
 import Stan.ModelBuilder.TypedExpressions.Operations
 import Stan.ModelBuilder.TypedExpressions.Functions
-import qualified Stan.ModelBuilder.Expressions as SME
+--import qualified Stan.ModelBuilder.Expressions as SME
 import Prelude hiding (Nat)
 import Relude.Extra
 import qualified Data.Map.Strict as Map
@@ -46,6 +46,7 @@ import Data.Typeable (typeRep)
 import Knit.Report (openCubic)
 import Text.Megaparsec.Error.Builder (elabel)
 
+type IndexKey = Text
 
 -- Expressions
 data LExprF :: (EType -> Type) -> EType -> Type where
@@ -153,8 +154,8 @@ instance TR.HTraversable LExprF where
 -- UEXpr represents expressions with un-looked-up indices/sizes
 data UExprF :: (EType -> Type) -> EType -> Type where
   UL :: LExprF r et -> UExprF r et
-  UNamedIndex :: SME.IndexKey -> UExprF r (EArray (S Z) EInt)
-  UNamedSize :: SME.IndexKey -> UExprF r EInt
+  UNamedIndex :: IndexKey -> UExprF r (EArray (S Z) EInt)
+  UNamedSize :: IndexKey -> UExprF r EInt
 
 type UExpr = TR.IFix UExprF
 

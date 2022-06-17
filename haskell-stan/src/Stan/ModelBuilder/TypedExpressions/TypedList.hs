@@ -84,6 +84,14 @@ instance HTraversable TypedList where
     (:>) aet al -> (:>) <$> natM aet <*> htraverse natM al
   hmapM = htraverse
 
+type family (as :: [k]) ++ (bs :: [k]) :: [k] where
+  '[] ++ bs = bs
+  (a ': as) ++ bs = a ': (as ++ bs)
+
+appendTypedLists :: TypedList u as -> TypedList u bs -> TypedList u (as ++ bs)
+appendTypedLists TNil b = b
+appendTypedLists (a :> as) b = a :> appendTypedLists as b
+
 zipTypedListsWith :: (forall x. a x -> b x -> c x) -> TypedList a args -> TypedList b args -> TypedList c args
 zipTypedListsWith _ TNil TNil = TNil
 zipTypedListsWith f (a :> as) (b :> bs) = f a b :> zipTypedListsWith f as bs
