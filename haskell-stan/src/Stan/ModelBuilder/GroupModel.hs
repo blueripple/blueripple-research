@@ -36,7 +36,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
-import Stan.ModelBuilder.TypedExpressions.ParameterBuilder
+import Stan.ModelBuilder.TypedExpressions.DAGBuilder
 
 import qualified Stan.ModelBuilder as TE
 import Data.Vec.Lazy (Vec(..))

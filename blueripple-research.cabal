@@ -136,13 +136,13 @@ library  haskell-stan
                  , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
+                 , Stan.ModelBuilder.TypedExpressions.DAGBuilder
                  , Stan.ModelBuilder.TypedExpressions.Evaluate
                  , Stan.ModelBuilder.TypedExpressions.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Format
                  , Stan.ModelBuilder.TypedExpressions.Functions
                  , Stan.ModelBuilder.TypedExpressions.Indexing
                  , Stan.ModelBuilder.TypedExpressions.Operations
-                 , Stan.ModelBuilder.TypedExpressions.ParameterBuilder
                  , Stan.ModelBuilder.TypedExpressions.Program
                  , Stan.ModelBuilder.TypedExpressions.Recursion
                  , Stan.ModelBuilder.TypedExpressions.Statements
