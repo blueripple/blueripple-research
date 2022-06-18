@@ -1,23 +1,17 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE FlexibleInstances #-}
 
 module Stan.ModelBuilder.TypedExpressions.Expressions
   (
@@ -43,8 +37,6 @@ import qualified Data.GADT.Compare as DT
 import Data.Type.Equality ((:~:)(Refl),TestEquality(testEquality))
 import Data.GADT.Compare (GEq(geq))
 import Data.Typeable (typeRep)
-import Knit.Report (openCubic)
-import Text.Megaparsec.Error.Builder (elabel)
 
 type IndexKey = Text
 

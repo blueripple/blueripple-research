@@ -40,7 +40,7 @@ import qualified Data.Dependent.Sum as DM
 import qualified Data.Graph as Gr
 import qualified Data.Some as Some
 import qualified Control.Foldl as FL
-import Polysemy.Law (Result(classes))
+import Data.Type.Equality ((:~:)(Refl),TestEquality(testEquality))
 
 -- Transformed Data declarations can only depend on other transformed data, so we need
 -- a wrapper type to enforce that.
@@ -58,15 +58,22 @@ type Parameters ts = TE.TypedList Parameter ts
 
 data FunctionToDeclare = FunctionToDeclare Text TE.UStmt
 
-data DeclExprAndStmts t = DeclExprAndStmts (Maybe (TE.UExpr t)) (TE.UExpr t -> [TE.UStmt])
+data DeclCode t where
+  DeclRHS :: TE.UExpr t -> DeclCode t
+  DeclCodeF :: (TE.UExpr t -> [TE.UStmt]) -> DeclCode t
 
 
 data TData :: TE.EType -> Type where
   TData :: TE.NamedDeclSpec t
         -> [FunctionToDeclare]
         -> TE.TypedList TData ts
-        -> (TE.ExprList ts -> DeclExprAndStmts t) -- code for the transformed data block
+        -> (TE.ExprList ts -> DeclCode t) -- code for the transformed data block
         -> TData t
+
+instance TestEquality TData where
+  testEquality tda tdb = testEquality (f tda) (f tdb) where
+    f (TData (TE.NamedDeclSpec _ (TE.DeclSpec st _ _)) _ _ _) = TE.sTypeFromStanType st
+
 
 --withTData :: TData t -> (forall ts.TE.NamedDeclSpec t -> TE.TypedList TData ts -> (TE.ExprList ts -> TE.UExpr t) -> r) -> r
 --withTData (TData nds tds eF) f = f nds tds eF
@@ -84,8 +91,15 @@ data BuildParameter :: TE.EType -> Type where
   TransformedP :: TE.NamedDeclSpec t
                -> [FunctionToDeclare]
                -> Parameters qs
-               -> (TE.ExprList qs -> DeclExprAndStmts t) -- code for transformed parameters block
+               -> (TE.ExprList qs -> DeclCode t) -- code for transformed parameters block
                -> BuildParameter t
+
+instance TestEquality BuildParameter where
+  testEquality bpa bpb = testEquality (f bpa) (f bpb) where
+    f = TE.sTypeFromStanType . TE.declType . TE.decl . getNamedDecl
+
+
+
 {-  TransformedDiffTypeP :: TE.NamedDeclSpec t
                        -> [FunctionToDeclare]
                        -> TE.DeclSpec q
@@ -96,7 +110,6 @@ data BuildParameter :: TE.EType -> Type where
                        -> BuildParameter t
 -}
 type BuildParameters ts = TE.TypedList BuildParameter ts
-
 
 getNamedDecl :: BuildParameter t -> TE.NamedDeclSpec t --SB.StanBuilderM md gq (TE.NamedDeclSpec t)
 getNamedDecl = \case
@@ -195,11 +208,15 @@ lookupParameterExpressions ps eMap = htraverse f ps where
         Just e -> Right e
         Nothing -> Left $ bParameterName bp <> " not found in expression map.  Dependency ordering issue??"
 
-declareAndAddCode :: SB.StanBlock -> TE.NamedDeclSpec t -> DeclExprAndStmts t -> SB.StanBuilderM md gq (TE.UExpr t)
-declareAndAddCode sb nds (DeclExprAndStmts exprM codeF) = do
-  v <- maybe (SB.stanDeclareN nds) (SB.stanDeclareRHSN nds) exprM
-  SB.inBlock sb $ SB.addStmtsToCode $ codeF v
-  return v
+declareAndAddCode :: SB.StanBlock -> TE.NamedDeclSpec t -> DeclCode t -> SB.StanBuilderM md gq (TE.UExpr t)
+declareAndAddCode sb nds dc =
+  SB.inBlock sb
+  $ case dc of
+      DeclRHS e -> SB.stanDeclareRHSN nds e
+      DeclCodeF sF -> do
+        v <- SB.stanDeclareN nds
+        SB.addStmtsToCode $ sF v
+        pure v
 
 -- This bit needs to move to someplace else so we can not import ModelBuilder
 addParameterToCodeAndMap :: DM.DMap TypeTaggedName TE.UExpr
@@ -243,7 +260,7 @@ simpleParameter nds ps d = BuildP $ UntransformedP nds [] ps (\qs t -> [TE.sampl
 simpleTransformed ::  TE.NamedDeclSpec t
                   -> [FunctionToDeclare]
                   -> Parameters ts
-                  -> (TE.ExprList ts -> DeclExprAndStmts t)
+                  -> (TE.ExprList ts -> DeclCode t)
                   -> Parameter t
 simpleTransformed nds ftds ps desF = BuildP $ TransformedP nds ftds ps desF
 
@@ -257,10 +274,12 @@ nonCenteredParameter :: TE.NamedDeclSpec t
 nonCenteredParameter nds ps rawDS rawD qs eF =
   let rawNDS = TE.NamedDeclSpec (rawName $ TE.declName nds) rawDS
       rawP = simpleParameter rawNDS ps rawD
-      tpDES (rV TE.:> qsE) = DeclExprAndStmts (Just $ eF qsE rV) (const [])
+      tpDES (rV TE.:> qsE) = DeclRHS $ eF qsE rV
   in BuildP $ TransformedP nds [] (rawP TE.:> qs) tpDES
 
---
+-- Only use if density uses constant args. E.g., stdNormal.
+-- If it uses named parameters,
+-- those should be dependencies, so use `nonCenteredParameters'
 simpleNonCentered :: TE.NamedDeclSpec t
                   -> TE.DeclSpec t
                   -> TE.DensityWithArgs t
