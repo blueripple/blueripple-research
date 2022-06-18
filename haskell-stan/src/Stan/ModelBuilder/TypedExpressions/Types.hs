@@ -33,6 +33,7 @@ import qualified Data.Type.Nat as DT
 
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
+import qualified Text.Show
 --import Data.GADT.Compare (GEq(geq))
 
 -- possible types of terms
@@ -93,6 +94,9 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
+
+instance Show (SType t) where
+  show x = "SType: " <> show (sTypeToEType x)
 
 instance Eq (SType t) where
   SVoid == SVoid = True

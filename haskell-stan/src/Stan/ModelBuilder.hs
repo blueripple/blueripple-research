@@ -24,6 +24,8 @@ import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.DAGTypes as DT
+import qualified Data.Dependent.Map as DM
 import Stan.ModelBuilder.TypedExpressions.Statements (StanName)
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
@@ -106,6 +108,19 @@ addStmtsToCode stmts = do
   cb <- getBlock
   f <- stanBuildEither $ TE.addStmtsToBlock cb stmts
   modifyCode f
+
+addStmtToCodeTop :: TE.UStmt -> StanBuilderM md gq ()
+addStmtToCodeTop stmt = do
+  cb <- getBlock
+  f <- stanBuildEither $ TE.addStmtToBlockTop cb stmt
+  modifyCode f
+
+addStmtsToCodeTop :: Traversable f => f TE.UStmt -> StanBuilderM md gq ()
+addStmtsToCodeTop stmts = do
+  cb <- getBlock
+  f <- stanBuildEither $ TE.addStmtsToBlockTop cb stmts
+  modifyCode f
+
 
 applyToFoldable :: Foldl.Fold row a -> ToFoldable d row -> d -> a
 applyToFoldable fld (ToFoldable f) = Foldl.fold fld . f
@@ -521,6 +536,8 @@ data BuilderState md gq = BuilderState { declaredVars :: !ScopedDeclarations
                                        , constModelJSON :: JSONSeriesFold ()  -- json for things which are attached to no data set.
                                        , constGQJSON :: JSONSeriesFold ()
                                        , hasFunctions :: !(Set.Set Text)
+                                       , parameterCollection :: DT.BParameterCollection
+                                       , parameterCode :: TE.StanProgram
                                        , code :: !StanCode
                                        }
 
@@ -531,6 +548,7 @@ dumpBuilderState bs = -- (BuilderState dvs ibs ris js hf c) =
   <> "\n model row-info-keys: " <> show (DHash.keys $ modelRowBuilders bs)
   <> "\n gq row-info-keys: " <> show (DHash.keys $ gqRowBuilders bs)
   <> "\n functions: " <> show (hasFunctions bs)
+  <> "\n parameterCollection (keys)" <> show (DM.keys $ DT.pdm $ parameterCollection bs)
 
 
 --getRowInfo :: InputDataType -> RowTypeTag r
@@ -707,6 +725,8 @@ initialBuilderState modelRowInfos gqRowInfos =
   mempty
   mempty
   Set.empty
+  (DT.BParameterCollection mempty mempty)
+  TE.emptyStanProgram
   (StanCode SBData TE.emptyStanProgram)
 
 type RowInfoMakers d = DHash.DHashMap RowTypeTag (GroupIndexAndIntMapMakers d)
@@ -1058,7 +1078,7 @@ runStanBuilder :: (Typeable md, Typeable gq)
                -> Either Text (BuilderState md gq, a)
 runStanBuilder md gq sgb sb =
   let builderState = runStanGroupBuilder sgb md gq
-      (resE, bs) = usingState builderState . runExceptT $ unStanBuilderM $ sb
+      (resE, bs) = usingState builderState . runExceptT $ unStanBuilderM sb
   in fmap (bs,) resE
 
 stanBuildError :: Text -> StanBuilderM md gq a
@@ -1172,6 +1192,7 @@ stanDeclare' sn ds mRHS = do
            Nothing -> pure ()
            Just _ -> stanBuildError $ "Attempt to re-declare variable with RHS (" <> sn <> ")"
   pure $ TE.namedE sn (TE.sTypeFromStanType $ TE.declType ds)
+
 {-
 
 --  let sv = SME.StanVar sn st

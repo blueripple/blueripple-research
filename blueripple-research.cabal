@@ -136,7 +136,8 @@ library  haskell-stan
                  , Stan.ModelBuilder.DesignMatrix
                  , Stan.ModelBuilder.Distributions
                  , Stan.ModelBuilder.Expressions
-                 , Stan.ModelBuilder.TypedExpressions.DAGBuilder
+                 , Stan.ModelBuilder.TypedExpressions.DAGTypes
+                 , Stan.ModelBuilder.TypedExpressions.DAG
                  , Stan.ModelBuilder.TypedExpressions.Evaluate
                  , Stan.ModelBuilder.TypedExpressions.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Format

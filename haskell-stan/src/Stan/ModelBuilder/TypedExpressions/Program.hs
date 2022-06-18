@@ -17,6 +17,7 @@ module Stan.ModelBuilder.TypedExpressions.Program (
     module Stan.ModelBuilder.TypedExpressions.Program,
 ) where
 
+import qualified Control.Foldl as FL
 import Data.Array ((!), (//))
 import qualified Data.Array as Array
 import qualified Data.List.NonEmpty as NE
@@ -82,11 +83,11 @@ programToStmt gq p = TE.SContext Nothing fullProgramStmt
 
 -- check if the type of statement is allowed in the block then, if so, provide the modification function
 -- otherwise error
-addStmtToBlock :: SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
-addStmtToBlock sb s = do
+addStmtToBlock' :: ([TE.UStmt] -> TE.UStmt -> [TE.UStmt]) -> SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtToBlock' addF sb s = do
   let f sp =
         let p = unStanProgram sp
-        in StanProgram $ p // [(sb, p ! sb ++ [s])]
+        in StanProgram $ p // [(sb, p ! sb `addF` s)]
   case s of
     TE.SFunction {} -> if sb == SBT.SBFunctions
                        then Right f
@@ -98,9 +99,21 @@ addStmtToBlock sb s = do
              _ -> Left "Statement other than declaration or comment in data or parameters block."
       else Right f
 
+addStmtToBlock :: SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtToBlock = addStmtToBlock' (\stmts s -> stmts ++ [s])
+
+addStmtToBlockTop :: SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtToBlockTop = addStmtToBlock' $ flip (:)
+
 addStmtsToBlock :: Traversable f => SBT.StanBlock -> f TE.UStmt -> Either Text (StanProgram -> StanProgram)
 addStmtsToBlock b stmts = do
   fs <- traverse (addStmtToBlock b) stmts
+  let g sp = foldl' (\sp f -> f sp) sp fs
+  return g
+
+addStmtsToBlockTop :: Traversable f => SBT.StanBlock -> f TE.UStmt -> Either Text (StanProgram -> StanProgram)
+addStmtsToBlockTop b stmts = do
+  fs <- traverse (addStmtToBlockTop b) $ reverse $ FL.fold FL.list stmts
   let g sp = foldl' (\sp f -> f sp) sp fs
   return g
 
