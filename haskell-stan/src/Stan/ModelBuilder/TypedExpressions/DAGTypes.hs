@@ -14,8 +14,7 @@ module Stan.ModelBuilder.TypedExpressions.DAGTypes
     ParameterTag
   , taggedParameterName
   , taggedParameterType
---  , parameterTagFromBP
---  , parameterTagFromTData
+  , parameterExpr
   , FunctionToDeclare(..)
   , TData(..)
   , Parameter(..)
@@ -53,6 +52,9 @@ import Stan.ModelBuilder.TypedExpressions.Expressions (UExpr)
 -- ultimately, we should not expose this constructor.  So to get one of these you have to add a Builder to the DMap.
 data ParameterTag :: TE.EType -> Type where
   ParameterTag :: TE.SType t -> TE.StanName -> ParameterTag t
+
+parameterExpr :: ParameterTag t -> UExpr t
+parameterExpr (ParameterTag st n) = TE.namedE n st
 
 taggedParameterType :: ParameterTag t -> TE.SType t
 taggedParameterType (ParameterTag st _) = st
@@ -133,6 +135,11 @@ data BuildParameter :: TE.EType -> Type where
                -> Parameters qs
                -> (TE.ExprList qs -> DeclCode t) -- code for transformed parameters block
                -> BuildParameter t
+  ModelP :: TE.NamedDeclSpec t
+         -> [FunctionToDeclare]
+         -> Parameters qs
+         -> (TE.ExprList qs -> DeclCode t)
+         -> BuildParameter t
 
 instance TestEquality BuildParameter where
   testEquality bpa bpb = testEquality (f bpa) (f bpb) where
@@ -144,6 +151,7 @@ withBPDeps :: BuildParameter t -> (forall ts. Parameters ts -> r) -> r
 withBPDeps (TransformedDataP (TData _ _ tds _)) f = f $ hfmap (BuildP . parameterTagFromTData) tds
 withBPDeps (UntransformedP _ _ ps _) f = f ps
 withBPDeps (TransformedP _ _ pq _ ) f = f pq
+withBPDeps (ModelP _ _ pq _ ) f = f pq
 
 data BParameterCollection = BParameterCollection { pdm :: DM.DMap ParameterTag BuildParameter, usedNames :: Set TE.StanName }
 
@@ -154,6 +162,7 @@ getNamedDecl = \case
   TransformedDataP (TData nds _ _ _) -> nds
   UntransformedP x _ _ _ -> x
   TransformedP x _ _ _ -> x
+  ModelP x _ _ _ -> x
 --  TransformedDiffTypeP x _ _ _ _ _ _ -> x
 
 setNamedDecl :: TE.NamedDeclSpec t -> BuildParameter t -> BuildParameter t --SB.StanBuilderM md gq (Parameter t)
@@ -161,6 +170,8 @@ setNamedDecl x = \case
   TransformedDataP (TData _ y z a) -> TransformedDataP (TData x y z a)
   UntransformedP _ y z a -> UntransformedP x y z a
   TransformedP _ y z a  -> TransformedP x y z a
+  ModelP _ y z a  -> ModelP x y z a
+
 --  TransformedDiffTypeP _ y z a b c d -> TransformedDiffTypeP x y z a b c d
 
 bParameterName :: BuildParameter t -> TE.StanName

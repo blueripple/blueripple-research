@@ -13,6 +13,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 module Stan.ModelBuilder.TypedExpressions.Types
   (
@@ -39,6 +40,13 @@ import qualified Text.Show
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
 data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Ord, Show)
+
+type EArray1 :: EType -> EType
+type EArray1 t = EArray (S Z) t
+
+type EArray2 :: EType -> EType
+type EArray2 t = EArray (S (S Z)) t
+
 
 -- A mechanism to limit the types we can use in functions via a constraint
 type TypeOneOf et ets = TypeOneOf' et ets (TypeOneOfB et ets)

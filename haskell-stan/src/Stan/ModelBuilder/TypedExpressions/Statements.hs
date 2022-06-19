@@ -103,7 +103,7 @@ choleskyFactorCovSpec rce = DeclSpec StanCholeskyFactorCov (rce ::: VNil)
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
 
-intArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec (EArray (S Z) EInt)
+intArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec (EArray1 EInt)
 intArraySpec se cs = arraySpec s1 (se ::: VNil) (intSpec cs)
 
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.

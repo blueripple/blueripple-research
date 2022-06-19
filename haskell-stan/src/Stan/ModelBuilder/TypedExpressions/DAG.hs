@@ -106,6 +106,10 @@ addParameterToCodeAndMap eMap (PhantomP bp) = do
       traverse_ (\(DT.FunctionToDeclare n fs) -> SB.addFunctionsOnce n $ SB.addStmtToCodeTop fs) $ reverse ftds
       pqEs <- SB.stanBuildEither $ DT.lookupParameterExpressions pq eMap
       declareAndAddCode SB.SBTransformedParameters nds $ tpDesF pqEs
+    DT.ModelP nds ftds pq tpDesF -> do
+      traverse_ (\(DT.FunctionToDeclare n fs) -> SB.addFunctionsOnce n $ SB.addStmtToCodeTop fs) $ reverse ftds
+      pqEs <- SB.stanBuildEither $ DT.lookupParameterExpressions pq eMap
+      declareAndAddCode SB.SBModel nds $ tpDesF pqEs
   return $ DT.addBuiltExpressionToMap bp v eMap
 
 -- reverse here because we are adding from top, so
@@ -118,13 +122,7 @@ rawName :: Text -> Text
 rawName t = t <> "_raw"
 --
 
-exprListToParameters :: TE.ExprList ts  -> DT.Parameters ts
-exprListToParameters = hfmap DT.GivenP
-
--- some useful special cases
-simpleParameter :: TE.NamedDeclSpec t -> DT.Parameters ts -> TE.Density t ts -> DT.BuildParameter t
-simpleParameter nds ps d = DT.UntransformedP nds [] ps (\qs t -> [TE.sample t d qs])
-
+-- should be used in place
 runStanBuilderDAG :: forall md gq a.(Typeable md, Typeable gq)
                   => md
                   -> gq
@@ -141,6 +139,18 @@ runStanBuilderDAG md gq sgb sb =
       builderState = SB.runStanGroupBuilder sgb md gq
       (resE, bs) = usingState builderState . runExceptT $ SB.unStanBuilderM sb'
   in fmap (bs,) resE
+
+
+
+exprListToParameters :: TE.ExprList ts  -> DT.Parameters ts
+exprListToParameters = hfmap DT.GivenP
+
+-- some useful special cases
+
+-- Only dependencies are paramters to prior density
+simpleParameter :: TE.NamedDeclSpec t -> DT.Parameters ts -> TE.Density t ts -> DT.BuildParameter t
+simpleParameter nds ps d = DT.UntransformedP nds [] ps (\qs t -> [TE.sample t d qs])
+
 
 
 addNonCenteredParameter :: TE.NamedDeclSpec t

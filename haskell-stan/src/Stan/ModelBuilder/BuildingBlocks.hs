@@ -16,10 +16,15 @@
 
 module Stan.ModelBuilder.BuildingBlocks where
 
+
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import Stan.ModelBuilder.TypedExpressions.Types (Nat(..))
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
-import qualified Stan.ModelBuilder.GroupModel as SGM
+import qualified Stan.ModelBuilder.Parameters as PA
 
 import Prelude hiding (All)
 import qualified Data.List.NonEmpty as NE
@@ -30,8 +35,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Stan.ModelConfig as SB
-import Streamly.Data.Array.Foreign (getIndex)
 
+{-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
 namedVectorIndex x = case SME.varType x of
   SME.StanVector (SME.NamedDim ik) -> return ik
@@ -51,38 +56,38 @@ namedMatrixColIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
 namedMatrixColIndex x = case SME.varType x of
   SME.StanMatrix (_, SME.NamedDim ik) -> return ik
   _ -> SB.stanBuildError $ "namedMatrixColIndex: bad type=" <> show x
-
+-}
 
 addIntData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
-            -> SME.StanName
+            -> TE.StanName
             -> Maybe Int
             -> Maybe Int
             -> (r -> Int)
-            -> SB.StanBuilderM md gq SME.StanVar
+            -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray (S Z) TE.EInt))
 addIntData rtt varName mLower mUpper f = do
-  let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanInt
-      bounds = case (mLower, mUpper) of
-                 (Nothing, Nothing) -> ""
-                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
+  let ds = TE.DecSB.StanArray [SB.NamedDim $ SB.dataSetName r
+                                case (mLower, mUpper) of
+                 (Nothing, Nothing) -> []
+                 (Just l, Nothing) -> [TE.lowerM $ TE.intE l]
                  (Nothing, Just u) -> "<upper=" <> show u <> ">"
                  (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
   SB.addColumnJson rtt varName stanType bounds f
 
 addCountData :: forall r md gq.(Typeable md, Typeable gq)
              => SB.RowTypeTag r
-             -> SME.StanName
+             -> TE.StanName
              -> (r -> Int)
-             -> SB.StanBuilderM md gq SME.StanVar
+             -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray (S Z) TE.EInt))
 addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
 
 addRealData :: (Typeable md, Typeable gq)
             => SB.RowTypeTag r
-            -> SME.StanName
+            -> TE.StanName
             -> Maybe Double
             -> Maybe Double
             -> (r -> Double)
-            -> SB.StanBuilderM md gq SME.StanVar
+            -> SB.StanBuilderM md gq  (TE.UExpr TE.ECVec)
 addRealData rtt varName mLower mUpper f = do
   let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanReal
       bounds = case (mLower, mUpper) of
@@ -97,7 +102,7 @@ add2dMatrixData :: (Typeable md, Typeable gq)
                 -> SB.MatrixRowFromData r
                 -> Maybe Double
                 -> Maybe Double
-            -> SB.StanBuilderM md gq SME.StanVar
+            -> SB.StanBuilderM md gq (TE.UExpr TE.EMat)
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   let bounds = case (mLower, mUpper) of
                  (Nothing, Nothing) -> ""
@@ -119,6 +124,7 @@ printVar t v@(SB.StanVar n _) = SB.addExprLine "printVar" $ SB.function "print" 
 printTarget :: Text -> SB.StanBuilderM md gq ()
 printTarget t = SB.addExprLine "printVar" $ SB.function "print" $ SB.bare ("\"" <> t <> "target=\"") :| [SB.bare "target()"]
 
+{-
 parallelSampleDistV :: (Typeable md, Typeable gq) => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slicedType) = do
 --  let rsExpr = SB.target `SB.plusEq` SB.function "reduce_sum"
@@ -153,7 +159,7 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
     let varName (SB.StanVar n _) = SB.name n
         argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
-
+-}
 generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
 generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
 

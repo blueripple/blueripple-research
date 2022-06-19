@@ -150,7 +150,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.TypedList
                  , Stan.ModelBuilder.TypedExpressions.Types
                  , Stan.ModelBuilder.FixedEffects
-                 , Stan.ModelBuilder.GroupModel
+                 , Stan.ModelBuilder.Parameters
 --                 , Stan.ModelBuilder.ModelParameters
 --                 , Stan.ModelBuilder.StanFunctionBuilder
                  , Stan.ModelBuilder.SumToZero

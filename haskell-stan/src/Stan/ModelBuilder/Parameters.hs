@@ -10,9 +10,9 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Stan.ModelBuilder.GroupModel
+module Stan.ModelBuilder.Parameters
   (
-    module Stan.ModelBuilder.GroupModel
+    module Stan.ModelBuilder.Parameters
   , module Stan.ModelBuilder.SumToZero
   )
   where
@@ -33,10 +33,11 @@ import Stan.ModelBuilder.TypedExpressions.Recursion (hfmap, htraverse, K(..))
 -}
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
-import Stan.ModelBuilder.TypedExpressions.DAG
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 
 import qualified Stan.ModelBuilder as TE
 import Data.Vec.Lazy (Vec(..))
@@ -49,59 +50,63 @@ import qualified Data.Dependent.Sum as DM
 import qualified Data.Graph as Gr
 import qualified Data.Some as Some
 import qualified Control.Foldl as FL
-import Data.Aeson.KeyMap (keys)
-import Streamly.Internal.Data.SVar (SVar(needDoorBell))
 
 -- various special cases
-
-simpleP :: TE.NamedDeclSpec t -> TE.DensityWithArgs t -> Parameter t
-simpleP nds (TE.DensityWithArgs d dArgs) = BuildP $ UntransformedP nds [] (exprListToParameters dArgs) d
-
-centeredHP :: TE.NamedDeclSpec t -> Parameters ts -> TE.Density t ts -> Parameter t
-centeredHP nds ps d = BuildP $ UntransformedP [] nds ps d
-
-nonCenteredHP :: TE.NamedDeclSpec t
-              -> Parameters ts
-              -> TE.DensityWithArgs t
-              -> (TE.ExprList ts -> TE.UExpr t -> TE.UExpr t)
-              -> Parameter t
-nonCenteredHP nds hps (TE.DensityWithArgs d dargs) ncF =
-  BuildP $ TransformedSameTypeP nds [] (exprListToParameters dargs) d hps ncF
-
-transformedHP :: TE.NamedDeclSpec t
-              -> Maybe [TE.VarModifier TE.UExpr (TE.ScalarType t)]
-              -> TE.DensityWithArgs t
-              -> (TE.UExpr t -> TE.UExpr t)
-              -> Parameter t
-transformedHP nds rawCsM rawPrior fromRawF =
-  let TE.DeclSpec st dims cs = TE.decl nds
-      rawDS = maybe (TE.decl nds) (TE.DeclSpec st dims) rawCsM
-  -- can't pattern match because the typelist of args would escape its scope
-  in TE.withDWA (\dRaw pRaw -> BuildP $ TransformedDiffTypeP nds [] rawDS (exprListToParameters pRaw) dRaw TE.TNil (const fromRawF)) rawPrior
-
-{-
-addTransformedParameter :: TE.NamedDeclSpec t
-                        -> Maybe [TE.VarModifier TE.UExpr (TE.ScalarType t)]
-                        -> TE.DensityWithArgs t
-                        -> (TE.UExpr t -> TE.UExpr t)
-                        -> SB.StanBuilderM md gq (TE.UExpr t)
-addTransformedParameter nds@(TE.NamedDeclSpec _ ds) rawCsM rawPrior fromRawF =
-  addParameter $ transformedHP nds rawCsM rawPrior fromRawF
+-- use this only if the args to the Density are fixed. Like stdNormal. They will otherwise not be declared in time.
+addIndependentPriorP :: TE.NamedDeclSpec t -> TE.DensityWithArgs t -> SB.StanBuilderM md gq (DAG.ParameterTag t)
+addIndependentPriorP nds (TE.DensityWithArgs d dArgs) =
+  DAG.addBuildParameter
+  $ DAG.UntransformedP nds [] (DAG.exprListToParameters dArgs)
+  $ \argEs e -> [TE.sample e d argEs]
 
 addCenteredHierarchical :: TE.NamedDeclSpec t
-                        -> Parameters args
+                        -> DAG.Parameters args
                         -> TE.Density t args
-                        -> SB.StanBuilderM md gq (TE.UExpr t)
-addCenteredHierarchical nds p d = addParameter $ centeredHP nds p d
+                        -> SB.StanBuilderM md gq (DAG.ParameterTag t)
+addCenteredHierarchical nds ps d = DAG.addBuildParameter
+                                  $ DAG.UntransformedP nds [] ps
+                                  $ \argEs e -> [TE.sample e d argEs]
 
-addNonCenteredHierarchical :: TE.NamedDeclSpec t
-                           -> Parameters ts
-                           -> TE.DensityWithArgs t
-                           -> (TE.ExprList ts -> TE.UExpr t -> TE.UExpr t)
-                           -> SB.StanBuilderM md gq (TE.UExpr t)
-addNonCenteredHierarchical nds p rawPrior fromRawF = addParameter $ nonCenteredHP nds p rawPrior fromRawF
--}
+addNonCenteredParameter :: TE.NamedDeclSpec t
+                        -> DAG.Parameters ts
+                        -> TE.DeclSpec t
+                        -> TE.Density t ts
+                        -> DAG.Parameters qs
+                        -> (TE.ExprList qs -> TE.UExpr t -> TE.UExpr t)
+                        -> SB.StanBuilderM md gq (DAG.ParameterTag t)
+addNonCenteredParameter nds ps rawDS rawD qs eF = do
+  let rawNDS = TE.NamedDeclSpec (DAG.rawName $ TE.declName nds) rawDS
+  rawPT <- DAG.addBuildParameter $ DAG.simpleParameter rawNDS ps rawD
+  let tpDES (rV TE.:> qsE) = DAG.DeclRHS $ eF qsE rV
+  DAG.addBuildParameter $ DAG.TransformedP nds [] (DAG.BuildP rawPT :> qs) tpDES
 
+addNonCenteredHierarchicalS :: TE.NamedDeclSpec t
+                            -> DAG.Parameters ts
+                            -> TE.DensityWithArgs t
+                            -> (TE.ExprList ts -> TE.UExpr t -> TE.UExpr t)
+                            -> SB.StanBuilderM md gq (DAG.ParameterTag t)
+addNonCenteredHierarchicalS nds ps (TE.DensityWithArgs d dArgs) =
+  addNonCenteredParameter nds (DAG.exprListToParameters dArgs) (TE.decl nds) d ps
+
+addTransformedHP :: TE.NamedDeclSpec t
+                 -> Maybe [TE.VarModifier TE.UExpr (TE.ScalarType t)]
+                 -> TE.DensityWithArgs t
+                 -> (TE.UExpr t -> TE.UExpr t)
+                 -> SB.StanBuilderM md gq (DAG.ParameterTag t)
+addTransformedHP nds rawCsM rawPrior fromRawF = do
+  let TE.DeclSpec st dims cs = TE.decl nds
+      rawNDS = TE.NamedDeclSpec (DAG.rawName $ TE.declName nds) $ maybe (TE.decl nds) (TE.DeclSpec st dims) rawCsM
+  rawPT <- addIndependentPriorP rawNDS rawPrior
+  DAG.addBuildParameter $ DAG.TransformedP nds [] (DAG.BuildP rawPT :> TNil)  (\(e :> TNil) -> DAG.DeclRHS e) -- (ExprList qs -> DeclCode t)
+  -- can't pattern match because the typelist of args would escape its scope
+--  TE.withDWA (\dRaw pRaw -> DAG.addBuildParameter $ TransformedDiffTypeP nds [] rawDS (exprListToParameters pRaw) dRaw TE.TNil (const fromRawF)) rawPrior
+
+
+
+
+
+
+{-
 -- This will make each component of the declared parameter independently normal
 hierarchicalCenteredFixedMeanNormal :: TE.NamedDeclSpec t -> Double -> Parameter TE.EReal -> Parameter t
 hierarchicalCenteredFixedMeanNormal nds mean sigmaP =
@@ -188,4 +193,5 @@ withSumToZero stz p = do
       p' <- setNamedDecl nds' p
       v <- addParameter p'
       STZ.sumToZeroQR n v
+-}
 -}
