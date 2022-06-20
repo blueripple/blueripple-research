@@ -745,6 +745,9 @@ newStateLegMapPosts cmdLine = do
       contestedNC = const True -- FIXME
   regSLDPost postInfoNC "NC" contestedNC bothHouses "StateBoth"
 -}
+  let postInfoNM = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+      contestedNM r = F.rgetField @ET.DistrictTypeC r == ET.StateLower -- state senate every four years, 2024 next
+  regSLDPost postInfoNM "NM" contestedNM True bothHouses "StateBoth"
 
   -- GA senate is 2-year terms
   let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
