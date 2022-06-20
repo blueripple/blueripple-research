@@ -82,6 +82,27 @@ type family AllGenTypes (ts :: [EType]) :: Constraint where
   AllGenTypes '[] = ()
   AllGenTypes (t ': ts) = (GenSType t, AllGenTypes ts)
 
+type family LastType (k :: [EType]) :: EType where
+  LastType '[] = EVoid
+  LastType (t ': '[]) = t
+  LastType (t ': ts) = LastType ts
+
+type family AllButLastF (k :: [EType]) (k' :: [EType]) :: [EType] where
+  AllButLastF '[] '[] = '[]
+  AllButLastF a (_ ': '[]) = a
+  AllButLastF a (t ': ts) = AllButLastF (t ': a) ts
+
+type family ReverseF (k :: [EType]) (k' :: [EType]):: [EType] where
+  ReverseF '[] '[] = '[]
+  ReverseF a '[] = a
+  ReverseF a (t ': ts) = ReverseF (t ': a) ts
+
+type family Reverse (k :: [EType]) :: [EType] where
+  Reverse a = ReverseF '[] a
+
+type family AllButLast (k :: [EType]) :: [EType] where
+  AllButLast a = Reverse (AllButLastF '[] a)
+
 -- list of arguments.  Parameterized by an expression type and the list of arguments
 data TypedList ::  (EType -> Type) -> [EType] -> Type where
   TNil :: TypedList f '[]

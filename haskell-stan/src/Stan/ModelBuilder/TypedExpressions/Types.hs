@@ -39,7 +39,20 @@ import qualified Text.Show
 
 -- possible types of terms
 -- NB: zero dimensional array will be treated as the underlying type
-data EType = EVoid | EString | EBool | EInt | EReal | EComplex | ECVec | ERVec | EMat | ESqMat | EArray Nat EType deriving (Eq, Ord, Show)
+data EType where
+  EVoid :: EType
+  EString :: EType
+  EBool :: EType
+  EInt :: EType
+  EReal :: EType
+  EComplex :: EType
+  ECVec :: EType
+  ERVec :: EType
+  EMat :: EType
+  ESqMat :: EType
+  EArray :: Nat -> EType -> EType
+--  (::->) :: EType -> EType -> EType
+  deriving (Eq, Ord, Show)
 
 type EArray1 :: EType -> EType
 type EArray1 t = EArray (S Z) t
@@ -104,6 +117,7 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
+--  (:->) :: SType t -> SType t' -> SType (t ::-> t')
 
 class GenSType (e :: EType) where
   genSType :: SType e
@@ -119,6 +133,7 @@ instance GenSType ERVec where genSType = SRVec
 instance GenSType EMat where genSType = SMat
 instance GenSType ESqMat where genSType = SSqMat
 instance (DT.SNatI n, GenSType t) => GenSType (EArray n t) where genSType = SArray DT.snat (genSType @t)
+--instance (GenSType ta, GenSType tb) => GenSType (ta ::-> tb) where genSType = genSType @ta :-> genSType @tb
 
 sIntArray :: SType (EArray1 EInt)
 sIntArray = SArray SS SInt
@@ -141,6 +156,7 @@ instance Eq (SType t) where
   SMat == SMat = True
   SSqMat == SSqMat = True
   SArray n st == SArray n' st' = (DT.snatToNat n == DT.snatToNat n') && (st == st')
+--  sa :-> sb == sa' :-> sb' = (sa == sa') && (sb == sb')
 
 
 sTypeToEType :: SType t -> EType
@@ -158,6 +174,7 @@ sTypeToEType = \case
   SArray sn st -> case DT.snatToNat sn of
     Z -> sTypeToEType st
     S n -> EArray (S n) $ sTypeToEType st
+--  sa :-> sb -> sTypeToEType sa ::-> sTypeToEType sb
 
 withSType :: forall t r.EType -> (forall t. SType t -> r) -> r
 withSType EVoid k = k SVoid
@@ -174,6 +191,7 @@ withSType (EArray n t) k = DT.reify n f
   where
     f :: forall n. DT.SNatI n => Proxy n -> r
     f _ = withSType t $ \st -> k (SArray (DT.snat @n)  st)
+--withSType (a ::-> b) k = withSType a $ \sa -> withSType b $ \sb -> k (sa :-> sb)
 
 sTypeName :: SType t -> Text
 sTypeName = \case
@@ -188,6 +206,7 @@ sTypeName = \case
   SMat -> "matrix"
   SSqMat -> "matrix"
   SArray _ _ -> "array"
+--  (:->) _ _ -> "funcApply"
 
 data StanType :: EType -> Type where
 --  StanVoid :: StanType EVoid
@@ -284,6 +303,11 @@ instance TestEquality SType where
     Refl <- testEquality sa sb
     Refl <- testEquality sn sm
     pure Refl
+{-  testEquality (sa :-> sb) (sa' :-> sb') = do
+    Refl <- testEquality sa sa'
+    Refl <- testEquality sb sb'
+    pure Refl
+-}
   testEquality _ _ = Nothing
 
 

@@ -58,6 +58,7 @@ data LExprF :: (EType -> Type) -> EType -> Type where
   LCond :: r EBool -> r t -> r t -> LExprF r t
   LSlice :: SNat n -> r EInt -> r t -> LExprF r (Sliced n t)
   LIndex :: SNat n -> r (EArray (S Z) EInt) -> r t -> LExprF r (Indexed n t)
+--  LLam :: (r ea -> r eb) -> r ea -> LExprF r (ea ::-> eb)
 --  deriving (Typeable)
 --  LRangeIndex :: SNat n -> Maybe (r EInt) -> Maybe (r EInt) -> r t -> LExprF r (Indexed n t)
 
@@ -119,6 +120,7 @@ instance TR.HFunctor LExprF where
     LCond c ifTrue ifFalse -> LCond (nat c) (nat ifTrue) (nat ifFalse)
     LSlice sn g gt -> LSlice sn (nat g) (nat gt)
     LIndex n re e -> LIndex n (nat re) (nat e)
+--    LLam f arg -> LLam (nat f) (nat arg)
 --    LRangeIndex n le ue e -> LRangeIndex n (fmap nat le) (fmap nat ue) (nat e)
 
 
@@ -140,6 +142,7 @@ instance TR.HTraversable LExprF where
     LCond c ifTrue ifFalse -> LCond <$> nat c <*> nat ifTrue <*> nat ifFalse
     LSlice sn a at -> LSlice sn <$> nat a <*> nat at
     LIndex n re e -> LIndex n <$> nat re <*> nat e
+--    LLam f arg -> LLam <$> nat f <*> nat arg
 --    LRangeIndex n le ue e -> LRangeIndex n <$> traverse nat le <*> traverse nat ue <*> nat e
   hmapM = TR.htraverse
 

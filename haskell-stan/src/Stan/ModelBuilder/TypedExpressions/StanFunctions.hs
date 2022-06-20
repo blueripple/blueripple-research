@@ -12,8 +12,8 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.TypedExpressions.StanFunctions
   (
@@ -43,7 +43,6 @@ invLogit = simpleFunction "inv_logit"
 sqrt :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t]
 sqrt = simpleFunction "sqrt"
 
-
 inv_sqrt :: Function EReal '[EReal]
 inv_sqrt = simpleFunction "inv_sqrt"
 
@@ -57,13 +56,10 @@ to_vector :: (TypeOneOf t [ECVec, ERVec, EArray1 EInt, EArray1 EReal], GenSType 
           => Function ECVec '[t]
 to_vector = simpleFunction "to_vector"
 
-size :: (TypeOneOf t '[ECVec, ERVec, EArray n t'], GenSType t) => Function EInt '[t]
+size :: (TypeOneOf t '[ECVec, ERVec, EArray1 EInt, EArray1 EReal, EArray1 EComplex], GenSType t) => Function EInt '[t]
 size = simpleFunction "size"
 
-row_vector_size :: Function EInt '[ERVec]
-row_vector_size = simpleFunction "size"
-
-vector_sum :: Function EReal '[ECVec]
+vector_sum :: (TypeOneOf t '[ECVec, ERVec], GenSType t) => Function EReal '[t]
 vector_sum = simpleFunction "sum"
 
 row_vector_sum :: Function EReal '[ERVec]
@@ -115,6 +111,30 @@ normalLUPDF = simpleDensity "normal_lupdf"
 
 normalRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
 normalRNG = simpleFunction "normal_rng"
+
+stdNormalDensity :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+stdNormalDensity = simpleDensity "std_normal"
+
+stdNormalLPDF :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+stdNormalLPDF = simpleDensity "std_normal_lpdf"
+
+stdNormalLUPDF :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+stdNormalLUPDF = simpleDensity "std_normal_lupdf"
+
+stdNormalRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[]
+stdNormalRNG = simpleFunction "std_normal_rng"
+
+cauchyDensity :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+cauchyDensity = simpleDensity "cauchy"
+
+cauchyLPDF :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+cauchyLPDF = simpleDensity "cauchy_lpdf"
+
+cauchyLUPDF :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+cauchyLUPDF = simpleDensity "cauchy_lupdf"
+
+cauchyRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
+cauchyRNG = simpleFunction "cauchy_rng"
 
 binomialDensity :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
 binomialDensity = simpleDensity "binomial"

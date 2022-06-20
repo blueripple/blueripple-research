@@ -53,13 +53,6 @@ familyLUDF (StanDist _ _ _ ludf _ ) = ludf
 familyRNG :: StanDist t ts -> TE.ExprList ts -> TE.UExpr t
 familyRNG (StanDist _ _ _ _ rng ) = rng
 
-{-
-familyExp :: StanDist args -> args -> SME.StanExpr
-familyExp (StanDist _ _ _ _ _ e) = e
--}
---vec :: SME.IndexKey -> SME.StanVar -> SME.StanExpr
---vec k (SME.StanVar name _) = SME.withIndexes (SME.name name) [SME.NamedDim k]
-
 
 normalDist :: (TE.TypeOneOf t [TE.EReal, TE.ECVec], TE.GenSType t) => StanDist t '[t, t]
 normalDist = StanDist Continuous sample lpdf lupdf rng
@@ -101,8 +94,8 @@ binomialLogitDistWithConstants :: StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.
 binomialLogitDistWithConstants = binomialLogitDist' True
 
 
-vecTimes = TE.binaryOpE (TE.SElementWise TE.SMultiply)
-vecDivide = TE.binaryOpE (TE.SElementWise TE.SDivide)
+--vecTimes = TE.binaryOpE (TE.SElementWise TE.SMultiply)
+--vecDivide = TE.binaryOpE (TE.SElementWise TE.SDivide)
 
 betaDist :: StanDist TE.EReal '[TE.EReal, TE.EReal]
 betaDist = StanDist Continuous sample lpdf lupdf rng
@@ -123,42 +116,65 @@ betaProportionDist = StanDist Continuous sample lpdf lupdf rng
     lupdf = TE.densityE TE.betaProportionLUPDF
     rng = TE.functionE TE.betaProportionRNG
 
+realToSameSizeVec :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.EReal -> TE.UExpr TE.ECVec
+realToSameSizeVec v x = TE.functionE TE.rep_vector (x :> TE.functionE TE.size (v :> TNil) :> TNil)
+
+betaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+betaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
+  where
+    sample x args = if sampleWithConstants
+                    then TE.target $ TE.densityE TE.betaBinomialLPMF x args
+                    else TE.sample x TE.betaBinomialDensity args
+    lpmf = TE.densityE TE.betaBinomialLPMF
+    lupmf = TE.densityE TE.betaBinomialLUPMF
+    rng = TE.functionE TE.betaBinomialRNG
+
+-- beta-binomial but with the same parameters for every row
+scalarBetaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
+scalarBetaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
+  where
+    (StanDist _ sample' lpmf' lupmf' rng') = betaBinomialDist' sampleWithConstants
+    sample x  = sample' x . argsToVecs
+    lpmf x = lpmf' x . argsToVecs
+    lupmf x = lupmf' x . argsToVecs
+    rng = rng' . argsToVecs
 
 scaledIntVec :: TE.UExpr TE.EReal
              -> TE.UExpr (TE.EArray1 TE.EInt)
              -> TE.UExpr TE.ECVec
 scaledIntVec x iv = x `TE.timesE` intsToVec iv
 
-realToSameSizeVec :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.EReal -> TE.UExpr TE.ECVec
-realToSameSizeVec v x = TE.functionE TE.rep_vector (x :> TE.functionE TE.size (v :> TNil) :> TNil)
-
-scalarBetaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
-scalarBetaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
-  where
-    argsToVecs :: TE.ExprList [TE.EArray1 TE.EInt, TE.EReal, TE.EReal] -> TE.ExprList [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
-    argsToVecs (t :> a :> b :> TNil) = t :> realToSameSizeVec t a :> realToSameSizeVec t b :> TNil
-    sample x args = if sampleWithConstants
-                    then TE.target $ TE.densityE TE.betaBinomialLPMF x $ argsToVecs args
-                    else TE.sample x TE.betaBinomialDensity $ argsToVecs args
-    lpmf x = TE.densityE TE.betaBinomialLPMF x . argsToVecs
-    lupmf x = TE.densityE TE.betaBinomialLUPMF x . argsToVecs
-    rng = TE.functionE TE.betaBinomialRNG . argsToVecs
-
-
-countScaledBetaBinomialDist :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
+countScaledBetaBinomialDist :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
 countScaledBetaBinomialDist sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
---    plusEq = SME.binOp "+="
-    sample :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList [TE.EArray1 TE.EInt, TE.EReal, TE.EReal] -> TE.UStmt
+    f :: TE.UExpr TE.ECVec -> TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.ECVec
+    f x = TE.binaryOpE (TE.SElementWise TE.SMultiply) x . intsToVec
+    sample :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UStmt
     sample x (t :> a :> b :> TNil) = if sampleWithConstants
-                                     then TE.target $ TE.densityE TE.betaBinomialLPMF x (t :> f a x :> f b x)
-                                     else TE.sample x TE.betaBinomialDensity (t :> f a x :> f b x)
-    lpmf x (t :> a :> b :> TNil)  = TE.densityE TE.betaBinomialLPMF x (t :> f x a :> f x b)
-    lupmf x (t :> a :> b :> TNil)  = TE.densityE TE.betaBinomialLUPMF x (t :> f x a :> f x b)
-    rng (t :> a :> b :> TNil)  = TE.functionE TE.betaBinomialRNG x (t :> f t a :> f t b)
+                                     then TE.target $ TE.densityE TE.betaBinomialLPMF x (t :> f a t :> f b t :> TNil)
+                                     else TE.sample x TE.betaBinomialDensity (t :> f a t :> f b t :> TNil)
+    lpmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
+    lpmf x (t :> a :> b :> TNil)  = TE.densityE TE.betaBinomialLPMF x (t :> f a t :> f b t :> TNil)
+    lupmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
+    lupmf x (t :> a :> b :> TNil)  = TE.densityE TE.betaBinomialLUPMF x (t :> f a t :> f b t :> TNil)
+    rng :: TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr (TE.EArray1 TE.EInt)
+    rng (t :> a :> b :> TNil)  = TE.functionE TE.betaBinomialRNG (t :> f a t :> f b t :> TNil)
 
+countScaledScalarBetaBinomialDist :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
+countScaledScalarBetaBinomialDist sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
+  where
+    (StanDist _ sample' lpmf' lupmf' rng') = countScaledBetaBinomialDist sampleWithConstants
+    sample x  = sample' x . argsToVecs
+    lpmf x = lpmf' x . argsToVecs
+    lupmf x = lupmf' x . argsToVecs
+    rng = rng' . argsToVecs
 
+argsToVecs :: TE.ExprList [TE.EArray1 TE.EInt, TE.EReal, TE.EReal] -> TE.ExprList [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+argsToVecs (t :> a :> b :> TNil) = t :> realToSameSizeVec t a :> realToSameSizeVec t b :> TNil
+
+intsToVec :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.ECVec
 intsToVec x = TE.functionE TE.to_vector (x :> TNil)
+
 {-
 normallyApproximatedBinomial :: StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
 normallyApproximatedBinomial = StanDist Continuous sample lpdf lupdf rng
@@ -191,44 +207,8 @@ normallyApproximatedBinomialLogit tV = StanDist Continuous sample lpdf lupdf rng
 --invLogit :: SME.StanExpr -> SME.StanExpr
 --invLogit e = SME.function "inv_logit" (one e)
 
-{-
-betaProportionDist :: StanDist (SME.StanExpr, SME.StanExpr)
-betaProportionDist = StanDist Continuous sample lpdf lupdf rng
-  where
-    sample (muE, kE) sv = SME.var sv `SME.vectorSample` SME.function "beta_proportion" (muE :| [kE])
-    lpdf (muE, kE) sv = SME.functionWithGivens "beta_proportion_lpdf" (one $ SME.var sv) (muE :| [kE])
-    lupdf (muE, kE) sv = SME.functionWithGivens "beta_proportion_lupdf" (one $ SME.var sv) (muE :| [kE])
-    rng (muE, kE) = SME.function "beta_proportion_rng" (muE :| [kE])
---    expectation (muE, _) = muE
-
-betaBinomialDist :: Bool -> SME.StanVar -> StanDist (SME.StanExpr, SME.StanExpr)
-betaBinomialDist sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng
-  where
-    plusEq = SME.binOp "+="
-    sample (aE, bE) sv = if sampleWithConstants
-                         then SME.target `plusEq` SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
-                         else SME.var sv `SME.vectorSample` SME.function "beta_binomial" (SME.var tV :| [aE, bE])
-    lpmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
-    lupmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lupmf" (one $ SME.var sv) (SME.var tV :| [aE, bE])
-    rng (aE, bE) = SME.function "beta_binomial_rng" (SME.var tV :| [aE, bE])
-
-countScaledBetaBinomialDist :: Bool -> SME.StanVar -> StanDist (SME.StanExpr, SME.StanExpr)
-countScaledBetaBinomialDist sampleWithConstants tV = StanDist Discrete sample lpmf lupmf rng
-  where
-    plusEq = SME.binOp "+="
-    f x = SME.binOp ".*" (SME.vectorFunction "to_vector" (SME.var tV) []) x
-    sample (aE, bE) sv = if sampleWithConstants
-                         then SME.target `plusEq` SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
-                         else SME.var sv `SME.vectorSample` SME.function "beta_binomial" (SME.var tV :| [f aE, f bE])
-    lpmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lpmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
-    lupmf (aE, bE) sv = SME.functionWithGivens "beta_binomial_lupmf" (one $ SME.var sv) (SME.var tV :| [f aE, f bE])
-    rng (aE, bE) = SME.function "beta_binomial_rng" (SME.var tV :| [f aE, f bE])
-
-
-
-
 --    expectation (aE, bE) = aE `SME.divide` (SME.paren $ aE `SME.plus` bE)
-
+{-
 -- for priors
 normal :: Maybe SME.StanExpr -> SME.StanExpr -> SME.StanExpr
 normal mMean sigma = SME.function "normal" (mean :| [sigma]) where

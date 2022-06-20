@@ -24,7 +24,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import Data.Maybe (fromJust)
 
 qSumToZeroQRF :: TE.Function TE.ECVec '[TE.EInt]
-qSumToZeroQRF = TE.simpleFunction "Q_sum_to_zero_QR" TE.SCVec (TE.oneType TE.SInt)
+qSumToZeroQRF = TE.simpleFunction "Q_sum_to_zero_QR"
 
 qSumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.EInt] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
 qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
@@ -39,12 +39,12 @@ qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
   return qr
 
 sumToZeroQRF :: TE.Function TE.ECVec '[TE.ECVec, TE.ECVec]
-sumToZeroQRF = TE.simpleFunction "sum_to_zero_QR" TE.SCVec (TE.SCVec TE.::> TE.SCVec TE.::> TE.TypeNil)
+sumToZeroQRF = TE.simpleFunction "sum_to_zero_QR"
 
 
 sumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.ECVec, TE.ECVec] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
 sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
-  n <- TE.declareRHSW "N" (TE.intSpec []) (TE.functionE TE.vector_size (TE.oneTyped x_raw) `TE.plusE` TE.intE 1)
+  n <- TE.declareRHSW "N" (TE.intSpec []) (TE.functionE TE.size (TE.oneTyped x_raw) `TE.plusE` TE.intE 1)
   x <- TE.declareW "x" (TE.vectorSpec n [])
   x_aux <- TE.declareRHSW "x_aux" (TE.realSpec []) (TE.realE 0)
   x_sigma <- TE.declareRHSW "x_sigma" (TE.realSpec []) (TE.functionE TE.inv_sqrt (TE.oneTyped $ TE.intE 1 `TE.minusE` (TE.realE 1 `TE.divideE` n)))
@@ -67,7 +67,7 @@ sumToZeroFunctions = SB.addFunctionsOnce "sumToZeroQR" $ do
 sumToZeroQR :: TE.StanName -> TE.UExpr TE.ECVec -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
 sumToZeroQR vName v_stz = do
   sumToZeroFunctions
-  let vecSizeE = TE.functionE TE.vector_size (TE.oneTyped v_stz) `TE.plusE` TE.intE 1
+  let vecSizeE = TE.functionE TE.size (TE.oneTyped v_stz) `TE.plusE` TE.intE 1
   qr_v <- SB.inBlock SB.SBTransformedData
     $ SB.stanDeclareRHS ("Q_r_" <> vName) (TE.vectorSpec (TE.intE 2 `TE.timesE` vecSizeE) []) $ TE.functionE qSumToZeroQRF (TE.oneTyped vecSizeE)
 --  v_stz <- SB.inBlock SB.SBParameters

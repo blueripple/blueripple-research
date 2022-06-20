@@ -43,6 +43,9 @@ data Function :: EType -> [EType] -> Type  where
            -> Function t args
   IdentityFunction :: SType t -> Function t '[t]
 
+--curryOneF :: Function t ts -> Function (t ::-> LastType ts) (AllButLast ts)
+--curryOneF (Function n st tl tF) = Function n
+
 -- Can't pattern match on the arg-mapping function in "where" or "let" since then args' would escape its scope.
 -- But we can do this
 withFunction :: (forall args'. Text -> SType t -> TypeList args -> (forall u.TypedList u args -> TypedList u args') -> r)
