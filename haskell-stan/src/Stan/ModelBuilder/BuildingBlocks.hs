@@ -64,21 +64,17 @@ addIntData :: (Typeable md, Typeable gq)
             -> Maybe Int
             -> Maybe Int
             -> (r -> Int)
-            -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray (S Z) TE.EInt))
+            -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
 addIntData rtt varName mLower mUpper f = do
-  let ds = TE.DecSB.StanArray [SB.NamedDim $ SB.dataSetName r
-                                case (mLower, mUpper) of
-                 (Nothing, Nothing) -> []
-                 (Just l, Nothing) -> [TE.lowerM $ TE.intE l]
-                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
-                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
+  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
+      ds = TE.intArraySpec s1 cd
   SB.addColumnJson rtt varName stanType bounds f
 
 addCountData :: forall r md gq.(Typeable md, Typeable gq)
              => SB.RowTypeTag r
              -> TE.StanName
              -> (r -> Int)
-             -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray (S Z) TE.EInt))
+             -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
 addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
 
 addRealData :: (Typeable md, Typeable gq)
@@ -89,13 +85,9 @@ addRealData :: (Typeable md, Typeable gq)
             -> (r -> Double)
             -> SB.StanBuilderM md gq  (TE.UExpr TE.ECVec)
 addRealData rtt varName mLower mUpper f = do
-  let stanType =  SB.StanArray [SB.NamedDim $ SB.dataSetName rtt] SME.StanReal
-      bounds = case (mLower, mUpper) of
-                 (Nothing, Nothing) -> ""
-                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
-                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
-                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.addColumnJson rtt varName stanType bounds f
+  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
+      ndsF lE = TE.NamedDeclSpec varName $ TE.vectorSpec lE cs
+  SB.addColumnJson rtt ndsF f
 
 add2dMatrixData :: (Typeable md, Typeable gq)
                 => SB.RowTypeTag r
@@ -104,12 +96,8 @@ add2dMatrixData :: (Typeable md, Typeable gq)
                 -> Maybe Double
             -> SB.StanBuilderM md gq (TE.UExpr TE.EMat)
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
-  let bounds = case (mLower, mUpper) of
-                 (Nothing, Nothing) -> ""
-                 (Just l, Nothing) -> "<lower=" <> show l <> ">"
-                 (Nothing, Just u) -> "<upper=" <> show u <> ">"
-                 (Just l, Just u) -> "<lower=" <> show l <> ", upper=" <> show u <> ">"
-  SB.add2dMatrixJson rtt matrixRowFromData bounds (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
+  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
+  SB.add2dMatrixJson rtt matrixRowFromData cs -- (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
 
 sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
 sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do

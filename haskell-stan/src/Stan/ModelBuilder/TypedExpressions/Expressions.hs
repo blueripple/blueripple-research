@@ -92,7 +92,7 @@ instance GEq LExpr where
 lNamedE :: Text -> SType t -> LExpr t
 lNamedE name  = TR.IFix . LNamed name
 
-namedLIndex :: Text -> LExpr (EArray (S Z) EInt)
+namedLIndex :: Text -> LExpr EIndexArray
 namedLIndex t = lNamedE t (SArray s1 SInt)
 
 namedLSize :: Text -> LExpr EInt
@@ -146,7 +146,7 @@ instance TR.HTraversable LExprF where
 -- UEXpr represents expressions with un-looked-up indices/sizes
 data UExprF :: (EType -> Type) -> EType -> Type where
   UL :: LExprF r et -> UExprF r et
-  UNamedIndex :: IndexKey -> UExprF r (EArray (S Z) EInt)
+  UNamedIndex :: IndexKey -> UExprF r EIndexArray
   UNamedSize :: IndexKey -> UExprF r EInt
 
 type UExpr = TR.IFix UExprF
@@ -248,13 +248,13 @@ condE ce te fe = TR.IFix $ UL $ LCond ce te fe
 sliceE :: SNat n -> UExpr EInt -> UExpr t -> UExpr (Sliced n t)
 sliceE sn ie e = TR.IFix $ UL $ LSlice sn ie e
 
-indexE :: SNat n -> UExpr (EArray (S Z) EInt) -> UExpr t -> UExpr (Indexed n t)
+indexE :: SNat n -> UExpr EIndexArray -> UExpr t -> UExpr (Indexed n t)
 indexE sn ie e = TR.IFix $ UL $ LIndex sn ie e
 
 rangeIndexE :: SNat n -> Maybe (UExpr EInt) -> Maybe (UExpr EInt) -> UExpr t -> UExpr (Indexed n t)
 rangeIndexE n leM ueM = indexE n (TR.IFix $ UL $ LIntRange leM ueM)
 
-namedIndexE :: Text -> UExpr (EArray (S Z) EInt)
+namedIndexE :: Text -> UExpr EIndexArray
 namedIndexE = TR.IFix . UNamedIndex
 
 namedSizeE :: Text -> UExpr EInt

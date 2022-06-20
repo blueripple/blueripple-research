@@ -121,9 +121,13 @@ instance TestEquality SBinaryOp where
 
 type family BinaryResultT (bo :: BinaryOp) (a :: EType) (b :: EType) :: EType where
   BinaryResultT BAdd a a = a
+  BinaryResultT BAdd a ECVec = IfNumbers a a ECVec (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType ECVec :<>: TE.Text " cannot be added." ))
+  BinaryResultT BAdd ECVec a = IfNumbers a a ECVec (TE.TypeError (TE.ShowType ECVec :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be added." ))
   BinaryResultT BAdd a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be added." ))
   BinaryResultT BSubtract EString EString = TE.TypeError (TE.Text "Stan strings cannot be subtracted!")
   BinaryResultT BSubtract a a = a
+  BinaryResultT BSubtract a ECVec = IfNumbers a a ECVec (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType ECVec :<>: TE.Text " cannot be subtracted." ))
+  BinaryResultT BSubtract ECVec a = IfNumbers a a ECVec (TE.TypeError (TE.ShowType ECVec :<>: TE.Text " and " :<>: TE.ShowType a :<>: TE.Text " cannot be subtracted." ))
   BinaryResultT BSubtract a b = IfNumbers a b (Promoted a b) (TE.TypeError (TE.ShowType a :<>: TE.Text " and " :<>: TE.ShowType b :<>: TE.Text " cannot be subtracted." ))
   BinaryResultT BMultiply EInt a = a
   BinaryResultT BMultiply a EInt = a

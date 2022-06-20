@@ -103,8 +103,12 @@ choleskyFactorCovSpec rce = DeclSpec StanCholeskyFactorCov (rce ::: VNil)
 arraySpec :: SNat n -> Vec n (UExpr EInt) -> DeclSpec t -> DeclSpec (EArray n t)
 arraySpec n arrIndices (DeclSpec t tIndices vms) = DeclSpec (StanArray n t) (arrIndices Vec.++ tIndices) vms
 
-intArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec (EArray1 EInt)
+intArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec EIndexArray
 intArraySpec se cs = arraySpec s1 (se ::: VNil) (intSpec cs)
+
+indexArraySpec :: UExpr EInt -> [VarModifier UExpr EInt] -> DeclSpec EIndexArray
+indexArraySpec = intArraySpec
+
 
 -- functions for ease of use and exporting.  Monomorphised to UStmt, etc.
 declare' :: Text -> StanType t -> Vec (DeclDimension t) (UExpr EInt) -> [VarModifier UExpr (ScalarType t)] -> UStmt
@@ -147,6 +151,9 @@ data DensityWithArgs g where
 
 withDWA :: (forall args.Density g args -> TypedList UExpr args -> r) -> DensityWithArgs g -> r
 withDWA f (DensityWithArgs d args) = f d args
+
+target :: UExpr EReal -> UStmt
+target = STarget
 
 sample :: UExpr t -> Density t args -> TypedList UExpr args -> UStmt
 sample = SSample
@@ -210,7 +217,7 @@ scoped = SScoped
 context :: (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty UStmt -> UStmt
 context cf = SContext (Just cf)
 
-insertIndexBinding :: IndexKey -> LExpr (EArray (S Z) EInt) -> IndexLookupCtxt -> IndexLookupCtxt
+insertIndexBinding :: IndexKey -> LExpr EIndexArray -> IndexLookupCtxt -> IndexLookupCtxt
 insertIndexBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
 
 insertSizeBinding :: IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
@@ -343,7 +350,7 @@ type IndexSizeMap = Map IndexKey (LExpr EInt)
 type IndexArrayMap = Map IndexKey IndexArrayL
 
 indexSize :: IndexArrayU -> UExpr EInt
-indexSize = functionE (array_num_elements s1 SInt) . oneTyped
+indexSize = functionE array_num_elements . oneTyped
 
 data IndexLookupCtxt = IndexLookupCtxt { sizes :: IndexSizeMap, indexes :: IndexArrayMap }
 

@@ -51,8 +51,12 @@ withFunction :: (forall args'. Text -> SType t -> TypeList args -> (forall u.Typ
 withFunction f (Function t st tl g) = f t st tl g
 withFunction f (IdentityFunction st) = f "" st (st ::> TypeNil) id
 
-simpleFunction :: Text -> SType t -> TypeList args -> Function t args
-simpleFunction fn st args = Function fn st args id
+--simpleFunction :: (GenSType t, AllGenTypes args) => Text -> SType t -> TypeList args -> Function t args
+--simpleFunction fn st args = Function fn st args id
+
+simpleFunction :: (GenSType t, GenTypeList args) => Text -> Function t args
+simpleFunction fn  = Function fn genSType genTypeList id
+
 
 functionArgTypes :: Function rt args -> TypeList args
 functionArgTypes (Function _ _ al _) = al
@@ -70,8 +74,8 @@ withDensity :: (forall args' . Text -> SType t -> TypeList args -> (forall u.Typ
             -> r
 withDensity f (Density dn st tl g) = f dn st tl g
 
-simpleDensity :: Text -> SType t -> TypeList ts -> Density t ts
-simpleDensity t st tl = Density t st tl id
+simpleDensity :: (GenSType t, AllGenTypes ts, GenTypeList ts) => Text -> Density t ts
+simpleDensity t  = Density t genSType genTypeList id
 
 -- const functor for holding arguments to functions
 data FuncArg :: Type -> k -> Type where

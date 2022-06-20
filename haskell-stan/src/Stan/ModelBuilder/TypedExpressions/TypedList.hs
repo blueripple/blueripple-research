@@ -1,15 +1,17 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
 
@@ -29,6 +31,7 @@ import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Hashable.Generic (HashArgs)
 import Data.Type.Equality ((:~:)(Refl), TestEquality(testEquality))
+import Stan.ModelBuilder.TypedExpressions.Types (GenSType)
 
 -- singleton for a list of arguments
 data TypeList :: [EType] -> Type where
@@ -65,6 +68,19 @@ typeListToTypedListOfTypes (st ::> atl) = st :> typeListToTypedListOfTypes atl
 
 oneType :: SType et -> TypeList '[et]
 oneType st = st ::> TypeNil
+
+class GenTypeList (ts :: [EType]) where
+  genTypeList :: TypeList ts
+
+instance GenTypeList '[] where
+  genTypeList = TypeNil
+
+instance (GenSType t, GenTypeList ts) => GenTypeList (t ': ts)  where
+  genTypeList = genSType @t ::> genTypeList @ts
+
+type family AllGenTypes (ts :: [EType]) :: Constraint where
+  AllGenTypes '[] = ()
+  AllGenTypes (t ': ts) = (GenSType t, AllGenTypes ts)
 
 -- list of arguments.  Parameterized by an expression type and the list of arguments
 data TypedList ::  (EType -> Type) -> [EType] -> Type where
@@ -125,3 +141,12 @@ typedSTypeListToTypeList (st :> xs) = st ::> typedSTypeListToTypeList xs
 
 applyTypedListFunctionToTypeList :: (forall u.TypedList u args -> TypedList u args') -> TypeList args -> TypeList args'
 applyTypedListFunctionToTypeList f = typedSTypeListToTypeList . f . typeListToSTypeList
+
+class GenTypedList (ts :: [EType]) where
+  genTypedList :: TypedList SType ts
+
+instance GenTypedList '[] where
+  genTypedList = TNil
+
+instance (GenSType t, GenTypedList ts) => GenTypedList (t ': ts)  where
+  genTypedList = genSType @t :> genTypedList @ts

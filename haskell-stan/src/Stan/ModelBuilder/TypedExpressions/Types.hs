@@ -47,6 +47,8 @@ type EArray1 t = EArray (S Z) t
 type EArray2 :: EType -> EType
 type EArray2 t = EArray (S (S Z)) t
 
+type EIndexArray :: EType
+type EIndexArray = EArray1 EInt
 
 -- A mechanism to limit the types we can use in functions via a constraint
 type TypeOneOf et ets = TypeOneOf' et ets (TypeOneOfB et ets)
@@ -102,6 +104,27 @@ data SType :: EType -> Type where
   SMat :: SType EMat
   SSqMat :: SType ESqMat
   SArray :: SNat n -> SType t -> SType (EArray n t)
+
+class GenSType (e :: EType) where
+  genSType :: SType e
+
+instance GenSType EVoid where genSType = SVoid
+instance GenSType EString where genSType = SString
+instance GenSType EBool where genSType = SBool
+instance GenSType EInt where genSType = SInt
+instance GenSType EReal where genSType = SReal
+instance GenSType EComplex where genSType = SComplex
+instance GenSType ECVec where genSType = SCVec
+instance GenSType ERVec where genSType = SRVec
+instance GenSType EMat where genSType = SMat
+instance GenSType ESqMat where genSType = SSqMat
+instance (DT.SNatI n, GenSType t) => GenSType (EArray n t) where genSType = SArray DT.snat (genSType @t)
+
+sIntArray :: SType (EArray1 EInt)
+sIntArray = SArray SS SInt
+
+sIndexArray :: SType EIndexArray
+sIndexArray = sIntArray
 
 instance Show (SType t) where
   show x = "SType: " <> show (sTypeToEType x)
@@ -185,6 +208,12 @@ data StanType :: EType -> Type where
   StanCholeskyFactorCorr :: StanType ESqMat
   StanCovMatrix :: StanType ESqMat
   StanCholeskyFactorCov :: StanType ESqMat
+
+stanIntArray :: StanType (EArray1 EInt)
+stanIntArray = StanArray SS StanInt
+
+stanIndexArray :: StanType EIndexArray
+stanIndexArray = stanIntArray
 
 stanTypeName :: StanType t -> Text
 stanTypeName = \case

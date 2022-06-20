@@ -71,6 +71,7 @@ import Stan.ModelConfig (InputDataType(..))
 import qualified Stan.ModelConfig as SC
 import qualified Data.Massiv.Array.Unsafe as X
 import qualified Stan.ModelBuilder.TypedExpressions.Format as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 {-
 stanCodeToStanModel :: StanCode -> StanModel
@@ -268,16 +269,16 @@ groupIndexVarName rtt gtt = dataSetName rtt <> "_" <> taggedGroupName gtt
 getGroupIndexVar :: forall md gq r k.
                     RowTypeTag r
                  -> GroupTypeTag k
-                 -> StanBuilderM md gq StanVar
+                 -> StanBuilderM md gq (TE.UExpr TE.EIndexArray)
 getGroupIndexVar rtt gtt = do
   let varName = groupIndexVarName rtt gtt
       dsNotFoundErr = stanBuildError
                       $ "getGroupIndexVar: data-set=" <> dataSetName rtt <> " (input type=" <> show (inputDataType rtt) <> ") not found."
-      varIfGroup :: forall x d.RowInfo d x -> StanBuilderM md gq SME.StanVar
+      varIfGroup :: forall x d.RowInfo d x -> StanBuilderM md gq (TE.UExpr TE.EIndexArray)
       varIfGroup ri =
         let (GroupIndexes gis) = groupIndexes ri
         in case DHash.lookup gtt gis of
-          Just _ -> return $ SME.StanVar varName (SME.StanArray [SME.NamedDim $ dataSetName rtt] SME.StanInt)
+          Just _ -> return $ TE.namedE varName TE.sIndexArray --SME.StanVar varName (SME.StanArray [SME.NamedDim $ dataSetName rtt] SME.StanInt)
           Nothing -> stanBuildError
             $ "getGroupIndexVar: group=" <> taggedGroupName gtt
             <> " not found in data-set=" <> dataSetName rtt <> " (input type=" <> show (inputDataType rtt) <> ") not found."
@@ -353,9 +354,10 @@ buildGroupIndexes = do
       buildIndexJSONFold rtt gtt@(GroupTypeTag gName) (IndexMap (IntIndex gSize mIntF) _ _ _) = do
         let dsName = dataSetName rtt
             indexName = groupIndexVarName rtt gtt --dsName <> "_" <> gName
-            nds = TE.NamedDeclSpec indexName $  TE.intArraySpec (TE.namedSizeE dsName) [TE.lowerM $ TE.intE 1]
+--            nds = TE.NamedDeclSpec indexName $  TE.intArraySpec (TE.namedSizeE dsName) [TE.lowerM $ TE.intE 1]
+            ndsF lE = TE.NamedDeclSpec indexName $  TE.intArraySpec lE [TE.lowerM $ TE.intE 1]
         addFixedIntJson' (inputDataType rtt) ("J_" <> gName) (Just 1) gSize
-        _ <- addColumnMJson rtt nds mIntF
+        _ <- addColumnMJson rtt ndsF mIntF
 --        _ <- addColumnMJson rtt indexName (SME.StanArray [SME.NamedDim dsName] SME.StanInt) "<lower=1>" mIntF
         addDeclBinding gName $ "J_" <> gName
         return Nothing
@@ -1007,8 +1009,9 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
 --      xWalkType = SME.StanArray [SME.NamedDim $ dataSetName rttFrom] SME.StanInt
 --      xWalkVar = SME.StanVar xWalkName xWalkType
       xWalkF = toGroupToIndexE . fromToGroup
-      xWalkNDS = TE.NamedDeclSpec xWalkName $ TE.intArraySpec (TE.namedSizeE $ dataSetName rttFrom) [TE.lowerM $ TE.intE 1]
-  addColumnMJson rttFrom xWalkNDS xWalkF
+--      xWalkNDS = TE.NamedDeclSpec xWalkName $ TE.intArraySpec (TE.namedSizeE $ dataSetName rttFrom) [TE.lowerM $ TE.intE 1]
+      xWalkNDSF lE = TE.NamedDeclSpec xWalkName $ TE.intArraySpec lE [TE.lowerM $ TE.intE 1]
+  addColumnMJson rttFrom xWalkNDSF xWalkF
 --  addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
 --  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   addUseBindingToDataSet rttFrom xWalkIndexKey xWalkName
@@ -1247,10 +1250,10 @@ addJson rtt nds fld = do
 -- things like lengths may often be re-added
 -- maybe work on a cleaner way...
 addJsonOnce :: (Typeable md, Typeable gq)
-                 => RowTypeTag r
-                 -> TE.NamedDeclSpec t
-                 -> Stan.StanJSONF r Aeson.Series
-                 -> StanBuilderM md gq (TE.UExpr t)
+            => RowTypeTag r
+            -> TE.NamedDeclSpec t
+            -> Stan.StanJSONF r Aeson.Series
+            -> StanBuilderM md gq (TE.UExpr t)
 addJsonOnce rtt nds fld = do
   alreadyDeclared <- isDeclaredAllScopes $ TE.declName nds
   if not alreadyDeclared
@@ -1265,7 +1268,12 @@ addFixedIntJson idt name mLower n = do
   modify $ addConstJson idt (JSONSeriesFold $ Stan.constDataF name n)
   return $ TE.namedE name TE.SInt
 
-addFixedIntJson' :: (Typeable md, Typeable gq) => InputDataType -> Text -> Maybe Int -> Int -> StanBuilderM md gq (TE.UExpr TE.EInt)
+addFixedIntJson' :: (Typeable md, Typeable gq)
+                 => InputDataType
+                 -> Text
+                 -> Maybe Int
+                 -> Int
+                 -> StanBuilderM md gq (TE.UExpr TE.EInt)
 addFixedIntJson' idt name mLower n = do
   alreadyDeclared <- isDeclaredAllScopes name
   if not alreadyDeclared
@@ -1290,43 +1298,47 @@ addColumnJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
                  , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                  )
               => RowTypeTag r
-              -> TE.NamedDeclSpec t
+              -> (TE.UExpr TE.EInt -> TE.NamedDeclSpec t)
               -> (r -> x)
               -> StanBuilderM md gq (TE.UExpr t)
-addColumnJson rtt nds toX = do
+addColumnJson rtt ndsF toX = do
   let dsName = dataSetName rtt
-  let sizeName = "N" <> underscoredIf dsName
-  addLengthJson rtt sizeName dsName -- ??
+      sizeName = "N" <> underscoredIf dsName
+  lE <- addLengthJson rtt sizeName dsName -- ??
+  let nds = ndsF lE
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayF toX)
 
+{-
 addColumnJsonOnce :: (Typeable md, Typeable gq, Aeson.ToJSON x
                      , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                      )
                   => RowTypeTag r
-                  -> Text
-                  -> TE.DeclSpec t
+                  -> (TE.UExpr TE.EInt -> TE.NamedDeclSpec t)
                   -> (r -> x)
                   -> StanBuilderM md gq (TE.UExpr t)
-addColumnJsonOnce rtt name ds toX = do
+addColumnJsonOnce rtt ndsF toX = do
   alreadyDeclared <- isDeclared name
   if not alreadyDeclared
-    then addColumnJson rtt (TE.NamedDeclSpec name ds) toX
+    then addColumnJson rtt ndsF toX
     else return $ TE.namedE name $ TE.sTypeFromStanType $ TE.declType ds
+-}
 
 addColumnMJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
                   , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                   )
                => RowTypeTag r
-               -> TE.NamedDeclSpec t
+               -> (TE.UExpr TE.EInt -> TE.NamedDeclSpec t)
                -> (r -> Either Text x)
                -> StanBuilderM md gq (TE.UExpr t)
-addColumnMJson rtt nds toMX = do
+addColumnMJson rtt ndsF toMX = do
   let dsName = dataSetName rtt
   let sizeName = "N_" <> dsName
-  addLengthJson rtt sizeName dsName -- ??
+  lE <- addLengthJson rtt sizeName dsName -- ??
+  let nds = ndsF lE
 --  let fullName = name <> "_" <> dsName
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayEF toMX)
 
+{-
 addColumnMJsonOnce :: (Typeable md, Typeable gq, Aeson.ToJSON x
                       , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                       )
@@ -1340,6 +1352,7 @@ addColumnMJsonOnce rtt nds toMX = do
   if not alreadyDeclared
     then addColumnMJson rtt nds toMX
     else return $ TE.namedE name $ TE.sTypeFromStanType $ TE.declType $ TE.decl nds --SME.StanVar name st
+-}
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
 data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, colIndexM :: Maybe SME.IndexKey, rowLength :: Int, rowVec :: r -> VU.Vector Double }
@@ -1348,22 +1361,22 @@ add2dMatrixJson :: (Typeable md, Typeable gq)
                 => RowTypeTag r
                 -> MatrixRowFromData r
                 -> [TE.VarModifier TE.UExpr TE.EReal]
-                -> TE.UExpr TE.EInt -- row dimension
+--                -> TE.UExpr TE.EInt -- row dimension
                 -> StanBuilderM md gq (TE.UExpr TE.EMat)
-add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) sc rowDimE = do
+add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) cs = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName
-      nds = TE.NamedDeclSpec name $ TE.matrixSpec rowDimE (TE.namedSizeE colName) sc
+      ndsF rowsE = TE.NamedDeclSpec name $ TE.matrixSpec rowsE (TE.namedSizeE colName) cs
       colIndex = fromMaybe name colIndexM
       colName = "K" <> "_" <> colIndex
       colDimName = colIndex <> "_Cols"
-      colDimVar = SME.StanVar colIndex SME.StanInt
-  addFixedIntJson' (inputDataType rtt) colName Nothing cols
+--      colDimVar = SME.StanVar colIndex SME.StanInt
+  _ <- addFixedIntJson' (inputDataType rtt) colName Nothing cols
 --  addDeclBinding' colDimName (SME.name colName)
   addDeclBinding colDimName colName
 --  addUseBindingToDataSet rtt colDimName (SME.name colName)
   addUseBindingToDataSet rtt colDimName colIndex
-  addColumnJson rtt nds vecF
+  addColumnJson rtt ndsF vecF
 
 modifyCode' :: (TE.StanProgram -> TE.StanProgram) -> BuilderState md gq -> BuilderState md gq
 modifyCode' f bs = let (StanCode curBlock oldProg) = code bs in bs { code = StanCode curBlock $ f oldProg }
