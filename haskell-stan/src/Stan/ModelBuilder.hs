@@ -1479,7 +1479,7 @@ profileStanBlock b = modifyCode g where
   g sp = newProgram
     where
       curBlock = TE.unStanProgram sp Array.! b
-      newBlock = TE.profile (stanProfileName b) : curBlock
+      newBlock = TE.profile (stanProfileName b) [] : curBlock
       newProgram = TE.StanProgram $ TE.unStanProgram sp Array.// [(b, newBlock)]
 
 stanProfileName :: StanBlock -> Text

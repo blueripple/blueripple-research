@@ -11,6 +11,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use for_" #-}
+{-# HLINT ignore "Use camelCase" #-}
 
 module Stan.ModelBuilder.BuildingBlocks where
 
@@ -333,21 +334,43 @@ declTranspose :: TE.TypeOneOf t [TE.EMat, TE.ESqMat, TE.ECVec, TE.ERVec]
 declTranspose nds m = do
   SB.stanDeclareRHSN nds $ TE.unaryOpE TE.STranspose m
 
-{-
-indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> Int -> SB.StanBuilderM md gq SB.StanVar
-indexedConstIntArray rtt mSuffix n =
+indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
+indexedConstIntArray rtt mSuffix lengthE nE =
   let dsName = SB.dataSetName rtt
-      sizeName = "N_" <> dsName
+      sizeName = SB.dataSetSizeName rtt
+      nds = TE.NamedDeclSpec ("constIndex_" <> dsName <> maybe "" ("_" <>) mSuffix) $ TE.intArraySpec lengthE []
   in SB.inBlock SB.SBTransformedData
-     $ SB.stanDeclareRHS ("constIndex_" <> dsName <> maybe "" ("_" <>) mSuffix) (SB.StanArray [SB.NamedDim dsName] SB.StanInt) ""
-     $ SB.function "rep_array" (SB.scalar (show n) :| [SB.name sizeName])
+     $ SB.stanDeclareRHSN nds $ TE.functionE TE.rep_array (nE :> lengthE :> TNil)
 
-zeroVectorE :: SME.IndexKey -> SB.StanExpr
-zeroVectorE indexKey = SB.function "rep_vector" ((SB.scalar $ show 0) :| [SB.indexSize indexKey])
+zeroVectorE :: TE.UExpr TE.EInt -> TE.UExpr TE.ECVec
+zeroVectorE lengthE = TE.functionE TE.rep_vector (TE.realE 0 :> lengthE :> TNil)
 
-zeroMatrixE :: SME.IndexKey -> SB.IndexKey -> SB.StanExpr
-zeroMatrixE rowIndex colIndex = SB.function "rep_matrix" ((SB.scalar $ show 0) :| [SB.indexSize rowIndex, SB.indexSize colIndex])
+zeroMatrixE :: TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> TE.UExpr TE.EMat
+zeroMatrixE rowsE colsE = TE.functionE TE.rep_matrix (TE.realE 0 :> rowsE :> colsE :> TNil)
 
+ps_by_group :: TE.Function TE.ECVec [TE.EInt, TE.EInt, TE.EIndexArray, TE.ECVec, TE.ECVec]
+ps_by_group = TE.simpleFunction "ps_by_group"
+
+psByGroupFunction :: SB.StanBuilderM md gq ()
+psByGroupFunction = do
+  SB.addFunctionOnce ps_by_group (TE.DataArg "Nps" :> TE.DataArg "Ngrp" :> TE.DataArg "grpPSIndex" :> TE.DataArg "wgts" :> TE.Arg "probs" :> TNil)
+    $ \(nPS :> nGrp :> grpPSIndex :> wgts :> probs :> TNil) -> TE.writerL $ do
+    let vds = TE.vectorSpec nGrp []
+        plusEq = TE.opAssign TE.SAdd
+        elDivEq = TE.opAssign (TE.SElementWise TE.SDivide)
+    sumByGroup <- TE.declareRHSW "SumByGroup" vds $ zeroVectorE nGrp
+    sumWgts <- TE.declareRHSW "SumByGroup" vds $ zeroVectorE nGrp
+    TE.addStmt $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nPS)
+      $ \k ->
+          let atk = TE.sliceE TE.s0 k
+              indexByPS = TE.indexE TE.s0 grpPSIndex
+          in [atk (indexByPS sumByGroup) `plusEq` (atk wgts `TE.timesE` atk (indexByPS probs))
+             , atk (indexByPS sumWgts) `plusEq` atk wgts
+             ]
+    TE.addStmt $ sumByGroup `elDivEq` sumWgts
+    return sumByGroup
+
+{-
 psByGroupFunction :: SB.StanBuilderM md gq ()
 psByGroupFunction = SB.addFunctionsOnce "psByGroup"
                       $ SB.declareStanFunction "vector psByGroup(int Nps, int Ngrp, array[] int grpPSIndex, vector wgts, vector probs)" $ do
@@ -359,7 +382,7 @@ psByGroupFunction = SB.addFunctionsOnce "psByGroup"
   SB.addLine "}\n"
   SB.addStanLine "SumByGroup ./= SumWgts"
   SB.addStanLine "return SumByGroup"
-
+-}
 
 postStratifiedParameterF :: (Typeable md, Typeable gq)
                          => Bool
@@ -367,45 +390,39 @@ postStratifiedParameterF :: (Typeable md, Typeable gq)
                          -> Maybe Text
                          -> SB.RowTypeTag r -- data set to post-stratify
                          -> SB.GroupTypeTag k -- group by
-                         -> SB.StanVar -- weight
-                         -> SB.StanVar --  expression of parameters to post-stratify
-                         -> Maybe (SB.RowTypeTag r') -- re-index?
-                         -> SB.StanBuilderM md gq SB.StanVar
-postStratifiedParameterF prof block varNameM rtt gtt wgtsV pV reIndexRttM = do
+                         -> TE.UExpr TE.EIndexArray -- PS Index for group
+                         -> TE.UExpr TE.ECVec -- PS weight
+                         -> TE.UExpr TE.ECVec --  expression of parameters to post-stratify
+                         -> Maybe (SB.RowTypeTag r', TE.UExpr TE.EIndexArray) -- re-index?
+                         -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+postStratifiedParameterF prof block varNameM rtt gtt grpIndex wgtsV pV reIndexRttM = do
   psByGroupFunction
   let dsName = SB.dataSetName rtt
       gName = SB.taggedGroupName gtt
+      dsSizeE = TE.namedSizeE $ SB.dataSetSizeName rtt
+      grpSizeE = TE.namedSizeE $ SB.groupSizeName gtt
       psDataByGroupName = dsName <> "_By_" <> gName
       indexName = SB.dataSetName rtt <> "_" <> SB.taggedGroupName gtt
       varName = case reIndexRttM of
         Nothing -> fromMaybe psDataByGroupName varNameM
-        Just reIndexRtt -> fromMaybe (dsName <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
-      grpVecType =  SB.StanVector $ SB.NamedDim gName
-      psVecType =  SB.StanVector $ SB.NamedDim dsName
-      profF :: SB.StanBuilderM md gq a -> SB.StanBuilderM md gq a
-      profF = if prof then SB.profile varName else SB.bracketed 2
+        Just (reIndexRtt, _) -> fromMaybe (dsName <> "_By_" <> SB.dataSetName reIndexRtt) varNameM
+      grpVecDS =  TE.vectorSpec grpSizeE [] --SB.StanVector $ SB.NamedDim gName
+      psVecDS =  TE.vectorSpec dsSizeE [] --SB.StanVector $ SB.NamedDim dsName
+      scopeF :: [TE.UStmt] -> TE.UStmt
+      scopeF stmts = if prof then TE.profile varName stmts else TE.scoped stmts
   SB.inBlock block $ case reIndexRttM of
     Nothing -> do
-      probV <- SB.stanDeclare varName grpVecType ""
-      profF $ do
-        wgtsAsVec <- SB.stanDeclareRHS ("wgtsVec") psVecType "" $ SB.vectorizedOne dsName $ SME.function "to_vector" (one $ SB.var wgtsV)
-        SB.addExprLine "postStratifiedParameterF"
-          $ SME.var probV `SME.eq` SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, SB.var wgtsAsVec, SB.var pV])
-      return probV
-    Just reIndexRtt -> do
-      let reIndexKey = SB.dataSetName reIndexRtt
-      riProb <-  SB.stanDeclare varName (SB.StanVector $ SB.NamedDim reIndexKey) ""
-      profF $ SB.useDataSetForBindings rtt $ do
-        wgtsAsVec <- SB.stanDeclareRHS ("wgtsVec") psVecType "" $ SB.vectorizedOne dsName $ SME.function "to_vector" (one $ SB.var wgtsV)
-        gProb <- SB.stanDeclareRHS psDataByGroupName grpVecType ""
-          $ SME.vectorizedOne dsName $ SME.function "psByGroup" (SME.indexSize dsName :|  [SME.indexSize gName, SME.bare indexName, SB.var wgtsAsVec, SB.var pV])
-        SB.useDataSetForBindings reIndexRtt
-          $ SB.addExprLine "postStratifiedParameter"
-          $ SB.vectorizedOne reIndexKey
-          $ SB.var riProb `SB.eq` SB.var gProb
-      return riProb
-
-
+      probV <- SB.stanDeclare varName grpVecDS
+      SB.addStmtToCode $ scopeF
+        [probV `TE.assign` TE.functionE ps_by_group (dsSizeE :>  grpSizeE :> grpIndex :> wgtsV :> pV :> TNil)]
+      pure probV
+    Just (reIndexRtt, reIndex) -> do
+      riProb <-  SB.stanDeclare varName $ TE.vectorSpec (TE.namedSizeE $ SB.dataSetSizeName reIndexRtt) [] --(SB.StanVector $ SB.NamedDim reIndexKey) ""
+      SB.addStmtToCode $ scopeF $ TE.writerL' $ do
+        gProb <- TE.declareRHSW psDataByGroupName grpVecDS $ TE.functionE ps_by_group (dsSizeE :>  grpSizeE :> grpIndex :> wgtsV :> pV :> TNil)
+        TE.addStmt $ riProb `TE.assign` TE.indexE TE.s0 reIndex gProb
+      pure riProb
+{-
 postStratifiedParameter :: (Typeable md, Typeable gq)
                         => Bool
                         -> Maybe Text

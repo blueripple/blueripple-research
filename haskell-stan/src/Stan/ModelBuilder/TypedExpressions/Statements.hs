@@ -212,7 +212,7 @@ simpleFunctionBody f n retDSF bF args = let rE = namedE n st in  (declare n (ret
 comment :: NonEmpty Text -> UStmt
 comment = SComment
 
-profile :: Text -> UStmt
+profile :: Traversable f => Text -> f UStmt -> UStmt
 profile = SProfile
 
 print :: TypedList UExpr args -> UStmt
@@ -333,7 +333,7 @@ data Stmt :: (EType -> Type) -> Type where
   SContinue :: Stmt r
   SFunction :: Traversable f => Function rt args -> TypedList (FuncArg Text) args -> f (Stmt r) -> r rt -> Stmt r
   SComment :: Traversable f => f Text -> Stmt r
-  SProfile :: Text -> Stmt r
+  SProfile :: Traversable f => Text -> f (Stmt r) -> Stmt r
   SPrint :: TypedList r args -> Stmt r
   SReject :: TypedList r args -> Stmt r
   SScoped :: Traversable f => f (Stmt r) -> Stmt r
@@ -354,7 +354,7 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SContinueF :: StmtF r a
   SFunctionF :: Traversable f => Function rt args -> TypedList (FuncArg Text) args -> f a -> r rt -> StmtF r a
   SCommentF :: Traversable f => f Text -> StmtF r a
-  SProfileF :: Text -> StmtF r a
+  SProfileF :: Traversable f => Text -> f a -> StmtF r a
   SPrintF :: TypedList r args -> StmtF r a
   SRejectF :: TypedList r args -> StmtF r a
   SScopedF :: Traversable f => f a -> StmtF r a
@@ -395,7 +395,7 @@ instance Functor (StmtF f) where
     SContinueF -> SContinueF
     SFunctionF func al sfs re -> SFunctionF func al (f <$> sfs) re
     SCommentF t -> SCommentF t
-    SProfileF t -> SProfileF t
+    SProfileF t stmts -> SProfileF t (f <$> stmts)
     SPrintF args -> SPrintF args
     SRejectF args -> SRejectF args
     SScopedF sfs -> SScopedF $ f <$> sfs
@@ -417,7 +417,7 @@ instance Foldable (StmtF f) where
     SContinueF -> mempty
     SFunctionF _ _ body _ -> foldMap f body
     SCommentF _ -> mempty
-    SProfileF _ -> mempty
+    SProfileF _ body -> foldMap f body
     SPrintF {} -> mempty
     SRejectF {} -> mempty
     SScopedF body -> foldMap f body
@@ -439,7 +439,7 @@ instance Traversable (StmtF f) where
     SContinueF -> pure SContinueF
     SFunctionF func al sfs re -> SFunctionF func al <$> traverse g sfs <*> pure re
     SCommentF t -> pure $ SCommentF t
-    SProfileF t -> pure $ SProfileF t
+    SProfileF t stmts -> SProfileF t <$> traverse g stmts
     SPrintF args -> pure $ SPrintF args
     SRejectF args -> pure $ SRejectF args
     SScopedF sfs -> SScopedF <$> traverse g sfs
@@ -461,7 +461,7 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SContinue -> SContinueF
     SFunction func al sts re -> SFunctionF func al sts re
     SComment t -> SCommentF t
-    SProfile t -> SProfileF t
+    SProfile t body -> SProfileF t body
     SPrint args -> SPrintF args
     SReject args -> SRejectF args
     SScoped sts -> SScopedF sts
@@ -483,7 +483,7 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SContinueF -> SContinue
     SFunctionF func al sts re -> SFunction func al sts re
     SCommentF t -> SComment t
-    SProfileF t -> SProfile t
+    SProfileF t body -> SProfile t body
     SPrintF args -> SPrint args
     SRejectF args -> SReject args
     SScopedF sts -> SScoped sts
@@ -505,7 +505,7 @@ instance TR.HFunctor StmtF where
     SContinueF -> SContinueF
     SFunctionF func al body re -> SFunctionF func al body (nat re)
     SCommentF x -> SCommentF x
-    SProfileF x -> SProfileF x
+    SProfileF x body -> SProfileF x body
     SPrintF args -> SPrintF (TR.hfmap nat args)
     SRejectF args -> SRejectF (TR.hfmap nat args)
     SScopedF body -> SScopedF body
@@ -527,7 +527,7 @@ instance TR.HTraversable StmtF where
     SContinueF -> pure SContinueF
     SFunctionF func al body re -> SFunctionF func al body <$> natM re
     SCommentF x -> pure $ SCommentF x
-    SProfileF x -> pure $ SProfileF x
+    SProfileF x body -> pure $ SProfileF x body
     SPrintF args -> SPrintF <$> TR.htraverse natM args
     SRejectF args -> SRejectF <$> TR.htraverse natM args
     SScopedF body -> pure $ SScopedF body

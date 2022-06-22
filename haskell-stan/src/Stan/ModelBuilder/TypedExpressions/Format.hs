@@ -83,7 +83,7 @@ stmtToCodeAlg = \case
     [] -> Right mempty
     [c] -> Right $ "//" <+> PP.pretty c
     cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ PP.pretty <$> cs) <> PP.line <> "*}"
-  SProfileF t -> Right $ "profile" <> PP.parens (PP.dquotes $ PP.pretty t)
+  SProfileF t body -> (\b -> "profile" <> PP.parens (PP.dquotes $ PP.pretty t) <+> bracketBlock b) <$> sequenceA body
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList al) <> PP.semi
   SRejectF al -> Right $ "reject" <+> PP.parens (csArgList al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body

@@ -14,6 +14,7 @@
 {-# HLINT ignore "Use camelCase" #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Stan.ModelBuilder.TypedExpressions.StanFunctions
   (
@@ -32,6 +33,7 @@ import Data.Vec.Lazy (Vec)
 import qualified GHC.TypeLits as TE
 import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Type.Nat (SNatI)
+import Prelude hiding (Nat)
 
 
 logit :: Function EReal '[EReal]
@@ -75,6 +77,14 @@ sum = simpleFunction "sum"
 
 rep_vector :: Function ECVec '[EReal, EInt]
 rep_vector = simpleFunction "rep_vector"
+
+type family NInts (n :: Nat) :: [EType] where
+  NInts Z = '[]
+  NInts (S n) = EInt ': NInts n
+
+-- this pleases me
+rep_array :: (GenSType t, GenTypeList (NInts n), SNatI n) => Function (EArray n t) (t ': NInts n)
+rep_array = simpleFunction "rep_array"
 
 dot :: Function EReal '[ECVec, ECVec]
 dot = simpleFunction "dot"
