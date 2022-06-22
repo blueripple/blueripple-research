@@ -930,10 +930,11 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                                $ F.toFrame
                                <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
                                      $ sortOn brDF
---                                     $ filter (not . (`elem` ["Safe D", "Safe R"]) . brDF)
---                                     $ filter notBoring
                                      $ FL.fold FL.list modelAndDRWith
                                    )
+  rp <- K.ignoreCacheTime rescaledProposed_C
+  let (demoModelDRA, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] rp sortedFilteredModelAndDRA
+  when (not $ null missing) $ K.knitError $ "Missing keys in AllCDs acs and model/DRA join: " <> show missing
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
 {-    _ <- K.addHvega Nothing Nothing
          $ diffVsChart @BRE.FracGrad "Model Delta vs Frac Grad" ("Frac Grad", (100*)) (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
@@ -943,13 +944,25 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
          $ diffVsLogDensityChart "Model Delta vs Density" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
 -}
     let fTable t ds = do
-          when (not $ null ds)
-            $  BR.brAddRawHtmlTable
-            (t)
-            (BHA.class_ "brTable")
-            (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-            (sortOn (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds)
-    categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories2 sortedFilteredModelAndDRA
+          when (not $ null ds) $ do
+            BR.brAddRawHtmlTable
+              t
+              (BHA.class_ "brTable")
+              (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+              (sortOn (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds)
+            let dists :: Set (F.Record [BR.StateAbbreviation, ET.DistrictName]) = Set.fromList $ fmap (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds
+            K.addHvega Nothing Nothing
+              $ BRV.demoCompareXYCS
+              "District"
+              "% non-white"
+              "% white college grad"
+              "Modeled D-Edge"
+              "log density"
+              (t <> " demographic scatter")
+              (FV.ViewConfig 600 600 5)
+              (FL.fold (xyFold2' sldDistLabel) $ F.filterFrame (\r -> F.rcast @[BR.StateAbbreviation, ET.DistrictName] r `Set.member` dists) demoModelDRA)
+            pure ()
+    categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories3 sortedFilteredModelAndDRA
     traverse_ (uncurry fTable) categorized
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
@@ -1150,6 +1163,16 @@ implausibleSurpriseFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.Modeled
 implausibleSurpriseFilter cc brR draR r = categoryFilter cc brR draR [SafeR, LeanR, Tossup] [SafeD] r
                                          || categoryFilter cc brR draR  [SafeD, LeanD, Tossup] [SafeR] r
 
+
+implausibleSafeDFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                  => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+implausibleSafeDFilter cc brR draR r = categoryFilter cc brR draR [SafeR, LeanR, Tossup] [SafeD] r
+
+implausibleSafeRFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                  => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+implausibleSafeRFilter cc brR draR r = categoryFilter cc brR draR  [SafeD, LeanD, Tossup] [SafeR] r
+
+
 demographicallyFavorableFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                                => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
 demographicallyFavorableFilter cc brR draR = categoryFilter cc brR draR [SafeD] [LeanD, Tossup, LeanR]
@@ -1182,6 +1205,15 @@ dCategories2 =
   ,DistrictCategory "Demographically Unfavorable Toss-ups" demographicallyUnfavorableFilter
   , DistrictCategory "Demographically Surprising But Historically Safe" implausibleSurpriseFilter
   ]
+
+dCategories3 =
+  [DistrictCategory "Both Close" bothCloseFilter
+  ,DistrictCategory "Demographically Favorable Toss-ups" demographicallyFavorableFilter
+  ,DistrictCategory "Demographically Unfavorable Toss-ups" demographicallyUnfavorableFilter
+  , DistrictCategory "Demographically Surprising But Historically Safe D" implausibleSafeDFilter
+  , DistrictCategory "Demographically Surprising But Historically Safe R" implausibleSafeRFilter
+  ]
+
 
 data CategorizedDistricts f rs
   = CategorizedDistricts
@@ -1620,6 +1652,22 @@ xyFold' labelFunc = FMR.mapReduceFold
     modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
     foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
                <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
+
+
+xyFold2' labelFunc = FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictName, ET.DistrictTypeC] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
+                     (FMR.foldAndLabel foldData (\k (x :: Double, y :: Double, c, s) -> (labelFunc k, x, y, c, s)))
+  where
+    allF = FL.premap (F.rgetField @BRC.Count) FL.sum
+    wnhF = FL.prefilter ((/= DT.R5_WhiteNonHispanic) . F.rgetField @DT.Race5C) allF
+    wnhGrad r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic && F.rgetField @DT.CollegeGradC r == DT.Grad
+    gradsF = FL.prefilter wnhGrad allF
+    densityF = fmap (fromMaybe 0) $ FL.premap (safeLog . F.rgetField @DT.PopPerSqMile) FL.last
+    modelF = fmap (fromMaybe 0) $ FL.premap (MT.ciMid . F.rgetField @BRE.ModeledShare) FL.last
+    foldData = (\a wnh grads m d -> (100 * realToFrac wnh/ realToFrac a, 100 * realToFrac grads/realToFrac a, 100*(m - 0.5), d))
+               <$> allF <*> wnhF <*> gradsF <*> modelF <*> densityF
+
 
 raceSort = Just $ show <$> [DT.R5_WhiteNonHispanic, DT.R5_Black, DT.R5_Hispanic, DT.R5_Asian, DT.R5_Other]
 
