@@ -167,7 +167,7 @@ data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
                | SpecificIn (UExpr t)
                | IndexedIn IndexKey (UExpr t)
 
-for :: Text -> ForType t -> (UExpr EInt -> NonEmpty UStmt) -> UStmt
+for :: Traversable f => Text -> ForType t -> (UExpr EInt -> f UStmt) -> UStmt
 for loopCounter ft bodyF = case ft of
   SpecificNumbered se' ee' -> SFor loopCounter se' ee' $ bodyF loopCounterE
   IndexedLoop ik -> SFor loopCounter (intE 1) (namedSizeE ik) $ bodyF loopCounterE --bodyWithLoopCounterContext ik
@@ -183,7 +183,7 @@ ifThen ce sTrue = SIfElse $ (ce, sTrue) :| []
 ifThenElse :: NonEmpty (UExpr EBool, UStmt) -> UStmt -> UStmt
 ifThenElse = SIfElse
 
-while :: UExpr EBool -> NonEmpty UStmt -> UStmt
+while :: Traversable f => UExpr EBool -> f UStmt -> UStmt
 while = SWhile
 
 break :: UStmt
@@ -192,12 +192,22 @@ break = SBreak
 continue :: UStmt
 continue = SContinue
 
-function :: Function rt args -> TypedList (FuncArg Text) args -> (TypedList UExpr args -> (NonEmpty UStmt, UExpr rt)) -> UStmt
+function :: Traversable f => Function rt args -> TypedList (FuncArg Text) args -> (TypedList UExpr args -> (f UStmt, UExpr rt)) -> UStmt
 function fd argNames bodyF = SFunction fd argNames bodyS ret
   where
     argTypes = typeListToTypedListOfTypes $ functionArgTypes fd
     argExprs = zipTypedListsWith (namedE . funcArgName) argNames argTypes
     (bodyS, ret) = bodyF argExprs
+
+simpleFunctionBody :: Function rt pts
+                   -> StanName
+                   -> (ExprList pts -> DeclSpec rt)
+                   -> (UExpr rt -> ExprList pts -> [UStmt])
+                   -> ExprList pts
+                   -> (NonEmpty UStmt, UExpr rt)
+simpleFunctionBody f n retDSF bF args = let rE = namedE n st in  (declare n (retDSF args) :| bF rE args, rE)
+  where
+    st = sTypeFromStanType $ declType $ retDSF args
 
 comment :: NonEmpty Text -> UStmt
 comment = SComment
@@ -211,10 +221,10 @@ print = SPrint
 reject :: TypedList UExpr args -> UStmt
 reject = SReject
 
-scoped :: NonEmpty UStmt -> UStmt
+scoped :: Traversable f => f UStmt -> UStmt
 scoped = SScoped
 
-context :: (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty UStmt -> UStmt
+context :: Traversable f => (IndexLookupCtxt -> IndexLookupCtxt) -> f UStmt -> UStmt
 context cf = SContext (Just cf)
 
 insertIndexBinding :: IndexKey -> LExpr EIndexArray -> IndexLookupCtxt -> IndexLookupCtxt
@@ -243,6 +253,7 @@ multiplierM = VarMultiplier
 
 newtype CodeWriter a = CodeWriter { unCodeWriter :: W.Writer [UStmt] a } deriving (Functor, Applicative, Monad, W.MonadWriter [UStmt])
 
+{-
 writerNE :: CodeWriter a -> Maybe (NonEmpty UStmt, a)
 writerNE cw = do
   let (stmts, a) = writerL cw
@@ -251,6 +262,7 @@ writerNE cw = do
 
 writerNE' :: CodeWriter a -> Maybe (NonEmpty UStmt)
 writerNE' = fmap fst . writerNE
+-}
 
 writerL :: CodeWriter a -> ([UStmt], a)
 writerL (CodeWriter w) = (stmts, a)
@@ -267,10 +279,20 @@ declareW t ds = do
   addStmt $ declare t ds
   return $ namedE t (sTypeFromStanType $ declType ds)
 
+declareNW :: NamedDeclSpec t -> CodeWriter (UExpr t)
+declareNW nds = do
+  addStmt $ declareN nds
+  return $ namedE (declName nds) (sTypeFromStanType $ declType $ decl nds)
+
 declareRHSW :: Text -> DeclSpec t -> UExpr t -> CodeWriter (UExpr t)
 declareRHSW t ds rhs = do
   addStmt $ declareAndAssign t ds rhs
   return $ namedE t (sTypeFromStanType $ declType ds)
+
+declareRHSNW :: NamedDeclSpec t -> UExpr t -> CodeWriter (UExpr t)
+declareRHSNW nds rhs = do
+  addStmt $ declareAndAssignN nds rhs
+  return $ namedE (declName nds) (sTypeFromStanType $ declType $ decl nds)
 
 
 instance TR.HFunctor VarModifier where
@@ -303,20 +325,20 @@ data Stmt :: (EType -> Type) -> Type where
   SAssign :: r t -> r t -> Stmt r
   STarget :: r EReal -> Stmt r
   SSample :: r st -> Density st args -> TypedList r args -> Stmt r
-  SFor :: Text -> r EInt -> r EInt -> NonEmpty (Stmt r) -> Stmt r
-  SForEach :: Text -> r t -> NonEmpty (Stmt r) -> Stmt r
+  SFor :: Traversable f => Text -> r EInt -> r EInt -> f (Stmt r) -> Stmt r
+  SForEach :: Traversable f => Text -> r t -> f (Stmt r) -> Stmt r
   SIfElse :: NonEmpty (r EBool, Stmt r) -> Stmt r -> Stmt r -- [(condition, ifTrue)] -> ifAllFalse
-  SWhile :: r EBool -> NonEmpty (Stmt r) -> Stmt r
+  SWhile :: Traversable f => r EBool -> f (Stmt r) -> Stmt r
   SBreak :: Stmt r
   SContinue :: Stmt r
-  SFunction :: Function rt args -> TypedList (FuncArg Text) args -> NonEmpty (Stmt r) -> r rt -> Stmt r
-  SComment :: NonEmpty Text -> Stmt r
+  SFunction :: Traversable f => Function rt args -> TypedList (FuncArg Text) args -> f (Stmt r) -> r rt -> Stmt r
+  SComment :: Traversable f => f Text -> Stmt r
   SProfile :: Text -> Stmt r
   SPrint :: TypedList r args -> Stmt r
   SReject :: TypedList r args -> Stmt r
-  SScoped :: NonEmpty (Stmt r) -> Stmt r
-  SBlock :: StmtBlock -> [Stmt r] -> Stmt r
-  SContext :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty (Stmt r) -> Stmt r
+  SScoped :: Traversable f => f (Stmt r) -> Stmt r
+  SBlock :: Traversable f => StmtBlock -> f (Stmt r) -> Stmt r
+  SContext :: Traversable f => Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> f (Stmt r) -> Stmt r
 
 data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> StmtF r a
@@ -324,20 +346,20 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SAssignF :: r t -> r t -> StmtF r a
   STargetF :: r EReal -> StmtF r a
   SSampleF :: r st -> Density st args -> TypedList r args -> StmtF r a
-  SForF :: Text -> r EInt -> r EInt -> NonEmpty a -> StmtF r a
-  SForEachF :: Text -> r t -> NonEmpty a -> StmtF r a
+  SForF :: Traversable f => Text -> r EInt -> r EInt -> f a -> StmtF r a
+  SForEachF :: Traversable f => Text -> r t -> f a -> StmtF r a
   SIfElseF :: NonEmpty (r EBool, a) -> a -> StmtF r a -- [(condition, ifTrue)] -> ifAllFalse
-  SWhileF :: r EBool -> NonEmpty a -> StmtF r a
+  SWhileF :: Traversable f => r EBool -> f a -> StmtF r a
   SBreakF :: StmtF r a
   SContinueF :: StmtF r a
-  SFunctionF :: Function rt args -> TypedList (FuncArg Text) args -> NonEmpty a -> r rt -> StmtF r a
-  SCommentF :: NonEmpty Text -> StmtF r a
+  SFunctionF :: Traversable f => Function rt args -> TypedList (FuncArg Text) args -> f a -> r rt -> StmtF r a
+  SCommentF :: Traversable f => f Text -> StmtF r a
   SProfileF :: Text -> StmtF r a
   SPrintF :: TypedList r args -> StmtF r a
   SRejectF :: TypedList r args -> StmtF r a
-  SScopedF :: NonEmpty a -> StmtF r a
-  SBlockF :: StmtBlock -> [a] -> StmtF r a
-  SContextF :: Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty a -> StmtF r a
+  SScopedF :: Traversable f => f a -> StmtF r a
+  SBlockF :: Traversable f => StmtBlock -> f a -> StmtF r a
+  SContextF :: Traversable f => Maybe (IndexLookupCtxt -> IndexLookupCtxt) -> f a -> StmtF r a
 
 type instance RS.Base (Stmt f) = StmtF f
 

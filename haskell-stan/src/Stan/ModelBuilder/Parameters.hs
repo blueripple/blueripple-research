@@ -25,12 +25,6 @@ import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.SumToZero as STZ
 import Stan.ModelBuilder.SumToZero (SumToZero(..))
 
-{-
-import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
-import Stan.ModelBuilder.TypedExpressions.Recursion (hfmap, htraverse, K(..))
--}
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
@@ -100,10 +94,6 @@ addTransformedHP nds rawCsM rawPrior fromRawF = do
   DAG.addBuildParameter $ DAG.TransformedP nds [] (DAG.BuildP rawPT :> TNil)  (\(e :> TNil) -> DAG.DeclRHS e) -- (ExprList qs -> DeclCode t)
   -- can't pattern match because the typelist of args would escape its scope
 --  TE.withDWA (\dRaw pRaw -> DAG.addBuildParameter $ TransformedDiffTypeP nds [] rawDS (exprListToParameters pRaw) dRaw TE.TNil (const fromRawF)) rawPrior
-
-
-
-
 
 
 {-

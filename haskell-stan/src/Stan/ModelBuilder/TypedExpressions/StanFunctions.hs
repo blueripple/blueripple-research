@@ -37,6 +37,8 @@ import Data.Type.Nat (SNatI)
 logit :: Function EReal '[EReal]
 logit = simpleFunction "logit"
 
+--logit :: TE.ExprList '[EReal] -> TE
+
 invLogit :: Function EReal '[EReal]
 invLogit = simpleFunction "inv_logit"
 
@@ -49,6 +51,15 @@ inv_sqrt = simpleFunction "inv_sqrt"
 inv :: Function EReal '[EReal]
 inv = simpleFunction "inv"
 
+mean :: (TypeOneOf t [ECVec, ERVec, EMat, ESqMat], GenSType t) => Function EReal '[t]
+mean = simpleFunction "mean"
+
+variance :: (TypeOneOf t [ECVec, ERVec, EMat, ESqMat], GenSType t) => Function EReal '[t]
+variance = simpleFunction "variance"
+
+targetVal :: Function EReal '[]
+targetVal = simpleFunction "target"
+
 array_num_elements :: (SNatI n, GenSType t) => Function EInt '[EArray n t]
 array_num_elements = simpleFunction "inv"
 
@@ -59,14 +70,8 @@ to_vector = simpleFunction "to_vector"
 size :: (TypeOneOf t '[ECVec, ERVec, EArray1 EInt, EArray1 EReal, EArray1 EComplex], GenSType t) => Function EInt '[t]
 size = simpleFunction "size"
 
-vector_sum :: (TypeOneOf t '[ECVec, ERVec], GenSType t) => Function EReal '[t]
-vector_sum = simpleFunction "sum"
-
-row_vector_sum :: Function EReal '[ERVec]
-row_vector_sum = simpleFunction "sum"
-
-matrix_sum :: Function EReal '[EMat]
-matrix_sum = simpleFunction "sum"
+sum :: (TypeOneOf t '[ECVec, ERVec, EMat, ESqMat], GenSType t) => Function EReal '[t]
+sum = simpleFunction "sum"
 
 rep_vector :: Function ECVec '[EReal, EInt]
 rep_vector = simpleFunction "rep_vector"
@@ -136,7 +141,7 @@ cauchyLUPDF = simpleDensity "cauchy_lupdf"
 cauchyRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
 cauchyRNG = simpleFunction "cauchy_rng"
 
-binomialDensity :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialDensity :: (TypeOneOf t [EArray1 EInt, EInt], GenSType t) => Density t '[t, EReal]
 binomialDensity = simpleDensity "binomial"
 
 binomialLPMF :: Density (EArray1 EInt) '[EArray1 EInt, EReal]

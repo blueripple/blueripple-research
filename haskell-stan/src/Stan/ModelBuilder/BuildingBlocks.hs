@@ -1,32 +1,34 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use for_" #-}
 
 module Stan.ModelBuilder.BuildingBlocks where
 
 
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import Stan.ModelBuilder.TypedExpressions.Types (Nat(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.Parameters as PA
 
-import Prelude hiding (All)
+import Prelude hiding (sum, All)
 import qualified Data.List.NonEmpty as NE
 import qualified Data.Dependent.HashMap as DHash
 import qualified Data.Dependent.Sum as DSum
@@ -35,6 +37,8 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Stan.ModelConfig as SB
+import Stan.ModelBuilder (dataSetSizeName)
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 {-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
@@ -66,9 +70,9 @@ addIntData :: (Typeable md, Typeable gq)
             -> (r -> Int)
             -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
 addIntData rtt varName mLower mUpper f = do
-  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
-      ds = TE.intArraySpec s1 cd
-  SB.addColumnJson rtt varName stanType bounds f
+  let cs = maybe [] (pure . TE.lowerM . TE.intE) mLower ++ maybe [] (pure . TE.upperM . TE.intE) mUpper
+      ndsF lE = TE.NamedDeclSpec varName $ TE.intArraySpec lE cs
+  SB.addColumnJson rtt ndsF f
 
 addCountData :: forall r md gq.(Typeable md, Typeable gq)
              => SB.RowTypeTag r
@@ -85,7 +89,7 @@ addRealData :: (Typeable md, Typeable gq)
             -> (r -> Double)
             -> SB.StanBuilderM md gq  (TE.UExpr TE.ECVec)
 addRealData rtt varName mLower mUpper f = do
-  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
+  let cs = maybe [] (pure . TE.lowerM. TE.realE) mLower ++ maybe [] (pure . TE.upperM . TE.realE) mUpper
       ndsF lE = TE.NamedDeclSpec varName $ TE.vectorSpec lE cs
   SB.addColumnJson rtt ndsF f
 
@@ -96,21 +100,17 @@ add2dMatrixData :: (Typeable md, Typeable gq)
                 -> Maybe Double
             -> SB.StanBuilderM md gq (TE.UExpr TE.EMat)
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
-  let cs = maybe [] (pure . TE.lowerM) mLower ++ maybe [] (pure . TE.upperM) mUpper
+  let cs = maybe [] (pure . TE.lowerM . TE.realE) mLower ++ maybe [] (pure . TE.upperM . TE.realE) mUpper
   SB.add2dMatrixJson rtt matrixRowFromData cs -- (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
 
-sampleDistV :: SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
-sampleDistV rtt sDist args yV =  SB.inBlock SB.SBModel $ do
-  let dsName = SB.dataSetName rtt
-      samplingE = SMD.familySampleF sDist args yV
-  SB.addExprLine "sampleDistV" $ SME.vectorizedOne dsName samplingE
+sampleDistV :: SMD.StanDist t args -> TE.ExprList args -> TE.UExpr t -> SB.StanBuilderM md gq ()
+sampleDistV sDist args yV =  SB.inBlock SB.SBModel $ SB.addStmtToCode $ SMD.familySample sDist yV args
 
-
-printVar :: Text -> SB.StanVar -> SB.StanBuilderM md gq ()
-printVar t v@(SB.StanVar n _) = SB.addExprLine "printVar" $ SB.function "print" $ SB.bare ("\"" <> t <> n <> "=\"") :| [SB.varNameE v]
+printExpr :: Text -> TE.UExpr t -> SB.StanBuilderM md gq ()
+printExpr t e = SB.addStmtToCode $ TE.print (TE.stringE ("\"" <> t <> "\"=") :> e :> TNil)
 
 printTarget :: Text -> SB.StanBuilderM md gq ()
-printTarget t = SB.addExprLine "printVar" $ SB.function "print" $ SB.bare ("\"" <> t <> "target=\"") :| [SB.bare "target()"]
+printTarget t = printExpr "target" (TE.functionE TE.targetVal TNil)
 
 {-
 parallelSampleDistV :: (Typeable md, Typeable gq) => Text -> SB.RowTypeTag r -> SMD.StanDist args -> args -> SB.StanVar -> SB.StanBuilderM md gq ()
@@ -148,103 +148,146 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
         argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 -}
-generateLogLikelihood :: SB.RowTypeTag r -> SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
-generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
+--generateLogLikelihood :: SB.RowTypeTag r -> TE.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
+--generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
 
-data LLDetails md gq r = forall args.LLDetails (SMD.StanDist args) (SB.StanBuilderM md gq args) SME.StanVar
+-- 2nd arg returns something which might need slicing at the loop index for paramters that depend on the index
+-- 3rd arg also
+data LLDetails r = forall t pts.LLDetails (SMD.StanDist t pts) [TE.UStmt] (TE.UExpr TE.EInt -> TE.ExprList pts) (TE.UExpr TE.EInt -> TE.UExpr t)
 --  LLDetails :: forall args.SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> LLDetails md gq r
 
-data LLDetailsList md gq r = LLDetailsList [LLDetails md gq r]
+data LLDetailsList r = LLDetailsList [LLDetails r]
 
-addDetailsLists :: LLDetailsList md gq r -> LLDetailsList md gq r -> LLDetailsList md gq r
+addDetailsLists :: LLDetailsList r -> LLDetailsList r -> LLDetailsList r
 addDetailsLists (LLDetailsList x) (LLDetailsList y) = LLDetailsList (x <> y)
 
-type LLSet md gq = DHash.DHashMap SB.RowTypeTag (LLDetailsList md gq)
+type LLSet = DHash.DHashMap SB.RowTypeTag LLDetailsList
 
-emptyLLSet :: LLSet md gq
+emptyLLSet :: LLSet
 emptyLLSet = DHash.empty
 
-addToLLSet :: SB.RowTypeTag r -> LLDetails md gq r -> LLSet md gq  -> LLSet md gq
+addToLLSet :: SB.RowTypeTag r -> LLDetails r -> LLSet  -> LLSet
 addToLLSet rtt d llSet = DHash.insertWith addDetailsLists rtt (LLDetailsList [d]) llSet
 
-mergeLLSets ::  LLSet md gq  -> LLSet md gq -> LLSet md gq
+mergeLLSets ::  LLSet  -> LLSet -> LLSet
 mergeLLSets = DHash.unionWith addDetailsLists
---data Res r = Res
 
-generateLogLikelihood' :: LLSet md gq -> SB.StanBuilderM md gq ()
+-- we return RowTypeTag from doOne so that DHash traversal can infer types, I think.
+generateLogLikelihood' :: LLSet -> SB.StanBuilderM md gq ()
 generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   let prependSizeName rtt (LLDetailsList ds) ls = Prelude.replicate (Prelude.length ds) (SB.dataSetSizeName rtt) ++ ls
   llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llSet) of
     Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
     Just x -> return x
-  let llSizeE = SME.multiOp "+" $ fmap SB.name llSizeListNE
-  SB.addDeclBinding' "LLIndex" llSizeE
-  logLikV <- SB.stanDeclare "log_lik" (SME.StanVector $ SME.NamedDim "LLIndex") ""
-  let doOne :: SB.RowTypeTag a -> LLDetails md gq a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
-      doOne rtt (LLDetails dist argsM yV) = do
+  let llSizeE = TE.multiOpE TE.SAdd $ fmap TE.namedSizeE llSizeListNE
+--  SB.addDeclBinding' "LLIndex" llSizeE
+  logLikE <- SB.stanDeclareN $ TE.NamedDeclSpec "log_lik" $ TE.vectorSpec llSizeE []
+  let doOne :: SB.RowTypeTag a -> LLDetails a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+      doOne rtt (LLDetails dist preStmts pF yF) = do
         prevSizes <- get
-        lift $ SB.bracketed 2 $ SB.useDataSetForBindings rtt $ SB.indexBindingScope $ do
-          SB.addUseBinding' "LLIndex" $ SB.multiOp "+" (SB.name "n" :| prevSizes)
-          let dsName = SB.dataSetName rtt
-          args <- argsM
-          SB.stanForLoopB "n" Nothing dsName
-            $ SB.addExprLine "generateLogLikelihood'"
-            $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
-        put $ SB.name (SB.dataSetSizeName rtt) : prevSizes
+        let sizeE =  TE.multiOpE TE.SAdd $ TE.namedSizeE "n" :| prevSizes
+        lift $ SB.addStmtToCode $ TE.scoped
+          $ preStmts ++ [TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ dataSetSizeName rtt))
+                         $ \nE ->
+                            let sliced = TE.sliceE TE.s0 nE
+                            in [sliced logLikE `TE.assign` SB.familyLDF dist (yF nE) (pF nE)]
+                        ]
+--          SB.stanForLoopB "n" Nothing dsName
+--            $ SB.addExprLine "generateLogLikelihood'"
+--            $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
+
+        put $ TE.namedSizeE (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
-      doList ::  SB.RowTypeTag a -> LLDetailsList md gq a -> StateT [SME.StanExpr] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
+      doList ::  SB.RowTypeTag a -> LLDetailsList a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
       doList rtt (LLDetailsList lls) = traverse_ (doOne rtt) lls >> pure rtt
   _ <- evalStateT (DHash.traverseWithKey doList llSet) []
   pure ()
 
-generatePosteriorPrediction :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> SB.StanBuilderM md gq SME.StanVar
-generatePosteriorPrediction rtt sv sDist args = generatePosteriorPrediction' rtt sv sDist args id
+generatePosteriorPrediction :: SB.RowTypeTag r
+                            -> TE.NamedDeclSpec TE.ECVec
+                            -> SMD.StanDist TE.EReal pts
+                            -> (TE.UExpr TE.EInt -> TE.ExprList pts)
+                            -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+generatePosteriorPrediction rtt nds sDist pEsF = generatePosteriorPrediction' rtt nds sDist pEsF id
 
-generatePosteriorPrediction' :: SB.RowTypeTag r -> SME.StanVar -> SMD.StanDist args -> args -> (SB.StanExpr -> SB.StanExpr) -> SB.StanBuilderM md gq SME.StanVar
-generatePosteriorPrediction' rtt sv@(SME.StanVar ppName t) sDist args f = SB.inBlock SB.SBGeneratedQuantities $ do
-  let rngE = SMD.familyRNG sDist args
-  ppVar <- SB.stanDeclare ppName t ""
-  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` f rngE
-  return sv
+generatePosteriorPrediction' :: SB.RowTypeTag r
+                             -> TE.NamedDeclSpec TE.ECVec
+                             -> SMD.StanDist TE.EReal pts
+                             -> (TE.UExpr TE.EInt -> TE.ExprList pts)
+                             -> (TE.UExpr TE.EReal -> TE.UExpr TE.EReal)
+                             -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+generatePosteriorPrediction' rtt nds sDist pEsF f = SB.inBlock SB.SBGeneratedQuantities $ do
+  let rngE nE = SMD.familyRNG sDist (pEsF nE)
+  ppE <- SB.stanDeclareN nds
+  SB.addStmtToCode
+    $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ SB.dataSetSizeName rtt)) $ \nE ->
+    let slice = TE.sliceE TE.s0 nE
+    in [TE.sliceE TE.s0 nE ppE `TE.assign` f (rngE nE)]
+--  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` f rngE
+  return ppE
 
-diagVectorFunction :: SB.StanBuilderM md gq Text
-diagVectorFunction = SB.declareStanFunction "vector indexBoth(vector[] vs, int N)" $ do
---  SB.addStanLine "int vec_size = num_elements(ii)"
-  SB.addStanLine "vector[N] out_vec"
-  SB.stanForLoop "i" Nothing "N" $ const $ SB.addStanLine $ "out_vec[i] = vs[i, i]"
-  SB.addStanLine "return out_vec"
-  pure "indexBoth"
 
--- given something indexed by things which can be indexed from a data-set,
--- create a vector which is a 1d alias
--- e.g., given beta_g1_g2[J_g1, J_g2]
--- declare beta_g1_g2_vD1[J_D1]
--- and set beta_g1_g2_vD1[n] = beta_g1_g2[g1_D1[n], g2_D1[n]]
-vectorizeVar :: SB.StanVar -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
-vectorizeVar v@(SB.StanVar vn _) = vectorizeExpr vn (SB.var v)
+diagVectorFunction :: SB.StanBuilderM md gq (TE.Function TE.ECVec '[TE.EArray1 TE.ECVec, TE.EInt])
+diagVectorFunction = do
+  let f :: TE.Function TE.ECVec '[TE.EArray1 TE.ECVec, TE.EInt]
+      f = TE.simpleFunction "index_both"
+      dsF :: TE.ExprList [TE.EArray1 TE.ECVec, TE.EInt] -> TE.DeclSpec TE.ECVec
+      dsF (_ :> n :> TNil) = TE.vectorSpec n []
+  SB.addFunctionOnce f (TE.Arg "vs" :> TE.Arg "N" :> TNil)
+    $ TE.simpleFunctionBody f "out_vec" dsF
+    $ \rvE (vs :> n :> TNil) ->
+        [TE.for "n" (TE.SpecificNumbered (TE.intE 1) n) $ \nE ->
+            let slice = TE.sliceE TE.s0 nE in [slice rvE `TE.assign` slice (TE.sliceE TE.s0 nE vs)]
+        ]
+  return f
 
-vectorizeExpr :: SB.StanName -> SB.StanExpr -> SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
-vectorizeExpr sn se ik = head <$> vectorizeExprT ((sn, se) :| []) ik
+vectorizeExpr :: TE.UExpr TE.EInt -> TE.StanName -> (TE.UExpr TE.EInt -> TE.UExpr TE.EReal) -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+vectorizeExpr lE sn se = head <$> vectorizeExprT lE ((sn, se) :| [])
 
 -- like vectorizeExpr but for multiple things in same loop
-vectorizeExprT :: Traversable t => t (SB.StanName, SB.StanExpr) -> SB.IndexKey -> SB.StanBuilderM md gq (t SB.StanVar)
-vectorizeExprT namedExprs ik = do
+vectorizeExprT :: Traversable t
+               => TE.UExpr TE.EInt -> t (TE.StanName, TE.UExpr TE.EInt -> TE.UExpr TE.EReal) -> SB.StanBuilderM md gq (t (TE.UExpr TE.ECVec))
+vectorizeExprT lengthE namedSrcs = do
   let vecVname sn = sn <> "_v"
-      declareVec (sn, se) = do
-        fv <- SB.stanDeclare (vecVname sn) (SB.StanVector (SB.NamedDim ik)) ""
-        return (fv, se)
-      fillVec (v, se) = (SB.addExprLine "vectorizeExprA" $ SB.var v `SB.eq` se) >> return v
-  varExps <- traverse declareVec namedExprs
-  SB.stanForLoopB "n" Nothing ik $ traverse fillVec varExps
+      nds sn = TE.NamedDeclSpec (vecVname sn) $ TE.vectorSpec lengthE []
+      declareVec (sn, ve) = do
+        fe <- SB.stanDeclareN $ nds sn
+        return (fe, ve)
+      fillVec ne (ve, se) = TE.sliceE TE.s0 ne ve `TE.assign` se ne
+  varExps <- traverse declareVec namedSrcs
+  SB.addStmtToCode $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) lengthE) $ \nE -> fmap (fillVec nE) varExps
+  return $ fst <$> varExps
+
+sum :: TE.UExpr TE.ECVec -> TE.UExpr TE.EReal
+sum x = TE.functionE TE.sum (x :> TNil)
 
 weightedMeanFunction :: SB.StanBuilderM md gq ()
-weightedMeanFunction =  SB.addFunctionsOnce "weighted_mean"
-                        $ SB.declareStanFunction "real weighted_mean(vector ws, vector xs)" $ do
-  SB.addStanLine "vector[num_elements(xs)] wgtdXs = ws .* xs"
-  SB.addStanLine "return (sum(wgtdXs)/sum(ws))"
+weightedMeanFunction = do
+  let f :: TE.Function TE.EReal [TE.ECVec, TE.ECVec]
+      f = TE.simpleFunction "weighted_mean"
+  SB.addFunctionOnce f (TE.Arg "ws" :> TE.Arg "xs" :> TNil)
+    $ \(ws :> xs :> TNil)  -> TE.writerL $ do
+    wgtdXs <- TE.declareRHSNW (TE.NamedDeclSpec "wgtdXs" $ TE.vectorSpec (TE.functionE TE.size (xs :> TNil)) [])
+              $ TE.binaryOpE (TE.SElementWise TE.SMultiply) ws xs
+    return $ sum wgtdXs `TE.divideE` sum ws
 
 weightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
-weightedMeanVarianceFunction =  SB.addFunctionsOnce "weighted_mean_variance"
+weightedMeanVarianceFunction = do
+  let f :: TE.Function TE.ECVec [TE.ECVec, TE.ECVec]
+      f = TE.simpleFunction "weighted_mean_variance"
+      eTimes = TE.binaryOpE (TE.SElementWise TE.SMultiply)
+  SB.addFunctionOnce f (TE.Arg "ws" :> TE.Arg "xs" :> TNil)
+    $ \(ws :> xs :> TNil) -> TE.writerL $ do
+    n <- TE.declareRHSW "N" (TE.intSpec []) $ TE.functionE TE.size (xs :> TNil)
+    wgtdXs <- TE.declareRHSW "wgtdXs" (TE.vectorSpec n []) $ ws `eTimes` xs
+    mv <- TE.declareW "meanVar" (TE.vectorSpec (TE.intE 2) [])
+    let meanVar i = TE.sliceE TE.s0 (TE.intE i) mv
+    TE.addStmt $ meanVar 1 `TE.assign` (sum wgtdXs `TE.divideE` sum ws)
+    y <- TE.declareRHSW "y" (TE.vectorSpec n []) $ xs `TE.minusE` meanVar 2
+    TE.addStmt $ meanVar 2 `TE.assign` (sum (ws `eTimes` y `eTimes` y) `TE.divideE` sum ws)
+    return mv
+{-
+  SB.addFunctionsOnce "weighted_mean_variance"
                         $ SB.declareStanFunction "vector weighted_mean_variance(vector ws, vector xs)" $ do
   SB.addStanLine "int N = num_elements(xs)"
   SB.addStanLine "vector[N] wgtdXs = ws .* xs"
@@ -253,7 +296,21 @@ weightedMeanVarianceFunction =  SB.addFunctionsOnce "weighted_mean_variance"
   SB.addStanLine "vector[N] y = (xs - meanVar[1])"
   SB.addStanLine "meanVar[2] = sum(ws .* y .* y)/sum(ws)"
   SB.addStanLine "return meanVar"
+-}
 
+unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
+unWeightedMeanVarianceFunction = do
+  let f :: TE.Function TE.ECVec [TE.ECVec, TE.ECVec]
+      f = TE.simpleFunction "unweighted_mean_variance"
+  SB.addFunctionOnce f (TE.Arg "ws" :> TE.Arg "xs" :> TNil)
+    $ \(ws :> xs :> TNil) -> TE.writerL $ do
+    n <- TE.declareRHSW "N" (TE.intSpec []) $ TE.functionE TE.size (xs :> TNil)
+    mv <- TE.declareW "meanVar" (TE.vectorSpec (TE.intE 2) [])
+    let meanVar i = TE.sliceE TE.s0 (TE.intE i) mv
+    TE.addStmt $ meanVar 1 `TE.assign` TE.functionE TE.mean (xs :> TNil)
+    TE.addStmt $ meanVar 2 `TE.assign` TE.functionE TE.variance (xs :> TNil)
+    return mv
+{-
 unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
 unWeightedMeanVarianceFunction =  SB.addFunctionsOnce "unweighted_mean_variance"
                         $ SB.declareStanFunction "vector unweighted_mean_variance(vector xs)" $ do
@@ -262,7 +319,8 @@ unWeightedMeanVarianceFunction =  SB.addFunctionsOnce "unweighted_mean_variance"
   SB.addStanLine "meanVar[1] = mean(xs)"
   SB.addStanLine "meanVar[2] = variance(xs)"
   SB.addStanLine "return meanVar"
-
+-}
+{-
 
 realIntRatio :: SME.StanVar -> SME.StanVar -> SME.StanExpr
 realIntRatio k l = SB.binOp "/"
@@ -480,4 +538,5 @@ addMultiIndex rtt gtts mVarName = do
           Nothing -> SB.stanBuildError $ "addMultiIndex: group " <> Sb.taggedGroupName gtt <> " is missing from group indexes for data-set " <> SB.dataSetName rtt <> "."
           Just _ -> return ()
   mapM_ checkGroup gtts
+-}
 -}

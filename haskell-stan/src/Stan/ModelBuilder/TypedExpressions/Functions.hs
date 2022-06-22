@@ -85,6 +85,8 @@ data FuncArg :: Type -> k -> Type where
   Arg :: a -> FuncArg a r
   DataArg :: a -> FuncArg a r
 
+type TypedArgNames = TypedList (FuncArg Text)
+
 funcArgName :: FuncArg Text a -> Text
 funcArgName = \case
   Arg txt -> txt

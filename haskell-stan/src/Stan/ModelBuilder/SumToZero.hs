@@ -21,13 +21,12 @@ import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
-import Data.Maybe (fromJust)
 
 qSumToZeroQRF :: TE.Function TE.ECVec '[TE.EInt]
 qSumToZeroQRF = TE.simpleFunction "Q_sum_to_zero_QR"
 
-qSumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.EInt] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
-qSumToZeroQRBody (n TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
+qSumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.EInt] -> ([TE.UStmt], TE.UExpr TE.ECVec)
+qSumToZeroQRBody (n TE.:> TE.TNil) = TE.writerL $ do
   qr <- TE.declareW "Q_r" (TE.vectorSpec (TE.intE 2 `TE.timesE` n) [])
   let
     xp1 x = x `TE.plusE` TE.realE 1
@@ -42,8 +41,8 @@ sumToZeroQRF :: TE.Function TE.ECVec '[TE.ECVec, TE.ECVec]
 sumToZeroQRF = TE.simpleFunction "sum_to_zero_QR"
 
 
-sumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.ECVec, TE.ECVec] -> (NonEmpty TE.UStmt, TE.UExpr TE.ECVec)
-sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.TNil) = fromJust $ TE.writerNE $ do
+sumToZeroQRBody :: TE.TypedList TE.UExpr '[TE.ECVec, TE.ECVec] -> ([TE.UStmt], TE.UExpr TE.ECVec)
+sumToZeroQRBody (x_raw TE.:> qr TE.:> TE.TNil) = TE.writerL $ do
   n <- TE.declareRHSW "N" (TE.intSpec []) (TE.functionE TE.size (TE.oneTyped x_raw) `TE.plusE` TE.intE 1)
   x <- TE.declareW "x" (TE.vectorSpec n [])
   x_aux <- TE.declareRHSW "x_aux" (TE.realSpec []) (TE.realE 0)
@@ -77,7 +76,7 @@ sumToZeroQR vName v_stz = do
 
 softSumToZero :: TE.UExpr TE.ECVec -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()
 softSumToZero v dw = SB.inBlock SB.SBModel $ SB.addStmtToCode
-  $ TE.functionE TE.vector_sum (TE.oneTyped v) `TE.sampleW` dw
+  $ TE.functionE TE.sum (TE.oneTyped v) `TE.sampleW` dw
 
 -- up to user to insure IndexArray and vector have same size
 weightedSoftSumToZero :: TE.StanName -> TE.UExpr TE.ECVec -> TE.IndexArrayU -> TE.DensityWithArgs TE.EReal -> SB.StanBuilderM md gq ()

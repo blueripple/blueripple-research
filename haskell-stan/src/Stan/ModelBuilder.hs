@@ -24,13 +24,15 @@ import qualified Stan.JSON as Stan
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.TypedExpressions.Program as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Functions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.DAGTypes as DT
 import qualified Data.Dependent.Map as DM
 import Stan.ModelBuilder.TypedExpressions.Statements (StanName)
-import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import Stan.ModelBuilder.TypedExpressions.Types (Nat(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Evaluate as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Format as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 import qualified Prettyprinter.Render.Text as PP
 
@@ -70,8 +72,6 @@ import qualified Data.GADT.Show as GADT
 import Stan.ModelConfig (InputDataType(..))
 import qualified Stan.ModelConfig as SC
 import qualified Data.Massiv.Array.Unsafe as X
-import qualified Stan.ModelBuilder.TypedExpressions.Format as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 {-
 stanCodeToStanModel :: StanCode -> StanModel
@@ -887,6 +887,14 @@ addFunctionsOnce functionsName fCode = do
              modify $ modifyFunctionNames $ Set.insert functionsName
          )
 
+addFunctionOnce :: (Traversable g, TE.GenSType rt)
+                => TE.Function rt ats -> TE.TypedArgNames ats -> (TE.ExprList ats -> (g TE.UStmt, TE.UExpr rt)) -> StanBuilderM md gq ()
+addFunctionOnce f@(TE.Function fn _ _ _) argNames fBF = do
+  fsNames <- gets hasFunctions
+  when (not $  fn `Set.member` fsNames)
+    $ inBlock SBFunctions
+    $ addStmtToCode $ TE.function f argNames fBF
+
 -- TODO: We should error if added twice but that doesn't quite work with post-stratifation code now.  Fix.
 addIntMapBuilder :: forall r k md gq.
                     RowTypeTag r
@@ -983,6 +991,13 @@ crosswalkIndexKey :: RowTypeTag rTo -> TE.StanName
 crosswalkIndexKey rttTo = "XWalkTo_" <> dataSetName rttTo
 {-# INLINEABLE crosswalkIndexKey #-}
 
+--dataSetSizeName :: RowTypeTag r -> Text
+--dataSetSizeName rtt = "N_" <> dataSetName rtt
+
+--groupSizeName :: GroupTypeTag k -> Text
+--groupSizeName gtt = "J_" <> taggedGroupName gtt
+
+
 -- build an index from each data-sets relationship to the common group.
 -- only works when both data sets are model data or both are GQ data.
 -- add Json and use-binding
@@ -1015,7 +1030,7 @@ addDataSetsCrosswalk  rttFrom rttTo gtt = do
 --  addColumnMJson rttFrom xWalkName xWalkType "<lower=1>" xWalkF
 --  addUseBindingToDataSet rttFrom xWalkIndexKey $ SME.indexBy (SME.name xWalkName) $ dataSetName rttFrom
   addUseBindingToDataSet rttFrom xWalkIndexKey xWalkName
-  addDeclBinding xWalkIndexKey $ "N_" <> dataSetName rttFrom
+  addDeclBinding xWalkIndexKey $ dataSetSizeName rttFrom
   pure ()
 
 modelRowInfo :: RowTypeTag r -> StanBuilderM md gq (RowInfo md r)

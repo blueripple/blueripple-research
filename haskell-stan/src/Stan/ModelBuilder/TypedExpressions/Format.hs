@@ -14,6 +14,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Stan.ModelBuilder.TypedExpressions.Format
   (
@@ -76,15 +77,17 @@ stmtToCodeAlg = \case
   SContinueF -> Right $ "continue" <> PP.semi
   SFunctionF (Function fname rt ats rF) al body re ->
     (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs (applyTypedListFunctionToTypeList rF ats) (rF al)
-           <+> bracketBlock (b `appendList` ["return" <+> unK re <> PP.semi])) <$> sequence body
+           <+> bracketBlock (b `appendAsList` ["return" <+> unK re <> PP.semi])) <$> sequence body
   SFunctionF (IdentityFunction _) _ _ _ -> Left "Attempt to *declare* Identity function!"
-  SCommentF (c :| []) -> Right $ "//" <+> PP.pretty c
-  SCommentF cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ NE.toList $ PP.pretty <$> cs) <> PP.line <> "*}"
+  SCommentF cs -> case toList cs of
+    [] -> Right mempty
+    [c] -> Right $ "//" <+> PP.pretty c
+    cs -> Right $ "{*" <> PP.line <> PP.indent 2 (PP.vsep $ PP.pretty <$> cs) <> PP.line <> "*}"
   SProfileF t -> Right $ "profile" <> PP.parens (PP.dquotes $ PP.pretty t)
   SPrintF al -> Right $ "print" <+> PP.parens (csArgList al) <> PP.semi
   SRejectF al -> Right $ "reject" <+> PP.parens (csArgList al) <> PP.semi
   SScopedF body -> bracketBlock <$> sequence body
-  SBlockF bl body -> maybe (Right mempty) (fmap (\x -> PP.pretty (stmtBlockHeader bl) <> bracketBlock x) . sequenceA) $ nonEmpty body
+  SBlockF bl body -> maybe (Right mempty) (fmap (\x -> PP.pretty (stmtBlockHeader bl) <> bracketBlock x) . sequenceA) $ nonEmpty $ toList body
   SContextF mf body -> case mf of
     Just _ -> Left "stmtToCodeAlg: Impossible! SContext with a change function remaining!"
     Nothing -> blockCode <$> sequence body
@@ -110,7 +113,7 @@ stanDeclHead st il vms = case st of
       else PP.langle <> (PP.hsep $ PP.punctuate ", " $ fmap vmToCode vms) <> PP.rangle
 
 -- add brackets and indent the lines of code
-bracketBlock :: NonEmpty CodePP -> CodePP
+bracketBlock :: Traversable f => f CodePP -> CodePP
 bracketBlock = bracketCode . blockCode
 
 -- surround with brackets and indent
@@ -118,15 +121,17 @@ bracketCode :: CodePP -> CodePP
 bracketCode c = "{" <> PP.line <> PP.indent 2 c <> PP.line <> "} "
 
 -- put each item of code on a separate line
-blockCode :: NonEmpty CodePP -> CodePP
-blockCode ne = PP.vsep $ NE.toList ne
+blockCode :: Traversable f => f CodePP -> CodePP
+blockCode ne = PP.vsep $ toList ne
 
 -- put each line *after the first* on a new line
-blockCode' :: NonEmpty CodePP -> CodePP
-blockCode' (c :| cs) = c <> PP.vsep cs
+blockCode' :: Traversable f => f CodePP -> CodePP
+blockCode' cs = case toList cs of
+  [] -> mempty
+  (c : cs) -> c <> PP.vsep cs
 
-appendList :: NonEmpty a -> [a] -> NonEmpty a
-appendList (a :| as) as' = a :| (as ++ as')
+appendAsList :: Traversable f => f a -> [a] -> [a]
+appendAsList fa as = toList fa ++ as
 
 functionArgs:: TypeList args -> TypedList (FuncArg Text) args -> CodePP
 functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <> PP.space) argCodeList
@@ -150,13 +155,16 @@ functionArgs argTypes argNames = PP.parens $ mconcat $ PP.punctuate (PP.comma <>
 
     argCodeList = typedKToList $ zipTypedListsWith f (typeListToSTypeList argTypes) argNames
 
+-- This might be wrong after switch from NE to
 ifElseCode :: NonEmpty (K CodePP EBool, Either Text CodePP) -> Either Text CodePP -> Either Text CodePP
 ifElseCode ecNE c = do
-  let (conds, ifTrueCodeEs) = NE.unzip ecNE
+  let appendNEList :: NonEmpty a -> [a] -> NonEmpty a
+      appendNEList (a :| as) as' = a :| as ++ as'
+      (conds, ifTrueCodeEs) = NE.unzip ecNE
       condCode (e :| es) = "if" <+> PP.parens (unK e) <> PP.space :| fmap (\le -> "else if" <+> PP.parens (unK le) <> PP.space) es
-      condCodeNE = condCode conds `appendList` ["else"]
-  ifTrueCodes <- sequenceA (ifTrueCodeEs `appendList` [c])
-  let ecNE = NE.zipWith (<+>) condCodeNE (fmap (bracketBlock . one) ifTrueCodes)
+      condCodeNE = condCode conds `appendNEList` ["else"]
+  ifTrueCodes <- sequenceA (ifTrueCodeEs `appendNEList` [c])
+  let ecNE = NE.zipWith (<+>) condCodeNE (fmap (bracketBlock . pure @[]) ifTrueCodes)
   return $ blockCode' ecNE
 
 data  IExprCode :: Type where

@@ -241,9 +241,11 @@ timesE = binaryOpE SMultiply
 divideE :: UExpr ta -> UExpr tb -> UExpr (BinaryResultT BDivide ta tb)
 divideE = binaryOpE SDivide
 
-
 boolOpE :: SBoolOp op -> UExpr ta -> UExpr tb -> UExpr (BoolResultT op ta tb)
 boolOpE bop ea eb = TR.IFix $ UL $ LBinaryOp (SBoolean bop) ea eb
+
+multiOpE :: (t ~ BinaryResultT op t t) => SBinaryOp op -> NonEmpty (UExpr t) -> UExpr t
+multiOpE op es = foldl' (binaryOpE op) (head es) (tail es)
 
 condE :: UExpr EBool -> UExpr t -> UExpr t -> UExpr t
 condE ce te fe = TR.IFix $ UL $ LCond ce te fe
