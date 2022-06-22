@@ -37,8 +37,9 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Stan.ModelConfig as SB
-import Stan.ModelBuilder (dataSetSizeName)
+import Stan.ModelBuilder.BuilderTypes (dataSetSizeName)
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
 
 {-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
@@ -320,17 +321,19 @@ unWeightedMeanVarianceFunction =  SB.addFunctionsOnce "unweighted_mean_variance"
   SB.addStanLine "meanVar[2] = variance(xs)"
   SB.addStanLine "return meanVar"
 -}
+
+
+realIntRatio :: TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> TE.UExpr TE.EReal
+realIntRatio k l = let f x = (TE.realE 1 `TE.timesE` x) in f k `TE.divideE` f l
+
+declTranspose :: TE.TypeOneOf t [TE.EMat, TE.ESqMat, TE.ECVec, TE.ERVec]
+              => TE.NamedDeclSpec (TE.UnaryResultT TE.UTranspose t)
+              -> TE.UExpr t
+              -> SB.StanBuilderM md gq (TE.UExpr (TE.UnaryResultT TE.UTranspose t))
+declTranspose nds m = do
+  SB.stanDeclareRHSN nds $ TE.unaryOpE TE.STranspose m
+
 {-
-
-realIntRatio :: SME.StanVar -> SME.StanVar -> SME.StanExpr
-realIntRatio k l = SB.binOp "/"
-                   (SB.paren $ (SB.scalar "1.0" `SB.times` SB.var k))
-                   (SB.paren $ (SB.scalar "1.0" `SB.times` SB.var l))
-
-matrixTranspose :: SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
-matrixTranspose m@(SB.StanVar n (SB.StanMatrix (rd, cd))) = do
-  SB.stanDeclareRHS (n <> "_Transpose") (SB.StanMatrix (cd, rd)) "" $ SB.matTranspose m
-
 indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> Int -> SB.StanBuilderM md gq SB.StanVar
 indexedConstIntArray rtt mSuffix n =
   let dsName = SB.dataSetName rtt
