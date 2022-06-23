@@ -12,7 +12,7 @@ module Stan.ModelBuilder.DesignMatrix where
 
 import Prelude hiding (All)
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
-import qualified Stan.ModelBuilder.ModelParameters as SMP
+import qualified Stan.ModelBuilder.Parameters as MP
 import qualified Stan.ModelBuilder as SB
 
 import qualified Control.Foldl as FL
