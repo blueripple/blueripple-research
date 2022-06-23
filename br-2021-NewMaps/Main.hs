@@ -8,6 +8,7 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -33,7 +34,8 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Data.CountFolds as BRCF
-
+import qualified BlueRipple.Model.DistrictClusters as BRDC
+import qualified BlueRipple.Model.TSNE as TSNE
 import qualified BlueRipple.Model.Election.DataPrep as BRE
 import qualified BlueRipple.Model.Election.StanModel as BRE
 
@@ -53,6 +55,7 @@ import qualified System.Console.CmdArgs as CmdArgs
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FI
+import qualified Frames.Streamly.TH as FS
 import qualified Frames.MapReduce as FMR
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.Folds as FF
@@ -77,6 +80,11 @@ import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import Stan.ModelBuilder (binomialLogitDistWithConstants)
 import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
+import BlueRipple.Model.DistrictClusters (districtsForClustering)
+import qualified Data.Vector.Unboxed as UVec
+import qualified BlueRipple.Utilities.KnitUtils as K
+
+FS.declareColumn "DistCategory" ''Text
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -935,14 +943,38 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   rp <- K.ignoreCacheTime rescaledProposed_C
   let (demoModelDRA, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] rp sortedFilteredModelAndDRA
   when (not $ null missing) $ K.knitError $ "Missing keys in AllCDs acs and model/DRA join: " <> show missing
+  districtsForClustering_C <- BR.retrieveOrMakeD "newMaps/allCDs/districtsForClustering.bin" (pure ())
+                              $ const
+                              $ pure
+                              $ BRDC.districtsForClustering @[DT.SexC, DT.CollegeGradC, DT.Race5C] @BRC.Count $ fmap F.rcast demoModelDRA
+  K.logLE K.Info $ "tSNE embedding..."
+  let tsnePerplexity = 10
+      tsneIters = [1000]
+      tsnePerplexities = [tsnePerplexity]
+      tsneLearningRates = [10]
+--      tsneClusters = 5
+  tsneResult_C <- BR.retrieveOrMakeFrame "mrp/DistrictClusters/tsne.bin" districtsForClustering_C $ \dfc -> do
+    K.logLE K.Info $ "Running tSNE gradient descent for " <> (T.pack $ show tsneIters) <> " iterations."
+    tsneMs <- TSNE.runTSNE
+              (Just 1)
+              BRDC.districtId
+              (UVec.toList . BRDC.districtVec)
+              tsnePerplexities
+              tsneLearningRates
+              tsneIters
+              (\x -> (TSNE.tsneIteration2D_M x, TSNE.tsneCost2D_M x, TSNE.solutionToList $ TSNE.tsneSolution2D_M x))
+              TSNE.tsne2D_S
+              dfc
+    let tSNERec :: TSNE.TSNEParams -> (Double, Double) -> F.Record [BRDC.TSNEPerplexity, BRDC.TSNELearningRate, BRDC.TSNEIters, BRDC.TSNE1, BRDC.TSNE2]
+        tSNERec (TSNE.TSNEParams p lr n) (x, y) = p F.&: lr F.&: n F.&: x F.&: y F.&: V.RNil
+        tSNERecs p = fmap (\(k, tSNEXY) -> k F.<+> tSNERec p tSNEXY) . M.toList
+        fullTSNEResult =  mconcat $ fmap (\(p, solM) -> F.toFrame $ tSNERecs p solM) $ tsneMs
+    pure fullTSNEResult
+  tsneResult <- K.ignoreCacheTime tsneResult_C
+
+
+--  K.ignoreCacheTime tsneResult_C >>= BR.logFrame
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
-{-    _ <- K.addHvega Nothing Nothing
-         $ diffVsChart @BRE.FracGrad "Model Delta vs Frac Grad" ("Frac Grad", (100*)) (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
-    _ <- K.addHvega Nothing Nothing
-         $ diffVsHispChart "Model Delta vs Frac Hispanic" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
-    _ <- K.addHvega Nothing Nothing
-         $ diffVsLogDensityChart "Model Delta vs Density" (FV.ViewConfig 600 600 5) (F.rcast <$> modelAndDRWith)
--}
     let fTable t ds = do
           when (not $ null ds) $ do
             BR.brAddRawHtmlTable
@@ -963,13 +995,21 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               (FL.fold (xyFold2' sldDistLabel) $ F.filterFrame (\r -> F.rcast @[BR.StateAbbreviation, ET.DistrictName] r `Set.member` dists) demoModelDRA)
             pure ()
     categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories3 sortedFilteredModelAndDRA
+    let withCategories = addCategoriesToRecords categorized
+        (tsneWithCategories, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] tsneResult withCategories
     traverse_ (uncurry fTable) categorized
+    K.addHvega Nothing Nothing
+      $ BRDC.tsneChart @DistCategory "All" "Category" (FV.ViewConfig 600 600 5) (fmap F.rcast tsneWithCategories)
+    pure ()
+
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
 --      (BHA.class_ "brTable")
 --      (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
 --      sortedFilteredModelAndDRA
   pure ()
+
+
 
 allCDsColonnade cas =
   let state = F.rgetField @DT.StateAbbreviation
@@ -1294,7 +1334,11 @@ categorizeDistricts' :: forall f rs r. (K.KnitEffects r
                                        , F.ElemOf rs ET.DistrictTypeC
                                        , F.ElemOf rs ET.DistrictName
                                        )
-                    => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> [DistrictCategory rs] -> f (F.Record rs) ->  K.Sem r ([(Text, [F.Record rs])])
+                    => (F.Record rs -> Bool)
+                     -> (Int, Int) -> (Int, Int)
+                     -> [DistrictCategory rs]
+                     -> f (F.Record rs)
+                     -> K.Sem r ([(Text, [F.Record rs])])
 categorizeDistricts' cc brR draR cats allDists = do
   let length = FL.fold FL.length
       catFld c =  (,) <$> pure (districtCategoryName c) <*> FL.prefilter (districtCategoryCriteria c cc brR draR) FL.list
@@ -1322,7 +1366,11 @@ categorizeDistricts' cc brR draR cats allDists = do
   traverse_ (\(t,c) -> K.logLE K.Info $ t <> " has " <> show (length c) <> " districts.") categorized
   return categorized
 
-
+addCategoriesToRecords :: FI.RecVec (rs V.++ '[DistCategory]) => [(Text, [F.Record rs])] -> F.FrameRec (rs V.++ '[DistCategory])
+addCategoriesToRecords = F.toFrame . concat . fmap f
+  where
+    f :: (Text, [F.Record rs]) -> [F.Record (rs V.++ '[DistCategory])]
+    f (dc, rs) = fmap (V.<+> FT.recordSingleton @DistCategory dc) rs
 
 data NewSLDMapsPostSpec = NewSLDMapsPostSpec
                           { stateAbbr :: Text
