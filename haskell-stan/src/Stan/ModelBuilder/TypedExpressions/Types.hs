@@ -75,6 +75,17 @@ type family TypeOneOf' (et :: EType) (ets :: [EType]) (mem :: Bool) :: Constrain
   TypeOneOf' et ets 'True = ()
   TypeOneOf' et ets 'False = TE.TypeError (TE.ShowType et :<>: TE.Text " is not a member of " :<>: TE.ShowType ets)
 
+{-
+type family OrArrayOfB (et :: EType) (t :: EType) :: Bool where
+  OrArrayOfB a a = True
+  OrArrayOfB a (EArray1 a) = True
+  OrArrayOfB EReal SCVec = True
+  OrArrayOfB _ _ = False
+
+type family ScalarOrArrayOf' (a :: EType) (b :: EType) (mem :: Bool) :: Constraint where
+  ScalarOrArrayOf' a b 'True = '[]
+  ScalarOrArrayOf a b 'False = TE.TypeError (TE.ShowType a :<>: TE.Text " is not a scalar or array of " :<>: TE.ShowType b)
+-}
 
 type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EInt a _ = a

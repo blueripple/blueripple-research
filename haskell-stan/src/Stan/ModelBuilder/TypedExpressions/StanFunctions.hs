@@ -1,20 +1,19 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Stan.ModelBuilder.TypedExpressions.StanFunctions
   (
@@ -35,22 +34,24 @@ import GHC.TypeLits (ErrorMessage((:<>:)))
 import Data.Type.Nat (SNatI)
 import Prelude hiding (Nat)
 
+-- this needs fixingf for higher dimensi
+type VectorizedReal t = (GenSType t, ScalarType t ~ EReal)
 
-logit :: Function EReal '[EReal]
+logit :: VectorizedReal t => Function t '[t]
 logit = simpleFunction "logit"
 
 --logit :: TE.ExprList '[EReal] -> TE
 
-invLogit :: Function EReal '[EReal]
+invLogit :: VectorizedReal t => Function t '[t]
 invLogit = simpleFunction "inv_logit"
 
-sqrt :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t]
+sqrt :: VectorizedReal t => Function t '[t]
 sqrt = simpleFunction "sqrt"
 
-inv_sqrt :: Function EReal '[EReal]
+inv_sqrt :: VectorizedReal t => Function t '[t]
 inv_sqrt = simpleFunction "inv_sqrt"
 
-inv :: Function EReal '[EReal]
+inv :: VectorizedReal t => Function t '[t]
 inv = simpleFunction "inv"
 
 mean :: (TypeOneOf t [ECVec, ERVec, EMat, ESqMat], GenSType t) => Function EReal '[t]
@@ -151,25 +152,29 @@ cauchyLUPDF = simpleDensity "cauchy_lupdf"
 cauchyRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
 cauchyRNG = simpleFunction "cauchy_rng"
 
-binomialDensity :: (TypeOneOf t [EArray1 EInt, EInt], GenSType t) => Density t '[t, EReal]
+type BinDensityC t t' = (TypeOneOf t [EArray1 EInt, EInt], GenSType t
+                        , TypeOneOf t' [EArray1 EReal, ECVec, EReal], ScalarType t' ~ EReal, GenSType t'
+                        , Dimension t ~ Dimension t')
+
+binomialDensity :: BinDensityC t t' => Density t '[t, t']
 binomialDensity = simpleDensity "binomial"
 
-binomialLPMF :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialLPMF :: BinDensityC t t' => Density t '[t, t']
 binomialLPMF = simpleDensity "binomial_lpmf"
 
-binomialLUPMF :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialLUPMF :: BinDensityC t t' => Density t '[t, t']
 binomialLUPMF = simpleDensity "binomial_lupmf"
 
-binomialRNG :: Function (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialRNG ::BinDensityC t t' => Function t '[t, t']
 binomialRNG = simpleFunction "binomial_rng"
 
-binomialLogitDensity :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialLogitDensity :: BinDensityC t t' => Density t '[t, t']
 binomialLogitDensity = simpleDensity "binomial_logit"
 
-binomialLogitLPMF :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialLogitLPMF :: BinDensityC t t' => Density t '[t, t']
 binomialLogitLPMF = simpleDensity "binomial_logit_lpmf"
 
-binomialLogitLUPMF :: Density (EArray1 EInt) '[EArray1 EInt, EReal]
+binomialLogitLUPMF :: BinDensityC t t' => Density t '[t, t']
 binomialLogitLUPMF = simpleDensity "binomial_logit_lupmf"
 
 betaDensity :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
@@ -196,16 +201,16 @@ betaProportionLUPDF = simpleDensity "beta_proportion_lupdf"
 betaProportionRNG ::  (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
 betaProportionRNG = simpleFunction "beta_proportion_rng"
 
-betaBinomialDensity ::   Density (EArray1 EInt) '[EArray1 EInt, ECVec, ECVec]
+betaBinomialDensity :: BinDensityC t t' => Density t '[t, t', t']
 betaBinomialDensity = simpleDensity "beta_binomial"
 
-betaBinomialLPMF :: Density (EArray1 EInt) '[EArray1 EInt, ECVec, ECVec]
+betaBinomialLPMF :: BinDensityC t t' => Density t '[t, t', t']
 betaBinomialLPMF = simpleDensity "beta_binomial_lpmf"
 
-betaBinomialLUPMF :: Density (EArray1 EInt) '[EArray1 EInt, ECVec, ECVec]
+betaBinomialLUPMF :: BinDensityC t t' => Density t '[t, t', t']
 betaBinomialLUPMF = simpleDensity "binomial_lupmf"
 
-betaBinomialRNG :: Function (EArray1 EInt) '[EArray1 EInt, ECVec, ECVec]
+betaBinomialRNG :: BinDensityC t t' => Function t '[t, t', t']
 betaBinomialRNG = simpleFunction "beta_binomial_rng"
 
 lkjDensity :: Density ESqMat '[EReal]

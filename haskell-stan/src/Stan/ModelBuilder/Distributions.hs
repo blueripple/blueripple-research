@@ -62,7 +62,7 @@ normalDist = StanDist Continuous sample lpdf lupdf rng
     lupdf = TE.densityE TE.normalLUPDF
     rng = TE.functionE TE.normalRNG
 
-binomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
+binomialDist' :: TE.BinDensityC t t' => Bool -> StanDist t '[t, t']
 binomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
     sample gE args = if sampleWithConstants
@@ -72,10 +72,10 @@ binomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
     lupmf = TE.densityE TE.binomialLUPMF
     rng = TE.functionE TE.binomialRNG
 
-binomialDist :: StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
+binomialDist ::  TE.BinDensityC t t' => StanDist t '[t, t']
 binomialDist = binomialDist' False
 
-binomialLogitDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
+binomialLogitDist' :: TE.BinDensityC t t' => Bool -> StanDist t '[t, t']
 binomialLogitDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
     sample gE args = if sampleWithConstants
@@ -83,14 +83,14 @@ binomialLogitDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
                      else TE.sample gE TE.binomialLogitDensity args
     lpmf = TE.densityE TE.binomialLogitLPMF
     lupmf = TE.densityE TE.binomialLogitLUPMF
-    rng :: TE.ExprList [TE.EArray1 TE.EInt, TE.EReal] -> TE.UExpr (TE.EArray1 TE.EInt)
+    rng :: TE.BinDensityC t t' => TE.ExprList [t, t'] -> TE.UExpr t
     rng (tE :> pE :> TNil)= TE.functionE TE.binomialRNG (tE :> TE.functionE TE.invLogit (pE :> TNil) :> TNil)
 
 
-binomialLogitDist :: StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
+binomialLogitDist :: TE.BinDensityC t t' => StanDist t '[t, t']
 binomialLogitDist = binomialLogitDist' False
 
-binomialLogitDistWithConstants :: StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal]
+binomialLogitDistWithConstants ::  TE.BinDensityC t t' => StanDist t '[t, t']
 binomialLogitDistWithConstants = binomialLogitDist' True
 
 
@@ -119,7 +119,7 @@ betaProportionDist = StanDist Continuous sample lpdf lupdf rng
 realToSameSizeVec :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.EReal -> TE.UExpr TE.ECVec
 realToSameSizeVec v x = TE.functionE TE.rep_vector (x :> TE.functionE TE.size (v :> TNil) :> TNil)
 
-betaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+betaBinomialDist' :: forall t t'.TE.BinDensityC t t' => Bool -> StanDist t '[t, t',t']
 betaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
     sample x args = if sampleWithConstants
@@ -133,7 +133,7 @@ betaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
 scalarBetaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
 scalarBetaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
-    (StanDist _ sample' lpmf' lupmf' rng') = betaBinomialDist' sampleWithConstants
+    (StanDist _ sample' lpmf' lupmf' rng') = (betaBinomialDist' @(TE.EArray1 TE.EInt) @TE.ECVec) sampleWithConstants
     sample x  = sample' x . argsToVecs
     lpmf x = lpmf' x . argsToVecs
     lupmf x = lupmf' x . argsToVecs
