@@ -29,6 +29,7 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
+import qualified BlueRipple.Data.Quantiles as BRQ
 import qualified BlueRipple.Data.Visualizations.DemoComparison as BRV
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -83,6 +84,8 @@ import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
 import BlueRipple.Model.DistrictClusters (districtsForClustering)
 import qualified Data.Vector.Unboxed as UVec
 import qualified BlueRipple.Utilities.KnitUtils as K
+import qualified BlueRipple.Data.Loaders.Redistricting as BR
+import qualified BlueRipple.Data.CountFolds as BRQ
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -854,6 +857,24 @@ gradByDistrictFld ppl f =
      (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
      (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGrad) $ gradFld fracPpl f))
 
+gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
+                             , F.ElemOf rs ET.DistrictName
+                             , rs F.⊆ rs
+                             )
+  => (F.Record rs -> Int)
+  -> (F.Record rs -> Double)
+  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracGradOfWhite])
+gradOfWhiteByDistrictFld ppl f =
+  let fracPpl = realToFrac . ppl
+      gradFld ::  (F.Record rs -> Double) -> (F.Record rs -> Double) -> FL.Fold (F.Record rs) Double
+      gradFld wgt x = (/) <$> FL.premap (\r -> wgt r * x r) FL.sum <*> FL.premap wgt FL.sum
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     FMR.noUnpack
+     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
+     (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGradOfWhite) $ gradFld fracPpl f))
+
+
 rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
                => Double
                -> f (F.Record rs)
@@ -894,7 +915,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         whenMatched _ acsPWLD xPWLD = Numeric.exp (acsPWLD - xPWLD)
         rescaleMap = M.merge M.dropMissing M.dropMissing (M.zipWithMatched whenMatched) acsPWLD proposedPWLD
         rescaleRow r = fmap (\s -> FT.fieldEndo @DT.PopPerSqMile (*s) r) $ M.lookup (F.rgetField @BR.StateAbbreviation r) rescaleMap
-    F.toFrame <$> (K.knitMaybe "allCDsPost: missing key in traversal of proposed for desnity rescaling" $ traverse rescaleRow $ FL.fold FL.list proposed)
+    F.toFrame <$> (K.knitMaybe "allCDsPost: missing key in traversal of proposed for density rescaling" $ traverse rescaleRow $ FL.fold FL.list proposed)
   let mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup, name)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
@@ -915,7 +936,12 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         gradByDistrict = FL.fold
                          (gradByDistrictFld (F.rgetField @BRC.Count) gradFrac)
                          (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC] <$> prop)
-        (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradByDistrict
+--        (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradByDistrict
+        gradOfWhiteFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) && (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) then 1 else 0
+        gradOfWhiteByDistrict = FL.fold
+                                (gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) gradOfWhiteFrac)
+                                (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC, DT.Race5C] <$> prop)
+        (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradOfWhiteByDistrict
     when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingGrad
     return withGrad
 
@@ -971,16 +997,21 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         fullTSNEResult =  mconcat $ fmap (\(p, solM) -> F.toFrame $ tSNERecs p solM) $ tsneMs
     pure fullTSNEResult
   tsneResult <- K.ignoreCacheTime tsneResult_C
+  let (tsneWith, tsneWithMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] tsneResult sortedFilteredModelAndDRA
+  when (not $ null tsneWithMissing) $ K.knitError $ "Missing keys tsneWith join."
+  let nwQuantiles = BRQ.quantileLookup (\r -> 1 - F.rgetField @BR.WhiteFrac r) 10 sortedFilteredModelAndDRA
+      gowQuantiles = BRQ.quantileLookup (F.rgetField @BRE.FracGradOfWhite) 10 sortedFilteredModelAndDRA
+      densQuantiles = BRQ.quantileLookup (F.rgetField @DT.PopPerSqMile) 10 sortedFilteredModelAndDRA
 
-
---  K.ignoreCacheTime tsneResult_C >>= BR.logFrame
+--  BR.logFrame tsneResult
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
     let fTable t ds = do
           when (not $ null ds) $ do
+--            BR.logFrame ds
             BR.brAddRawHtmlTable
               t
               (BHA.class_ "brTable")
-              (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+              (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
               (sortOn (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds)
             let dists :: Set (F.Record [BR.StateAbbreviation, ET.DistrictName]) = Set.fromList $ fmap (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds
             K.addHvega Nothing Nothing
@@ -994,14 +1025,31 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               (FV.ViewConfig 600 600 5)
               (FL.fold (xyFold2' sldDistLabel) $ F.filterFrame (\r -> F.rcast @[BR.StateAbbreviation, ET.DistrictName] r `Set.member` dists) demoModelDRA)
             pure ()
-    categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories3 sortedFilteredModelAndDRA
+    K.logLE K.Info $ "sortedFilteredModelAndDRA has " <> show (FL.fold FL.length sortedFilteredModelAndDRA) <> " rows."
+    categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories4 sortedFilteredModelAndDRA
     let withCategories = addCategoriesToRecords categorized
         (tsneWithCategories, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] tsneResult withCategories
     traverse_ (uncurry fTable) categorized
     K.addHvega Nothing Nothing
-      $ BRDC.tsneChart @DistCategory "All" "Category" (FV.ViewConfig 600 600 5) (fmap F.rcast tsneWithCategories)
+      $ BRDC.tsneChartCat @DistCategory "All" "Category" (FV.ViewConfig 600 600 5) (fmap F.rcast tsneWithCategories)
+    let distKey r = F.rgetField @BR.StateAbbreviation r <> "-"  <> F.rgetField @ET.DistrictName r
+        tsneMapPair r = (distKey r, (F.rgetField @BRDC.TSNE1 r, F.rgetField @BRDC.TSNE2 r))
+        tsneDistMap = FL.fold (FL.premap tsneMapPair FL.map) tsneResult
+        tsneResFilter radius t1 t2 r =
+          let x = F.rgetField @BRDC.TSNE1 r
+              y = F.rgetField @BRDC.TSNE2 r
+          in (x - t1)^2 + (y - t2)^2 <= radius^2
+    let tsneEach d = do
+          let dk = distKey d
+          case M.lookup dk tsneDistMap of
+            Nothing -> K.knitError $ dk <> " is missing from tsne Results"
+            Just (t1, t2) -> do
+              let tsneNear = F.filterFrame (tsneResFilter 5 t1 t2) tsneWith
+              K.addHvega Nothing Nothing
+                $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+              pure ()
+    traverse_ (traverse_ tsneEach) $ fmap snd $ categorized
     pure ()
-
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
 --      (BHA.class_ "brTable")
@@ -1011,11 +1059,16 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 
 
 
-allCDsColonnade cas =
+allCDsColonnade nwQ gowQ dQ cas =
   let state = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
       was = F.rgetField @OldCDOverlap
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      fracNW r = 1 - F.rgetField @BR.WhiteFrac r
+      qF x = case x of
+        Left _ -> BR.textToStyledHtml "Err"
+        Right n -> BR.numberToStyledHtml "%d" n
+      fracGOW r = F.rgetField @BRE.FracGradOfWhite r
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
@@ -1023,6 +1076,13 @@ allCDsColonnade cas =
      <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
+     <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracNW))
+     <> C.headed "NW Quantile" (BR.toCell cas "NWQ" "NWQ" (qF . nwQ))
+     <> C.headed "%Grad-White" (BR.toCell cas "%GW" "%GW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracGOW))
+     <> C.headed "GOW Quantile" (BR.toCell cas "GOWQ" "GOWQ" (qF . gowQ))
+     <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
+     <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
+
 
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
@@ -1212,6 +1272,15 @@ implausibleSafeRFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledSha
                   => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
 implausibleSafeRFilter cc brR draR r = categoryFilter cc brR draR  [SafeD, LeanD, Tossup] [SafeR] r
 
+plausibleSafeDFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                  => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+plausibleSafeDFilter cc brR draR r = categoryFilter cc brR draR [LeanD] [SafeD] r
+
+plausibleSafeRFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
+                  => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
+plausibleSafeRFilter cc brR draR r = categoryFilter cc brR draR  [LeanR] [SafeR] r
+
+
 
 demographicallyFavorableFilter :: (F.ElemOf rs TwoPartyDShare,F.ElemOf rs BRE.ModeledShare)
                                => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> F.Record rs -> Bool
@@ -1252,6 +1321,17 @@ dCategories3 =
   ,DistrictCategory "Demographically Unfavorable Toss-ups" demographicallyUnfavorableFilter
   , DistrictCategory "Demographically Surprising But Historically Safe D" implausibleSafeDFilter
   , DistrictCategory "Demographically Surprising But Historically Safe R" implausibleSafeRFilter
+  ]
+
+dCategories4 =
+  [DistrictCategory "Both Close" bothCloseFilter
+  ,DistrictCategory "Demographically Favorable Toss-ups" demographicallyFavorableFilter
+  ,DistrictCategory "Demographically Unfavorable Toss-ups" demographicallyUnfavorableFilter
+  , DistrictCategory "Demographically Vulnerable But Historically Safe D" plausibleSafeDFilter
+  , DistrictCategory "Demographically Vulnerable But Historically Safe D" plausibleSafeRFilter
+  , DistrictCategory "Demographically Surprising But Historically Safe D" implausibleSafeDFilter
+  , DistrictCategory "Demographically Surprising But Historically Safe R" implausibleSafeRFilter
+  , DistrictCategory "Safe/Safe" safeSafeFilter
   ]
 
 
@@ -1346,8 +1426,9 @@ categorizeDistricts' cc brR draR cats allDists = do
       restFld = FL.prefilter (not . cc) FL.list
       allFld = (,,) <$> FL.length <*> catsFld <*> restFld
       (countAll, categorized, uninteresting) = FL.fold allFld allDists
-      checkTotal = countAll - length uninteresting == FL.fold (FL.premap (length . snd) FL.sum) categorized
-  when (not checkTotal) $ K.logLE K.Info "Categorized Districts: count matches"
+      checkTotal = (countAll - length uninteresting) == FL.fold (FL.premap (length . snd) FL.sum) categorized
+  K.logLE K.Info $ show (length uninteresting) <> " of " <> show countAll <> " are uninteresting districts."
+  when (not checkTotal) $ K.logLE K.Info "Categorized Districts: counts don't match!"
   let findOverlaps :: (Foldable g)
                    => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
       findOverlaps a b =
@@ -1453,18 +1534,19 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       interestingFilter r = F.rcast @[ET.DistrictTypeC, ET.DistrictName] r `Set.member` interestingDistricts
   K.logLE K.Info $ "For " <> districtDescription postSpec <> " in " <> stateAbbr postSpec
     <> " there are " <> show (length interestingDistricts) <> " interesting districts."
-  categorized <- categorizeDistricts (contested postSpec . F.rcast) brShareRange draShareRangeSLD sortedModelAndDRA
-  let fTable ds t = do
+  categorized <- categorizeDistricts' (contested postSpec . F.rcast) brShareRange draShareRangeSLD dCategories3 sortedModelAndDRA
+  let fTable t ds = do
         when (not $ null ds)
           $  BR.brAddRawHtmlTable
           ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: " <> t)
           (BHA.class_ "brTable")
           (dmColonnadeOverlap overlapsMMap tableCAS)
           ds
-  fTable (bothClose categorized) "Both Models Close"
-  fTable (plausibleSurprise categorized) "Plausible Surprises"
-  fTable (diffOfDegree categorized) "Differences of Degree"
-  fTable (implausibleSurprise categorized) "Implausible Suprises"
+  traverse_ (uncurry fTable) categorized
+--  fTable (bothClose categorized) "Both Models Close"
+--  fTable (plausibleSurprise categorized) "Plausible Surprises"
+--  fTable (diffOfDegree categorized) "Differences of Degree"
+--  fTable (implausibleSurprise categorized) "Implausible Suprises"
 {-  BR.brAddRawHtmlTable
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: All Interesting")
     (BHA.class_ "brTable")

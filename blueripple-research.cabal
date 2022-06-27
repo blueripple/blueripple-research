@@ -243,6 +243,7 @@ library
                  , BlueRipple.Data.CCESPath
                  , BlueRipple.Data.CCESFrame
                  , BlueRipple.Data.CCES
+                 , BlueRipple.Data.Quantiles
                  , BlueRipple.Data.Visualizations.DemoComparison
                  , BlueRipple.Model.DistrictClusters
                  , BlueRipple.Model.StanMRP

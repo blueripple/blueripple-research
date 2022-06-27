@@ -310,13 +310,13 @@ FS.declareColumn "TSNEIters" ''Int
 FS.declareColumn "TSNEPerplexity" ''Int
 FS.declareColumn "TSNELearningRate" ''Double
 
-tsneChart :: forall t f.(V.KnownField t, Foldable f, Show (V.Snd t))
-          => T.Text
-          -> T.Text
-          -> FV.ViewConfig
-          -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2])
-          -> GV.VegaLite
-tsneChart title labelName vc rows =
+tsneChartCat :: forall t f.(V.KnownField t, Foldable f, Show (V.Snd t))
+             => T.Text
+             -> T.Text
+             -> FV.ViewConfig
+             -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2])
+             -> GV.VegaLite
+tsneChartCat title labelName vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
                     V.:& FVD.asVLData (GV.Str . show) "DType"
                     V.:& FVD.asVLData GV.Str "District"
@@ -332,6 +332,63 @@ tsneChart title labelName vc rows =
       encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
       encToolTips = GV.tooltips [[GV.TName "District Name", GV.TmType GV.Nominal], [GV.TName labelName, GV.TmType GV.Nominal]]
       ptEnc = GV.encoding . encodeTSNEx . encodeTSNEy . encodeLabel
+      labelEnc = ptEnc . encDistrictName . encToolTips
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
+      labelSpec = GV.asSpec [labelEnc [],  GV.mark GV.Text [GV.MdX 20], makeDistrictName [] ]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [ptSpec, labelSpec], vlData]
+
+
+tsneChartNum :: forall t f.(V.KnownField t, Foldable f, Real (V.Snd t), F.ElemOf [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2] t)
+             => T.Text
+             -> T.Text
+             -> (V.Snd t -> V.Snd t)
+             -> FV.ViewConfig
+             -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2])
+             -> GV.VegaLite
+tsneChartNum title numName f vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData (GV.Str . show) "DType"
+                    V.:& FVD.asVLData GV.Str "District"
+                    V.:& FVD.asVLData (GV.Number . realToFrac . f) numName
+                    V.:& FVD.asVLData GV.Number "TSNE-x"
+                    V.:& FVD.asVLData GV.Number "TSNE-y"
+                    V.:& V.RNil
+      maxF = fmap (fromMaybe 0) $ FL.maximum
+      absMinF = fmap (abs . fromMaybe 0) $ FL.minimum
+      colorExtent = FL.fold (FL.premap (realToFrac . f . F.rgetField @t) (max <$> maxF <*> absMinF)) rows
+      vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
+      encodeTSNEx = GV.position GV.X [GV.PName "TSNE-x", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
+      encodeTSNEy = GV.position GV.Y [GV.PName "TSNE-y", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
+      encodeLabel = GV.color [GV.MName numName, GV.MmType GV.Quantitative, GV.MScale [GV.SDomain (GV.DNumbers [negate colorExtent, colorExtent]), GV.SScheme "redblue" []]]
+      encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
+      encToolTips = GV.tooltips [[GV.TName "District Name", GV.TmType GV.Nominal], [GV.TName numName, GV.TmType GV.Nominal]]
+      ptEnc = GV.encoding . encodeTSNEx . encodeTSNEy . encodeLabel
+      labelEnc = ptEnc . encDistrictName . encToolTips
+      ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
+      labelSpec = GV.asSpec [labelEnc [],  GV.mark GV.Text [GV.MdX 20], makeDistrictName [] ]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [ptSpec, labelSpec], vlData]
+
+
+tsneChart' :: forall f.(Foldable f)
+          => T.Text
+          -> FV.ViewConfig
+          -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, TSNE1, TSNE2])
+          -> GV.VegaLite
+tsneChart' title vc rows =
+  let toVLDataRec = FVD.asVLData GV.Str "State"
+                    V.:& FVD.asVLData (GV.Str . show) "DType"
+                    V.:& FVD.asVLData GV.Str "District"
+                    V.:& FVD.asVLData GV.Number "TSNE-x"
+                    V.:& FVD.asVLData GV.Number "TSNE-y"
+                    V.:& V.RNil
+      vlData = FVD.recordsToData toVLDataRec rows
+      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
+      encodeTSNEx = GV.position GV.X [GV.PName "TSNE-x", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
+      encodeTSNEy = GV.position GV.Y [GV.PName "TSNE-y", GV.PmType GV.Quantitative, GV.PScale [GV.SZero False]]
+      encDistrictName = GV.text [GV.TName "District Name", GV.TmType GV.Nominal]
+      encToolTips = GV.tooltips [[GV.TName "District Name", GV.TmType GV.Nominal], [GV.TmType GV.Nominal]]
+      ptEnc = GV.encoding . encodeTSNEx . encodeTSNEy
       labelEnc = ptEnc . encDistrictName . encToolTips
       ptSpec = GV.asSpec [ptEnc [], GV.mark GV.Circle []]
       labelSpec = GV.asSpec [labelEnc [],  GV.mark GV.Text [GV.MdX 20], makeDistrictName [] ]
