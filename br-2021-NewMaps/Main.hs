@@ -972,7 +972,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   districtsForClustering_C <- BR.retrieveOrMakeD "newMaps/allCDs/districtsForClustering.bin" (pure ())
                               $ const
                               $ pure
-                              $ BRDC.districtsForClustering @[DT.SexC, DT.CollegeGradC, DT.Race5C] @BRC.Count $ fmap F.rcast demoModelDRA
+                              $ BRDC.districtsForClustering @[DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopPerSqMile] @BRC.Count $ fmap F.rcast demoModelDRA
   K.logLE K.Info $ "tSNE embedding..."
   let tsnePerplexity = 10
       tsneIters = [1000]
@@ -1004,6 +1004,12 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       densQuantiles = BRQ.quantileLookup (F.rgetField @DT.PopPerSqMile) 10 sortedFilteredModelAndDRA
 
 --  BR.logFrame tsneResult
+  let districtCompare x y =
+        let
+          st = F.rgetField @BR.StateAbbreviation
+          dn = F.rgetField @ET.DistrictName
+        in compare (st x)  (st y) <> ET.districtNameCompare (dn x) (dn y)
+
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
     let fTable t ds = do
           when (not $ null ds) $ do
@@ -1012,7 +1018,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               t
               (BHA.class_ "brTable")
               (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-              (sortOn (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds)
+              (sortBy districtCompare ds)
             let dists :: Set (F.Record [BR.StateAbbreviation, ET.DistrictName]) = Set.fromList $ fmap (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds
             K.addHvega Nothing Nothing
               $ BRV.demoCompareXYCS
@@ -1044,7 +1050,11 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
           case M.lookup dk tsneDistMap of
             Nothing -> K.knitError $ dk <> " is missing from tsne Results"
             Just (t1, t2) -> do
-              let tsneNear = F.filterFrame (tsneResFilter 5 t1 t2) tsneWith
+              let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) tsneWith
+              BR.brAddRawHtmlTable dk
+                (BHA.class_ "brTable")
+                (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+                (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
               K.addHvega Nothing Nothing
                 $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
               pure ()
@@ -1083,6 +1093,30 @@ allCDsColonnade nwQ gowQ dQ cas =
      <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
      <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
 
+{-
+tseNearColonnade nwQ gowQ dQ cas =
+  let state = F.rgetField @DT.StateAbbreviation
+      dName = F.rgetField @ET.DistrictName
+      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      fracNW r = 1 - F.rgetField @BR.WhiteFrac r
+      qF x = case x of
+        Left _ -> BR.textToStyledHtml "Err"
+        Right n -> BR.numberToStyledHtml "%d" n
+      fracGOW r = F.rgetField @BRE.FracGradOfWhite r
+      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
+     <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
+     <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracNW))
+     <> C.headed "NW Quantile" (BR.toCell cas "NWQ" "NWQ" (qF . nwQ))
+     <> C.headed "%Grad-White" (BR.toCell cas "%GW" "%GW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracGOW))
+     <> C.headed "GOW Quantile" (BR.toCell cas "GOWQ" "GOWQ" (qF . gowQ))
+     <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
+     <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
+-}
 
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
