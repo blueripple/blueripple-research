@@ -70,7 +70,7 @@ to_vector :: (TypeOneOf t [ECVec, ERVec, EArray1 EInt, EArray1 EReal], GenSType 
           => Function ECVec '[t]
 to_vector = simpleFunction "to_vector"
 
-size :: (TypeOneOf t '[ECVec, ERVec, EArray1 EInt, EArray1 EReal, EArray1 EComplex], GenSType t) => Function EInt '[t]
+size :: (IsContainer t, GenSType t) => Function EInt '[t]
 size = simpleFunction "size"
 
 sum :: (TypeOneOf t '[ECVec, ERVec, EMat, ESqMat], GenSType t) => Function EReal '[t]
@@ -112,6 +112,33 @@ rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> TypeNil) f
   where
     f :: TypedList u '[EReal, EInt] -> TypedList u '[EReal, EInt, EInt]
     f (a :> b :> TNil) = a :> b :> b :> TNil
+
+segment :: (IsContainer t, GenSType t) => Function t [t, EInt, EInt]
+segment = simpleFunction "segment"
+
+inverse :: (TypeOneOf t [EMat, ESqMat], GenSType t) => Function t '[t]
+inverse = simpleFunction "inverse"
+
+qr_thin_Q :: Function EMat '[EMat]
+qr_thin_Q = simpleFunction "qr_thin_Q"
+
+qr_thin_R :: Function EMat '[EMat]
+qr_thin_R = simpleFunction "qr_thin_R"
+
+block :: Function EMat [EMat, EInt, EInt, EInt, EInt]
+block = simpleFunction "block"
+
+sub_col :: Function ECVec [EMat, EInt, EInt, EInt]
+sub_col = simpleFunction "sub_col"
+
+sub_row :: Function ERVec [EMat, EInt, EInt, EInt]
+sub_row = simpleFunction "sub_row"
+
+rows :: (TypeOneOf t [EMat, ESqMat], GenSType t) => Function EInt '[t]
+rows = simpleFunction "rows"
+
+cols :: (TypeOneOf t [EMat, ESqMat], GenSType t) => Function EInt '[t]
+cols = simpleFunction "cols"
 
 
 -- Densities & RNGs

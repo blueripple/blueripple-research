@@ -888,12 +888,13 @@ addFunctionsOnce functionsName fCode = do
          )
 
 addFunctionOnce :: (Traversable g, TE.GenSType rt)
-                => TE.Function rt ats -> TE.TypedArgNames ats -> (TE.ExprList ats -> (g TE.UStmt, TE.UExpr rt)) -> StanBuilderM md gq ()
+                => TE.Function rt ats -> TE.TypedArgNames ats -> (TE.ExprList ats -> (g TE.UStmt, TE.UExpr rt)) -> StanBuilderM md gq (TE.Function rt ats)
 addFunctionOnce f@(TE.Function fn _ _ _) argNames fBF = do
   fsNames <- gets hasFunctions
   when (not $  fn `Set.member` fsNames)
     $ inBlock SBFunctions
     $ addStmtToCode $ TE.function f argNames fBF
+  return f
 
 -- TODO: We should error if added twice but that doesn't quite work with post-stratifation code now.  Fix.
 addIntMapBuilder :: forall r k md gq.

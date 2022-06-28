@@ -1,18 +1,12 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.FixedEffects where
 
@@ -22,6 +16,9 @@ import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.Parameters as MP
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+
 import Prelude hiding (All)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -30,39 +27,39 @@ import qualified Data.Vector as V
 
 --data FixedEffects row = FixedEffects Int (row -> V.Vector Double)
 
-data FixedEffectsModel k env d = NonInteractingFE Bool SB.StanExpr
-                               | InteractingFE Bool (SB.GroupTypeTag k) (SGM.GroupModel env d)
+--data FixedEffectsModel k env d = NonInteractingFE Bool SB.StanExpr
+--                               | InteractingFE Bool (SB.GroupTypeTag k) (SGM.GroupModel env d)
 
 
-thinQR :: FixedEffectsModel k env d -> Bool
-thinQR (NonInteractingFE b _) = b
-thinQR (InteractingFE b _ _) = b
+--thinQR :: FixedEffectsModel k env d -> Bool
+--thinQR (NonInteractingFE b _) = b
+--thinQR (InteractingFE b _ _) = b
 
-data QRMatrixes = QRMatrixes { qM :: SME.StanVar, rM :: SME.StanVar, rInvM :: SME.StanVar}
-data FEMatrixes = NoQR SME.StanVar SME.StanVar | ThinQR SME.StanVar SME.StanVar QRMatrixes
+data QRMatrixes = QRMatrixes { qM :: TE.UExpr TE.EMat, rM :: TE.UExpr TE.EMat, rInvM :: TE.UExpr TE.EMat}
+data FEMatrixes = NoQR (TE.UExpr TE.EMat) (TE.UExpr TE.EMat) | ThinQR (TE.UExpr TE.EMat) (TE.UExpr TE.EMat) QRMatrixes
 
-xM :: FEMatrixes -> SME.StanVar
+xM :: FEMatrixes -> TE.UExpr TE.EMat
 xM (NoQR x _) = x
 xM (ThinQR x _ _) = x
 
-centeredXM :: FEMatrixes -> SME.StanVar
+centeredXM :: FEMatrixes -> TE.UExpr TE.EMat
 centeredXM (NoQR _ x) = x
 centeredXM (ThinQR _ x _) = x
 
-qrM :: (QRMatrixes -> SME.StanVar) -> FEMatrixes -> Either Text SME.StanVar
+qrM :: (QRMatrixes -> SME.StanVar) -> FEMatrixes -> Either Text (TE.UExpr TE.EMat)
 qrM _ (NoQR _ _) = Left "qrM: No QR matrix in NoQR"
 qrM f (ThinQR _ _ qr) = Right $ f qr
 
-qrQ :: FEMatrixes -> Either Text SME.StanVar
+qrQ :: FEMatrixes -> Either Text (TE.UExpr TE.EMat)
 qrQ = qrM qM
 
-qrR :: FEMatrixes -> Either Text SME.StanVar
+qrR :: FEMatrixes -> Either Text (TE.UExpr TE.EMat)
 qrR = qrM rM
 
-qrRInv :: FEMatrixes -> Either Text SME.StanVar
+qrRInv :: FEMatrixes -> Either Text (TE.UExpr TE.EMat)
 qrRInv = qrM rInvM
 
-type MakeVecE md gq = SME.IndexKey -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
+--type MakeVecE md gq = SME.IndexKey -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
 
 addFixedEffects :: forall k rFE rM md gq.(Typeable md, Typeable gq)
                 => FixedEffectsModel k md gq

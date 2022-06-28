@@ -141,6 +141,9 @@ taggedGroupName (GroupTypeTag n) = n
 groupSizeName :: GroupTypeTag k -> Text
 groupSizeName g = "J_" <> taggedGroupName g
 
+dataByGroupIndexName :: RowTypeTag r -> GroupTypeTag g -> Text
+dataByGroupIndexName rtt gtt = dataSetName rtt <> "_" <> taggedGroupName gtt
+
 instance GADT.GEq GroupTypeTag where
   geq gta@(GroupTypeTag n1) gtb@(GroupTypeTag n2) =
     case Reflection.eqTypeRep (Reflection.typeOf gta) (Reflection.typeOf gtb) of

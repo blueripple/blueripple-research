@@ -74,7 +74,7 @@ import qualified Optics
 import qualified Stan.JSON as SJ
 import qualified Stan.ModelBuilder.ModelParameters as SMP
 import qualified Stan.ModelBuilder.GroupModel as SB
-import qualified Stan.ModelBuilder.FixedEffects as SFE
+--import qualified Stan.ModelBuilder.FixedEffects as SFE
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP

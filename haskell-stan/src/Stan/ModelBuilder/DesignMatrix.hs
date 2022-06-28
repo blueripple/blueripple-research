@@ -7,10 +7,25 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeApplications #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use for_" #-}
 
 module Stan.ModelBuilder.DesignMatrix where
 
 import Prelude hiding (All)
+
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+
+
+
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Parameters as MP
 import qualified Stan.ModelBuilder as SB
@@ -28,26 +43,32 @@ import qualified Data.Set as Set
 import qualified Data.Vector.Unboxed as V
 import qualified CmdStan as SB
 import qualified Stan.ModelConfig as SB
+import Stan.ModelBuilder (RowTypeTag(RowTypeTag))
+import Stan.ModelBuilder.TypedExpressions.Operations (SBinaryOp(SBoolean))
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
+import qualified Stan.ModelBuilder as TE
+import qualified Data.Type.Nat as DT
+import qualified Data.Aeson as DT
+import Data.Type.Equality ((:~:)(..), TestEquality (..))
 
-data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: Text
+data DesignMatrixRowPart r = DesignMatrixRowPart { dmrpName :: TE.StanName
                                                  , dmrpLength :: Int
                                                  , dmrpVecF :: r -> V.Vector Double
                                                  }
 
-
 instance Contravariant DesignMatrixRowPart where
   contramap g (DesignMatrixRowPart n l f) = DesignMatrixRowPart n l (f . g)
 
-
+-- a co-product
 stackDesignMatrixRowParts :: DesignMatrixRowPart r1 -> DesignMatrixRowPart r2 -> Either Text (DesignMatrixRowPart (Either r1 r2))
 stackDesignMatrixRowParts d1 d2 = do
   when (dmrpName d1 /= dmrpName d2) $ Left $ "stackDesignMatrixRowPart: Name mismatch! d1=" <> dmrpName d1 <> "; d2=" <> dmrpName d2
   when (dmrpLength d1 /= dmrpLength d2) $ Left $ "stackDesignMatrixRowPart: Length mismatch! l(d1)=" <> show (dmrpLength d1) <> "; l(d2)=" <> show (dmrpLength d2)
   pure $ DesignMatrixRowPart (dmrpName d1) (dmrpLength d1) (either (dmrpVecF d1) (dmrpVecF d2))
+{-# INLINEABLE stackDesignMatrixRowParts #-}
 
 
-
-data DesignMatrixRow r = DesignMatrixRow { dmName :: Text
+data DesignMatrixRow r = DesignMatrixRow { dmName :: TE.StanName
                                          , dmParts :: [DesignMatrixRowPart r]
                                          }
 
@@ -56,27 +77,32 @@ stackDesignMatrixRows dm1 dm2 = do
   when (dmName dm1 /= dmName dm2) $ Left $ "stackDesignMatrixRows: Name mismatch! dm1=" <> dmName dm1 <> "; dm2=" <> dmName dm2
   newParts <- traverse (uncurry stackDesignMatrixRowParts) $ zip (dmParts dm1) (dmParts dm2)
   return $ DesignMatrixRow (dmName dm1) newParts
+{-# INLINEABLE stackDesignMatrixRows #-}
 
 dmColIndexName :: DesignMatrixRow r -> Text
 dmColIndexName dmr = dmName dmr <> "_Cols"
+{-# INLINEABLE dmColIndexName #-}
 
 instance Contravariant DesignMatrixRow where
   contramap g (DesignMatrixRow n dmrps) = DesignMatrixRow n $ fmap (contramap g) dmrps
 
 rowLengthF :: FL.Fold (DesignMatrixRowPart r) Int
 rowLengthF = FL.premap dmrpLength FL.sum
+{-# INLINEABLE rowLengthF #-}
 
 rowFuncF :: FL.Fold (DesignMatrixRowPart r) (r -> V.Vector Double)
 rowFuncF = appConcat . sequenceA <$> FL.premap dmrpVecF FL.list
   where appConcat g r = V.concat (g r)
+{-# INLINEABLE rowFuncF #-}
 
 matrixFromRowData :: DesignMatrixRow r -> Maybe SB.IndexKey -> SB.MatrixRowFromData r
 matrixFromRowData (DesignMatrixRow name rowParts) indexKeyM = SB.MatrixRowFromData name indexKeyM length f
   where (length, f) = FL.fold ((,) <$> rowLengthF <*> rowFuncF) rowParts
+{-# INLINEABLE matrixFromRowData #-}
 
 designMatrixRowPartFromMatrixRowData :: SB.MatrixRowFromData r -> DesignMatrixRowPart r
 designMatrixRowPartFromMatrixRowData (SB.MatrixRowFromData name _ n rowFunc) = DesignMatrixRowPart name n rowFunc
-
+{-# INLINEABLE designMatrixRowPartFromMatrixRowData #-}
 {-
 combineRowFuncs :: Foldable f => f (Int, r -> V.Vector Double) -> (Int, r -> V.Vector Double)
 combineRowFuncs rFuncs =
@@ -97,6 +123,7 @@ boundedEnumRowFunc encodeAsZerosM rToKey = case numKeys of
     numKeys = length (oneHotKeys encodeAsZerosM)
     oneZero r x = if rToKey r == x then 1 else 0
     nonBinary = (numKeys, oneHotVector encodeAsZerosM . rToKey)
+{-# INLINEABLE boundedEnumRowFunc #-}
 
 oneHotKeys :: (Enum k, Bounded k, Eq k) => Maybe k -> [k]
 oneHotKeys encodeAsZerosM =  maybe id List.delete encodeAsZerosM universe
@@ -114,15 +141,16 @@ oneHotVectorMassiv encodeAsZerosM k = MA.compute $ MV.sfromList $ fmap (oneZero 
     oneZero k k' = if k == k' then 1 else 0
 {-# INLINEABLE oneHotVectorMassiv #-}
 
-
 boundedEnumRowPart :: (Enum k, Bounded k, Eq k) => Maybe k -> Text -> (r -> k) -> DesignMatrixRowPart r
 boundedEnumRowPart encodeAsZerosM name f = DesignMatrixRowPart name n vf
   where (n, vf) = boundedEnumRowFunc encodeAsZerosM f
+{-# INLINEABLE boundedEnumRowPart #-}
 
 rowPartFromFunctions :: Text -> [r -> Double] -> DesignMatrixRowPart r
 rowPartFromFunctions name fs = DesignMatrixRowPart name (length fs) toVec
   where
     toVec r = V.fromList $ fmap ($ r) fs
+{-# INLINEABLE rowPartFromFunctions #-}
 
 rowPartFromBoundedEnumFunctions :: forall k r.(Enum k, Bounded k, Eq k) => Maybe k -> Text -> (k -> r -> Double) -> DesignMatrixRowPart r
 rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name vecSize (V.fromList . MV.stoList . sumScaledVecs)
@@ -131,6 +159,7 @@ rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name
         keyedVecs = zip keys $ fmap (oneHotVectorMassiv encodeAsZerosM) keys
         scaledVecs r = fmap (\(k, v) -> v MN..* f k r) keyedVecs
         sumScaledVecs r = FL.fold (FL.Fold (MN.!+!) (MA.compute $ MV.sreplicate (MA.Sz vecSize) 0) id) $ scaledVecs r
+{-# INLINEABLE rowPartFromBoundedEnumFunctions #-}
 
 -- adds matrix (name_dataSetName)
 -- adds K_name (or given index) for col dimension (also <NamedDim name_Cols>)
@@ -141,61 +170,84 @@ rowPartFromBoundedEnumFunctions encodeAsZerosM name f = DesignMatrixRowPart name
 -- "Int K_Design;"
 -- "matrix[N_myDat, K_Design] Design_myDat;"
 -- with accompanying json
-addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> Maybe SB.IndexKey -> SB.StanBuilderM md gq SB.StanVar
-addDesignMatrix rtt dmr colIndexM = SB.add2dMatrixJson rtt (matrixFromRowData dmr colIndexM) ""  (SB.NamedDim (SB.dataSetName rtt))
+addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> Maybe SB.IndexKey -> SB.StanBuilderM md gq (TE.UExpr TE.EMat)
+addDesignMatrix rtt dmr colIndexM = SB.add2dMatrixJson rtt (matrixFromRowData dmr colIndexM) []
+{-# INLINEABLE addDesignMatrix #-}
 
-designMatrixColDimBinding ::  DesignMatrixRow r -> Maybe SB.IndexKey -> (SB.IndexKey, SB.StanExpr)
+designMatrixColDimBinding ::  DesignMatrixRow r -> Maybe SB.IndexKey -> (SB.IndexKey, TE.UExpr TE.EInt)
 designMatrixColDimBinding dmr indexKeyM = (colIndex, colExpr)
   where
     ik = fromMaybe (dmName dmr) indexKeyM
     colIndex = ik  <> "_Cols"
-    colExpr = SB.name $ "K_" <> ik
+    colExpr = TE.namedSizeE $ "K_" <> ik
 {-# INLINEABLE designMatrixColDimBinding #-}
 
-designMatrixIndexes :: DesignMatrixRow r -> [(Text, Int, Int)]
+designMatrixIndexes :: DesignMatrixRow r -> [(DesignMatrixRowPart r, Int, Int)]
 designMatrixIndexes (DesignMatrixRow _ dmps)= SL.scan rowPartScan dmps where
   rowPartScanStep rp = do
     curIndex <- get
     put $ curIndex + dmrpLength rp
-    return (dmrpName rp, dmrpLength rp, curIndex)
+    return (rp, dmrpLength rp, curIndex)
   rowPartScan = SL.Scan rowPartScanStep 1
 
--- adds J_Group and Group_Design_Index for all parts of row
-addDesignMatrixIndexes :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq ()
+designMatrixPartSizeName :: DesignMatrixRow r -> DesignMatrixRowPart r -> TE.StanName
+designMatrixPartSizeName dmr dmrp = "S_" <> dmName dmr <> "_" <> dmrpName dmrp
+{-# INLINEABLE designMatrixPartSizeName #-}
+
+designMatrixPartIndexName :: DesignMatrixRow r -> DesignMatrixRowPart r -> TE.StanName
+designMatrixPartIndexName dmr dmrp = "I_" <> dmName dmr <> "_" <> dmrpName dmrp
+{-# INLINEABLE designMatrixPartIndexName #-}
+
+
+-- declares S_DesignName_PartName (size of part) and I_DesignName_PartName (starting index of part) and for all parts of design matrix row
+addDesignMatrixIndexes :: (Typeable md, Typeable gq)
+                       => SB.RowTypeTag r -> DesignMatrixRow r -> SB.StanBuilderM md gq [(DesignMatrixRowPart r, TE.UExpr TE.EInt, TE.UExpr TE.EInt)]
 addDesignMatrixIndexes rtt dmr = do
-  let addEach (gName, gSize, gStart) = do
-        let sizeName = dmName dmr <> "_" <> gName
-        sv <- SB.addFixedIntJson (SB.inputDataType rtt) sizeName Nothing gSize
-        SB.addDeclBinding sizeName sv
-        SB.addUseBindingToDataSet rtt sizeName sv
-        SB.addFixedIntJson (SB.inputDataType rtt) (gName <> "_" <> dmName dmr <> "_Index") Nothing gStart
-        pure ()
-  traverse_ addEach $ designMatrixIndexes dmr
+  let addEach (rp, gSize, gStart) = do
+--        let sizeName = dmName dmr <> "_" <> gName
+        se <- SB.addFixedIntJson (SB.inputDataType rtt) (designMatrixPartSizeName dmr rp) Nothing gSize
+        ie <- SB.addFixedIntJson (SB.inputDataType rtt) (designMatrixPartIndexName dmr rp) Nothing gStart
+        pure (rp, se, ie)
+  traverse addEach $ designMatrixIndexes dmr
 
--- we assume we've already checked the dimension
-splitToGroupVar :: Text -> Text -> SB.StanVar -> SB.StanBuilderM md gq SB.StanVar
-splitToGroupVar dName gName v@(SB.StanVar n st) = do
-  let newVarName = n <> "_" <> gName
-      index = gName <> "_" <> dName <> "_Index"
-      sizeName = dName <> "_" <> gName
-      namedDimE x = SB.stanDimToExpr $ SB.NamedDim x
-      vecDM = SB.vectorizedOne (dName <> "_Cols")
-      segment x = vecDM $ SB.function "segment" $ SB.var x :| [SB.name index, namedDimE sizeName]
-      block d x = vecDM $ SB.function "block" $ SB.var x :| [SB.scalar "1", SB.name index, namedDimE d, namedDimE sizeName]
-  case st of
-    SB.StanVector _ -> SB.stanDeclareRHS newVarName (SB.StanVector $ SB.NamedDim sizeName) "" $ segment v
-    SB.StanArray [SB.NamedDim d] (SB.StanVector _) -> do
-      nv <- SB.stanDeclare newVarName (SB.StanArray [SB.NamedDim d] $ SB.StanVector $ SB.NamedDim sizeName) ""
-      SB.stanForLoopB "k" Nothing d $ SB.addExprLine "splitToGroupVec" $ SB.var nv `SB.eq` segment v
-      return nv
-    SB.StanMatrix (SB.NamedDim d, _) -> SB.stanDeclareRHS newVarName (SB.StanMatrix (SB.NamedDim d, SB.NamedDim sizeName)) "" $ block d v
-    _ -> SB.stanBuildError "DesignMatrix.splitToGroupVar: Can only split vectors, arrays of vectors or matrices. And the latter, only with named row dimension."
+splitToGroupVar :: forall t r md gq.(TE.IsContainer t, TE.GenSType t)
+                => (DesignMatrixRowPart r, TE.UExpr TE.EInt, TE.UExpr TE.EInt)
+                -> TE.UExpr t
+                -> TE.StanName
+                -> SB.StanBuilderM md gq (TE.UExpr t)
+splitToGroupVar (dmrp, se, ie) tse sn = do
+  let newVarName = sn <> "_" <> dmrpName dmrp
+      splitVarRowsE = TE.functionE TE.size (tse :> TNil)
+      segment :: TE.UExpr TE.ECVec -> TE.UExpr TE.ECVec
+      segment x = TE.functionE TE.segment (x :> ie :> se :> TNil) --  $ SB.var x :| [SB.name index, namedDimE sizeName]
+      block x = TE.functionE TE.block (x :> TE.intE 1 :> ie :> splitVarRowsE :> se :> TNil)
 
--- take a stan vector, array, or matrix indexed by this design row
+  case TE.genSType @t of
+    TE.SCVec -> SB.stanDeclareRHSN (TE.NamedDeclSpec newVarName $ TE.vectorSpec se []) $ segment tse
+    TE.SArray sn TE.SCVec -> case testEquality sn (DT.SS @DT.Nat0) of
+      Just Refl -> do
+        xe :: TE.UExpr (TE.EArray1 TE.ECVec) <- SB.stanDeclareN (TE.NamedDeclSpec newVarName $ TE.array1Spec splitVarRowsE (TE.vectorSpec se []))
+        TE.addStmtToCode
+          $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) splitVarRowsE)
+          $ \ke -> let atk = TE.sliceE TE.s0 ke
+                   in [atk xe `TE.assign` segment (atk tse)]
+        pure xe
+      _ -> SB.stanBuildError "DesignMatrix.splitToGroupVar: Can only split vectors, 1d arrays of vectors, or matrices."
+    TE.SMat -> SB.stanDeclareRHSN (TE.NamedDeclSpec newVarName $ TE.matrixSpec splitVarRowsE se []) $ block tse
+    _ -> SB.stanBuildError "DesignMatrix.splitToGroupVar: Can only split vectors, 1d arrays of vectors, or matrices."
+
+-- take a Stan vector, array, or matrix indexed by this design row
 -- and split into the parts for each group
 -- this doesn't depend on r
-splitToGroupVars :: DesignMatrixRow r -> SB.StanVar -> SB.StanBuilderM md gq [SB.StanVar]
-splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
+-- Do we want to
+-- 1. Check dimensions? Don't know how from Haskell side.
+-- 2. Should the name prefix here come from the design matrix name?
+splitToGroupVars :: (TE.IsContainer t, TE.GenSType t)
+                 => DesignMatrixRow r -> TE.UExpr t -> Maybe TE.StanName -> SB.StanBuilderM md gq [TE.UExpr t]
+splitToGroupVars dmr tse nM =
+  let n = fromMaybe (dmName dmr) nM
+  in traverse (\(dmrp, k, l) -> splitToGroupVar (dmrp, TE.intE k, TE.intE l) tse n) $ designMatrixIndexes dmr
+{-
   let designColName = n <> "_Cols"
   case st of
     SB.StanVector d -> when (d /= SB.NamedDim designColName)
@@ -205,25 +257,42 @@ splitToGroupVars dmr@(DesignMatrixRow n _) v@(SB.StanVar _ st) = do
     SB.StanMatrix (d, _)  -> when (d /= SB.NamedDim designColName)
       $ SB.stanBuildError $ "DesignMatrix.splitTogroupVars: matrix to split has wrong row-dimension: " <> show d
   traverse (\(g, _, _) -> splitToGroupVar n g v) $ designMatrixIndexes dmr
-
+-}
 
 data DMParameterization = DMCentered | DMNonCentered deriving (Show, Eq)
 
-
+{-
 addDMParametersAndPriors :: (Typeable md, Typeable gq)
-                         => Text
+                         => DesignMatrixRow r
                          -> SB.GroupTypeTag k -- exchangeable contexts
-                         -> SB.StanName -- name for beta parameter (so we can use theta if QR)
+                         -> TE.StanName -- name for beta parameter (so we can use theta if QR)
                          -> DMParameterization
-                         -> (SB.StanExpr, SB.StanExpr, Double) -- priors for mu and tau and lkj parameter
+                         -> (TE.DensityWithArgs TE.ECVec, TE.DensityWithArgs TE.ECVec, TE.DensityWithArgs TE.ESqMat) -- priors for mu and tau and lkj parameter
                          -> Maybe Text -- suffix for varnames
-                         -> SB.StanBuilderM md gq (SB.StanVar
-                                                  , SB.StanVar
-                                                  , SB.StanVar
-                                                  , SB.StanVar
-                                                  , SB.StanVar
+                         -> SB.StanBuilderM md gq (DAG.ParameterTag TE.ECVec -- alpha
+                                                  , DAG.ParameterTag TE.EMat -- beta
+                                                  , DAG.ParameterTag TE.ECVec -- mu
+                                                  , DAG.ParameterTag TE.ECVec -- tau
+                                                  , DAG.ParameterTag TE.ESqMat -- corr
                                                   )
-addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, tauPrior, lkjParameter) mS = do
+addDMParametersAndPriors dmr gtt betaName parameterization (muPrior, tauPrior, lkjPrior) = do
+
+
+
+addDMParametersAndPriors' :: (Typeable md, Typeable gq)
+                         => DesignMatrixRow r
+                         -> SB.GroupTypeTag k -- exchangeable contexts
+                         -> TE.StanName -- name for beta parameter (so we can use theta if QR)
+                         -> DMParameterization
+                         -> (TE.DensityWithArgs TE.ECVec, TE.DensityWithArgs TE.ECVec, TE.DensityWithArgs TE.ESqMat) -- priors for mu and tau and lkj parameter
+                         -> Maybe Text -- suffix for varnames
+                         -> SB.StanBuilderM md gq (DAG.ParameterTag TE.ECVec -- alpha
+                                                  , DAG.ParameterTag TE.EMat -- beta
+                                                  , DAG.ParameterTag TE.ECVec -- mu
+                                                  , DAG.ParameterTag TE.ECVec -- tau
+                                                  , DAG.ParameterTag TE.ESqMat -- corr
+                                                  )
+addDMParametersAndPriors' dmr gtt betaName parameterization (muPrior, tauPrior, lkjPrior) = do
   let dmDimName = designMatrixName <> "_Cols"
       dmDim = SB.NamedDim dmDimName
       dmVec = SB.StanVector dmDim
@@ -237,7 +306,7 @@ addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, 
       dmBetaE dm beta = vecDM $ SB.function "dot_product" (SB.var dm :| [SB.var beta])
       lkjPriorE = SB.function "lkj_corr_cholesky" (SB.scalar (show lkjParameter) :| [])
 
-  (alphaRaw, muAlpha, sigmaAlpha, mu, tau, lCorr, betaRaw) <- SB.inBlock SB.SBParameters $ do
+  (alphaRaw, muAlpha, sigmaAlpha, mu, tau, lCorr, betaRaw) <- do
     alphaRaw' <- case parameterization of
       DMCentered -> SB.stanDeclare ("alpha" <> s) gVec ""
       DMNonCentered -> SB.stanDeclare ("alpha_raw" <> s) gVec ""
@@ -282,22 +351,70 @@ addDMParametersAndPriors designMatrixName g betaName parameterization (muPrior, 
       , vecDM $ SB.var lCorr `SB.vectorSample` lkjPriorE
       ]
   pure (alpha, beta, mu, tau, lCorr)
-
+-}
 data DMStandardization = DMCenterOnly | DMCenterAndScale
 
-fixSDZeroFunction :: SB.StanBuilderM md gq ()
-fixSDZeroFunction =  SB.addFunctionsOnce "fixSDZero"
-                   $ SB.declareStanFunction "real fixSDZero(real x)" $ do
-  SB.addStanLine "return (x == 0 ? 1 : x)"
+fixSDZeroFunction :: SB.StanBuilderM md gq (TE.Function TE.EReal '[TE.EReal])
+fixSDZeroFunction =  do
+  let f :: TE.Function TE.EReal '[TE.EReal]
+      f = TE.simpleFunction "fixSDZero"
+  SB.addFunctionOnce f (TE.Arg "x" :> TNil)
+    $ \(x :> TNil) -> TE.writerL $ return $ TE.condE (TE.binaryOpE (TE.SBoolean TE.SEq) x (TE.realE 0)) (TE.realE 0) x
+
+shiftAndScaleDataMatrixFunction :: SB.StanBuilderM md gq (TE.Function TE.EMat '[TE.EMat, TE.ECVec, TE.ECVec])
+shiftAndScaleDataMatrixFunction =  do
+  let f :: TE.Function TE.EMat '[TE.EMat, TE.ECVec, TE.ECVec]
+      f = TE.simpleFunction "shiftAndScaleDataMatrix"
+  SB.addFunctionOnce f (TE.DataArg "m" :> TE.DataArg "means" :> TE.DataArg "sds" :> TNil)
+    $ \(m :> means :> sds :> TNil) -> TE.writerL $ do
+    newMatrix <- TE.declareNW (TE.NamedDeclSpec "shiftedAndScaled" $ TE.matrixSpec (SBB.mRowsE m) (SBB.mColsE m) [])
+    TE.addStmt $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) $ SBB.mColsE m)
+      $ \ke ->
+          let colk :: TE.UExpr q -> TE.UExpr (TE.Sliced TE.N1 q)
+              colk = TE.sliceE TE.s1 ke
+              elDivide = TE.binaryOpE (TE.SElementWise TE.SDivide)
+          in [colk newMatrix `TE.assign` ((colk m `TE.minusE` means) `elDivide` sds)]
+    return newMatrix
+
 
 centerDataMatrix :: (Typeable md, Typeable gq)
                  => DMStandardization
-                 -> SB.StanVar -- matrix
-                 -> Maybe SB.StanVar -- row weights
-                 -> SB.StanBuilderM md gq (SB.StanVar -- standardized matrix, X - row_mean(X) or (X - row_mean(X))/row_stddev(X)
-                                          , SB.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar -- \Y -> standardized Y (via mean/var of X)
+                 -> TE.UExpr TE.EMat -- matrix
+                 -> Maybe (TE.UExpr TE.ECVec)
+                 -> TE.StanName -- prefix for names
+                 -> SB.StanBuilderM md gq (TE.UExpr TE.EMat -- standardized matrix, X - row_mean(X) or (X - row_mean(X))/row_stddev(X)
+                                          , SB.InputDataType -> TE.UExpr TE.EMat -> TE.StanName -> SB.StanBuilderM md gq (TE.UExpr TE.EMat) -- \Y -> standardized Y (via mean/var of X)
                                           )
-centerDataMatrix dms mV@(SB.StanVar mn mt) mwgtsV = do
+centerDataMatrix dms m mwgtsV namePrefix = do
+  vecMVF <- case mwgtsV of
+    Nothing -> do
+      mvF <- SBB.unWeightedMeanVarianceFunction
+      let dummyVecE = TE.namedE "dummyVec" TE.SCVec
+      return $ \mc -> TE.functionE mvF (dummyVecE :> mc :> TNil)
+    Just wgtsV -> do
+      mvF <- SBB.weightedMeanVarianceFunction
+      return $ \mc -> TE.functionE mvF (wgtsV :> mc :> TNil)
+  SB.inBlock SB.SBTransformedData $ do
+    fixSDZero <- fixSDZeroFunction
+    mVec <- SB.stanDeclareN $ TE.NamedDeclSpec (namePrefix <> "_means") $ TE.vectorSpec (SBB.mColsE m) []
+    sVec <- SB.stanDeclareN $ TE.NamedDeclSpec (namePrefix <> "_variances") $ TE.vectorSpec (SBB.mColsE m) []
+    SB.addStmtToCode
+      $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) $ SBB.mColsE m)
+      $ \ke -> TE.writerL' $ do
+      let kCol = TE.sliceE TE.s1 ke
+          atk = TE.sliceE TE.s0 ke
+      mv <- TE.declareRHSNW (TE.NamedDeclSpec "mv" $ TE.vectorSpec (TE.intE 2) []) $ vecMVF (kCol m)
+      TE.addStmt $ atk mVec `TE.assign` (TE.sliceE TE.s0 (TE.intE 1) mv)
+      TE.addStmt $ atk sVec `TE.assign` TE.functionE fixSDZero (TE.functionE TE.sqrt ((TE.sliceE TE.s0 (TE.intE 2) mv) :> TNil) :> TNil)
+    shiftAndScaleF <- shiftAndScaleDataMatrixFunction
+    let stdize x = TE.functionE shiftAndScaleF (m :> mVec :> sVec :> TNil)
+    mStd <- SB.stanDeclareRHSN (TE.NamedDeclSpec (namePrefix <> "_standardized") $ TE.matrixSpec (SBB.mRowsE m) (SBB.mColsE m) [])
+            $ stdize m
+    let centerF idt m' n = do
+          let block = if idt == SB.ModelData then SB.SBTransformedData else SB.SBTransformedDataGQ
+          SB.inBlock block $ SB.stanDeclareRHSN (TE.NamedDeclSpec n $ TE.matrixSpec (SBB.mRowsE m') (SBB.mColsE m') []) $ stdize m'
+    return (mStd, centerF)
+{-
   (rowIndexKey, colIndexKey) <- case mt of
     SB.StanMatrix (rowDim, colDim) -> do
       rowIndex <- case rowDim of
@@ -355,43 +472,33 @@ centerDataMatrix dms mV@(SB.StanVar mn mt) mwgtsV = do
                <> show mv
                <> " which is not a matrix type with indexed row and column dimension."
   pure (centeredXV, stdX)
-
+-}
 -- take a matrix x and return (thin) Q, R and inv(R)
 -- as Q_x, R_x, invR_x
 -- see https://mc-stan.org/docs/2_28/stan-users-guide/QR-reparameterization.html
-thinQR :: SB.StanVar -- matrix of predictors
-       -> Maybe (SB.StanVar, SB.StanName) -- theta and name for beta
-       -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar, SB.StanVar, Maybe SB.StanVar)
-thinQR xVar@(SB.StanVar xName mType@(SB.StanMatrix (rowDim, SB.NamedDim colDimName))) mThetaBeta = do
-  let colDim = SB.NamedDim colDimName
-      vecDM = SB.vectorizedOne colDimName
-      srE =  SB.function "sqrt" (one $ SB.indexSize' rowDim `SB.minus` SB.scalar "1")
-      qRHS = SB.function "qr_thin_Q" (one $ SB.varNameE xVar) `SB.times` srE
+thinQR :: forall t md gq.(TE.GenSType t, TE.TypeOneOf t [TE.ECVec, TE.EMat, TE.EArray (TE.S TE.Z) TE.ECVec])
+       => TE.UExpr TE.EMat -- matrix of predictors
+       -> TE.StanName -- names prefix
+       -> Maybe (TE.UExpr t, TE.StanName) -- theta and name for beta
+       -> SB.StanBuilderM md gq (TE.UExpr TE.EMat, TE.UExpr TE.EMat, TE.UExpr TE.EMat, Maybe (TE.UExpr t))
+thinQR xE xName mThetaBeta = do
   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
-    qV  <- SB.stanDeclareRHS ("Q_" <> xName) mType "" qRHS
-    let rType = SB.StanMatrix (colDim, colDim)
-        rRHS = SB.function "qr_thin_R" (one $ SB.varNameE xVar) `SB.divide` srE
-    rV <- SB.stanDeclareRHS ("R_" <> xName) rType "" rRHS
-    let riRHS = SB.function "inverse" (one $ SB.varNameE rV)
-    rInvV <- SB.stanDeclareRHS ("invR_" <> xName) rType "" riRHS
---    SBB.printVar "" rV
---    SBB.printVar "" rInvV
-    return (qV, rV, rInvV)
+    qE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("Q_" <> xName) $ TE.matrixSpec (SBB.mRowsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.qr_thin_Q (xE :> TNil)
+    rE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("R_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.qr_thin_R (xE :> TNil)
+    rInvE <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("invR_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.inverse (rE :> TNil)
+    return (qE, rE, rInvE)
   mBeta <- case mThetaBeta of
     Nothing -> return Nothing
-    Just (theta@(SB.StanVar _ betaType), betaName) -> case betaType of
-      SB.StanMatrix (_, SB.NamedDim gDimName) ->
+    Just (theta, betaName) -> case TE.genSType @t of
+      TE.SMat ->
         fmap Just
            $ SB.inBlock SB.SBGeneratedQuantities
-           $ SB.stanDeclareRHS betaName betaType ""
-           $ SB.vectorizedOne gDimName
-           $ vecDM $ rI `SB.matMult` theta
-      SB.StanVector (SB.NamedDim gDimName) ->
+           $ SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.matrixSpec (SBB.mRowsE theta) (SBB.mColsE theta) [])
+           $ rI `TE.timesE` theta
+      TE.SCVec ->
         fmap Just
            $ SB.inBlock SB.SBGeneratedQuantities
-           $ SB.stanDeclareRHS betaName betaType ""
-           $ vecDM $ rI `SB.matMult` theta
-      _ -> SB.stanBuildError $ "DesignMatrix.thinQR: bad type given for theta: type=" <> show betaType
+           $ SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.vectorSpec (TE.functionE TE.size (theta :> TNil)) [])
+           $ rI `TE.timesE` theta
+      _ -> SB.stanBuildError $ "DesignMatrix.thinQR: bad type given for theta: type=" <> show (TE.genSType @t)
   return (q, r, rI, mBeta)
-
-thinQR x _ = SB.stanBuildError $ "Non matrix variable given to DesignMatrix.thinQR: v=" <> show x

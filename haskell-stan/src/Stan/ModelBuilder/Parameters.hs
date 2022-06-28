@@ -44,6 +44,7 @@ import qualified Data.Dependent.Sum as DM
 import qualified Data.Graph as Gr
 import qualified Data.Some as Some
 import qualified Control.Foldl as FL
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 -- various special cases
 -- use this only if the args to the Density are fixed. Like stdNormal. They will otherwise not be declared in time.
@@ -95,6 +96,48 @@ addTransformedHP nds rawCsM rawPrior fromRawF = do
   -- can't pattern match because the typelist of args would escape its scope
 --  TE.withDWA (\dRaw pRaw -> DAG.addBuildParameter $ TransformedDiffTypeP nds [] rawDS (exprListToParameters pRaw) dRaw TE.TNil (const fromRawF)) rawPrior
 
+
+{-
+centeredHierarchicalVectorPrior :: SME.StanVar -> SME.StanVar -> SME.StanVar -> SB.StanBuilderM md gq SME.StanExpr
+centeredHierarchicalVectorPrior mu tau lCorr = do
+  muIndex <- isVec "centeredHierarchicalVectorPrior " mu
+  tauIndex <-isVec "centeredHierarchicalVectorPrior" tau
+  corrIndex <- isCholeskyCorr "centeredHierarchicalVectorPrior " lCorr
+  when (muIndex /= tauIndex || muIndex /= corrIndex)
+    $ SB.stanBuildError
+    $ "centeredHierarchicalVectorPrior : index mismatch in given input parameters. "
+    <> "mu index=" <> muIndex <> "; tau index=" <> tauIndex <> "; corrIndex=" <> corrIndex
+  let dpmE = SB.function "diag_pre_multiply" (SB.var tau :| [SB.var lCorr])
+  return $ SB.function "multi_normal_cholesky" (SB.var mu :| [dpmE])
+
+addHierarchicalVector :: Text
+                      -> SME.IndexKey
+                      -> SB.GroupTypeTag k
+                      -> Parameterization
+                      -> SME.StanExpr
+                      -> SB.StanBuilderM md gq SB.StanVar
+addHierarchicalVector name rowIndex gtt parameterization priorE = do
+  let gName = SB.taggedGroupName gtt
+      pType = SB.StanMatrix (SME.NamedDim rowIndex, SME.NamedDim gName)
+--      vecSet = Set.fromList [gName, rowIndex]
+      vecG = SB.vectorizedOne gName
+      vecR = SB.vectorizedOne rowIndex
+  case parameterization of
+    Centered -> do
+      pv <- SB.inBlock SB.SBParameters $ SB.stanDeclare name pType ""
+      SB.inBlock SB.SBModel
+        $ SB.addExprLine "addHierarchicalVector"
+        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var pv) `SME.vectorSample` priorE
+      return pv
+    NonCentered f -> do
+      rpv <- SB.inBlock SB.SBParameters $ SB.stanDeclare (name <> "_raw") pType ""
+      SB.inBlock SB.SBModel
+        $ SB.addExprLine "addHierarchicalVector"
+        $ vecG $ vecR $ SB.function "to_vector" (one $ SB.var rpv) `SME.vectorSample` priorE
+      SB.inBlock SB.SBTransformedParameters
+        $ SB.stanDeclareRHS name pType "" $ vecG $ vecR $ f rpv
+
+-}
 
 {-
 -- This will make each component of the declared parameter independently normal

@@ -263,7 +263,7 @@ vectorizeExprT lengthE namedSrcs = do
 sum :: TE.UExpr TE.ECVec -> TE.UExpr TE.EReal
 sum x = TE.functionE TE.sum (x :> TNil)
 
-weightedMeanFunction :: SB.StanBuilderM md gq ()
+weightedMeanFunction :: SB.StanBuilderM md gq (TE.Function TE.EReal [TE.ECVec, TE.ECVec])
 weightedMeanFunction = do
   let f :: TE.Function TE.EReal [TE.ECVec, TE.ECVec]
       f = TE.simpleFunction "weighted_mean"
@@ -273,7 +273,7 @@ weightedMeanFunction = do
               $ TE.binaryOpE (TE.SElementWise TE.SMultiply) ws xs
     return $ sum wgtdXs `TE.divideE` sum ws
 
-weightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
+weightedMeanVarianceFunction :: SB.StanBuilderM md gq (TE.Function TE.ECVec [TE.ECVec, TE.ECVec])
 weightedMeanVarianceFunction = do
   let f :: TE.Function TE.ECVec [TE.ECVec, TE.ECVec]
       f = TE.simpleFunction "weighted_mean_variance"
@@ -300,12 +300,12 @@ weightedMeanVarianceFunction = do
   SB.addStanLine "return meanVar"
 -}
 
-unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq ()
+unWeightedMeanVarianceFunction :: SB.StanBuilderM md gq (TE.Function TE.ECVec [TE.ECVec, TE.ECVec])
 unWeightedMeanVarianceFunction = do
   let f :: TE.Function TE.ECVec [TE.ECVec, TE.ECVec]
       f = TE.simpleFunction "unweighted_mean_variance"
   SB.addFunctionOnce f (TE.Arg "ws" :> TE.Arg "xs" :> TNil)
-    $ \(ws :> xs :> TNil) -> TE.writerL $ do
+    $ \(_ :> xs :> TNil) -> TE.writerL $ do
     n <- TE.declareRHSW "N" (TE.intSpec []) $ TE.functionE TE.size (xs :> TNil)
     mv <- TE.declareW "meanVar" (TE.vectorSpec (TE.intE 2) [])
     let meanVar i = TE.sliceE TE.s0 (TE.intE i) mv
@@ -351,7 +351,7 @@ zeroMatrixE rowsE colsE = TE.functionE TE.rep_matrix (TE.realE 0 :> rowsE :> col
 ps_by_group :: TE.Function TE.ECVec [TE.EInt, TE.EInt, TE.EIndexArray, TE.ECVec, TE.ECVec]
 ps_by_group = TE.simpleFunction "ps_by_group"
 
-psByGroupFunction :: SB.StanBuilderM md gq ()
+psByGroupFunction :: SB.StanBuilderM md gq (TE.Function TE.ECVec [TE.EInt, TE.EInt, TE.EIndexArray, TE.ECVec, TE.ECVec])
 psByGroupFunction = do
   SB.addFunctionOnce ps_by_group (TE.DataArg "Nps" :> TE.DataArg "Ngrp" :> TE.DataArg "grpPSIndex" :> TE.DataArg "wgts" :> TE.Arg "probs" :> TNil)
     $ \(nPS :> nGrp :> grpPSIndex :> wgts :> probs :> TNil) -> TE.writerL $ do
@@ -422,6 +422,14 @@ postStratifiedParameterF prof block varNameM rtt gtt grpIndex wgtsV pV reIndexRt
         gProb <- TE.declareRHSW psDataByGroupName grpVecDS $ TE.functionE ps_by_group (dsSizeE :>  grpSizeE :> grpIndex :> wgtsV :> pV :> TNil)
         TE.addStmt $ riProb `TE.assign` TE.indexE TE.s0 reIndex gProb
       pure riProb
+
+mRowsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.UExpr TE.EInt
+mRowsE m = TE.functionE TE.rows (m :> TNil)
+
+mColsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.UExpr TE.EInt
+mColsE m = TE.functionE TE.cols (m :> TNil)
+
+
 {-
 postStratifiedParameter :: (Typeable md, Typeable gq)
                         => Bool

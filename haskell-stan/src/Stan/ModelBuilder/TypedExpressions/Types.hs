@@ -54,6 +54,22 @@ data EType where
 --  (::->) :: EType -> EType -> EType
   deriving (Eq, Ord, Show)
 
+class GenEType (e :: EType) where
+  genEType :: EType
+
+instance GenEType EVoid where genEType = EVoid
+instance GenEType EString where genEType = EString
+instance GenEType EBool where genEType = EBool
+instance GenEType EInt where genEType = EInt
+instance GenEType EReal where genEType = EReal
+instance GenEType EComplex where genEType = EComplex
+instance GenEType ECVec where genEType = ECVec
+instance GenEType ERVec where genEType = ERVec
+instance GenEType EMat where genEType = EMat
+instance GenEType ESqMat where genEType = ESqMat
+instance (DT.SNatI n, GenEType t) => GenEType (EArray n t) where genEType = EArray (DT.snatToNat $ DT.snat @n) (genEType @t)
+
+
 type EArray1 :: EType -> EType
 type EArray1 t = EArray (S Z) t
 
@@ -114,6 +130,14 @@ type family ScalarType (et :: EType) :: EType where
   ScalarType EMat = EReal
   ScalarType ESqMat = EReal
   ScalarType a = a
+
+type family IsContainer (t :: EType) :: Constraint where
+  IsContainer ECVec = ()
+  IsContainer ERVec = ()
+  IsContainer EMat = ()
+  IsContainer ESqMat = ()
+  IsContainer (EArray _ _) = ()
+  IsContainer t = TE.TypeError (TE.ShowType t :<>: TE.Text " is not a container type.  Perhaps you are trying to call segment or block?")
 
 -- EType singleton
 data SType :: EType -> Type where

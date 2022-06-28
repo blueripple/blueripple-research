@@ -149,7 +149,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.Statements
                  , Stan.ModelBuilder.TypedExpressions.TypedList
                  , Stan.ModelBuilder.TypedExpressions.Types
-                 , Stan.ModelBuilder.FixedEffects
+--                 , Stan.ModelBuilder.FixedEffects
                  , Stan.ModelBuilder.Parameters
 --                 , Stan.ModelBuilder.ModelParameters
 --                 , Stan.ModelBuilder.StanFunctionBuilder
