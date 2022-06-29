@@ -38,6 +38,7 @@ common deps
                , foldl >= 1.4 && < 1.5
                , foldl-statistics >= 0.1.5 && < 0.2
                , generic-optics >= 2.0
+               , grid >= 7.8 && < 7.10
                , groups
                , heidi >= 0.1.0 && < 0.2
                , here
@@ -55,13 +56,16 @@ common deps
                , pipes
                , polysemy >= 1.6 && < 1.8
                , polysemy-plugin
+               , polysemy-RandomFu
                , primitive >= 0.7.0.0
                , profunctors
                , random-fu >= 0.2.7.3
-               , random-source
+--               , random-source
                , relude >=1.0.0 && < 1.2
                , semirings >= 0.5 && < 0.7
                , say >= 0.1.0.1 && < 0.2
+               , som > 10.0 && < 10.2
+               , sparse-linear-algebra >= 0.3 && < 0.4
                , statistics
                , streamly >= 0.8 && < 0.9
                , streamly-bytestring
@@ -244,7 +248,9 @@ library
                  , BlueRipple.Data.CCESPath
                  , BlueRipple.Data.CCESFrame
                  , BlueRipple.Data.CCES
+                 , BlueRipple.Data.Quantiles
                  , BlueRipple.Data.Visualizations.DemoComparison
+                 , BlueRipple.Model.DistrictClusters
                  , BlueRipple.Model.StanMRP
                  , BlueRipple.Model.StanCCES
                  , BlueRipple.Model.PreferenceBayes

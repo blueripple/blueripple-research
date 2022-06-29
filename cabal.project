@@ -27,6 +27,12 @@ source-repository-package
 
 source-repository-package
   type: git
+  location: https://github.com/adamConnerSax/polysemy-Extra
+  tag: 2c78425f825b227b514e5d6f4851da2716a38372
+  subdir: polysemy-RandomFu
+
+source-repository-package
+  type: git
   location: https://github.com/L-as/flat
   tag: 41a040c413351e021982bb78bd00f750628f8060
 

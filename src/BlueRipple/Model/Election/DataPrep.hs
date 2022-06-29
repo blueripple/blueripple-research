@@ -106,6 +106,7 @@ FS.declareColumn "PresRVotes" ''Int
 FS.declareColumn "FracUnder45" ''Double
 FS.declareColumn "FracFemale" ''Double
 FS.declareColumn "FracGrad" ''Double
+FS.declareColumn "FracGradOfWhite" ''Double
 FS.declareColumn "FracWhiteNonHispanic" ''Double
 FS.declareColumn "FracWhiteHispanic" ''Double
 FS.declareColumn "FracNonWhiteHispanic" ''Double
