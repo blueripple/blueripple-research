@@ -48,6 +48,7 @@ import Data.Type.Equality ((:~:)(Refl),TestEquality(testEquality))
 import qualified Text.Show
 import qualified Data.Set as Set
 import Stan.ModelBuilder.TypedExpressions.Expressions (UExpr)
+import Stan.ModelBuilder.TypedExpressions.Types (sTypeToEType)
 
 -- ultimately, we should not expose this constructor.  So to get one of these you have to add a Builder to the DMap.
 data ParameterTag :: TE.EType -> Type where
@@ -69,6 +70,9 @@ instance GC.GCompare ParameterTag where
   gcompare a b = case GC.geq a b of
     Just GC.Refl -> case compare (taggedParameterName a) (taggedParameterName b) of
       EQ -> GC.GEQ
+      LT -> GC.GLT
+      GT -> GC.GGT
+    Nothing -> case compare (sTypeToEType $ taggedParameterType a) (sTypeToEType $ taggedParameterType b) of
       LT -> GC.GLT
       GT -> GC.GGT
 

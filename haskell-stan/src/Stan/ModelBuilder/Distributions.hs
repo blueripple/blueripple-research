@@ -62,6 +62,19 @@ normalDist = StanDist Continuous sample lpdf lupdf rng
     lupdf = TE.densityE TE.normalLUPDF
     rng = TE.functionE TE.normalRNG
 
+
+scalarNormalDist :: StanDist TE.ECVec '[TE.EReal, TE.EReal]
+scalarNormalDist = StanDist Continuous sample lpdf lupdf rng
+  where
+--    f v x = TE.functionE TE.rep_vector (x :> TE.functionE TE.size (v :> TNil) :> TNil)
+--    g :: TE.UExpr TE.ECVec -> TE.ExprList [TE.EReal, TE.EReal] -> TE.ExprList [TE.ECVec, TE.ECVec]
+--    g x (a :> b :> TNil) = f x a :> f x b :> TNil
+    sample x  = TE.sample x TE.normalDensityS
+    lpdf = TE.densityE TE.normalLPDFS
+    lupdf = TE.densityE TE.normalLUPDFS
+    rng = TE.functionE TE.normalRNGS
+
+
 binomialDist' :: TE.BinDensityC t t' => Bool -> StanDist t '[t, t']
 binomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where

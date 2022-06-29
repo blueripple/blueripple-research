@@ -14,7 +14,7 @@
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
 module Stan.ModelBuilder.TypedExpressions.Program (
-    module Stan.ModelBuilder.TypedExpressions.Program,
+    module Stan.ModelBuilder.TypedExpressions.Program
 ) where
 
 import qualified Control.Foldl as FL

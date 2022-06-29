@@ -155,6 +155,19 @@ normalLUPDF = simpleDensity "normal_lupdf"
 normalRNG :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
 normalRNG = simpleFunction "normal_rng"
 
+normalDensityS :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalDensityS = simpleDensity "normal"
+
+normalLPDFS :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalLPDFS = simpleDensity "normal_lpdf"
+
+normalLUPDFS :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalLUPDFS = simpleDensity "normal_lupdf"
+
+normalRNGS :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Function t '[EReal, EReal]
+normalRNGS = simpleFunction "normal_rng"
+
+
 stdNormalDensity :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
 stdNormalDensity = simpleDensity "std_normal"
 

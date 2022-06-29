@@ -142,6 +142,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.Expressions
                  , Stan.ModelBuilder.TypedExpressions.Format
                  , Stan.ModelBuilder.TypedExpressions.Functions
+                 , Stan.ModelBuilder.TypedExpressions.StanFunctions
                  , Stan.ModelBuilder.TypedExpressions.Indexing
                  , Stan.ModelBuilder.TypedExpressions.Operations
                  , Stan.ModelBuilder.TypedExpressions.Program

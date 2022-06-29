@@ -13,6 +13,7 @@ import qualified KnitEnvironment as KE
 
 
 import qualified Stan.ModelBuilder as S
+import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.RScriptBuilder as SR
@@ -45,7 +46,7 @@ runMatchupsModel clearCaches matchupsId = do
     K.ignoreCacheTimeM
     $ runModel @KE.SerializerC @KE.CacheData
     clearCaches
-    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ "mu" <> show matchupsId) "fb")
+    (SC.RunnerInputNames "haskell-stan/test/stan" "normalSpreadDiff" (Just $ SC.GQNames "normalSpreadDiffGQ" ("mu" <> show matchupsId)) "fb")
     dw
     code
     ""
@@ -65,7 +66,7 @@ dataWranglerAndCode :: forall md gq r. (K.KnitEffects r, Typeable md, Typeable g
                     -> K.ActionWithCacheTime r gq --F.Frame FB_Matchup
                     -> S.StanGroupBuilderM md gq ()
                     -> S.StanBuilderM md gq ()
-                    -> K.Sem r (SC.DataWrangler md gq S.DataSetGroupIntMaps (), S.StanCode)
+                    -> K.Sem r (SC.DataWrangler md gq S.DataSetGroupIntMaps (), SP.StanProgram)
 dataWranglerAndCode modelData_C gqData_C gb sb = do
   modelDat <- K.ignoreCacheTime modelData_C
   gqDat <- K.ignoreCacheTime gqData_C
@@ -85,7 +86,7 @@ dataWranglerAndCode modelData_C gqData_C gb sb = do
               (Just gqWrangle)
         return wrangler
       resE = S.runStanBuilder modelDat gqDat gb builderWithWrangler
-  K.knitEither $ fmap (\(bs, dw) -> (dw, S.code bs)) resE
+  K.knitEither $ fmap (\(bs, dw) -> (dw, S.program (S.code bs))) resE
 
 runModel :: forall st cd md gq b c r.
             (SC.KnitStan st cd r
@@ -96,19 +97,19 @@ runModel :: forall st cd md gq b c r.
          => Bool
          -> SC.RunnerInputNames
          -> SC.DataWrangler md gq b ()
-         -> S.StanCode
+         -> SP.StanProgram
          -> Text
          -> SC.ResultAction r md gq b () c
          -> K.ActionWithCacheTime r md
          -> K.ActionWithCacheTime r gq
          -> K.Sem r (K.ActionWithCacheTime r c)
-runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C gqData_C =
+runModel clearCaches rin dataWrangler stanProgram ppName resultAction modelData_C gqData_C =
   K.wrapPrefix "haskell-stan-test.runModel" $ do
   K.logLE K.Info
     $ "Running: model="
     <> SC.rinModel rin <> " using model data=" <> SC.rinData rin
-    <> maybe "" (" and GQ data=" <>) (SC.rinGQ rin)
-  let outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.rinGQ rin)
+    <> maybe "" (" and GQ data=" <>) (SC.gqDataName <$> SC.rinGQ rin)
+  let outputLabel = SC.rinModel rin  <> "_" <> SC.rinData rin <> maybe "" ("_" <>) (SC.gqDataName <$> SC.rinGQ rin)
       stancConfig =
         (CS.makeDefaultStancConfig (toString $ SC.rinModelDir rin <> "/" <> SC.rinModel rin)) {CS.useOpenCL = False}
   stanConfig <-
@@ -116,7 +117,7 @@ runModel clearCaches rin dataWrangler stanCode ppName resultAction modelData_C g
     . SC.noLogOfSummary
     <$> SMR.makeDefaultModelRunnerConfig @st @cd
     rin
-    (Just (S.All, S.stanCodeToStanModel stanCode))
+    (Just (S.All, stanProgram))
     (SC.StanMCParameters 4 4 Nothing Nothing Nothing Nothing (Just 1))
     (Just stancConfig)
   let resultCacheKey = "stan/test/result/" <> outputLabel <> ".bin"
