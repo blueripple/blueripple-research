@@ -19,6 +19,7 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
+import Stan.ModelBuilder.TypedExpressions.Recursion (hfmap)
 
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Expressions as SE
@@ -43,6 +44,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.DAG as SB
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import Stan.ModelBuilder (groupSizeE)
 import qualified Stan.ModelBuilder as TE
+import qualified Stan.ModelBuilder as DS
 
 -- remove "haskell-stan" from these paths if this becomes it's own project
 F.tableTypes "FB_Result" ("haskell-stan/test/data/football.csv")
@@ -116,35 +118,44 @@ spreadDiffNormal = do
   sigmaMuP <- DAG.addBuildParameter
               $ DAG.simpleParameter
               (TE.NamedDeclSpec "sigma_mu_fav" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-              (DAG.GivenP (TE.realE 0) :> DAG.GivenP (TE.realE 3) :> TNil)
+              (DAG.given (TE.realE 0) :> DAG.given (TE.realE 3) :> TNil)
               TE.normalDensity
   sigmaP <- DAG.addBuildParameter
          $ DAG.simpleParameter
          (TE.NamedDeclSpec "sigma" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-         (DAG.GivenP (TE.realE 13) :> DAG.GivenP (TE.realE 15) :> TNil)
+         (DAG.given (TE.realE 13) :> DAG.given (TE.realE 15) :> TNil)
          $ TE.normalDensity
   muVP <- DAG.addBuildParameter
           $ DAG.simpleParameter
           (TE.NamedDeclSpec "mu_fav" $ TE.vectorSpec (S.groupSizeE favoriteG) [])
-          (DAG.GivenP (TE.realE 0) :> DAG.BuildP sigmaMuP :> TNil)
+          (DAG.given (TE.realE 0) :> DAG.build sigmaMuP :> TNil)
          $ TE.normalDensityS
-  let toVec x = TE.functionE TE.rep_vector (x :> S.dataSetSizeE resultsData :> TNil)
-      vecSigmaP = DAG.mapParameter toVec sigmaP
-      indexedMuP = DAG.mapParameter (TE.indexE TE.s0 (TE.byGroupIndexE resultsData favoriteG)) muVP
+  -- these parameter mappings are unecessary here.  We could just map the expressions in the sampling statement.
+  -- But this demonstrates how to map parameters as parameters which is necessary to use them as hyper-parameters.
+  let toVec rtt x = TE.functionE TE.rep_vector (x :> S.dataSetSizeE rtt :> TNil)
+      vecSigmaP = DAG.mapped (toVec resultsData) $ DAG.build sigmaP
+      indexedMuP = DAG.mapped (TE.indexE TE.s0 (TE.byGroupIndexE resultsData favoriteG)) $ DAG.build muVP
+      spreadDiffNormalPs = indexedMuP :> vecSigmaP :> TNil
   S.inBlock S.SBModel
     $ S.addStmtToCode
-    $ TE.sample spreadDiffE TE.normalDensity (indexedMuP :> vecSigmaP :> TNil)
---  SBB.sampleDistV resultsData SD.normalDist (S.var mu_favV, S.var sigmaV) spreadDiffV
-{-  S.inBlock S.SBGeneratedQuantities $ do
+    $ DS.familySample DS.normalDist spreadDiffE $ DAG.asExprs spreadDiffNormalPs
+  S.inBlock S.SBGeneratedQuantities $ do
     matchups <- S.dataSetTag @FB_Matchup SC.GQData "Matchups"
+    let ps = (TE.indexE TE.s0 (TE.byGroupIndexE matchups favoriteG) (DAG.parameterTagExpr muVP)
+             :> toVec matchups (DAG.parameterTagExpr sigmaP)
+             :> TNil)
     S.addRowKeyIntMap matchups favoriteG (F.rgetField @FavoriteName)
-    S.useDataSetForBindings matchups $ do
-      S.stanDeclareRHS "eScoreDiff" (S.StanVector $ S.NamedDim "Matchups") ""
-        $ SE.vectorizedOne "Matchups"
-        $ SD.familyExp SD.normalDist (S.var mu_favV, S.var sigmaV)
-      return ()
-  SBB.generateLogLikelihood resultsData SD.normalDist (return (S.var mu_favV, S.var sigmaV)) spreadDiffV
--}
+    _ <- S.stanDeclareRHSN (TE.NamedDeclSpec "eScoreDiff" $ TE.vectorSpec (TE.dataSetSizeE matchups) [])
+         $ SD.familyRNG SD.normalDist ps
+    pure ()
+
+  let at = TE.sliceE TE.s0
+  SBB.generateLogLikelihood resultsData SD.normalDist []
+    (\k -> at k (DAG.parameterExpr indexedMuP) :> at k (DAG.parameterExpr vecSigmaP) :> TNil)
+    (\k -> at k spreadDiffE)
+
+--  (return (S.var mu_favV, S.var sigmaV)) spreadDiffV
+
 
 -- the getParameter function feels like an incantation.  Need to simplify.
 type ModelReturn = ([(Text, [Double])],[Double], [Double],[(Text, [Double])])

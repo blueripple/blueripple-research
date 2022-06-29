@@ -14,12 +14,16 @@ module Stan.ModelBuilder.TypedExpressions.DAGTypes
     ParameterTag
   , taggedParameterName
   , taggedParameterType
-  , mapParameter
   , parameterExpr
+  , parameterTagExpr
   , FunctionToDeclare(..)
   , TData(..)
   , Parameter(..)
+  , given
+  , build
+  , mapped
   , Parameters
+  , asExprs
   , DeclCode(..)
   , BuildParameter(..)
   , BParameterCollection(..)
@@ -55,9 +59,6 @@ import Stan.ModelBuilder.TypedExpressions.Types (sTypeToEType)
 data ParameterTag :: TE.EType -> Type where
   ParameterTag :: TE.SType t -> TE.StanName -> ParameterTag t
 
-parameterExpr :: ParameterTag t -> UExpr t
-parameterExpr (ParameterTag st n) = TE.namedE n st
-
 taggedParameterType :: ParameterTag t -> TE.SType t
 taggedParameterType (ParameterTag st _) = st
 
@@ -82,9 +83,24 @@ instance Show (ParameterTag t) where
 
 instance GC.GShow ParameterTag where gshowsPrec = Text.Show.showsPrec
 
-
 parameterTagFromBP :: BuildParameter t -> ParameterTag t
 parameterTagFromBP p = ParameterTag (bParameterSType p) (bParameterName p)
+
+parameterTagExpr :: ParameterTag t -> TE.UExpr t
+parameterTagExpr (ParameterTag st n) = TE.namedE n st
+
+--data UseParameter :: TE.EType -> Type where
+--  AsIs :: ParameterTag t -> UseParameter t
+--  Mapped :: (TE.UExpr t -> TE.UExpr t') -> UseParameter t -> UseParameter t'
+
+
+
+--useParameterExpr :: UseParameter t -> UExpr t
+--useParameterExpr (AsIs pt) = parameterTagExpr pt
+--useParameterExpr (Mapped g pt) = g $ useParameterExpr pt
+
+--mapParameter :: (TE.UExpr t -> TE.UExpr t') -> UseParameter t -> UseParameter t'
+--mapParameter = Mapped
 
 -- Transformed Data declarations can only depend on other transformed data, so we need
 -- a wrapper type to enforce that.
@@ -99,10 +115,25 @@ data Parameter :: TE.EType -> Type where
   BuildP :: ParameterTag t -> Parameter t
   MappedP :: (TE.UExpr t -> TE.UExpr t') -> Parameter t -> Parameter t'
 
-mapParameter :: (TE.UExpr t -> TE.UExpr t') -> Parameter t -> Parameter t'
-mapParameter = MappedP
+parameterExpr :: Parameter t -> TE.UExpr t
+parameterExpr (GivenP e) = e
+parameterExpr (BuildP p) = parameterTagExpr p
+parameterExpr (MappedP g p) = g $ parameterExpr p
+
+given :: TE.UExpr t -> Parameter t
+given = GivenP
+
+build :: ParameterTag t -> Parameter t
+build = BuildP
+
+mapped :: (UExpr t -> UExpr t') -> Parameter t -> Parameter t'
+mapped = MappedP
 
 type Parameters ts = TE.TypedList Parameter ts
+
+asExprs :: Parameters ts -> TE.ExprList ts
+asExprs = hfmap parameterExpr
+{-# INLINEABLE asExprs #-}
 
 data FunctionToDeclare = FunctionToDeclare Text TE.UStmt
 
@@ -204,12 +235,13 @@ lookupParameterExpressions :: Parameters ts -> DM.DMap ParameterTag TE.UExpr -> 
 lookupParameterExpressions ps eMap = htraverse f ps where
   f :: Parameter t -> Either Text (TE.UExpr t)
   f p = case p of
-    GivenP e -> return e
-    BuildP ttn -> do
-      case DM.lookup ttn eMap of
-        Just e -> Right e
-        Nothing -> Left $ taggedParameterName ttn <> " not found in expression map.  Dependency ordering issue??"
-    MappedP g p -> g <$> f p
+      GivenP e -> return e
+      BuildP ttn -> do
+        case DM.lookup ttn eMap of
+          Just e -> Right e
+          Nothing -> Left $ taggedParameterName ttn <> " not found in expression map.  Dependency ordering issue??"
+      MappedP g p -> g <$> f p
+--    MappedP g p -> g <$> f p
 
 lookupTDataExpressions :: TE.TypedList TData ts -> DM.DMap ParameterTag TE.UExpr -> Either Text (TE.TypedList TE.UExpr ts)
 lookupTDataExpressions tds = lookupParameterExpressions (hfmap (BuildP . parameterTagFromTData) tds)

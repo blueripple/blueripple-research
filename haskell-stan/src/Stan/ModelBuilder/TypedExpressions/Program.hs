@@ -67,10 +67,7 @@ programToStmt gq p = TE.SContext Nothing fullProgramStmt
       in if null x && null xGQ then Nothing else Just (TE.SBlock TE.TDataStmts $ x ++ xGQ)
     paramsStmt = TE.SBlock TE.ParametersStmts $ stmtsArray ! SBT.SBParameters
     tParamsStmtM = let x = stmtsArray ! SBT.SBTransformedParameters in if null x then Nothing else Just (TE.SBlock TE.TParametersStmts x)
-    modelStmt =
-        let ms = stmtsArray ! SBT.SBModel
-            gqms = stmtsArray ! SBT.SBGeneratedQuantities
-         in TE.SBlock TE.ModelStmts $ ms ++ if gq /= SBT.NoGQ then gqms else []
+    modelStmt = TE.SBlock TE.ModelStmts $ stmtsArray ! SBT.SBModel
     gqStmtM =
         let gqs = stmtsArray ! SBT.SBGeneratedQuantities
             lls = stmtsArray ! SBT.SBLogLikelihood
@@ -122,18 +119,7 @@ addStmtsToBlockTop b stmts = do
 
 programAsText :: SBT.GeneratedQuantities -> StanProgram -> Either Text Text
 programAsText gq p = stmtAsText $ programToStmt gq p
-{-do
-  let pStmt = programToStmt gq p
-  case TE.statementToCodeE TE.emptyLookupCtxt pStmt of
-    Right x -> pure $ PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
-    Left err ->
-      let msg = "Lookup error when building code from tree: " <> err <> "\n"
-            <> "Tree with failed lookups between hashes follows.\n"
-            <> case TE.eStatementToCodeE TE.emptyLookupCtxt pStmt of
-                 Left err2 -> "Yikes! Can't build error tree: " <> err2 <> "\n"
-                 Right x -> PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
-      in Left msg
--}
+
 stmtAsText :: TE.UStmt -> Either Text Text
 stmtAsText  stmt = case TE.statementToCodeE TE.emptyLookupCtxt stmt of
   Right x -> pure $ PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x

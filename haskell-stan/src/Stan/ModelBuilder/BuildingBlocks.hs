@@ -150,8 +150,14 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
         argList = SB.bare fNameUse :|  [SB.name slicedName, SB.name "grainsize"] ++ (varName <$> fnArgs)
     SB.addExprLine "parallelSampleDistV" $ SB.target `SB.plusEq` SB.function "reduce_sum" argList
 -}
---generateLogLikelihood :: SB.RowTypeTag r -> TE.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> SB.StanBuilderM md gq ()
---generateLogLikelihood rtt sDist args yV =  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist args yV) $ emptyLLSet
+generateLogLikelihood :: SB.RowTypeTag r
+                      -> SMD.StanDist t pts
+                      -> [TE.UStmt]
+                      -> (TE.UExpr TE.EInt -> TE.ExprList pts)
+                      -> (TE.UExpr TE.EInt -> TE.UExpr t)
+                      -> SB.StanBuilderM md gq ()
+generateLogLikelihood rtt sDist preCode slicedArgsF slicedYF =
+  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist preCode slicedArgsF  slicedYF) emptyLLSet
 
 -- 2nd arg returns something which might need slicing at the loop index for paramters that depend on the index
 -- 3rd arg also
@@ -181,15 +187,16 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   llSizeListNE <- case nonEmpty (DHash.foldrWithKey prependSizeName [] llSet) of
     Nothing -> SB.stanBuildError "generateLogLikelihood': empty set of log-likelihood details given"
     Just x -> return x
-  let llSizeE = TE.multiOpE TE.SAdd $ fmap TE.namedSizeE llSizeListNE
+  let namedIntE n = TE.namedE n TE.SInt
+      llSizeE = TE.multiOpE TE.SAdd $ fmap namedIntE llSizeListNE
 --  SB.addDeclBinding' "LLIndex" llSizeE
   logLikE <- SB.stanDeclareN $ TE.NamedDeclSpec "log_lik" $ TE.vectorSpec llSizeE []
   let doOne :: SB.RowTypeTag a -> LLDetails a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
       doOne rtt (LLDetails dist preStmts pF yF) = do
         prevSizes <- get
-        let sizeE =  TE.multiOpE TE.SAdd $ TE.namedSizeE "n" :| prevSizes
+        let sizeE =  TE.multiOpE TE.SAdd $ namedIntE "n" :| prevSizes
         lift $ SB.addStmtToCode $ TE.scoped
-          $ preStmts ++ [TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ dataSetSizeName rtt))
+          $ preStmts ++ [TE.for "n" (TE.SpecificNumbered (TE.intE 1) (namedIntE $ dataSetSizeName rtt))
                          $ \nE ->
                             let sliced = TE.sliceE TE.s0 nE
                             in [sliced logLikE `TE.assign` SB.familyLDF dist (yF nE) (pF nE)]
