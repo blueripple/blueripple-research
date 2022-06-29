@@ -112,9 +112,11 @@ groupBuilder teams = do
 
 spreadDiffNormal :: S.StanBuilderM (F.Frame FB_Result) (F.Frame FB_Matchup) ()
 spreadDiffNormal = do
+  -- data
   resultsData <- S.dataSetTag @FB_Result SC.ModelData "Results"
-  S.setDataSetForBindings resultsData
   spreadDiffE <- SBB.addRealData resultsData "diff" Nothing Nothing spreadDiff
+
+  -- parameters
   sigmaMuP <- DAG.addBuildParameter
               $ DAG.simpleParameter
               (TE.NamedDeclSpec "sigma_mu_fav" $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -130,28 +132,31 @@ spreadDiffNormal = do
           (TE.NamedDeclSpec "mu_fav" $ TE.vectorSpec (S.groupSizeE favoriteG) [])
           (DAG.given (TE.realE 0) :> DAG.build sigmaMuP :> TNil)
          $ TE.normalDensityS
-  -- these parameter mappings are unecessary here.  We could just map the expressions in the sampling statement.
-  -- But this demonstrates how to map parameters as parameters which is necessary to use them as hyper-parameters.
+  -- get expressions for the parameters we need to model the data
+  let (sigmaE :> muVecE :> TNil) = DAG.tagsAsExprs (sigmaP :> muVP :> TNil)
+
+  -- helpers for broadcasting sigma and indexing mu
   let toVec rtt x = TE.functionE TE.rep_vector (x :> S.dataSetSizeE rtt :> TNil)
-      vecSigmaP = DAG.mapped (toVec resultsData) $ DAG.build sigmaP
-      indexedMuP = DAG.mapped (TE.indexE TE.s0 (TE.byGroupIndexE resultsData favoriteG)) $ DAG.build muVP
-      spreadDiffNormalPs = indexedMuP :> vecSigmaP :> TNil
+      indexed rtt gtt = TE.indexE TE.s0 (TE.byGroupIndexE rtt gtt)
+
+  -- model (non-parameter part)
   S.inBlock S.SBModel
     $ S.addStmtToCode
-    $ DS.familySample DS.normalDist spreadDiffE $ DAG.asExprs spreadDiffNormalPs
+    $ DS.familySample DS.normalDist spreadDiffE (indexed resultsData favoriteG muVecE :> toVec resultsData sigmaE :> TNil)
+
+  -- generated quantities, in this case a prediction
   S.inBlock S.SBGeneratedQuantities $ do
-    matchups <- S.dataSetTag @FB_Matchup SC.GQData "Matchups"
-    let ps = (TE.indexE TE.s0 (TE.byGroupIndexE matchups favoriteG) (DAG.parameterTagExpr muVP)
-             :> toVec matchups (DAG.parameterTagExpr sigmaP)
-             :> TNil)
-    S.addRowKeyIntMap matchups favoriteG (F.rgetField @FavoriteName)
-    _ <- S.stanDeclareRHSN (TE.NamedDeclSpec "eScoreDiff" $ TE.vectorSpec (TE.dataSetSizeE matchups) [])
+    matchupsData <- S.dataSetTag @FB_Matchup SC.GQData "Matchups"
+    let ps = indexed matchupsData favoriteG muVecE :> toVec matchupsData sigmaE :> TNil
+    S.addRowKeyIntMap matchupsData favoriteG (F.rgetField @FavoriteName)
+    _ <- S.stanDeclareRHSN (TE.NamedDeclSpec "eScoreDiff" $ TE.vectorSpec (TE.dataSetSizeE matchupsData) [])
          $ SD.familyRNG SD.normalDist ps
     pure ()
 
+  -- log-likelihood
   let at = TE.sliceE TE.s0
   SBB.generateLogLikelihood resultsData SD.normalDist []
-    (\k -> at k (DAG.parameterExpr indexedMuP) :> at k (DAG.parameterExpr vecSigmaP) :> TNil)
+    (\k -> at k (indexed resultsData favoriteG muVecE) :> at k (toVec resultsData sigmaE) :> TNil)
     (\k -> at k spreadDiffE)
 
 --  (return (S.var mu_favV, S.var sigmaV)) spreadDiffV

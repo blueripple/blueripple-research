@@ -133,6 +133,8 @@ zipTypedListsWith :: (forall x. a x -> b x -> c x) -> TypedList a args -> TypedL
 zipTypedListsWith _ TNil TNil = TNil
 zipTypedListsWith f (a :> as) (b :> bs) = f a b :> zipTypedListsWith f as bs
 
+--typeChangingMap :: (forall t. u t -> u (F t')) -> TypedList u as ->
+
 eqTypedLists :: forall (t ::EType -> Type) es. (forall a.t a -> t a -> Bool) -> TypedList t es -> TypedList t es -> Bool
 eqTypedLists f a b = getAll $ mconcat $ All <$> typedKToList (zipTypedListsWith (\x y -> K $ f x y) a b)
 
