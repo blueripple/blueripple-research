@@ -65,12 +65,13 @@ depOrderedPParameters pc =  (\(pp, _, _) -> pp) . vToBuildInfo <$> Gr.topSort pG
   parameterNameM = \case
     DT.GivenP _ -> Nothing
     DT.BuildP ttn -> Just $ DT.taggedParameterName ttn
+    DT.MappedP _ p -> parameterNameM p
   bParameterNames :: DT.Parameters ts -> [TE.StanName]
   bParameterNames = catMaybes . TE.typedKToList . hfmap (K . parameterNameM)
   dSumToGBuildInfo :: DM.DSum DT.ParameterTag DT.BuildParameter -> (PhantomP, TE.StanName, [TE.StanName])
   dSumToGBuildInfo (_ DM.:=> bp) = (PhantomP bp, DT.bParameterName bp, withBPDeps bp bParameterNames)
   (pGraph, vToBuildInfo, nameToVertex) = Gr.graphFromEdges . fmap dSumToGBuildInfo . DM.toList $ DT.pdm pc
-  orderedVList = Gr.topSort pGraph
+--  orderedVList = Gr.topSort pGraph
 
 
 declareAndAddCode :: SB.StanBlock -> TE.NamedDeclSpec t -> DT.DeclCode t -> SB.StanBuilderM md gq (TE.UExpr t)

@@ -14,6 +14,7 @@ module Stan.ModelBuilder.TypedExpressions.DAGTypes
     ParameterTag
   , taggedParameterName
   , taggedParameterType
+  , mapParameter
   , parameterExpr
   , FunctionToDeclare(..)
   , TData(..)
@@ -96,6 +97,10 @@ parameterTagFromBP p = ParameterTag (bParameterSType p) (bParameterName p)
 data Parameter :: TE.EType -> Type where
   GivenP :: TE.UExpr t -> Parameter t
   BuildP :: ParameterTag t -> Parameter t
+  MappedP :: (TE.UExpr t -> TE.UExpr t') -> Parameter t -> Parameter t'
+
+mapParameter :: (TE.UExpr t -> TE.UExpr t') -> Parameter t -> Parameter t'
+mapParameter = MappedP
 
 type Parameters ts = TE.TypedList Parameter ts
 
@@ -204,6 +209,7 @@ lookupParameterExpressions ps eMap = htraverse f ps where
       case DM.lookup ttn eMap of
         Just e -> Right e
         Nothing -> Left $ taggedParameterName ttn <> " not found in expression map.  Dependency ordering issue??"
+    MappedP g p -> g <$> f p
 
 lookupTDataExpressions :: TE.TypedList TData ts -> DM.DMap ParameterTag TE.UExpr -> Either Text (TE.TypedList TE.UExpr ts)
 lookupTDataExpressions tds = lookupParameterExpressions (hfmap (BuildP . parameterTagFromTData) tds)

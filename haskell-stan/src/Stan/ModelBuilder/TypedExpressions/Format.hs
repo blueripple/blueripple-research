@@ -67,14 +67,14 @@ stmtToCodeAlg = \case
   SDeclareF txt st divf vms -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <> PP.semi
   SDeclAssignF txt st divf vms rhs -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <+> PP.equals <+> unK rhs <> PP.semi
   SAssignF lhs rhs -> Right $ unK lhs <+> PP.equals <+> unK rhs <> PP.semi
-  STargetF rhs -> Right $ "target +=" <+> unK rhs
-  SSampleF lhs (Density dn _ _ rF) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList $ rF al)
+  STargetF rhs -> Right $ "target +=" <+> unK rhs <> PP.semi
+  SSampleF lhs (Density dn _ _ rF) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList $ rF al) <> PP.semi
   SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> unK fe <> PP.colon <> unK te) <+> bracketBlock b) <$> sequenceA body
   SForEachF txt e body -> (\b -> "foreach" <+> PP.parens (PP.pretty txt <+> "in" <+> unK e) <+> bracketBlock b) <$> sequence body
   SIfElseF condAndIfTrueL allFalse -> ifElseCode condAndIfTrueL allFalse
   SWhileF if' body -> (\b -> "while" <+> PP.parens (unK if') <+> bracketBlock b) <$> sequence body
-  SBreakF -> Right $ "break" <> PP.semi
-  SContinueF -> Right $ "continue" <> PP.semi
+  SBreakF -> Right $ "break"
+  SContinueF -> Right $ "continue"
   SFunctionF (Function fname rt ats rF) al body re ->
     (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs (applyTypedListFunctionToTypeList rF ats) (rF al)
            <+> bracketBlock (b `appendAsList` ["return" <+> unK re <> PP.semi])) <$> sequence body
@@ -119,6 +119,9 @@ bracketBlock = bracketCode . blockCode
 -- surround with brackets and indent
 bracketCode :: CodePP -> CodePP
 bracketCode c = "{" <> PP.line <> PP.indent 2 c <> PP.line <> "} "
+
+addSemi :: CodePP -> CodePP
+addSemi c = c <> PP.semi
 
 -- put each item of code on a separate line
 blockCode :: Traversable f => f CodePP -> CodePP

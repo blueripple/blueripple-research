@@ -96,7 +96,10 @@ addStmtToBlock' addF sb s = do
       then case s of
              TE.SDeclare {} -> Right f
              TE.SComment {} -> Right f
-             _ -> Left "Statement other than declaration or comment in data or parameters block."
+             _ -> Left $ "Statement other than declaration or comment in data or parameters block: \n"
+               <> (case stmtAsText s of
+                     Left err -> "Error trying to render statement (" <> err <> ")"
+                     Right st -> st)
       else Right f
 
 addStmtToBlock :: SBT.StanBlock -> TE.UStmt -> Either Text (StanProgram -> StanProgram)
@@ -118,7 +121,8 @@ addStmtsToBlockTop b stmts = do
   return g
 
 programAsText :: SBT.GeneratedQuantities -> StanProgram -> Either Text Text
-programAsText gq p = do
+programAsText gq p = stmtAsText $ programToStmt gq p
+{-do
   let pStmt = programToStmt gq p
   case TE.statementToCodeE TE.emptyLookupCtxt pStmt of
     Right x -> pure $ PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
@@ -129,3 +133,14 @@ programAsText gq p = do
                  Left err2 -> "Yikes! Can't build error tree: " <> err2 <> "\n"
                  Right x -> PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
       in Left msg
+-}
+stmtAsText :: TE.UStmt -> Either Text Text
+stmtAsText  stmt = case TE.statementToCodeE TE.emptyLookupCtxt stmt of
+  Right x -> pure $ PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
+  Left err ->
+    let msg = "Lookup error when building code from tree: " <> err <> "\n"
+              <> "Tree with failed lookups between hashes follows.\n"
+              <> case TE.eStatementToCodeE TE.emptyLookupCtxt stmt of
+                   Left err2 -> "Yikes! Can't build error tree: " <> err2 <> "\n"
+                   Right x -> PP.renderStrict $ PP.layoutSmart PP.defaultLayoutOptions x
+    in Left msg

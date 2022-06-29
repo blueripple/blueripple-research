@@ -11,6 +11,7 @@ import Models
 
 import qualified KnitEnvironment as KE
 
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 
 import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
@@ -85,7 +86,7 @@ dataWranglerAndCode modelData_C gqData_C gb sb = do
               modelWrangle
               (Just gqWrangle)
         return wrangler
-      resE = S.runStanBuilder modelDat gqDat gb builderWithWrangler
+      resE = DAG.runStanBuilderDAG modelDat gqDat gb builderWithWrangler
   K.knitEither $ fmap (\(bs, dw) -> (dw, S.program (S.code bs))) resE
 
 runModel :: forall st cd md gq b c r.

@@ -65,31 +65,6 @@ data LExprF :: (EType -> Type) -> EType -> Type where
 
 type LExpr = TR.IFix LExprF
 
-
---eqLExprF (LArray nv) (LArray nv') = unNest nv == unNest nv'
-
-{-
-
-eqLExpr :: (forall t.LExprF t a -> LExprF t b -> Bool) -> LExpr a -> LExpr b -> Bool
-eqLExpr f la lb = f (TR.unIFix la) (TR.unIFix lb)
-
-instance GEq LExpr where
-  geq (TR.IFix (LNamed t st)) (TR.IFix (LNamed t' st')) = if t == t' then geq st st' else Nothing
-  geq (TR.IFix (LInt n)) (TR.IFix (LInt m)) = if m == n then Just Refl else Nothing
-  geq (TR.IFix (LReal x)) (TR.IFix (LReal y)) = if x == y then Just Refl else Nothing
-  geq (TR.IFix (LString t)) (TR.IFix (LString t')) = if t == t' then Just Refl else Nothing
-  geq (TR.IFix (LVector v)) (TR.IFix (LVector v')) = if v == v' then Just Refl else Nothing
-  geq (TR.IFix (LMatrix v)) (TR.IFix (LMatrix v')) = if fmap Vec.toList v == fmap Vec.toList v' then Just Refl else Nothing
-  geq (TR.IFix (LArray nv)) (TR.IFix (LArray nv')) = do
-    let (sizesA, eas) = unNest nv
-        (sizesB, ebs) = unNest nv'
-    Refl <- if sizesA == sizesB then Just Refl else Nothing
-    _ $ zipWith geq eas ebs
--}
-
-
-
-
 lNamedE :: Text -> SType t -> LExpr t
 lNamedE name  = TR.IFix . LNamed name
 
@@ -171,6 +146,7 @@ instance TR.HTraversable UExprF where
 namedE :: Text -> SType t -> UExpr t
 namedE name  = TR.IFix . UL . LNamed name
 
+{-
 -- we shouldn't export this constructor.
 -- You should only be able to make via the function below.
 data Var :: EType -> Type where
@@ -190,7 +166,7 @@ varE (Var _ _ ue) = ue
 
 var :: Text -> StanType t -> Var t
 var n st = Var n st $ namedE n $ sTypeFromStanType st
-
+-}
 intE :: Int -> UExpr EInt
 intE = TR.IFix . UL . LInt
 

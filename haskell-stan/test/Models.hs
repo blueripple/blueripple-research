@@ -12,6 +12,7 @@ import qualified KnitEnvironment as KE
 
 import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
@@ -40,6 +41,8 @@ import qualified Data.Vector as Vec
 import Control.Lens ((^.), view)
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as SB
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+import Stan.ModelBuilder (groupSizeE)
+import qualified Stan.ModelBuilder as TE
 
 -- remove "haskell-stan" from these paths if this becomes it's own project
 F.tableTypes "FB_Result" ("haskell-stan/test/data/football.csv")
@@ -122,24 +125,15 @@ spreadDiffNormal = do
          $ TE.normalDensity
   muVP <- DAG.addBuildParameter
           $ DAG.simpleParameter
-          (TE.NamedDeclSpec "mu_fav" $ TE.vectorSpec (TE.namedSizeE "J_Favorite") [])
+          (TE.NamedDeclSpec "mu_fav" $ TE.vectorSpec (S.groupSizeE favoriteG) [])
           (DAG.GivenP (TE.realE 0) :> DAG.BuildP sigmaMuP :> TNil)
          $ TE.normalDensityS
---  let normal m s = SD.normal (Just $ SE.scalar $ show m) $ SE.scalar $ show s
---      sigmaVar = S.StanVar "sigma_mu_fav" S.StanReal
---      hpps = one (sigmaVar, ("<lower=0>",\v -> S.var v `S.vectorSample` normal 0 3))
---      betaPrior v = S.addExprLine "spreadDiffNormal"
---        $ S.vectorizedOne "Results" $ S.var v `S.vectorSample` S.normal (Just $ S.scalar "0") (S.var sigmaVar)
---      muModel = SGM.Hierarchical SGM.STZNone hpps (SGM.Centered betaPrior)
---        SGM.hierarchicalCenteredFixedMeanNormal 0 "sigma_mu_fav" (normal 0 3) SGM.STZNone
---  mu_favV <- SGM.groupModel (S.StanVar "mu_fav" $ S.StanVector $ S.NamedDim "Favorite") muModel
---  sigmaV <- S.inBlock S.SBParameters $ S.stanDeclare "sigma" S.StanReal ""
---  S.inBlock S.SBModel $ S.addExprLines "priors"
---    [
---      SE.var sigmaV `SE.vectorSample` normal 13 5
---    ]
-  let toVec x = TE.functionE TE.rep_vector (x :> TE.namedSizeE "J_Favorite" :> TNil)
-  S.addStmtToCode $ TE.sample spreadDiffE TE.normalDensity (DAG.parameterExpr muVP :> toVec (DAG.parameterExpr sigmaP) :> TNil)
+  let toVec x = TE.functionE TE.rep_vector (x :> S.dataSetSizeE resultsData :> TNil)
+      vecSigmaP = DAG.mapParameter toVec sigmaP
+      indexedMuP = DAG.mapParameter (TE.indexE TE.s0 (TE.byGroupIndexE resultsData favoriteG)) muVP
+  S.inBlock S.SBModel
+    $ S.addStmtToCode
+    $ TE.sample spreadDiffE TE.normalDensity (indexedMuP :> vecSigmaP :> TNil)
 --  SBB.sampleDistV resultsData SD.normalDist (S.var mu_favV, S.var sigmaV) spreadDiffV
 {-  S.inBlock S.SBGeneratedQuantities $ do
     matchups <- S.dataSetTag @FB_Matchup SC.GQData "Matchups"

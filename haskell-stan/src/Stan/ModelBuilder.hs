@@ -72,6 +72,7 @@ import qualified Data.GADT.Show as GADT
 import Stan.ModelConfig (InputDataType(..))
 import qualified Stan.ModelConfig as SC
 import qualified Data.Massiv.Array.Unsafe as X
+import qualified Data.Vinyl as TE
 
 {-
 stanCodeToStanModel :: StanCode -> StanModel
@@ -998,6 +999,15 @@ crosswalkIndexKey rttTo = "XWalkTo_" <> dataSetName rttTo
 --groupSizeName :: GroupTypeTag k -> Text
 --groupSizeName gtt = "J_" <> taggedGroupName gtt
 
+
+dataSetSizeE :: RowTypeTag r -> TE.UExpr TE.EInt
+dataSetSizeE rtt = TE.namedE (dataSetSizeName rtt) TE.SInt
+
+groupSizeE :: GroupTypeTag k -> TE.UExpr TE.EInt
+groupSizeE gtt = TE.namedE (groupSizeName gtt) TE.SInt
+
+byGroupIndexE :: RowTypeTag r -> GroupTypeTag k -> TE.UExpr TE.EIndexArray
+byGroupIndexE rtt gtt = TE.namedE (dataByGroupIndexName rtt gtt) TE.sIndexArray
 
 -- build an index from each data-sets relationship to the common group.
 -- only works when both data sets are model data or both are GQ data.
