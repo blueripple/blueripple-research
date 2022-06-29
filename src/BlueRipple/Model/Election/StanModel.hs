@@ -24,10 +24,12 @@ import Relude.Extra (secondF)
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
+import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CensusTables as Census
 import qualified BlueRipple.Data.CensusLoaders as Census
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
+import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Keyed as BRK
@@ -64,6 +66,10 @@ import qualified Frames.Streamly.TH as FS
 import qualified Frames.Serialize as FS
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Transform as FT
+import qualified Frames.Folds as FF
+import qualified Frames.MapReduce as FMR
+import qualified Control.MapReduce as FMR
+
 import GHC.Generics (Generic)
 import qualified Data.MapRow as MapRow
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
@@ -71,25 +77,30 @@ import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
 import qualified Numeric.Foldl as NFL
 import qualified Optics
-import qualified Stan.JSON as SJ
-import qualified Stan.ModelBuilder.ModelParameters as SMP
-import qualified Stan.ModelBuilder.GroupModel as SB
+--import qualified Stan.ModelBuilder.ModelParameters as SMP
+--import qualified Stan.ModelBuilder.GroupModel as SB
 --import qualified Stan.ModelBuilder.FixedEffects as SFE
+import qualified Stan.JSON as SJ
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
-import qualified BlueRipple.Data.CCES as CCES
-import BlueRipple.Data.CCESFrame (cces2018C_CSV)
-import BlueRipple.Data.ElectionTypes (CVAP)
-import qualified Frames.MapReduce as FMR
+
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder as SB
-import qualified Control.MapReduce as FMR
-import qualified Frames.Folds as FF
-import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
-import qualified Stan.ModelBuilder.StanFunctionBuilder as SFB
+
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as SP
+
+--import qualified Stan.ModelBuilder.StanFunctionBuilder as SFB
+--import BlueRipple.Data.CCESFrame (cces2018C_CSV)
+--import BlueRipple.Data.ElectionTypes (CVAP)
 
 import BlueRipple.Model.Election.DataPrep
 
@@ -256,7 +267,7 @@ setupCCESTData :: (Typeable md, Typeable gq)
                -> DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
                                         , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-                                        , SB.StanVar, SB.StanVar, SB.StanVar)
+                                        , TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
 setupCCESTData m densRP = do
   ccesTData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData "CCEST"
   dmCCES <- DM.addDesignMatrix ccesTData (designMatrixRowCCES m densRP DMTurnout (const 0)) (Just "DMTurnout")
@@ -264,13 +275,12 @@ setupCCESTData m densRP = do
   votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted) --(round . F.rgetField @AHVoted)
   return (ccesTData, designMatrixRowCCES m densRP DMTurnout (const 0), cvapCCES, votedCCES, dmCCES)
 
-
 setupCPSData ::  (Typeable md, Typeable gq)
              => Model k
              -> DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM)
              -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
                                       , DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-                                      , SB.StanVar, SB.StanVar, SB.StanVar)
+                                      , TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
 setupCPSData m densRP = do
   cpsData <- SB.dataSetTag @(F.Record CPSVWithDensityEM) SC.ModelData "CPS"
   cvapCPS <- SB.addCountData cpsData "CVAP_CPS" (F.rgetField @BRCF.Count)
@@ -288,11 +298,11 @@ setupElexData :: forall rs md gq.
               -> Int
               -> ET.OfficeT
               -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record rs)
-                                        , SB.StanVar
-                                        , SB.StanVar
-                                        , SB.StanVar
-                                        , SB.StanVar
-                                        )
+                                       , TE.IntArrayE
+                                       , TE.IntArrayE
+                                       , TE.IntArrayE
+                                       , TE.IntArrayE
+                                       )
 setupElexData vst eScale office = do
   let rescale x = x `div` eScale
   elexData <- SB.dataSetTag @(F.Record rs) SC.ModelData ("Elections_" <> show office)
@@ -315,17 +325,19 @@ getElexData :: forall rs md gq. (Typeable md
             => ElectionRow rs
             -> ET.VoteShareType
             -> Int
-            -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record rs), SB.StanVar, SB.StanVar, SB.StanVar, SB.StanVar)
+            -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record rs), TE.IntArrayE, TE.IntArrayE, TE.IntArrayE, TE.IntArrayE)
+
 getElexData x vst eScale = setupElexData @rs vst eScale $ officeFromElectionRow x
 
+-- HERE
 setupACSPSRows :: (Typeable md, Typeable gq)
                => Model k
                -> DM.DesignMatrixRowPart (F.Record ACSWithDensityEM)
                -> (ET.OfficeT -> F.Record ACSWithDensityEM -> Double)
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ACSWithDensityEM)
-                                         , SB.StanVar
-                                         , SB.StanVar
-                                         , Map ET.OfficeT SB.StanVar)
+                                         , TE.RealArrayE
+                                         , TE.MatrixE
+                                         , Map ET.OfficeT TE.MatrixE)
 setupACSPSRows m densRP incF = do
   let include = modelComponents m
       offices = votesFrom m
@@ -346,7 +358,7 @@ setupCCESPData :: (Typeable md, Typeable gq)
                -> ET.OfficeT
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
                                         , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-                                        , SB.StanVar, SB.StanVar, SB.StanVar)
+                                        , TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
 setupCCESPData m densRP dmPrefType incF office = do
   let (votesF, dVotesF) = getCCESVotes office (voteShareType m)
   ccesPData <- SB.dataSetTag @(F.Record CCESWithDensityEM) SC.ModelData ("CCESP_" <> show office)

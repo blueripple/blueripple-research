@@ -57,9 +57,9 @@ import qualified Stan.ModelRunner as SM
 import Stan.ModelRunner (RScripts)
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
-import qualified Stan.ModelBuilder.GroupModel as SB
+import Stan.ModelBuilder.TypedExpressions.DAG (runStanBuilderDAG)
+import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
-import qualified Stan.ModelBuilder.FixedEffects as SB
 import qualified Stan.ModelBuilder.Distributions as SB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
@@ -97,7 +97,7 @@ buildDataWranglerAndCode groupM builderM modelData_C gqData_C = do
               modelWrangle
               (Just gqWrangle)
         return wrangler
-      resE = SB.runStanBuilder modelDat gqDat groupM builderWithWrangler
+      resE = runStanBuilderDAG modelDat gqDat groupM builderWithWrangler
   K.knitEither $ fmap (\(bs, dw) -> (dw, SB.code bs)) resE
 
 runMRPModel :: (K.KnitEffects r
@@ -109,13 +109,13 @@ runMRPModel :: (K.KnitEffects r
             -> SC.StanMCParameters
             -> BR.StanParallel
             -> SC.DataWrangler md gq b ()
-            -> SB.StanCode
+            -> SP.StanProgram
             -> SM.RScripts
             -> SC.ResultAction r md gq b () c
             -> K.ActionWithCacheTime r md
             -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanCode rScripts resultAction modelData_C gqData_C =
+runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanProgram rScripts resultAction modelData_C gqData_C =
   K.wrapPrefix "StanMRP.runModel" $ do
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
@@ -134,7 +134,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
 --    . SC.noDiagnose
     <$> SM.makeDefaultModelRunnerConfig @BR.SerializerC @BR.CacheData
     runnerInputNames
-    (Just (SB.All, SB.stanCodeToStanModel stanCode))
+    (Just (SB.All, stanProgram))
     smcParameters
     (Just stancConfig)
   let resultCacheKey = "stan/MRP/result/" <> SC.mergedPrefix SC.MRFull runnerInputNames <> ".bin"
@@ -170,6 +170,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
       gqData_C
 
 -- Basic group declarations, indexes and Json are produced automatically
+{-
 addGroup :: SB.RowTypeTag r
            -> SB.StanExpr
            -> SB.GroupModel md gq
@@ -480,3 +481,4 @@ checkGroupSubset n1 n2 gs1 gs2 = do
     <> n2 <> "(" <> showNames gs2 <> ")."
     <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
     <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
+-}

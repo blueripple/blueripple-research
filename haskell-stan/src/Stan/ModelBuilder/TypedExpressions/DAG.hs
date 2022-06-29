@@ -122,7 +122,7 @@ rawName :: Text -> Text
 rawName t = t <> "_raw"
 --
 
--- should be used in place
+-- should be used in place of runStanBuilder
 runStanBuilderDAG :: forall md gq a.(Typeable md, Typeable gq)
                   => md
                   -> gq

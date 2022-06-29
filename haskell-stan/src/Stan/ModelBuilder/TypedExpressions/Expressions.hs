@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
+{-# LANGUAGE StandaloneKindSignatures #-}
 
 module Stan.ModelBuilder.TypedExpressions.Expressions
   (
@@ -257,6 +258,18 @@ sliceInnerN e v = Vec.withDict v $ go e v where
 
 sliceAll :: UExpr t -> Vec (Dimension t) (UExpr EInt) -> UExpr (SliceInnerN (Dimension t) t)
 sliceAll = sliceInnerN
+
+
+-- some type aliases for ergonomics
+type IntE = UExpr EInt
+type RealE = UExpr EReal
+type ArrayE :: EType -> Type
+type ArrayE t = UExpr (EArray1 t)
+type IntArrayE = ArrayE EInt
+type RealArrayE = ArrayE EReal
+type VectorE = UExpr ECVec
+type MatrixE = UExpr EMat
+
 
 lExprTypeIs :: LExpr t -> SType t' -> Bool
 lExprTypeIs le st = case eqLExprType le (lNamedE "" st) of
