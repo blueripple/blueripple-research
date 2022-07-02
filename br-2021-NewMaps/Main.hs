@@ -88,6 +88,7 @@ import qualified BlueRipple.Data.Loaders.Redistricting as BR
 import qualified BlueRipple.Data.CountFolds as BRQ
 import BlueRipple.Data.Quantiles (quantileLookup')
 import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
+import qualified Data.Array as Array
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -1018,10 +1019,14 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       nwQuantiles20 = fmap realToFrac . quantileLookup' nwShare nwQBs20
       gowQuantiles20 = fmap realToFrac . quantileLookup' gowShare gowQBs20
       densQuantiles20 = fmap realToFrac . quantileLookup' dens densQBs20
-      dMedian qf = BRQ.medianE qf  $ F.filterFrame histDFilter sortedFilteredModelAndDRA
-      rMedian qf= BRQ.medianE qf  $ F.filterFrame histRFilter sortedFilteredModelAndDRA
-      addDistToSBC r (n, qf) = SBComparison n <$> qf r <*> dMedian qf <*> rMedian qf
-      addDistToSBCs r = traverse (addDistToSBC r) [("% Non-White", nwQuantiles20), ("% Grad among White", gowQuantiles20), ("Density", densQuantiles20)]
+      notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
+      dMedian sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
+      rMedian sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
+      sameState r r' = F.rgetField @BR.StateAbbreviation r == F.rgetField @BR.StateAbbreviation r'
+      addDistToSBC comp r (n, qf) = case comp of
+        SBCNational -> SBComparison n <$> qf r <*> dMedian (const True) qf <*> rMedian (const True) qf
+        SBCState -> SBComparison n <$> qf r <*> dMedian (sameState r) qf <*> rMedian (sameState r) qf
+      addDistToSBCs comp r = traverse (addDistToSBC comp r) [("% Non-White", nwQuantiles20), ("% Grad among White", gowQuantiles20), ("Density", densQuantiles20)]
 
 --  BR.logFrame tsneResult
   let districtCompare x y =
@@ -1059,14 +1064,15 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 --    let getSBCs :: Monad m
 --                => F.Record [BR.StateAbbreviation, ET.DistrictName]
 --                -> StateT (Map (F.Record [BR.StateAbbreviation, ET.DistrictName]) (Either Text [SBComparison])) m (Either Text [SBComparison])
-    let getSBCs d = do
+    let getSBCs comp d = do
           let dk = (F.rgetField @BR.StateAbbreviation d, F.rgetField @ET.DistrictName d)
-          m <- get
+          m <- gets (getSBCMap comp)
           case M.lookup dk m of
             Just sbcs -> return sbcs
             Nothing -> do
-              let sbcs = addDistToSBCs d
-              put (M.insert dk sbcs m)
+              let sbcs = addDistToSBCs comp d
+                  newMap = M.insert dk sbcs m
+              modify $ updateSBCMap comp newMap
               return sbcs
 
     K.addHvega Nothing Nothing
@@ -1091,18 +1097,24 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                 (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
               lift $ K.addHvega Nothing Nothing
                 $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
-              sbcsE <- getSBCs $ F.rcast d
-              sbcs <- lift $ K.knitEither sbcsE
-              lift $ K.addHvega Nothing Nothing $ sbcChart 20 10 (FV.ViewConfig 200 80 5) $ one (dk, sbcs)
-              let tsneNearD = F.filterFrame (\r -> F.rgetField @TwoPartyDShare r >= 0.53 && (distKey r /= distKey d)) tsneNear
+              sbcsNatE <- getSBCs SBCNational $ F.rcast d
+              sbcsNat <- lift $ K.knitEither sbcsNatE
+              lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) $ one (dk, sbcsNat)
+              sbcsStE <- getSBCs SBCState $ F.rcast d
+              case sbcsStE of
+                Left _ -> pure ()
+                Right sbcsSt -> (lift $ K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) $ one (dk, sbcsSt)) >> pure ()
+              let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
                   eachNear dNear = do
                     let dkNear = distKey dNear
-                    sbcsNearE <- getSBCs $ F.rcast dNear
+                    sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
                     sbcsNear <- lift $ K.knitEither sbcsNearE
-                    lift $ K.addHvega Nothing Nothing $ sbcChart 20 10 (FV.ViewConfig 200 80 5) $ (dk, sbcs) :| [(dkNear, sbcsNear)]
-              traverse_ eachNear tsneNearD
+                    lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) $ (dk, sbcsNat) :| [(dkNear, sbcsNear)]
+              traverse_ eachNear tsneNear'
               pure ()
-    evalStateT (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized) mempty
+    evalStateT
+      (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized)
+      (SBCS mempty mempty)
     pure ()
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
@@ -1111,6 +1123,17 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 --      sortedFilteredModelAndDRA
   pure ()
 
+data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
+data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])
+                     , sbcState :: Map (Text, Text) (Either Text [SBComparison])
+                     }
+getSBCMap :: SBCComp -> SBCS ->  Map (Text, Text) (Either Text [SBComparison])
+getSBCMap SBCNational = sbcNational
+getSBCMap SBCState = sbcState
+
+updateSBCMap :: SBCComp -> Map (Text, Text) (Either Text [SBComparison]) -> SBCS -> SBCS
+updateSBCMap SBCNational m sbcs = sbcs { sbcNational = m }
+updateSBCMap SBCState m sbcs = sbcs { sbcState = m }
 
 
 allCDsColonnade nwQ gowQ dQ cas =
@@ -1157,8 +1180,8 @@ sbcToVGData gr cr dn sbc = GV.dataRow [("Stat", GV.Str $ sbcName sbc)
                                          ,("Size", GV.Number 50)
                                          ]
                   []
-sbcChart :: Int -> Int -> FV.ViewConfig -> NonEmpty (Text, [SBComparison]) -> GV.VegaLite
-sbcChart givenRange chartRange vc sbcsByDist =
+sbcChart :: SBCComp -> Int -> Int -> FV.ViewConfig -> NonEmpty (Text, [SBComparison]) -> GV.VegaLite
+sbcChart comp givenRange chartRange vc sbcsByDist =
   let datEach (dn, sbcs) =  concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
       dat = GV.dataFromRows [] $ concatMap datEach sbcsByDist --GV.dataFromRows [] $ concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
       encStatName = GV.position GV.Y [GV.PName "Stat", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
@@ -1178,7 +1201,10 @@ sbcChart givenRange chartRange vc sbcsByDist =
 --      encTypeD = GV.detail [GV.DName "Type", GV.DmType GV.Nominal]
       enc = GV.encoding . encStatName . encVal . encTypeC . encSize
       mark = GV.mark GV.Point [] --[GV.MSize 50, GV.MOpacity 0.7]
-      title = if length sbcsByDist == 1 then (fst $ head sbcsByDist) <> ": Demographics" else "Demographic Comparison"
+      cText = case comp of
+        SBCNational -> "National"
+        SBCState -> "State"
+      title = if length sbcsByDist == 1 then (fst $ head sbcsByDist) <> ": " <> cText <> " Demographics" else "National Demographic Comparison"
   in FV.configuredVegaLite vc [FV.title title, enc [], mark, dat]
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
