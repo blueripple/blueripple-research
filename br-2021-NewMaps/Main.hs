@@ -86,6 +86,7 @@ import qualified Data.Vector.Unboxed as UVec
 import qualified BlueRipple.Utilities.KnitUtils as K
 import qualified BlueRipple.Data.Loaders.Redistricting as BR
 import qualified BlueRipple.Data.CountFolds as BRQ
+import BlueRipple.Data.Quantiles (quantileLookup')
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -999,9 +1000,27 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   tsneResult <- K.ignoreCacheTime tsneResult_C
   let (tsneWith, tsneWithMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] tsneResult sortedFilteredModelAndDRA
   when (not $ null tsneWithMissing) $ K.knitError $ "Missing keys tsneWith join."
-  let nwQuantiles = BRQ.quantileLookup (\r -> 1 - F.rgetField @BR.WhiteFrac r) 10 sortedFilteredModelAndDRA
-      gowQuantiles = BRQ.quantileLookup (F.rgetField @BRE.FracGradOfWhite) 10 sortedFilteredModelAndDRA
-      densQuantiles = BRQ.quantileLookup (F.rgetField @DT.PopPerSqMile) 10 sortedFilteredModelAndDRA
+  let nwShare r = 1 - F.rgetField @BR.WhiteFrac r
+      gowShare = F.rgetField @BRE.FracGradOfWhite
+      dens = F.rgetField @DT.PopPerSqMile
+      nwQBs = BRQ.quantileBreaks nwShare 10 sortedFilteredModelAndDRA
+      gowQBs = BRQ.quantileBreaks gowShare 10 sortedFilteredModelAndDRA
+      densQBs = BRQ.quantileBreaks dens 10 sortedFilteredModelAndDRA
+      nwQuantiles = BRQ.quantileLookup' nwShare nwQBs
+      gowQuantiles = BRQ.quantileLookup' gowShare gowQBs
+      densQuantiles = BRQ.quantileLookup' dens densQBs
+      histDFilter r = F.rgetField @TwoPartyDShare r >= 0.5
+      histRFilter r = F.rgetField @TwoPartyDShare r < 0.5
+      nwQBs20 = BRQ.quantileBreaks nwShare 20 sortedFilteredModelAndDRA
+      gowQBs20 = BRQ.quantileBreaks gowShare 20 sortedFilteredModelAndDRA
+      densQBs20 = BRQ.quantileBreaks dens 20 sortedFilteredModelAndDRA
+      nwQuantiles20 = fmap realToFrac . quantileLookup' nwShare nwQBs20
+      gowQuantiles20 = fmap realToFrac . quantileLookup' gowShare gowQBs20
+      densQuantiles20 = fmap realToFrac . quantileLookup' dens densQBs20
+      dMedian qf = BRQ.medianE qf  $ F.filterFrame histDFilter sortedFilteredModelAndDRA
+      rMedian qf= BRQ.medianE qf  $ F.filterFrame histRFilter sortedFilteredModelAndDRA
+      addDistToSBC r (n, qf) = SBComparison n <$> qf r <*> dMedian qf <*> rMedian qf
+      addDistToSBCs r = traverse (addDistToSBC r) [("Non-White%", nwQuantiles20), ("Grad-of-White%", gowQuantiles20), ("Density", densQuantiles20)]
 
 --  BR.logFrame tsneResult
   let districtCompare x y =
@@ -1057,6 +1076,8 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                 (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
               K.addHvega Nothing Nothing
                 $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+              sbcs <- K.knitEither $ addDistToSBCs d
+              K.addHvega Nothing Nothing $ sbcChart 20 10 dk (FV.ViewConfig 200 100 5) sbcs
               pure ()
     traverse_ (traverse_ tsneEach) $ fmap snd $ categorized
     pure ()
@@ -1093,31 +1114,32 @@ allCDsColonnade nwQ gowQ dQ cas =
      <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
      <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
 
-{-
-tseNearColonnade nwQ gowQ dQ cas =
-  let state = F.rgetField @DT.StateAbbreviation
-      dName = F.rgetField @ET.DistrictName
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      fracNW r = 1 - F.rgetField @BR.WhiteFrac r
-      qF x = case x of
-        Left _ -> BR.textToStyledHtml "Err"
-        Right n -> BR.numberToStyledHtml "%d" n
-      fracGOW r = F.rgetField @BRE.FracGradOfWhite r
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
-     <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
-     <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracNW))
-     <> C.headed "NW Quantile" (BR.toCell cas "NWQ" "NWQ" (qF . nwQ))
-     <> C.headed "%Grad-White" (BR.toCell cas "%GW" "%GW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracGOW))
-     <> C.headed "GOW Quantile" (BR.toCell cas "GOWQ" "GOWQ" (qF . gowQ))
-     <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
-     <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
--}
 
+
+data SBComparison = SBComparison { sbcName :: Text, sbcDistVal :: Double, sbcDMid :: Double, sbcRMid :: Double}
+sbcToVGData :: Double -> Double -> Text -> SBComparison -> [GV.DataRow]
+sbcToVGData gr cr dn sbc = GV.dataRow [("Stat", GV.Str $ sbcName sbc)
+                                      ,("Type",GV.Str dn)
+                                      ,("Rank", GV.Number $ cr * (sbcDistVal sbc)/gr)
+                                      ]
+                           $ GV.dataRow [("Stat", GV.Str $ sbcName sbc)
+                                        ,("Type",GV.Str "Dem Median")
+                                        ,("Rank", GV.Number $ cr * (sbcDMid sbc)/gr)
+                                        ]
+                           $ GV.dataRow  [("Stat", GV.Str $ sbcName sbc)
+                                         ,("Type",GV.Str "Rep Median")
+                                         ,("Rank", GV.Number $ cr * (sbcRMid sbc)/gr)
+                                         ]
+                  []
+sbcChart :: Int -> Int -> Text -> FV.ViewConfig -> [SBComparison] -> GV.VegaLite
+sbcChart givenRange chartRange dn vc sbcs =
+  let dat = GV.dataFromRows [] $ concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
+      encStatName = GV.position GV.Y [GV.PName "Stat", GV.PmType GV.Nominal]
+      encVal = GV.position GV.X [GV.PName "Rank", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0, realToFrac chartRange]]]
+      encType = GV.color [GV.MName "Type", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort (GV.Strings ["Dem Median", dn, "Rep Median"])]]
+      encBars = GV.encoding . encStatName . encVal . encType
+      barMark = GV.mark GV.Circle [GV.MSize 50, GV.MOpacity 0.7]
+  in FV.configuredVegaLite vc [FV.title (dn <> ": Demographic Comparison"), encBars [], barMark, dat]
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
             => Text
