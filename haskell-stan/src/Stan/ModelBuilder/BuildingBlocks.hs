@@ -27,7 +27,6 @@ import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.Distributions as SMD
-import qualified Stan.ModelBuilder.Parameters as PA
 
 import Prelude hiding (sum, All)
 import qualified Data.List.NonEmpty as NE
@@ -41,6 +40,7 @@ import qualified Stan.ModelConfig as SB
 import Stan.ModelBuilder.BuilderTypes (dataSetSizeName)
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
+import Stan.ModelBuilder (addFromCodeWriter)
 
 {-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
@@ -152,19 +152,18 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
 -}
 generateLogLikelihood :: SB.RowTypeTag r
                       -> SMD.StanDist t pts
-                      -> [TE.UStmt]
-                      -> (TE.UExpr TE.EInt -> TE.ExprList pts)
+                      -> TE.CodeWriter (TE.UExpr TE.EInt -> TE.ExprList pts)
                       -> (TE.UExpr TE.EInt -> TE.UExpr t)
                       -> SB.StanBuilderM md gq ()
-generateLogLikelihood rtt sDist preCode slicedArgsF slicedYF =
-  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist preCode slicedArgsF  slicedYF) emptyLLSet
+generateLogLikelihood rtt sDist slicedArgsFCW slicedYF =
+  generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist slicedArgsFCW slicedYF) emptyLLSet
 
 -- 2nd arg returns something which might need slicing at the loop index for paramters that depend on the index
 -- 3rd arg also
-data LLDetails r = forall t pts.LLDetails (SMD.StanDist t pts) [TE.UStmt] (TE.UExpr TE.EInt -> TE.ExprList pts) (TE.UExpr TE.EInt -> TE.UExpr t)
+data LLDetails r = forall t pts.LLDetails (SMD.StanDist t pts) (TE.CodeWriter (TE.UExpr TE.EInt -> TE.ExprList pts)) (TE.UExpr TE.EInt -> TE.UExpr t)
 --  LLDetails :: forall args.SMD.StanDist args -> SB.StanBuilderM md gq args -> SME.StanVar -> LLDetails md gq r
 
-data LLDetailsList r = LLDetailsList [LLDetails r]
+newtype LLDetailsList r = LLDetailsList [LLDetails r]
 
 addDetailsLists :: LLDetailsList r -> LLDetailsList r -> LLDetailsList r
 addDetailsLists (LLDetailsList x) (LLDetailsList y) = LLDetailsList (x <> y)
@@ -189,22 +188,15 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
     Just x -> return x
   let namedIntE n = TE.namedE n TE.SInt
       llSizeE = TE.multiOpE TE.SAdd $ fmap namedIntE llSizeListNE
---  SB.addDeclBinding' "LLIndex" llSizeE
   logLikE <- SB.stanDeclareN $ TE.NamedDeclSpec "log_lik" $ TE.vectorSpec llSizeE []
   let doOne :: SB.RowTypeTag a -> LLDetails a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
-      doOne rtt (LLDetails dist preStmts pF yF) = do
+      doOne rtt (LLDetails dist pFCW yF) = do
         prevSizes <- get
         let sizeE =  TE.multiOpE TE.SAdd $ namedIntE "n" :| prevSizes
-        lift $ SB.addStmtToCode $ TE.scoped
-          $ preStmts ++ [TE.for "n" (TE.SpecificNumbered (TE.intE 1) (namedIntE $ dataSetSizeName rtt))
-                         $ \nE ->
-                            let sliced = TE.sliceE TE.s0 nE
-                            in [sliced logLikE `TE.assign` SB.familyLDF dist (yF nE) (pF nE)]
-                        ]
---          SB.stanForLoopB "n" Nothing dsName
---            $ SB.addExprLine "generateLogLikelihood'"
---            $ SB.var logLikV `SB.eq` SMD.familyLDF dist args yV
-
+        lift $ SB.addFromCodeWriter $ do
+          pF <- pFCW
+          TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (namedIntE $ dataSetSizeName rtt))
+            $ \nE -> [TE.sliceE TE.s0 nE logLikE `TE.assign` SB.familyLDF dist (yF nE) (pF nE)]
         put $ TE.namedSizeE (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
       doList ::  SB.RowTypeTag a -> LLDetailsList a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
@@ -229,10 +221,8 @@ generatePosteriorPrediction' rtt nds sDist pEsF f = SB.inBlock SB.SBGeneratedQua
   let rngE nE = SMD.familyRNG sDist (pEsF nE)
   ppE <- SB.stanDeclareN nds
   SB.addStmtToCode
-    $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ SB.dataSetSizeName rtt)) $ \nE ->
-    let slice = TE.sliceE TE.s0 nE
-    in [TE.sliceE TE.s0 nE ppE `TE.assign` f (rngE nE)]
---  SB.stanForLoopB "n" Nothing (SB.dataSetName rtt) $ SB.addExprLine "generatePosteriorPrediction" $ SME.var ppVar `SME.eq` f rngE
+    $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ SB.dataSetSizeName rtt))
+    $ \nE -> [TE.sliceE TE.s0 nE ppE `TE.assign` f (rngE nE)]
   return ppE
 
 
@@ -250,21 +240,21 @@ diagVectorFunction = do
         ]
   return f
 
-vectorizeExpr :: TE.UExpr TE.EInt -> TE.StanName -> (TE.UExpr TE.EInt -> TE.UExpr TE.EReal) -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+vectorizeExpr :: TE.IntE -> TE.StanName -> (TE.IntE -> TE.RealE) -> TE.CodeWriter TE.VectorE
 vectorizeExpr lE sn se = head <$> vectorizeExprT lE ((sn, se) :| [])
 
 -- like vectorizeExpr but for multiple things in same loop
 vectorizeExprT :: Traversable t
-               => TE.UExpr TE.EInt -> t (TE.StanName, TE.UExpr TE.EInt -> TE.UExpr TE.EReal) -> SB.StanBuilderM md gq (t (TE.UExpr TE.ECVec))
+               => TE.IntE -> t (TE.StanName, TE.IntE -> TE.RealE) -> TE.CodeWriter (t (TE.UExpr TE.ECVec))
 vectorizeExprT lengthE namedSrcs = do
   let vecVname sn = sn <> "_v"
       nds sn = TE.NamedDeclSpec (vecVname sn) $ TE.vectorSpec lengthE []
       declareVec (sn, ve) = do
-        fe <- SB.stanDeclareN $ nds sn
+        fe <- TE.declareNW $ nds sn
         return (fe, ve)
       fillVec ne (ve, se) = TE.sliceE TE.s0 ne ve `TE.assign` se ne
   varExps <- traverse declareVec namedSrcs
-  SB.addStmtToCode $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) lengthE) $ \nE -> fmap (fillVec nE) varExps
+  TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) lengthE) $ \nE -> fmap (fillVec nE) varExps
   return $ fst <$> varExps
 
 sum :: TE.UExpr TE.ECVec -> TE.UExpr TE.EReal
@@ -341,7 +331,7 @@ declTranspose :: TE.TypeOneOf t [TE.EMat, TE.ESqMat, TE.ECVec, TE.ERVec]
 declTranspose nds m = do
   SB.stanDeclareRHSN nds $ TE.unaryOpE TE.STranspose m
 
-indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
+indexedConstIntArray :: SB.RowTypeTag r -> Maybe Text -> TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> SB.StanBuilderM md gq TE.IntArrayE
 indexedConstIntArray rtt mSuffix lengthE nE =
   let dsName = SB.dataSetName rtt
       sizeName = SB.dataSetSizeName rtt
@@ -349,10 +339,10 @@ indexedConstIntArray rtt mSuffix lengthE nE =
   in SB.inBlock SB.SBTransformedData
      $ SB.stanDeclareRHSN nds $ TE.functionE TE.rep_array (nE :> lengthE :> TNil)
 
-zeroVectorE :: TE.UExpr TE.EInt -> TE.UExpr TE.ECVec
+zeroVectorE :: TE.IntE -> TE.VectorE
 zeroVectorE lengthE = TE.functionE TE.rep_vector (TE.realE 0 :> lengthE :> TNil)
 
-zeroMatrixE :: TE.UExpr TE.EInt -> TE.UExpr TE.EInt -> TE.UExpr TE.EMat
+zeroMatrixE :: TE.IntE -> TE.IntE -> TE.MatrixE
 zeroMatrixE rowsE colsE = TE.functionE TE.rep_matrix (TE.realE 0 :> rowsE :> colsE :> TNil)
 
 ps_by_group :: TE.Function TE.ECVec [TE.EInt, TE.EInt, TE.EIndexArray, TE.ECVec, TE.ECVec]

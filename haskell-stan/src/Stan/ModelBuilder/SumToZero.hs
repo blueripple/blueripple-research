@@ -91,7 +91,7 @@ weightedSoftSumToZero vName v wgtIndex prior = do
     SB.addStmtToCode $ w `TE.divEq` vecSize
     pure w
   SB.inBlock SB.SBModel $ SB.addStmtToCode
-    $ TE.functionE TE.dot (v TE.:> weights TE.:> TE.TNil) `TE.sampleW` prior
+    $ TE.functionE TE.dot_product (v TE.:> weights TE.:> TE.TNil) `TE.sampleW` prior
   pure ()
 
 data SumToZero = STZNone

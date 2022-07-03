@@ -117,18 +117,15 @@ spreadDiffNormal = do
   spreadDiffE <- SBB.addRealData resultsData "diff" Nothing Nothing spreadDiff
 
   -- parameters
-  sigmaMuP <- DAG.addBuildParameter
-              $ DAG.simpleParameter
+  sigmaMuP <- DAG.simpleParameter
               (TE.NamedDeclSpec "sigma_mu_fav" $ TE.realSpec [TE.lowerM $ TE.realE 0])
               (DAG.given (TE.realE 0) :> DAG.given (TE.realE 3) :> TNil)
               TE.normalDensity
-  sigmaP <- DAG.addBuildParameter
-         $ DAG.simpleParameter
+  sigmaP <- DAG.simpleParameter
          (TE.NamedDeclSpec "sigma" $ TE.realSpec [TE.lowerM $ TE.realE 0])
          (DAG.given (TE.realE 13) :> DAG.given (TE.realE 15) :> TNil)
          $ TE.normalDensity
-  muVP <- DAG.addBuildParameter
-          $ DAG.simpleParameter
+  muVP <- DAG.simpleParameter
           (TE.NamedDeclSpec "mu_fav" $ TE.vectorSpec (S.groupSizeE favoriteG) [])
           (DAG.given (TE.realE 0) :> DAG.build sigmaMuP :> TNil)
          $ TE.normalDensityS

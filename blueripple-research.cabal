@@ -155,7 +155,7 @@ library  haskell-stan
                  , Stan.ModelBuilder.TypedExpressions.TypedList
                  , Stan.ModelBuilder.TypedExpressions.Types
 --                 , Stan.ModelBuilder.FixedEffects
-                 , Stan.ModelBuilder.Parameters
+--                 , Stan.ModelBuilder.Parameters
 --                 , Stan.ModelBuilder.ModelParameters
 --                 , Stan.ModelBuilder.StanFunctionBuilder
                  , Stan.ModelBuilder.SumToZero
@@ -252,7 +252,7 @@ library
                  , BlueRipple.Data.Visualizations.DemoComparison
                  , BlueRipple.Model.DistrictClusters
                  , BlueRipple.Model.StanMRP
-                 , BlueRipple.Model.StanCCES
+--                 , BlueRipple.Model.StanCCES
                  , BlueRipple.Model.PreferenceBayes
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Model.PostStratify

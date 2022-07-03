@@ -41,6 +41,7 @@ import Stan.ModelBuilder.Distributions
 import Stan.ModelBuilder.BuilderTypes
 
 import Prelude hiding (All)
+import Control.Monad.Writer.Strict as W
 import qualified Control.Foldl as Foldl
 import qualified Control.Exception as X
 import qualified GHC.IO.Exception as X
@@ -124,6 +125,9 @@ addStmtsToCodeTop stmts = do
   f <- stanBuildEither $ TE.addStmtsToBlockTop cb stmts
   modifyCode f
 
+addFromCodeWriter :: TE.CodeWriter a -> StanBuilderM md gq a
+addFromCodeWriter (TE.CodeWriter cw) = addStmtsToCode stmts >> return a
+  where (a, stmts) = W.runWriter cw
 
 applyToFoldable :: Foldl.Fold row a -> ToFoldable d row -> d -> a
 applyToFoldable fld (ToFoldable f) = Foldl.fold fld . f

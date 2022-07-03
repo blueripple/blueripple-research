@@ -89,9 +89,11 @@ import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder as SB
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
+import qualified Stan.ModelBuilder.Distributions as SD
 
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
@@ -103,6 +105,9 @@ import qualified Stan.ModelBuilder.TypedExpressions.DAG as SP
 --import BlueRipple.Data.ElectionTypes (CVAP)
 
 import BlueRipple.Model.Election.DataPrep
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as TE
+import Stan.ModelBuilder.TypedExpressions.DAG (addCenteredHierarchical)
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
 
 groupBuilderDM :: forall rs ks k.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -369,103 +374,153 @@ setupCCESPData m densRP dmPrefType incF office = do
 
 data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
 
-colIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
-colIndex = SB.namedMatrixColIndex
+--colIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
+--colIndex = SB.namedMatrixColIndex
 
-dsAlphaBeta :: Text -> SB.IndexKey -> SB.StanExpr -> SB.StanExpr -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
-dsAlphaBeta dsName ik alphaPrior betaPrior = do
-    dsAlpha <- SMP.addParameter ("alpha_" <> dsName) SB.StanReal "" (SB.UnVectorized alphaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
-    dsBeta <- SMP.addParameter ("beta_" <> dsName) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) betaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
-    return (dsAlpha, dsBeta)
+dsAlphaBeta :: Text
+            -> TE.IntE
+            -> TE.DensityWithArgs TE.EReal
+            -> TE.DensityWithArgs TE.ECVec
+            -> SB.StanBuilderM md gq (TE.ParameterTag TE.EReal, TE.ParameterTag TE.ECVec)
+dsAlphaBeta dsLabel betaSizeE alphaPrior betaPrior = do
+  alphaP <- TE.addBuildParameter
+            $ TE.simpleParameterWA
+            (TE.NamedDeclSpec ("alpha_" <> dsLabel) $ TE.realSpec [])
+            alphaPrior
+  betaP <- TE.addBuildParameter
+           $ TE.simpleParameterWA
+           (TE.NamedDeclSpec ("beta_" <> dsLabel) $ TE.vectorSpec betaSizeE [])
+           betaPrior
+--    dsAlpha <- SMP.addParameter ("alpha_" <> dsName) SB.StanReal "" (SB.UnVectorized alphaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
+--    dsBeta <- SMP.addParameter ("beta_" <> dsName) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) betaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
+  pure (alphaP, betaP)
 
-dsAlphaGroup :: Text -> SB.GroupTypeTag k -> SB.StanExpr -> SB.StanExpr -> SB.StanBuilderM md gq SB.StanVar
-dsAlphaGroup dsName gtt muPrior  sigmaPrior = do
-    let normal x y = SB.normal (Just $ SB.scalar $ show x) (SB.scalar $ show y)
-    muDSAlphaP <- SMP.addParameter ("muAlpha_" <> dsName) SB.StanReal "" (SB.UnVectorized muPrior) -- $ normal 0 0.5)
-    sigmaDSAlphaP <- SMP.addParameter ("sigmaAlpha_" <> dsName) SB.StanReal "<lower=0>"  (SB.UnVectorized sigmaPrior) -- $ normal 0 0.4)
-    dsAlphaNonCenterF <- SMP.scalarNonCenteredF muDSAlphaP sigmaDSAlphaP
-    SMP.addHierarchicalScalar ("alpha_" <>  dsName) gtt (SMP.NonCentered dsAlphaNonCenterF) (normal 0 1)
+dsAlphaGroup :: Text
+             -> SB.GroupTypeTag k
+             -> TE.DensityWithArgs TE.EReal
+             -> TE.DensityWithArgs TE.EReal
+             -> SB.StanBuilderM md gq (TE.ParameterTag TE.EReal)
+dsAlphaGroup dsLabel gtt muPrior sigmaPrior = do
+  muAlphaP <- TE.addBuildParameter
+              $ TE.simpleParameterWA (TE.NamedDeclSpec ("muAlpha_" <> dsLabel) $ TE.realSpec []) muPrior
+  sigmaAlphaP <- TE.addBuildParameter
+    $ TE.simpleParameterWA (TE.NamedDeclSpec ("sigmaAlpha_" <> dsLabel) $ TE.realSpec [TE.lowerM $ TE.realE 0]) sigmaPrior
+  let ncF (mu :> sigma :> TNil) raw = mu `TE.plusE` (sigma `TE.timesE` raw)
+      vds = TE.vectorSpec (SB.groupSizeE gtt) []
+      toVec re = TE.functionE TE.rep_vector (re :> SB.groupSizeE gtt :> TNil)
+      f pt = SP.mapped toVec . SP.build
+  TE.simpleNonCentered
+     (TE.NamedDeclSpec ("alpha_" <> dsName) vds)
+     vds
+     (TE.DensityWithArgs TE.std_normal TNil)
+     (f muAlphaP :> f sigmaAlphaP :> TNil)
+     ncF
+--    let normal x y = SB.normal (Just $ SB.scalar $ show x) (SB.scalar $ show y)
+--    muDSAlphaP <- SMP.addParameter ("muAlpha_" <> dsName) SB.StanReal "" (SB.UnVectorized muPrior) -- $ normal 0 0.5)
+--    sigmaDSAlphaP <- SMP.addParameter ("sigmaAlpha_" <> dsName) SB.StanReal "<lower=0>"  (SB.UnVectorized sigmaPrior) -- $ normal 0 0.4)
+--    dsAlphaNonCenterF <- SMP.scalarNonCenteredF muDSAlphaP sigmaDSAlphaP
+--    SMP.addHierarchicalScalar ("alpha_" <>  dsName) gtt (SMP.NonCentered dsAlphaNonCenterF) (normal 0 1)
 
-dsSpecific :: Text -> DSSpecificWithPriors k md gq -> SB.IndexKey -> Maybe ET.OfficeT -> SB.StanBuilderM md gq (Maybe SB.StanVar, Maybe SB.StanVar)
-dsSpecific dsLabel dsp ik oM =
+dsSpecific :: Text -> TE.IntE -> DSSpecificWithPriors -> Maybe ET.OfficeT
+           -> SB.StanBuilderM md gq (Maybe (TE.ParameterTag TE.EReal), Maybe (TE.ParameterTag TE.ECVec))
+dsSpecific dsLabel betaSizeE dsp oM = do
+  let alphaNDS = TE.NamedDeclSpec ("alpha_" <> dsLabel) $ TE.realSpec []
+      aRawDS = TE.realSpec []
+      aRawDensityWA x = TE.DensityWithArgs TE.normal (TE.realE 0 :> TE.realE x :> TNil)
+      betaNDS =  TE.NamedDeclSpec ("theta_" <> dsLabel) $ TE.vectorSpec betaSizeE []
+      bRawDS = TE.vectorSpec betaSizeE []
+      v y = TE.functionE TE.rep_vector (y :> betaSizeE :> TNil)
+      bRawDensityWA x = TE.DensityWithArgs TE.normal (v 0 :> v x :> TNil)
   case dsp of
     DSPNone -> return (Nothing, Nothing)
     DSPAlpha ap -> do
-      dsAlpha <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
+      dsAlpha <- SP.simpleParameterWA alphaNDS ap
       return (Just dsAlpha, Nothing)
-    DSPAlphaHC ap -> do
-      dsAlpha <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
+    DSPAlphaHC d ps -> do
+      dsAlpha <- SP.addCenteredHierarchical alphaNDS ps d
       return (Just dsAlpha, Nothing)
-    DSPAlphaHNC alphaF -> do
-      dsAlpha <- alphaF dsLabel
+    DSPAlphaHN aRawSigma aps alphaF -> do
+      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps alphaF
       return (Just dsAlpha, Nothing)
-    DSPAlphaHCBetaNH oM' ap bp -> do
-      a <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
+    DSPAlphaHCBetaNH oM' ad aps bp -> do
+      dsAlpha <- SP.addCenteredHierarchical alphaNDS aps ad
+      dsBetaM <- if fromMaybe True ((/=) <$> oM <*> oM')
+        then Just <$> SP.simpleParameterWA betaNDS bp
+        else pure Nothing
+      return (Just dsAlpha, dsBetaM)
+    DSPAlphaHNCBetaNH oM' aRawSigma aps alphaF bp -> do
+      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps alphaF
+      dsBetaM <- if fromMaybe True ((/=) <$> oM <*> oM')
+        then Just <$> SP.simpleParameterWA betaNDS bp
+        else pure Nothing
+      return (Just dsAlpha, dsBetaM)
+{-    DSPAlphaGroup muPrior sigmaPrior -> do
+      dsAlpha <- dsAlphaGroup dsLabel betaSizeE muPrior sigmaPrior
+      return (Just dsAlpha, Nothing) -}
+    DSPAlphaBetaNH oM' gtt alphaPrior betaPrior -> do
       if fromMaybe True ((/=) <$> oM <*> oM')
         then do
-        b <- SMP.addParameter ("theta_" <> dsLabel) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) bp)
-        return (Just a, Just b)
-        else return (Just a, Nothing)
-    DSPAlphaHNCBetaNH oM' alphaF bp -> do
-      dsAlpha <- alphaF dsLabel --a <- SMP.addParameter ("alpha_" <> dsLabel) SB.StanReal "" (SB.UnVectorized ap)
-      if fromMaybe True ((/=) <$> oM <*> oM')
-        then do
-        b <- SMP.addParameter ("theta_" <> dsLabel) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) bp)
-        return (Just dsAlpha, Just b)
-        else return (Just dsAlpha, Nothing)
-    DSPAlphaGroup gtt muPrior sigmaPrior -> do
-      dsAlpha <- dsAlphaGroup dsLabel gtt muPrior sigmaPrior
-      return (Just dsAlpha, Nothing)
-    DSPAlphaBetaNH oM' alphaPrior betaPrior -> do
-      if fromMaybe True ((/=) <$> oM <*> oM')
-        then do
-        (a, b) <- dsAlphaBeta dsLabel ik alphaPrior betaPrior
+        (a, b) <- dsAlphaBeta dsLabel betaSizeE alphaPrior betaPrior
         return (Just a, Just b)
         else return (Nothing, Nothing)
-    DSPAlphaBetaHC alphaPrior betaPrior -> do
-      (a, b) <- dsAlphaBeta dsLabel ik alphaPrior betaPrior
-      return (Just a, Just b)
-    DSPAlphaBetaHNC alphaF betaF -> do
-      a <- alphaF dsLabel
-      b <- betaF dsLabel
-      return (Just a, Just b)
+    DSPAlphaBetaHC aps ad bps bd  -> do
+      dsAlpha <- SP.addCenteredHierarchical alphaNDS aps ad
+      dsBeta <- SP.addCenteredHierarchical betaNDS bps bd
+      return (Just dsAlpha, Just dsBeta)
+    DSPAlphaBetaHNC aRawSigma aps aF bRawSigma bps bF -> do
+      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps aF
+      dsBeta <- SP.simpleNonCentered betaNDS bRawDS (bRawDensityWA bRawSigma) bps bF
+      return (Just dsAlpha, Just dsBeta)
 
-data CenterDM md gq = NoCenter
-                    | CenterWith (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-                    | UnweightedCenter
-                    | WeightedCenter SB.StanVar
+data CenterDM  where
+  NoCenter :: CenterDM
+  CenterWith :: TE.StanName -> (SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq TE.MatrixE) -> CenterDM
+  UnweightedCenter :: TE.StanName -> CenterDM
+  WeightedCenter :: TE.StanName -> TE.VectorE -> CenterDM
 
 centerIf :: (Typeable md, Typeable gq)
-         => SB.StanVar
-         -> CenterDM md gq
---         -> Maybe SB.StanVar
---         -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
-         -> SB.StanBuilderM md gq (SB.StanVar
-                                  , SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+         => TE.MatrixE
+         -> CenterDM
+         -> SB.StanBuilderM md gq (TE.MatrixE
+                                  , SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq SB.StanVar)
 centerIf m centerDM =  case centerDM of
   NoCenter -> return (m, \_ v _ -> pure v)
-  CenterWith f -> do
-    mC <- f SC.ModelData m Nothing --(Just dataSetLabel)
+  CenterWith n f -> do
+    mC <- f SC.ModelData m n --(Just dataSetLabel)
     return (mC, f)
-  UnweightedCenter -> DM.centerDataMatrix DM.DMCenterAndScale m Nothing
-  WeightedCenter wgts -> DM.centerDataMatrix DM.DMCenterAndScale m (Just wgts)
+  UnweightedCenter n -> DM.centerDataMatrix DM.DMCenterAndScale m Nothing n
+  WeightedCenter n wgts -> DM.centerDataMatrix DM.DMCenterAndScale m (Just wgts) n
 
-mBetaE :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr)
-mBetaE dm = do
-  dmColIndex <- colIndex dm
-  return $ \betaE -> SB.vectorizedOne dmColIndex $ SB.function "dot_product" (SB.var dm :| [betaE])
+{-
+sliceIfVec :: forall t.(TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.EArray1 TE.EReal], TE.GenEType t) => TE.IntE -> TE.UExpr t -> TE.RealE
+sliceIfVec k x = case TE.genEType @t of
+  TE.EReal -> x
+  TE.ECVec -> TE.sliceE TE.s0 k x
+  TE.EArray (TE.S TE.Z) TE.EReal -> TE.sliceE TE.s0 k x
 
-muE :: SB.StanVar -> SB.StanBuilderM md gq (SB.StanExpr -> SB.StanExpr -> SB.StanExpr)
-muE dm = do
-  dmBetaE <- mBetaE dm
-  return $ \aE betaE -> aE `SB.plus` dmBetaE betaE
+sliceIfMatrix :: forall t.(TE.TypeOneOf t [TE.ECVec, TE.EMat, TE.EArray1 TE.ECVec], TE.GenEType t) => TE.IntE -> TE.UExpr t -> TE.VectorE
+sliceIfMatrix k x = case TE.genEType @t of
+  TE.ECVec -> x
+  TE.EMat -> TE.sliceE TE.s0 k x
+  TE.EArray (TE.S TE.Z) TE.ECVec -> TE.sliceE TE.s0 k x
+-}
 
-addIf :: Maybe SB.StanVar -> SB.StanVar -> SB.StanExpr
+-- dim(m) is Ndata x predictors
+-- dim(b) predictors x NData, from re-indexing predictors x Nstates
+-- we slice b on cols instead of rows
+mBetaE :: TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.RealE
+mBetaE m b k = TE.function TE.dot_product (TE.sliceE TE.s0 k m :> TE.sliceE TE.s1 k b :> TNil)
+
+-- dim(a) is Nstates, re-indexed to Ndata
+muE :: TE.VectorE -> TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.RealE
+muE a m b k = TE.sliceE TE.s0 k a `TE.plusE` mBetaE m b k
+
+addIf :: (TE.BinaryResultT TE.BAdd t t ~ t) => Maybe (TE.UExpr t) -> TE.UExpr t -> TE.UExpr t
 addIf mv v = case mv of
-  Nothing -> SB.var v
-  Just v' -> SB.var v' `SB.plus` SB.var v
+  Nothing -> v
+  Just v' -> v' `TE.plusE` v
 
-
+{-
 addIfM :: Maybe SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
 addIfM mv v@(SB.StanVar _ t) = case mv of
   Nothing -> return $ SB.var v
@@ -479,8 +534,18 @@ addIfM mv v@(SB.StanVar _ t) = case mv of
                                                           then return $ SB.function "rep_matrix" (SB.varNameE v' :| [SB.indexSize ck]) `SB.plus` SB.var v
                                                           else SB.stanBuildError ("addIf: mismatched types! lhs=" <> show t' <> "; rhs=" <> show t)
            _ -> SB.stanBuildError ("addIf: bad rhs type when lhs /= rhs. lhs=" <> show t' <> "; rhs=" <> show t)
+-}
 
 
+indexedMuE :: Maybe TE.RealE -> Maybe TE.VectorE -> TE.VectorE -> TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.EReal
+indexedMuE dsAlphaM dsBetaM alphaByState dm betaByState =
+  let statesSizeE = TE.functionE TE.size (alphaByState :> TNil)
+      repV x = TE.functionE TE.rep_vector (x :> statesSizeE :> TNil)
+      repM v = TE.functionE TE.rep_matrix (v :> statesSizeE :> TNil)
+  in muE (addIf (fmap rep dsAlphaM) alpha) dm (addIf (fmap repM dsBetaM) beta)
+
+
+{-
 indexedMuE3 :: SB.StanVar -> SB.StanBuilderM md gq (Maybe SB.StanVar -> Maybe SB.StanVar -> SB.StanVar -> SB.StanVar -> SB.StanExpr)
 indexedMuE3 dm = do
   muE' <- muE dm
@@ -489,97 +554,113 @@ indexedMuE3 dm = do
           alpha' = addIf dsAlphaM alpha
           beta' = addIf dsBetaM beta
   return f
+-}
 
+modelCounts :: SD.StanDist t ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
+modelCounts dist counts buildParams = do
+  ps <- SB.inBlock SB.SBModel $ SB.addFromCodeWriter buildParams
+  SB.sampleDistV dist params counts
 
-modelVar :: SB.RowTypeTag r -> SB.StanDist a -> SB.StanVar -> SB.StanBuilderM md gq a -> SB.StanBuilderM md gq ()
-modelVar rtt dist y eM = do
-  let f e = SB.sampleDistV rtt dist e y
-  SB.inBlock SB.SBModel
-    $ SB.useDataSetForBindings rtt
-    $ (eM >>= f)
+updateLLSet ::  SB.RowTypeTag r
+            -> SD.StanDist t ps
+            -> TE.IntArrayE
+            -> TE.CodeWriter (TE.IntE -> TE.ExprList ps)
+            -> SB.LLSet md gq -> SB.LLSet md gq
+updateLLSet rtt dist indexedY paramCode = SB.addToLLSet rtt llDetails where
+  llDetails = SB.LLDetails dist paramCode indexedParams indexedY
 
-updateLLSet ::  SB.RowTypeTag r -> SB.StanDist a -> SB.StanVar -> SB.StanBuilderM md gq a -> SB.LLSet md gq -> SB.LLSet md gq
-updateLLSet rtt dist y eM llSet =  SB.addToLLSet rtt llDetails llSet where
-  llDetails = SB.LLDetails dist eM y
+addPosteriorPredictiveCheck :: Text -> SB.RowTypeTag r -> SD.StanDist t pts -> (TE.IntE -> TE.ExprList pts) ->  SB.StanBuilderM md gq ()
+addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
+  let ppNDS = TE.NamedDeclSpec ppVarname  $ TE.vectorSpec (SB.dataSetSizeE rtt) []
+  SB.generatePosteriorPrediction rtt ppNDS dist indexedParams
 
+invLogit x = TE.functionE TE.inv_logit (x :> TNil)
 
-addPosteriorPredictiveCheck :: Text -> SB.RowTypeTag r -> SB.StanDist a -> SB.StanBuilderM md gq a ->  SB.StanBuilderM md gq ()
-addPosteriorPredictiveCheck ppVarName rtt dist eM = do
-  let pp = SB.StanVar ppVarName (SB.StanVector $ SB.NamedDim $ SB.dataSetName rtt)
-  eM >>= SB.useDataSetForBindings rtt
-    . SB.generatePosteriorPrediction rtt pp dist
-  pure ()
+data QR = NoQR | DoQR TE.StanName TE.StanName | WithQR TE.StanName TE.MatrixE TE.MatrixE
 
-invLogit x = SB.function "inv_logit" (one x)
-
-data QR = NoQR | DoQR | WithQR SB.StanVar SB.StanVar
-
-handleQR :: SB.RowTypeTag r -> QR -> SB.StanVar -> SB.StanVar -> SB.StanBuilderM md gq (SB.StanVar, QR)
-handleQR rtt qr m theta =  case qr of
+handleQR :: QR -> TE.MatrixE -> TE.MatrixE -> SB.StanBuilderM md gq (TE.MatrixE, QR)
+handleQR qr m theta =  case qr of
   NoQR -> return (m, NoQR)
-  WithQR rI beta -> do
-    let qName = "Q_" <> SB.varName m
-    colIndex <- SB.namedMatrixColIndex m
-    let vec = SB.vectorized $ Set.fromList [SB.dataSetName rtt, colIndex]
+  WithQR mName rI beta -> do
+    let qName = mName <> "_Q"
     alreadyDeclared <- SB.isDeclared qName
     q <- case alreadyDeclared of
-      True -> return $ SB.StanVar qName (SB.varType m)
+      True -> return $ TE.namedE qName TE.SMat --SB.StanVar qName (SB.varType m)
       False -> do
+        let rowsE = TE.functionE TE.rows (m :> TNil)
+            colsE = TE.functionE TE.cols (m :> TNil)
         SB.inBlock SB.SBTransformedData
-          $ SB.useDataSetForBindings rtt
-          $ SB.stanDeclareRHS ("Q_" <> SB.varName m) (SB.varType m) ""
-          $ vec
-          $ m `SB.matMult` rI
+          $ SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
     return (q, WithQR rI beta)
-  DoQR -> do
-    (q, _, rI, mBeta) <- DM.thinQR m (Just $ (theta, "ri_" <> SB.varName theta))
+  DoQR mName thName -> do
+    (q, _, rI, mBeta) <- DM.thinQR m mName (Just (theta, "ri_" <> thName))
     beta <- case mBeta of
       Just b -> return b
       Nothing -> SB.stanBuildError "handleQR: thinQR returned nothing for beta!"
-    return $ (q, WithQR rI beta)
+    return $ (q, WithQR mName rI beta)
 
-applyQR :: QR -> (SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr) -> SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+
+applyQR :: QR -> (TE.MatrixE -> TE.UExpr t) -> TE.MatrixE -> SB.StanBuilderM md gq (TE.UExpr t)
 applyQR NoQR f m = f m
-applyQR (WithQR rI _) f m = SB.inBlock SB.SBTransformedDataGQ $ do
-  rowIndex <- SB.namedMatrixRowIndex m
-  colIndex <- SB.namedMatrixColIndex rI
-  let vec = SB.vectorized $ Set.fromList [rowIndex, colIndex]
-  mQ <- SB.stanDeclareRHS (SB.varName m <> "_Q") (SB.varType m) "" $ vec $ m `SB.matMult` rI
+applyQR (WithQR mName rI _) f m = SB.inBlock SB.SBTransformedDataGQ $ do
+  let rowsE = TE.functionE TE.rows (m :> TNil)
+      colsE = TE.functionE TE.cols (m :> TNil)
+      qName = mName <> "_Q"
+  mQ <- SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
   f mQ
 applyQR DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
+applyQR' :: QR -> TE.MatrixE -> SB.StanBuilderM md gq TE.MatrixE
+applyQR' NoQR m = m
+applyQR' (WithQR mName rI _) m = SB.inBlock SB.SBTransformedDataGQ $ do
+  let rowsE = TE.functionE TE.rows (m :> TNil)
+      colsE = TE.functionE TE.cols (m :> TNil)
+      qName = mName <> "_Q"
+  SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
+applyQR' DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
+
+
+-- NB, final returned value is matrix (States x Predictors) so that data and index get you logit of prob
 addBLModelForDataSet :: (Typeable md, Typeable gq)
                      => Text
                      -> Bool
-                     -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
-                     -> DSSpecificWithPriors k md gq
-                     -> CenterDM md gq
+                     -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
+                     -> DSSpecificWithPriors
+                     -> CenterDM
 --                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.LLSet md gq
-                     -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                     -> TE.VectorE -- alpha (one per States)
+                     -> TE.MatrixE -- beta (Design Matrix Cols x States)
+                     -> SB.LLSet
+                     -> SB.StanBuilderM md gq (CenterDM
                                               , QR
-                                              , SB.LLSet md gq
-                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              , SB.LLSet
+                                              , TE.MatrixE  -- State x K, logit of probabilities in each state as linear functions of (possiby rotated) predictors
                                               )
 addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  colIndexKey <- colIndex dm
-  (dsAlphaM, dsBetaM) <- SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm centerDM --Nothing centerM
-  (dmQR, retQR) <- handleQR rtt qr dmC beta
-  muF <- indexedMuE3 dmQR
-  let muE = muF dsAlphaM dsBetaM alpha beta
-      dist = SB.binomialLogitDist counts
-      vecMu = SB.vectorizeExpr (addLabel "mu") muE (SB.dataSetName rtt)
-  modelVar rtt dist successes (SB.var <$> vecMu)
-  let llSet' = updateLLSet rtt dist successes (pure muE) llSet
-  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure muE)
-  let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (CenterWith centerF, retQR, llSet', prob)
+  let dmColsE = TE.functionE TE.cols (dm :> TNil)
+      countsSizeE = TE.functionE TE.size (counts :> TNil)
+--  colIndexKey <- colIndex dm
+  (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel dmColsE dsSp Nothing
+  (dmC, centerF) <- centerIf dm centerDM --Nsothing centerM
+  (dmQR, retQR) <- handleQR qr dmC beta
+--  muF <- indexedMuE3 dmQR
+  let at x k = TE.sliceE TE.s0 k (TE.indexE TE.s0 _ x)
+      muE' dm = indexedMuE dsAlphaM dsBetaM (at alpha) dm (at beta)
+      muE = muE' dmQR
+      dist = SD.binomialLogitDist
+--      vecMu = SB.vectorizeExpr (addLabel "mu") muE (SB.dataSetName rtt)
+  modelVar dist successes (pure $ muE :> counts :> TNil)
+  let indexedParams k = muE :> counts `at` k :> TNil
+      indexedY k = successes `at` k
+  let llSet' = updateLLSet rtt dist indexedY [] indexedParams llSet
+  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist indexedParams
+
+--  let probF m = TE.functionE TE.inv_logit (muE' m :> )
+--  let prob = applyQR retQR muE' $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
+  return (CenterWith centerF, retQR, llSet', applyQR' retQR)
 
 addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       => Text
@@ -610,7 +691,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countSc
   let muE = invLogit $ muF dsAlphaM dsBetaM alpha beta
       bA = SB.var betaWidth `SB.times` SB.paren muE
       bB = SB.var betaWidth `SB.times` SB.paren (SB.scalar "1" `SB.minus` muE)
-      dist = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True counts
+      dist = (if countScaled then SD.countScaledScalarBetaBinomialDist else SB.scalarBetaBinomialDist') True
       vecA = SB.vectorizeExpr (addLabel "bAT") bA (SB.dataSetName rtt)
       vecB = SB.vectorizeExpr (addLabel "bBT") bB (SB.dataSetName rtt)
   modelVar rtt dist successes $ do
@@ -1365,16 +1446,20 @@ printDataSetSpecific (DSAlphaBetaNH oM) = "DSabNH" <> maybe "" officeText oM
 printDataSetSpecific DSAlphaBetaHC = "DSabHC"
 printDataSetSpecific DSAlphaBetaHNC = "DSabHNC"
 
-data DSSpecificWithPriors k md gq  = DSPNone
-                                   | DSPAlpha SB.StanExpr
-                                   | DSPAlphaHC SB.StanExpr
-                                   | DSPAlphaHNC (Text -> SB.StanBuilderM md gq SB.StanVar)
-                                   | DSPAlphaHCBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
-                                   | DSPAlphaHNCBetaNH (Maybe ET.OfficeT) (Text -> SB.StanBuilderM md gq SB.StanVar) SB.StanExpr
-                                   | DSPAlphaGroup (SB.GroupTypeTag k) SB.StanExpr SB.StanExpr
-                                   | DSPAlphaBetaNH (Maybe ET.OfficeT) SB.StanExpr SB.StanExpr
-                                   | DSPAlphaBetaHC SB.StanExpr SB.StanExpr
-                                   | DSPAlphaBetaHNC (Text -> SB.StanBuilderM md gq SB.StanVar) (Text -> SB.StanBuilderM md gq SB.StanVar)
+-- non centered all use std-normal raw as source
+-- removed alpha group because only with that one, alpha is a vector parameter rather than a real one.
+data DSSpecificWithPriors where
+  DSPNone :: DSSpecificWithPriors
+  DSPAlpha :: TE.DensityWithArgs TE.EReal -> DSSpecificWithPriors
+  DSPAlphaHC :: TE.Density TE.EReal ts -> TE.Parameters ts -> DSSpecificWithPriors
+  DSPAlphaHN :: Double -> TE.Parameters ts -> (TE.ExprList ts -> TE.RealE -> TE.RealE) -> DSSpecificWithPriors
+  DSPAlphaHCBetaNH :: Maybe ET.OfficeT -> TE.Density TE.EReal ts -> TE.Parameters ts -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
+  DSPAlphaHNCBetaNH :: Maybe ET.OfficeT -> Double -> TE.Parameters ts -> (TE.ExprList ts -> TE.RealE -> TE.RealE) -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
+--  DSPAlphaGroup :: SB.GroupTypeTag k -> TE.DensityWithArgs TE.EReal -> TE.DensityWithArgs TE.EReal -> DSSpecificWithPriors
+  DSPAlphaBetaNH :: Maybe ET.OfficeT -> TE.DensityWithArgs TE.EReal -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
+  DSPAlphaBetaHC :: TE.Parameters aps -> TE.Density TE.EReal aps ->  TE.Parameters bps -> TE.Density TE.ECVec bps -> DSSpecificWithPriors
+  DSPAlphaBetaHNC :: Double -> TE.Parameters aps -> (TE.ExprList aps -> TE.RealE -> TE.RealE)
+                  -> Double -> TE.Parameters bps -> (TE.ExprList bps -> TE.VectorE -> TE.VectorE) -> DSSpecificWithPriors
 
 
 printVotesFrom :: Set ET.OfficeT -> Text

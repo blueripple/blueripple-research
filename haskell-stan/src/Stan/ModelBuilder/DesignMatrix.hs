@@ -27,7 +27,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 
 
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
-import qualified Stan.ModelBuilder.Parameters as MP
+--import qualified Stan.ModelBuilder.Parameters as MP
 import qualified Stan.ModelBuilder as SB
 
 import qualified Control.Foldl as FL
@@ -487,18 +487,25 @@ thinQR xE xName mThetaBeta = do
     rE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("R_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.qr_thin_R (xE :> TNil)
     rInvE <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("invR_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.inverse (rE :> TNil)
     return (qE, rE, rInvE)
-  mBeta <- case mThetaBeta of
+  mBeta <-  SB.inBlock SB.SBGeneratedQuantities $ case mThetaBeta of
     Nothing -> return Nothing
-    Just (theta, betaName) -> case TE.genSType @t of
+    Just (theta, betaName) -> fmap Just $ case TE.genSType @t of
       TE.SMat ->
-        fmap Just
-           $ SB.inBlock SB.SBGeneratedQuantities
-           $ SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.matrixSpec (SBB.mRowsE theta) (SBB.mColsE theta) [])
+           SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.matrixSpec (SBB.mRowsE theta) (SBB.mColsE theta) [])
            $ rI `TE.timesE` theta
       TE.SCVec ->
-        fmap Just
-           $ SB.inBlock SB.SBGeneratedQuantities
-           $ SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.vectorSpec (TE.functionE TE.size (theta :> TNil)) [])
+           SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.vectorSpec (TE.functionE TE.size (theta :> TNil)) [])
            $ rI `TE.timesE` theta
+      TE.SArray sn TE.SCVec -> case testEquality sn (DT.SS @DT.Nat0) of
+        Just Refl -> do
+          let arrSizeE = TE.functionE TE.size (theta :> TNil)
+              vecSize = TE.functionE TE.rows (rI :> TNil)
+          TE.addFromCodeWriter (do
+                                   beta <- TE.declareNW (TE.NamedDeclSpec betaName $ TE.array1Spec arrSizeE (TE.vectorSpec vecSize []))
+                                   TE.addStmt $ TE.for "j" (TE.SpecificNumbered (TE.intE 0) arrSizeE)
+                                           $ \j -> let atj = TE.sliceE TE.s0 j in [atj beta `TE.assign` (rI `TE.timesE` atj theta)]
+                                   return beta
+                               )
+        Nothing -> SB.stanBuildError $ "DesignMatrix.thinQR array of dimension other than 1 given for theta."
       _ -> SB.stanBuildError $ "DesignMatrix.thinQR: bad type given for theta: type=" <> show (TE.genSType @t)
   return (q, r, rI, mBeta)
