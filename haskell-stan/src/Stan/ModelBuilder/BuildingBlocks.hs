@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -41,6 +42,8 @@ import Stan.ModelBuilder.BuilderTypes (dataSetSizeName)
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
 import Stan.ModelBuilder (addFromCodeWriter)
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+import Stan.ModelBuilder.TypedExpressions.Expressions (IntArrayE)
 
 {-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
@@ -70,7 +73,7 @@ addIntData :: (Typeable md, Typeable gq)
             -> Maybe Int
             -> Maybe Int
             -> (r -> Int)
-            -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
+            -> SB.StanBuilderM md gq TE.IntArrayE
 addIntData rtt varName mLower mUpper f = do
   let cs = maybe [] (pure . TE.lowerM . TE.intE) mLower ++ maybe [] (pure . TE.upperM . TE.intE) mUpper
       ndsF lE = TE.NamedDeclSpec varName $ TE.intArraySpec lE cs
@@ -80,7 +83,7 @@ addCountData :: forall r md gq.(Typeable md, Typeable gq)
              => SB.RowTypeTag r
              -> TE.StanName
              -> (r -> Int)
-             -> SB.StanBuilderM md gq (TE.UExpr (TE.EArray1 TE.EInt))
+             -> SB.StanBuilderM md gq TE.IntArrayE
 addCountData rtt varName f = addIntData rtt varName (Just 0) Nothing f
 
 addRealData :: (Typeable md, Typeable gq)
@@ -89,7 +92,7 @@ addRealData :: (Typeable md, Typeable gq)
             -> Maybe Double
             -> Maybe Double
             -> (r -> Double)
-            -> SB.StanBuilderM md gq  (TE.UExpr TE.ECVec)
+            -> SB.StanBuilderM md gq  TE.VectorE
 addRealData rtt varName mLower mUpper f = do
   let cs = maybe [] (pure . TE.lowerM. TE.realE) mLower ++ maybe [] (pure . TE.upperM . TE.realE) mUpper
       ndsF lE = TE.NamedDeclSpec varName $ TE.vectorSpec lE cs
@@ -100,7 +103,7 @@ add2dMatrixData :: (Typeable md, Typeable gq)
                 -> SB.MatrixRowFromData r
                 -> Maybe Double
                 -> Maybe Double
-            -> SB.StanBuilderM md gq (TE.UExpr TE.EMat)
+            -> SB.StanBuilderM md gq TE.MatrixE
 add2dMatrixData rtt matrixRowFromData mLower mUpper = do
   let cs = maybe [] (pure . TE.lowerM . TE.realE) mLower ++ maybe [] (pure . TE.upperM . TE.realE) mUpper
   SB.add2dMatrixJson rtt matrixRowFromData cs -- (SB.NamedDim $ SB.dataSetName rtt)  --stanType bounds f
@@ -152,8 +155,8 @@ parallelSampleDistV fPrefix rtt sDist args slicedVar@(SB.StanVar slicedName slic
 -}
 generateLogLikelihood :: SB.RowTypeTag r
                       -> SMD.StanDist t pts
-                      -> TE.CodeWriter (TE.UExpr TE.EInt -> TE.ExprList pts)
-                      -> (TE.UExpr TE.EInt -> TE.UExpr t)
+                      -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
+                      -> (TE.IntE -> TE.UExpr t)
                       -> SB.StanBuilderM md gq ()
 generateLogLikelihood rtt sDist slicedArgsFCW slicedYF =
   generateLogLikelihood' $ addToLLSet rtt (LLDetails sDist slicedArgsFCW slicedYF) emptyLLSet
@@ -207,16 +210,16 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
 generatePosteriorPrediction :: SB.RowTypeTag r
                             -> TE.NamedDeclSpec TE.ECVec
                             -> SMD.StanDist TE.EReal pts
-                            -> (TE.UExpr TE.EInt -> TE.ExprList pts)
-                            -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+                            -> (TE.IntE -> TE.ExprList pts)
+                            -> SB.StanBuilderM md gq TE.VectorE
 generatePosteriorPrediction rtt nds sDist pEsF = generatePosteriorPrediction' rtt nds sDist pEsF id
 
 generatePosteriorPrediction' :: SB.RowTypeTag r
                              -> TE.NamedDeclSpec TE.ECVec
                              -> SMD.StanDist TE.EReal pts
-                             -> (TE.UExpr TE.EInt -> TE.ExprList pts)
-                             -> (TE.UExpr TE.EReal -> TE.UExpr TE.EReal)
-                             -> SB.StanBuilderM md gq (TE.UExpr TE.ECVec)
+                             -> (TE.IntE -> TE.ExprList pts)
+                             -> (TE.RealE -> TE.RealE)
+                             -> SB.StanBuilderM md gq TE.VectorE
 generatePosteriorPrediction' rtt nds sDist pEsF f = SB.inBlock SB.SBGeneratedQuantities $ do
   let rngE nE = SMD.familyRNG sDist (pEsF nE)
   ppE <- SB.stanDeclareN nds
@@ -420,11 +423,20 @@ postStratifiedParameterF prof block varNameM rtt gtt grpIndex wgtsV pV reIndexRt
         TE.addStmt $ riProb `TE.assign` TE.indexE TE.s0 reIndex gProb
       pure riProb
 
-mRowsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.UExpr TE.EInt
+mRowsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.IntE
 mRowsE m = TE.functionE TE.rows (m :> TNil)
 
-mColsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.UExpr TE.EInt
+mColsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.IntE
 mColsE m = TE.functionE TE.cols (m :> TNil)
+
+lengthE :: (TE.TypeOneOf t [TE.ECVec, TE.ERVec, TE.EArray1 t'], TE.GenSType t, TE.IsContainer t)
+        => TE.UExpr t -> TE.IntE
+lengthE v = TE.functionE TE.size (v :> TNil)
+
+
+reIndex :: IntArrayE -> (TE.IntE -> TE.UExpr t) -> TE.IntE -> TE.UExpr t
+reIndex ia eF ke = eF $ TE.sliceE TE.s0 ke ia
+
 
 
 {-

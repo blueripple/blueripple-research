@@ -270,6 +270,15 @@ type RealArrayE = ArrayE EReal
 type VectorE = UExpr ECVec
 type MatrixE = UExpr EMat
 
+{-
+data ContainerOf v a where
+  InnerSliceable :: Sliced N0 v ~ a => UExpr v -> ContainerOf v a
+  Functional :: (IntE -> UExpr t) -> ContainerOf EVoid a
+
+type RealContainer = ContainerOf EReal
+type IntContainer = ContainerOf EInt
+type VecContainer = ContainerOf ECVec
+-}
 
 lExprTypeIs :: LExpr t -> SType t' -> Bool
 lExprTypeIs le st = case eqLExprType le (lNamedE "" st) of

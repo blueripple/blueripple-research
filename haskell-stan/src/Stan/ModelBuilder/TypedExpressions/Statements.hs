@@ -300,6 +300,14 @@ declareRHSNW nds rhs = do
   addStmt $ declareAndAssignN nds rhs
   return $ namedE (declName nds) (sTypeFromStanType $ declType $ decl nds)
 
+{-
+asFunction :: ContainerOf v a -> IntE -> UExpr a
+asFunction (InnerSliceable c) = \ke -> sliceE s0 ke c
+asFunction (Functional f) = f
+
+asVector :: StanName -> ContainerOf ECVec EReal -> CodeWriter VectorE
+asVector n (InnerSliceable c) = pure c
+-}
 
 instance TR.HFunctor VarModifier where
   hfmap f = \case

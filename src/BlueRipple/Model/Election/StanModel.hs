@@ -108,6 +108,11 @@ import BlueRipple.Model.Election.DataPrep
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as TE
 import Stan.ModelBuilder.TypedExpressions.DAG (addCenteredHierarchical)
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
+import qualified Stan.ModelBuilder as TE
+import Data.Sequence.Internal.Sorting (TQList(TQNil))
+import Streamly.Data.Array.Foreign (getIndex)
+import Foreign (wordPtrToPtr)
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as SB
 
 groupBuilderDM :: forall rs ks k.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -509,7 +514,7 @@ sliceIfMatrix k x = case TE.genEType @t of
 -- dim(b) predictors x NData, from re-indexing predictors x Nstates
 -- we slice b on cols instead of rows
 mBetaE :: TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.RealE
-mBetaE m b k = TE.function TE.dot_product (TE.sliceE TE.s0 k m :> TE.sliceE TE.s1 k b :> TNil)
+mBetaE m b k = TE.functionE TE.dot_product (TE.sliceE TE.s0 k m :> TE.sliceE TE.s1 k b :> TNil)
 
 -- dim(a) is Nstates, re-indexed to Ndata
 muE :: TE.VectorE -> TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.RealE
@@ -569,7 +574,11 @@ updateLLSet ::  SB.RowTypeTag r
 updateLLSet rtt dist indexedY paramCode = SB.addToLLSet rtt llDetails where
   llDetails = SB.LLDetails dist paramCode indexedParams indexedY
 
-addPosteriorPredictiveCheck :: Text -> SB.RowTypeTag r -> SD.StanDist t pts -> (TE.IntE -> TE.ExprList pts) ->  SB.StanBuilderM md gq ()
+addPosteriorPredictiveCheck :: Text
+                            -> SB.RowTypeTag r
+                            -> SD.StanDist t pts
+                            -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
+                            ->  SB.StanBuilderM md gq ()
 addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
   let ppNDS = TE.NamedDeclSpec ppVarname  $ TE.vectorSpec (SB.dataSetSizeE rtt) []
   SB.generatePosteriorPrediction rtt ppNDS dist indexedParams
@@ -600,108 +609,110 @@ handleQR qr m theta =  case qr of
     return $ (q, WithQR mName rI beta)
 
 
-applyQR :: QR -> (TE.MatrixE -> TE.UExpr t) -> TE.MatrixE -> SB.StanBuilderM md gq (TE.UExpr t)
-applyQR NoQR f m = f m
+applyQR :: QR -> (TE.MatrixE -> a) -> TE.MatrixE -> SB.StanBuilderM md gq a
+applyQR NoQR f m = pure $ f m
 applyQR (WithQR mName rI _) f m = SB.inBlock SB.SBTransformedDataGQ $ do
   let rowsE = TE.functionE TE.rows (m :> TNil)
       colsE = TE.functionE TE.cols (m :> TNil)
       qName = mName <> "_Q"
   mQ <- SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
-  f mQ
+  pure $ f mQ
 applyQR DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
 applyQR' :: QR -> TE.MatrixE -> SB.StanBuilderM md gq TE.MatrixE
-applyQR' NoQR m = m
-applyQR' (WithQR mName rI _) m = SB.inBlock SB.SBTransformedDataGQ $ do
+applyQR' NoQR m = pure m
+applyQR' (WithQR mName rI _) m = do
   let rowsE = TE.functionE TE.rows (m :> TNil)
       colsE = TE.functionE TE.cols (m :> TNil)
       qName = mName <> "_Q"
   SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
 applyQR' DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
+at :: TE.IntE -> TE.UExpr t -> TE.UExpr (TE.Sliced TE.N0 t)
+at = TE.sliceE TE.s0
 
--- NB, final returned value is matrix (States x Predictors) so that data and index get you logit of prob
+by :: TE.UExpr t -> TE.IntArrayE -> TE.UExpr (TE.Indexed TE.N0 t)
+by x i = TE.indexE TE.s0 i x
+
 addBLModelForDataSet :: (Typeable md, Typeable gq)
-                     => Text
+                     => SB.RowTypeTag r
+                     -> Text
                      -> Bool
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
                      -> DSSpecificWithPriors
                      -> CenterDM
---                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
                      -> QR
                      -> TE.VectorE -- alpha (one per States)
-                     -> TE.MatrixE -- beta (Design Matrix Cols x States)
+                     -> TE.MatrixE -- beta (predictors x States)
                      -> SB.LLSet
                      -> SB.StanBuilderM md gq (CenterDM
                                               , QR
                                               , SB.LLSet
-                                              , TE.MatrixE  -- State x K, logit of probabilities in each state as linear functions of (possiby rotated) predictors
+                                              , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.EReal) -- probabilities indexed to data
                                               )
-addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
+addBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  let dmColsE = TE.functionE TE.cols (dm :> TNil)
-      countsSizeE = TE.functionE TE.size (counts :> TNil)
---  colIndexKey <- colIndex dm
-  (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel dmColsE dsSp Nothing
-  (dmC, centerF) <- centerIf dm centerDM --Nsothing centerM
+  (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
+  (dmC, centerF) <- centerIf dm centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR qr dmC beta
---  muF <- indexedMuE3 dmQR
-  let at x k = TE.sliceE TE.s0 k (TE.indexE TE.s0 _ x)
-      muE' dm = indexedMuE dsAlphaM dsBetaM (at alpha) dm (at beta)
+  let muE' dm = indexedMuE dsAlphaM dsBetaM alpha dm beta
       muE = muE' dmQR
       dist = SD.binomialLogitDist
---      vecMu = SB.vectorizeExpr (addLabel "mu") muE (SB.dataSetName rtt)
-  modelVar dist successes (pure $ muE :> counts :> TNil)
-  let indexedParams k = muE :> counts `at` k :> TNil
+      stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
+  modelCounts dist successes $ do
+    -- should we vectorize the re-indexed (states to data) or reindex after vectorizing?
+    -- first is (potentially) contiguous in memory; second is smaller and faster to vectorize
+    muVec <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "mu") $ reIndex stateByDataIndexE muE
+    -- muVec <- TE.indexE TE.s0 stateByDataIndexE <$> SB.vectorizeExpr (TE.groupSizE stateGroup) (addLabel "mu")
+    pure $ counts :> muVec :> TNil
+  let indexedParams k = counts `at` k :> muE `by` stateByDataIndexE `at` k :> TNil
       indexedY k = successes `at` k
-  let llSet' = updateLLSet rtt dist indexedY [] indexedParams llSet
-  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist indexedParams
-
---  let probF m = TE.functionE TE.inv_logit (muE' m :> )
---  let prob = applyQR retQR muE' $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (CenterWith centerF, retQR, llSet', applyQR' retQR)
+      llSet' = updateLLSet rtt dist indexedY (pure indexedParams) llSet
+  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams)
+  let probE m k = invLogit $ muE' m k
+  return (CenterWith centerF, retQR, llSet', applyQR retQR probE)
 
 addBBLModelForDataSet :: (Typeable md, Typeable gq)
-                      => Text
+                      => SB.RowTypeTag r
+                      -> Text
                       -> Bool
-                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, SB.StanVar, SB.StanVar, SB.StanVar)
-                      -> DSSpecificWithPriors k md gq
-                      -> CenterDM md gq
---                      -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
+                      -> DSSpecificWithPriors
+                      -> CenterDM
                       -> QR
                       -> Bool
-                      -> SB.StanVar
-                      -> SB.StanVar
-                      -> SB.StanVar
+                      -> TE.VectorE -- alpha (by state)
+                      -> TE.MatrixE -- beta (predictors x state)
+                      -> TE.RealE -- beta-width
                       -> SB.LLSet md gq
                       -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                                , QR
                                                , SB.LLSet md gq
-                                               , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                               , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                                )
-addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countScaled alpha beta betaWidth llSet = do
+addBBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr countScaled alpha beta betaWidth llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
   (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
-  colIndexKey <- colIndex dm
-  (dsAlphaM, dsBetaM) <-  SB.useDataSetForBindings rtt $ dsSpecific dataSetLabel dsSp colIndexKey Nothing
-  (dmC, centerF) <- SB.useDataSetForBindings rtt $ centerIf dm centerDM --Nothing centerM
-  (dmQR, retQR) <- handleQR rtt qr dmC beta
-  muF <- indexedMuE3 dmQR
-  let muE = invLogit $ muF dsAlphaM dsBetaM alpha beta
-      bA = SB.var betaWidth `SB.times` SB.paren muE
-      bB = SB.var betaWidth `SB.times` SB.paren (SB.scalar "1" `SB.minus` muE)
+  (dsAlphaM, dsBetaM) <-  dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
+  (dmC, centerF) <- centerIf dm centerDM --Nothing centerM
+  (dmQR, retQR) <- handleQR qr dmC beta
+  let muE' mE = invLogit $ indexedMuE dsAlphaM dsBetaM (at alpha) mE (at beta)
+      muE = muE' dm
+      bA kE = betaWidth `TE.timesE` muE kE
+      bB kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE kE)
       dist = (if countScaled then SD.countScaledScalarBetaBinomialDist else SB.scalarBetaBinomialDist') True
-      vecA = SB.vectorizeExpr (addLabel "bAT") bA (SB.dataSetName rtt)
-      vecB = SB.vectorizeExpr (addLabel "bBT") bB (SB.dataSetName rtt)
-  modelVar rtt dist successes $ do
-    a <- vecA
-    b <- vecB
-    return (SB.var a, SB.var b)
-  let llSet' = updateLLSet rtt dist successes (pure (bA, bB)) llSet
-  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure (bA, bB))
-  let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (CenterWith centerF, retQR, llSet', prob)
+      stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
+  modelCounts dist successes $ do
+    a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bAT") $ SB.reIndex bA stateByDataIndexE bA
+    a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bBT") $ SB.reIndex bA stateByDataIndexE bB
+    pure $ successes :> a :> b :> TNil
+  let indexedParams kE = counts `at` kE :> bA `by` stateByDataIndexE `at` kE :> bA `by` stateByDataIndexE `at` kE :> TNil
+      indexedY kE = successes `at` kE
+      llSet' = updateLLSet rtt dist indexedY (pure indexedParams) llSet
+  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams)
+--  let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
+  return (CenterWith centerF, retQR, llSet', applyQR retQR muE')
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
@@ -760,20 +771,69 @@ matrix elexPSFunction(array[] int gIdx, vector psWgts, vector aT, matrix bT, mat
 }
 |]
 
+type ElexPSArgs = [TE.IntArrayE, TE.ECVec, TE.ECVec, TE.EMat, TE.EMat, TE.ECVec, TE.EMat, TE.EMat, TE.EInt, TE.IntArrayE]
+elexPSF :: SB.StanBuilderM md gq (TE.Function TE.EMat ElexPSArgs)
+elexPSF = do
+  let f :: TE.Function TE.EMat ElexPSArgs
+      f = TE.simpleFunction "elexPSFunction"
+      row x k = TE.sliceE TE.s0 k x
+      col x k = TE.sliceE TE.s1 k x
+--      byRow x i = TE.indexE TE.s0 i x
+      byCol x i = TE.indexE TE.s1 i x
+      dotProduct v1 v2 = TE.functionE TE.dot_product (v1 :> v2 :> TNil)
+      plusEq = TE.opAssign TE.SAdd
+      eDivEq = TE.opAssign (TE.SElementWise TE.SDivide)
+  SB.addFunctionOnce f (TE.DataArg "gIdx" :> TE.DataArg "psWgts" :> TE.Arg "aT" :> TE.Arg "bT" :> TE.DataArg "dT"
+                       :> TE.Arg "aP" :> TE.Arg "bP" :> TE.DataArg "dP", TE.DataArg "N_elex", TE.DataArg "elexIdx")
+    $ \(gIdx :> psWgts :> aT :> bT :> dT :> aP :> bP :> dP :> nElex :> elexIdx) -> TE.writerL $ do
+    let grp kE = gIdx `at` kE
+    nPS <- TE.declareRHSNW (TE.NamedDeclSpec "N_ps" $ TE.intSpec []) $ SB.lengthE gIdx
+    nGrp <- TE.declareRHSNW (TE.NamedDeclSpec "N_grp" $ TE.intSpec []) $ SB.lengthE aT
+    p <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nGrp (TE.intE 2))
+      $ TE.functionE TE.rep_matrix (TE.realE 0 :> nGrp :> TE.intE 2 :> TNil)
+    wgts <- TE.declareRHSNW (TE.NamedDeclSpec "wgts" $ TE.matrixSpec nGrp (TE.intE 2))
+      $ TE.functionE TE.rep_matrix (TE.realE 0 :> nGrp :> TE.intE 2 :> TNil)
+    TE.addStmt $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nPS) $ \kE -> TE.writerL' $ do
+      pT <- TE.declareRHSNW (TE.NamedDeclSpec "pT" $ TE.realSpec [])
+        $ invLogit $ (aT `at` state kE) `TE.plusE` dotProduct (dT `at` kE) (bT `byCol` grp kE)
+      pP <- TE.declareRHSNW (TE.NamedDeclSpec "pP" $ TE.realSpec [])
+        $ invLogit $ (aP `at` state kE) `TE.plusE` dotProduct (dP `at` kE) (bP `byCol` grp kE)
+      wPT <- TE.declareRHSNW (TE.NamedDeclSpec "wPT" $ TE.realSpec []) $ (psWgts `at` kE) `TE.timesE` pT
+      TE.addStmt $ p `at` state kE `at` TE.intE 1 `plusEq` wPT
+      TE.addStmt $ p `at` state kE `at` TE.intE 2 `plusEq` (wPT `timesE` pP)
+      TE.addStmt $ wgts `at` grp kE `at` TE.intE 1 `plusEq` (psWgts `at` kE)
+      TE.addStmt $ wgts `at` grp kE `at` TE.intE 2 `plusEq` wPT
+    TE.addStmt $ p `eDivEq` wgts
+    q <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nElex (TE.intE 2))
+    TE.addStmt $ q `col` TE.intE 1 `TE.assign` (p `by` elexIdx) `col` TE.intE 1
+    TE.addStmt $ q `col` TE.intE 2 `TE.assign` (p `by` elexIdx) `col` TE.intE 2
+    return q
+
+-- given J is group size, K is number of predictors, N is size of post-strat data-set
 elexPSFunction :: Text
                -> SB.RowTypeTag r -- ps rows
                -> SB.RowTypeTag r' -- election rows
                -> SB.GroupTypeTag k
-               -> SB.StanVar -- psWgts
-               -> SB.StanExpr -- alphaT
-               -> SB.StanExpr -- betaT
-               -> SB.StanVar -- dmT
-               -> SB.StanExpr -- alphaP
-               -> SB.StanExpr -- betaP
-               -> SB.StanVar -- dmP
-               -> SB.StanBuilderM md gq (SB.StanVar, SB.StanVar)
-elexPSFunction varNameSuffix rttPS rttElex gtt psWgtsV alphaTE betaTE dmTV alphaPE betaPE dmPV = do
-  SB.addFunctionsOnce "elexPSFunction" $ SB.declareStanFunction' elexPSFunctionText
+               -> TE.RealArrayE -- psWgts
+               -> TE.VectorE-- alphaT, J
+               -> TE.MatrixE -- betaT, K x J
+               -> TE.MatrixE -- dmT, N x K
+               -> TE.VectorE -- alphaP, J
+               -> TE.MatrixE -- betaP, K x J
+               -> TE.MatrixE -- dmP, N x K
+               -> SB.StanBuilderM md gq (TE.VectorE, TE.VectorE)
+elexPSFunction varNameSuffix rttPS rttElex gtt psWgts alphaT betaT dmT alphaP betaP dmP = do
+  let dataIdx = SB.namedIndexE (SB.dataByGroupIndexName rttPS gtt)
+      nElex = TE.dataSetSizeE rttElex
+      elexIdx = SB.namedIndexE (SB.dataByGroupIndexName rttElex gtt)
+  f <- elexPSF
+  ps <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexProbs_" <> varNameSuffix) $ TE.matrixSpec nElex (TE.intE 2) [])
+        $ TE.functionE f (dataIdx :> psWgts :> alphaT :> betaT :> dmT :> alphaP :> betaP :> dmP :> nElex :> elexIdx)
+  pT <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPT_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 ps (TE.intE 1)
+  pP <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPP_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 ps (TE.intE 2)
+  pure (pT, pP)
+
+{-
   psIndexKey <- SB.named1dArrayIndex psWgtsV
   let elexIK = SB.dataSetName rttElex
   let grpIndexKey = SB.taggedGroupName gtt
@@ -797,33 +857,32 @@ elexPSFunction varNameSuffix rttPS rttElex gtt psWgtsV alphaTE betaTE dmTV alpha
     pP <- SB.stanDeclareRHS ("elexPP_" <> varNameSuffix) (SB.StanVector $ SB.NamedDim elexIK) ""
           $ SB.function "col" $ (SB.varNameE ps :| [SB.scalar "2"])
     return (pT, pP)
-
+-}
+{-
 addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                     => Bool
                     -> ET.VoteShareType
                     -> Int
                     -> ElectionRow rs
-                    -> CenterDM md gq
-                    -> CenterDM md gq
---                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
---                    -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                    -> CenterDM
+                    -> CenterDM
                     -> QR
                     -> QR
-                    -> DSSpecificWithPriors k md gq
-                    -> DSSpecificWithPriors k md gq
-                    -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, Map ET.OfficeT SB.StanVar) -- ps data-set, wgt var, design-matrixes (turnout, share)
-                    -> SB.StanVar
-                    -> SB.StanVar
-                    -> SB.StanVar
-                    -> SB.StanVar
-                    -> SB.LLSet md gq
+                    -> DSSpecificWithPriors
+                    -> DSSpecificWithPriors
+                    -> (SB.RowTypeTag r, TE.VectorE, TE.MatrixE, Map ET.OfficeT TE.MatrixE) -- ps data-set, wgt var, design-matrixes (turnout, share)
+                    -> TE.VectorE
+                    -> TE.MatrixE
+                    -> TE.VectorE
+                    -> SB.MatrixE
+                    -> SB.LLSet
                     -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                              , QR
                                              , QR
-                                             , SB.LLSet md gq
-                                             , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
-                                             , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                             , SB.LLSet
+                                             , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
+                                             , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                              )
 addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) alphaT betaT alphaP betaP llSet = do
   let office = officeFromElectionRow officeRow
@@ -833,9 +892,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
     Nothing -> SB.stanBuildError $ "addBLModelsForElex': given office (" <> show office <> ") not present in ps pref matrices."
     Just x -> return x
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
-  colTIndexKey <- colIndex dmPST
-  colPIndexKey <- colIndex dmPSP
-  (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colTIndexKey (Just office)
+--  colTIndexKey <- colIndex dmPST
+--  colPIndexKey <- colIndex dmPSP
+  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) (SB.mColsE dmPST) dsSpT colTIndexKey (Just office)
   (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colPIndexKey (Just office)
   (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST centerTDM --Nothing centerTM
   (dmTQR, retQRT) <- handleQR rttElex qrT dmTC betaT
@@ -873,35 +932,34 @@ addBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT q
                 centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                 alphaT betaT alphaP betaP llSet
 
+-}
 addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
                      => Bool
                      -> ET.VoteShareType
                      -> Int
                      -> ElectionRow rs
-                     -> CenterDM md gq
-                     -> CenterDM md gq
---                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
---                     -> Maybe (SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar)
+                     -> CenterDM
+                     -> CenterDM
                      -> QR
                      -> QR
-                     -> DSSpecificWithPriors k md gq
-                     -> DSSpecificWithPriors k md gq
-                     -> (SB.RowTypeTag r, SB.StanVar, SB.StanVar, Map ET.OfficeT SB.StanVar) -- ps data-set, wgt var, design-matrixes (turnout, share)
+                     -> DSSpecificWithPriors
+                     -> DSSpecificWithPriors
+                     -> (SB.RowTypeTag r, TE.VectorE, TE.MatrixE, Map ET.OfficeT TE.MatrixE) -- ps data-set, wgt var, design-matrixes (turnout, share)
                      -> Bool
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.StanVar
-                     -> SB.LLSet md gq
+                     -> TE.VectorE
+                     -> TE.MatrixE
+                     -> TE.RealE
+                     -> SB.VectorE
+                     -> SB.MatrixE
+                     -> SB.RealE
+                     -> SB.LLSet
                      -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
                                               , QR
                                               , QR
                                               , SB.LLSet md gq
-                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
-                                              , SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
+                                              , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
+                                              , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                               )
 addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSPs) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = do
   let office = officeFromElectionRow officeRow
@@ -911,40 +969,47 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
     Nothing -> SB.stanBuildError $ "addBBLModelsForElex': given office (" <> show office <> ") not present in ps pref matrices."
     Just x -> return x
   (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
-  colIndexT <- colIndex dmPST
-  colIndexP <- colIndex dmPSP
-  (dsTAlphaM, dsTBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("T_" <> dsLabel) dsSpT colIndexT (Just office)
-  (dsPAlphaM, dsPBetaM) <- SB.useDataSetForBindings rttElex $ dsSpecific ("P_" <> dsLabel) dsSpP colIndexP (Just office)
-  (dmTC, centerTF) <- SB.useDataSetForBindings rttPS $ centerIf dmPST centerTDM --Nothing centerTM
-  (dmTQR, retQRT) <- handleQR rttPS qrT dmTC betaT
-  (dmPC, centerPF) <- SB.useDataSetForBindings rttPS $ centerIf dmPSP centerPDM --Nothing centerPM
-  (dmPQR, retQRP) <- handleQR rttPS qrP dmPC betaP
-  betaT' <- addIfM dsTBetaM betaT
-  betaP' <- addIfM dsPBetaM betaP
+--  colIndexT <- colIndex dmPST
+--  colIndexP <- colIndex dmPSP
+  (dsTAlphaM, dsTBetaM) <- dsSpecific ("T_" <> dsLabel) (SB.mColsE dmPST) dsSpT (Just office)
+  (dsPAlphaM, dsPBetaM) <- dsSpecific ("P_" <> dsLabel) (SB.mColsE dmPSP) dsSpP (Just office)
+  (dmTC, centerTF) <- centerIf dmPST centerTDM --Nothing centerTM
+  (dmTQR, retQRT) <- handleQR qrT dmTC betaT
+  (dmPC, centerPF) <- centerIf dmPSP centerPDM --Nothing centerPM
+  (dmPQR, retQRP) <- handleQR qrP dmPC betaP
+  --
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
                           $ elexPSFunction (officeText office)
                           rttPS rttElex stateGroup wgtsV
-                          (addIf dsTAlphaM alphaT) betaT' dmTQR
-                          (addIf dsPAlphaM alphaP) betaP' dmPQR
-  let f x w = if countScaled then x `SB.divide` SB.var w else x `SB.times` SB.var w
-      bA mu w = f (SB.paren (SB.var mu)) w
-      bB mu w = f (SB.paren (SB.scalar "1" `SB.minus` SB.var mu)) w
-      bAT pt = bA pt scaleT
-      bBT pt = bB pt scaleT
-      bAP pp = bA pp scaleP
-      bBP pp = bB pp scaleP
-  let distT = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True cvap
-      distS = (if countScaled then SB.countScaledBetaBinomialDist else SB.betaBinomialDist) True votesInRace
-  modelVar rttElex distT votes (pure (bAT pTByElex, bBT pTByElex))
-  modelVar rttElex distS dVotesInRace (pure (bAP pSByElex, bBP pSByElex))
-  let llSet' = updateLLSet rttElex distT votes (pure (bAT pTByElex, bBT pTByElex))
-               $ updateLLSet rttElex distS dVotesInRace (pure (bAP pSByElex, bBP pSByElex)) llSet
+                          (addIf dsTAlphaM alphaT) (addIf dsTBetaM betaT) dmTQR
+                          (addIf dsPAlphaM alphaP) (addIf dsPBetaM betaP) dmPQR
+  let f x w = if countScaled then x `TE.divideE` w else w `TE.times` x
+      oneMinusVec v = TE.functionE TE.rep_vector (TE.realE 1 :> SB.lengthE v :> TNil) `TE.minusE` v
+      bAT pt = f pt scaleT
+      bBT pt = f (oneMinusVec pt) scaleT
+      bAP pp = f pp scaleP
+      bBP pp = f (oneMinusVec pp) scaleP
+  let distT = (if countScaled then SB.countScaledBetaBinomialDist else SD.scalarBetaBinomialDist') True
+      distS = (if countScaled then SB.countScaledBetaBinomialDist else SD.scalarBetaBinomialDist') True
+  modelCounts distT votes $ pure $ cvap :> bAT pTByElex :>  bBT pTByElex :> TNil
+  modelCounts distS dVotesInRace $ pure $ votesInRace :> bAP pSByElex :>  bBP pSByElex :> TNil
+--  modelVar rttElex distS dVotesInRace (pure (bAP pSByElex, bBP pSByElex))
+  let indexedTY kE = votes `at` kE
+      indexedParamsT kE = cvap `at` kE :> bAT pTByElex :>  bBT pTByElex :> TNil
+      indexedSY kE = dVotesInRace `at` kE
+      indexedParamsS kE = votesInRace `at` kE :> bAP pSByElex :>  bBP pSByElex :> TNil
+
+  let llSet' = updateLLSet rttElex distT indexedTY (pure indexedParamsT)
+               $ updateLLSet rttElex distS indexedSY (pure indexedParamsS)
+               $ llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT (pure (bAT pTByElex, bBT pTByElex))
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS (pure (bAP pSByElex, bBP pSByElex))
-  let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAlphaM dsTBetaM alphaT betaT) . indexedMuE3
-      probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
-  return (CenterWith centerTF, CenterWith centerPF, retQRT, retQRP, llSet', probT, probP)
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distT $ pure indexedParamsT
+    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure indexedParamsS
+  let pTE' mE = invLogit $ indexedMuE dsTAlphaM dsTBetaM alphaT mE betaT
+      pPE' mE = invLogit $ indexedMuE dsPAlphaM dsPBetaM alphaP mE betaP
+--  let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAlphaM dsTBetaM alphaT betaT) . indexedMuE3
+--      probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
+  return (CenterWith centerTF, CenterWith centerPF, retQRT, retQRP, llSet', applyQR retQRT pTE', applyQR retQRP pPE')
 
 addBBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
        ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
