@@ -339,13 +339,12 @@ getElexData :: forall rs md gq. (Typeable md
 
 getElexData x vst eScale = setupElexData @rs vst eScale $ officeFromElectionRow x
 
--- HERE
 setupACSPSRows :: (Typeable md, Typeable gq)
                => Model k
                -> DM.DesignMatrixRowPart (F.Record ACSWithDensityEM)
                -> (ET.OfficeT -> F.Record ACSWithDensityEM -> Double)
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ACSWithDensityEM)
-                                         , TE.RealArrayE
+                                         , TE.IntArrayE
                                          , TE.MatrixE
                                          , Map ET.OfficeT TE.MatrixE)
 setupACSPSRows m densRP incF = do
@@ -388,18 +387,17 @@ dsAlphaBeta :: Text
             -> TE.DensityWithArgs TE.ECVec
             -> SB.StanBuilderM md gq (TE.ParameterTag TE.EReal, TE.ParameterTag TE.ECVec)
 dsAlphaBeta dsLabel betaSizeE alphaPrior betaPrior = do
-  alphaP <- TE.addBuildParameter
-            $ TE.simpleParameterWA
+  alphaP <- TE.simpleParameterWA
             (TE.NamedDeclSpec ("alpha_" <> dsLabel) $ TE.realSpec [])
             alphaPrior
-  betaP <- TE.addBuildParameter
-           $ TE.simpleParameterWA
+  betaP <- TE.simpleParameterWA
            (TE.NamedDeclSpec ("beta_" <> dsLabel) $ TE.vectorSpec betaSizeE [])
            betaPrior
 --    dsAlpha <- SMP.addParameter ("alpha_" <> dsName) SB.StanReal "" (SB.UnVectorized alphaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
 --    dsBeta <- SMP.addParameter ("beta_" <> dsName) (SB.StanVector $ SB.NamedDim ik) "" (SB.Vectorized (one ik) betaPrior) -- $ SB.normal Nothing (SB.scalar "0.5"))
   pure (alphaP, betaP)
 
+{-
 dsAlphaGroup :: Text
              -> SB.GroupTypeTag k
              -> TE.DensityWithArgs TE.EReal
@@ -410,7 +408,8 @@ dsAlphaGroup dsLabel gtt muPrior sigmaPrior = do
               $ TE.simpleParameterWA (TE.NamedDeclSpec ("muAlpha_" <> dsLabel) $ TE.realSpec []) muPrior
   sigmaAlphaP <- TE.addBuildParameter
     $ TE.simpleParameterWA (TE.NamedDeclSpec ("sigmaAlpha_" <> dsLabel) $ TE.realSpec [TE.lowerM $ TE.realE 0]) sigmaPrior
-  let ncF (mu :> sigma :> TNil) raw = mu `TE.plusE` (sigma `TE.timesE` raw)
+  let ncF :: TE.ExprList [TE.ECVec, TE.ECVec] -> TE.ECVec ->
+      ncF (mu :> sigma :> TNil) raw = mu `TE.plusE` (sigma `TE.timesE` raw)
       vds = TE.vectorSpec (SB.groupSizeE gtt) []
       toVec re = TE.functionE TE.rep_vector (re :> SB.groupSizeE gtt :> TNil)
       f pt = SP.mapped toVec . SP.build
@@ -425,6 +424,7 @@ dsAlphaGroup dsLabel gtt muPrior sigmaPrior = do
 --    sigmaDSAlphaP <- SMP.addParameter ("sigmaAlpha_" <> dsName) SB.StanReal "<lower=0>"  (SB.UnVectorized sigmaPrior) -- $ normal 0 0.4)
 --    dsAlphaNonCenterF <- SMP.scalarNonCenteredF muDSAlphaP sigmaDSAlphaP
 --    SMP.addHierarchicalScalar ("alpha_" <>  dsName) gtt (SMP.NonCentered dsAlphaNonCenterF) (normal 0 1)
+-}
 
 dsSpecific :: Text -> TE.IntE -> DSSpecificWithPriors -> Maybe ET.OfficeT
            -> SB.StanBuilderM md gq (Maybe (TE.ParameterTag TE.EReal), Maybe (TE.ParameterTag TE.ECVec))
@@ -435,7 +435,7 @@ dsSpecific dsLabel betaSizeE dsp oM = do
       betaNDS =  TE.NamedDeclSpec ("theta_" <> dsLabel) $ TE.vectorSpec betaSizeE []
       bRawDS = TE.vectorSpec betaSizeE []
       v y = TE.functionE TE.rep_vector (y :> betaSizeE :> TNil)
-      bRawDensityWA x = TE.DensityWithArgs TE.normal (v 0 :> v x :> TNil)
+      bRawDensityWA x = TE.DensityWithArgs TE.normal (v 0 :> v (TE.realE x) :> TNil)
   case dsp of
     DSPNone -> return (Nothing, Nothing)
     DSPAlpha ap -> do
@@ -444,7 +444,7 @@ dsSpecific dsLabel betaSizeE dsp oM = do
     DSPAlphaHC d ps -> do
       dsAlpha <- SP.addCenteredHierarchical alphaNDS ps d
       return (Just dsAlpha, Nothing)
-    DSPAlphaHN aRawSigma aps alphaF -> do
+    DSPAlphaHNC aRawSigma aps alphaF -> do
       dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps alphaF
       return (Just dsAlpha, Nothing)
     DSPAlphaHCBetaNH oM' ad aps bp -> do
@@ -462,7 +462,7 @@ dsSpecific dsLabel betaSizeE dsp oM = do
 {-    DSPAlphaGroup muPrior sigmaPrior -> do
       dsAlpha <- dsAlphaGroup dsLabel betaSizeE muPrior sigmaPrior
       return (Just dsAlpha, Nothing) -}
-    DSPAlphaBetaNH oM' gtt alphaPrior betaPrior -> do
+    DSPAlphaBetaNH oM' alphaPrior betaPrior -> do
       if fromMaybe True ((/=) <$> oM <*> oM')
         then do
         (a, b) <- dsAlphaBeta dsLabel betaSizeE alphaPrior betaPrior
@@ -477,17 +477,17 @@ dsSpecific dsLabel betaSizeE dsp oM = do
       dsBeta <- SP.simpleNonCentered betaNDS bRawDS (bRawDensityWA bRawSigma) bps bF
       return (Just dsAlpha, Just dsBeta)
 
-data CenterDM  where
-  NoCenter :: CenterDM
-  CenterWith :: TE.StanName -> (SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq TE.MatrixE) -> CenterDM
-  UnweightedCenter :: TE.StanName -> CenterDM
-  WeightedCenter :: TE.StanName -> TE.VectorE -> CenterDM
+data CenterDM md gq where
+  NoCenter :: CenterDM md gq
+  CenterWith :: TE.StanName -> (SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq TE.MatrixE) -> CenterDM md gq
+  UnweightedCenter :: TE.StanName -> CenterDM md gq
+  WeightedCenter :: TE.StanName -> TE.VectorE -> CenterDM md gq
 
-centerIf :: (Typeable md, Typeable gq)
+centerIf :: forall md gq.(Typeable md, Typeable gq)
          => TE.MatrixE
-         -> CenterDM
+         -> CenterDM md gq
          -> SB.StanBuilderM md gq (TE.MatrixE
-                                  , SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq SB.StanVar)
+                                  , SC.InputDataType -> TE.MatrixE -> TE.StanName -> SB.StanBuilderM md gq TE.MatrixE)
 centerIf m centerDM =  case centerDM of
   NoCenter -> return (m, \_ v _ -> pure v)
   CenterWith n f -> do
@@ -542,12 +542,12 @@ addIfM mv v@(SB.StanVar _ t) = case mv of
 -}
 
 
-indexedMuE :: Maybe TE.RealE -> Maybe TE.VectorE -> TE.VectorE -> TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.EReal
+indexedMuE :: Maybe TE.RealE -> Maybe TE.VectorE -> TE.VectorE -> TE.MatrixE -> TE.MatrixE -> TE.IntE -> TE.RealE
 indexedMuE dsAlphaM dsBetaM alphaByState dm betaByState =
   let statesSizeE = TE.functionE TE.size (alphaByState :> TNil)
       repV x = TE.functionE TE.rep_vector (x :> statesSizeE :> TNil)
-      repM v = TE.functionE TE.rep_matrix (v :> statesSizeE :> TNil)
-  in muE (addIf (fmap rep dsAlphaM) alpha) dm (addIf (fmap repM dsBetaM) beta)
+      repM v = TE.functionE TE.repV_matrix (v :> statesSizeE :> TNil)
+  in muE (addIf (fmap repV dsAlphaM) alphaByState) dm (addIf (fmap repM dsBetaM) betaByState)
 
 
 {-
@@ -570,7 +570,8 @@ updateLLSet ::  SB.RowTypeTag r
             -> SD.StanDist t ps
             -> TE.IntArrayE
             -> TE.CodeWriter (TE.IntE -> TE.ExprList ps)
-            -> SB.LLSet md gq -> SB.LLSet md gq
+            -> SB.LLSet
+            -> SB.LLSet
 updateLLSet rtt dist indexedY paramCode = SB.addToLLSet rtt llDetails where
   llDetails = SB.LLDetails dist paramCode indexedParams indexedY
 
@@ -640,15 +641,15 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                      -> Bool
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
                      -> DSSpecificWithPriors
-                     -> CenterDM
+                     -> CenterDM md gq
                      -> QR
                      -> TE.VectorE -- alpha (one per States)
                      -> TE.MatrixE -- beta (predictors x States)
                      -> SB.LLSet
-                     -> SB.StanBuilderM md gq (CenterDM
+                     -> SB.StanBuilderM md gq (CenterDM m gq
                                               , QR
                                               , SB.LLSet
-                                              , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.EReal) -- probabilities indexed to data
+                                              , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE) -- probabilities indexed to data
                                               )
 addBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
@@ -679,16 +680,16 @@ addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       -> Bool
                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
                       -> DSSpecificWithPriors
-                      -> CenterDM
+                      -> CenterDM md gq
                       -> QR
                       -> Bool
                       -> TE.VectorE -- alpha (by state)
                       -> TE.MatrixE -- beta (predictors x state)
                       -> TE.RealE -- beta-width
-                      -> SB.LLSet md gq
-                      -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                      -> SB.LLSet
+                      -> SB.StanBuilderM md gq (CenterDM md gq
                                                , QR
-                                               , SB.LLSet md gq
+                                               , SB.LLSet
                                                , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                                )
 addBBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr countScaled alpha beta betaWidth llSet = do
@@ -720,7 +721,7 @@ officeText office = case office of
   ET.Senate -> "Se"
   ET.House -> "Ho"
 
-elexDSSp :: Set ET.OfficeT -> ET.OfficeT -> DSSpecificWithPriors md gq k -> DSSpecificWithPriors md gq k
+elexDSSp :: Set ET.OfficeT -> ET.OfficeT -> DSSpecificWithPriors -> DSSpecificWithPriors
 elexDSSp offices o dsSp
   | ET.House `Set.member` offices = if o == ET.House then DSPNone else dsSp
   | ET.President `Set.member` offices = if o == ET.President then DSPNone else dsSp
@@ -771,7 +772,7 @@ matrix elexPSFunction(array[] int gIdx, vector psWgts, vector aT, matrix bT, mat
 }
 |]
 
-type ElexPSArgs = [TE.IntArrayE, TE.ECVec, TE.ECVec, TE.EMat, TE.EMat, TE.ECVec, TE.EMat, TE.EMat, TE.EInt, TE.IntArrayE]
+type ElexPSArgs = [TE.EIndexArray, TE.ECVec, TE.ECVec, TE.EMat, TE.EMat, TE.ECVec, TE.EMat, TE.EMat, TE.EInt, TE.EIndexArray]
 elexPSF :: SB.StanBuilderM md gq (TE.Function TE.EMat ElexPSArgs)
 elexPSF = do
   let f :: TE.Function TE.EMat ElexPSArgs
@@ -938,8 +939,8 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                      -> ET.VoteShareType
                      -> Int
                      -> ElectionRow rs
-                     -> CenterDM
-                     -> CenterDM
+                     -> CenterDM md gq
+                     -> CenterDM md gq
                      -> QR
                      -> QR
                      -> DSSpecificWithPriors
@@ -953,11 +954,11 @@ addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable
                      -> SB.MatrixE
                      -> SB.RealE
                      -> SB.LLSet
-                     -> SB.StanBuilderM md gq (CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
-                                              , CenterDM md gq --SC.InputDataType -> SB.StanVar -> Maybe Text -> SB.StanBuilderM md gq SB.StanVar
+                     -> SB.StanBuilderM md gq (CenterDM md gq
+                                              , CenterDM md gq
                                               , QR
                                               , QR
-                                              , SB.LLSet md gq
+                                              , SB.LLSet
                                               , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                               , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE)
                                               )
@@ -1099,8 +1100,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
       dataAndCodeBuilder :: MRP.BuilderM CCESAndCPSEM (F.FrameRec rs) ()
       dataAndCodeBuilder = do
         (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
-        let (dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart DMTurnout (const 0)) (Just "DMTurnout")
-            (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
+        let --(dmColIndexT, dmColExprT) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart DMTurnout (const 0)) (Just "DMTurnout")
+            --(dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
             centerMatrices = True
             initialCenterFM = if centerMatrices then WeightedCenter acsPSWgts else NoCenter
             initialQRT = DoQR
@@ -1108,102 +1109,122 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             meanTurnout = 0.6
             logit x = Numeric.log (x / (1 - x))
             logitMeanTurnout = logit meanTurnout
-            normal m sd = SB.normal (Just $ SB.scalar $ show m) (SB.scalar $ show sd)
-            cauchy m s = SB.cauchy (Just $ SB.scalar $ show m) (SB.scalar $ show s)
+            -- fixed densities
+            normal :: TE.TypeOneOf t '[TE.EReal, TE.ECVec] => TE.DensityWithArgs t
+            normal m sd = TE.DensityWithArgs TE.normalS (TE.realE m :> TE.realE sd :> TNil)
+            cauchy m s =  TE.DensityWithArgs TE.cauchy (TE.realE m >: TE.realE s :> TNil) --(Just $ SB.scalar $ show m) (SB.scalar $ show sd)
+            nStatesE = SB.groupSizeE stateGroup
+            colsTE = SB.mColsE dmACST
+            repVec nE x =  TE.functionE TE.rep_vector (x :> nE :> TNil)
+            repVecLike v = repVec (SB.lengthE v)
+        colsPE <- SB.stanBuildMaybe "No Preference matrices in ACS data prep?" $ do
+          dmACSP <- head <$> nonEmpty $ M.toList acsDMPs
+          pure $ SB.mColsE dmACSP
         elexData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "Elections_President"
-        alphaT <- SB.useDataSetForBindings elexData $ do
-          muAlphaT <- SMP.addParameter "muAlphaT" SB.StanReal "" (SB.UnVectorized $ normal logitMeanTurnout 1)
-          sigmaAlphaT <- SMP.addParameter "sigmaAlphaT" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
-          alphaTNonCenterF <- SMP.scalarNonCenteredF muAlphaT sigmaAlphaT
-          SMP.addHierarchicalScalar "alphaT" stateGroup (SMP.NonCentered alphaTNonCenterF) $ normal 0 1
---          SMP.addHierarchicalScalar "alphaT" stateGroup SMP.Centered $ SB.normal (Just $ SB.var muAlphaT)  (SB.var sigmaAlphaT)
---          pure muAlphaT
-        thetaT <- SB.useDataSetForBindings elexData $ do
-          SB.addDeclBinding' dmColIndexT dmColExprT
-          SB.addUseBinding' dmColIndexT dmColExprT
-          muThetaT <- SMP.addParameter "muThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "" (SB.Vectorized (one dmColIndexT) (normal 0 1))
+        alphaT <- do
+          muPT <- SP.simpleParameter (TE.NamedDeclSpec "muAlphaT" $ TE.realSpec []) $ normal logitMeanTurnout 1
+          sigmaPT <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT" $ TE.realSpec []) $ normal 0 0.4
+          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaT" $ TE.vectorSpec nStatesE [])
+            (TE.vectorSpec nStatesE [])
+            (normal 0 1)
+            (hfmap SP.build $ muPT :> SP.build sigmaPT :> TNil)
+            (\(mu :> sd :> TNil) rE -> repVecLike rE mu `TE.plusE` (sd  `TE.timesE` rE))
+          pure $ SP.parameterTagExpr alphaPT
+        thetaT <- do
+          muPT <- SP.simpleParameter (TE.NamedDeclSpec "muThetaT" $ TE.vectorSpec colsTE []) $ normal 0 1
+          let thetaTSpec =  TE.NamedDeclSpec "thetaT" $ TE.matrixSpec colsTE nStatesE []
+              muThetaMat x = TE.functionE TE.rep_matrix (x :> nStatesE :> TNil)
           case betaType model of
+            SingleBeta -> SP.addBuildParameter
+                          $ SP.TransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          (\(muE :> TNil) -> DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
-              tauThetaT <- SMP.addParameter "tauThetaT" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
-              corrThetaT <- SMP.lkjCorrelationMatrixParameter "corrT" dmColIndexT 1
-              thetaTNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaT tauThetaT corrThetaT
-              SMP.addHierarchicalVector "thetaT" dmColIndexT stateGroup (SMP.NonCentered thetaTNonCenteredF) (normal 0 0.4)
-            SingleBeta -> pure muThetaT
-        alphaP <- SB.useDataSetForBindings elexData $ do
-          muAlphaP <- SMP.addParameter "muAlphaP" SB.StanReal "" (SB.UnVectorized $ normal 0 1)
-          sigmaAlphaP <- SMP.addParameter "sigmaAlphaP" SB.StanReal "<lower=0>"  (SB.UnVectorized $ normal 0 0.4)
-          alphaPNonCenterF <- SMP.scalarNonCenteredF muAlphaP sigmaAlphaP
-          SMP.addHierarchicalScalar "alphaP" stateGroup (SMP.NonCentered alphaPNonCenterF) (normal 0 1)
---          SMP.addHierarchicalScalar "alphaP" stateGroup SMP.Centered $ SB.normal (Just $ SB.var muAlphaP)  (SB.var sigmaAlphaP)
---          pure muAlphaP
-        thetaP <- SB.useDataSetForBindings elexData $ do
-          SB.addDeclBinding' dmColIndexP dmColExprP
-          SB.addUseBinding' dmColIndexP dmColExprP
-          muThetaP <- SMP.addParameter "muThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "" (SB.Vectorized (one dmColIndexP) (normal 0 1))
+              tauPT <- SP.simpleParameter (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE []) $ normal 0 0.4
+              corrPT <- SP.simpleParameter (TE.NamedDeclSpec "corrT" $ TE.corrMatrixSpec colsTE [])
+                $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
+              thetaPT <- SP.withIIDMatrixRaw thetaTSpec (normal 0 0.4)
+                (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
+                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
+              pure $ SP.parameterTagExpr thetaTPT
+        alphaP <- do
+          muPT <- SP.simpleParameter (TE.NamedDeclSpec "muAlphaP" $ TE.realSpec []) $ normal 0 1
+          sigmaPT <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP" $ TE.realSpec []) $ normal 0 0.4
+          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaP" $ TE.vectorSpec nStatesE [])
+            (TE.vectorSpec nStatesE [])
+            (normal 0 1)
+            (hfmap SP.build $ muPT :> SP.build sigmaPT :> TNil)
+            (\(mu :> sd :> TNil) rE -> repVecLike rE mu `TE.plusE` (sd  `TE.timesE` rE))
+          pure $ SP.parameterTagExpr alphaPT
+        thetaT <- do
+          muPT <- SP.simpleParameter (TE.NamedDeclSpec "muThetaP" $ TE.vectorSpec colsPE []) $ normal 0 1
+          let thetaTSpec =  TE.NamedDeclSpec "thetaP" $ TE.matrixSpec colsPE nStatesE []
+              muThetaMat x = TE.functionE TE.rep_matrix (x :> nStatesE :> TNil)
           case betaType model of
+            SingleBeta -> SP.addBuildParameter
+                          $ SP.TransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          (\(muE :> TNil) -> DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
-              tauThetaP <- SMP.addParameter "tauThetaP" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
-              corrThetaP <- SMP.lkjCorrelationMatrixParameter "corrP" dmColIndexP 1
-              thetaPNonCenteredF <- SMP.vectorNonCenteredF (SB.taggedGroupName stateGroup) muThetaP tauThetaP corrThetaP
-              SMP.addHierarchicalVector "thetaP" dmColIndexP stateGroup (SMP.NonCentered thetaPNonCenteredF) (normal 0 0.4)
-            SingleBeta -> pure muThetaP
+              tauPT <- SP.simpleParameter (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE []) $ normal 0 0.4
+              corrPT <- SP.simpleParameter (TE.NamedDeclSpec "corrP" $ TE.corrMatrixSpec colsPE [])
+                $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
+              thetaPT <- SP.withIIDMatrixRaw thetaTSpec (normal 0 0.4)
+                (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
+                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
+              pure $ SP.parameterTagExpr thetaT_PT
         (dssWPT, dssWPP) <- case dataSetSpecific model of
           DSNone -> return (DSPNone, DSPNone)
           DSAlpha -> let x = DSPAlpha (normal 0 0.5) in return (x, x)
           DSAlphaHC -> do
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let dssT = DSPAlphaHC (SB.normal Nothing $ SB.var sigmaAlphaTDS)
-                dssP = DSPAlphaHC (SB.normal Nothing $ SB.var sigmaAlphaPDS)
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let dssT = DSPAlphaHC TE.normal Nothing (SP.given (TE.realE 0) :> SP.build sigmaAlphaTDS :> TNil)
+                dssP = DSPAlphaHC TE.normal Nothing (SP.given (TE.realE 0) :> SP.build sigmaAlphaPDS :> TNil)
             return (dssT, dssP)
           DSAlphaHNC -> do
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let alphaF sigma t = do
-                  raw <- SMP.addParameter ("alpha_" <> t <> "_raw") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
-                  SB.inBlock SB.SBTransformedParameters
-                    $ SB.stanDeclareRHS ("alpha_" <> t) SB.StanReal ""
-                    $ SB.var sigma `SB.times` SB.var raw
-            let dssT = DSPAlphaHNC $ alphaF sigmaAlphaTDS
-                dssP = DSPAlphaHNC $ alphaF sigmaAlphaPDS
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let dssT = DSPAlphaHNC $ 1 (SP.build sigmaAlphaTDS :> TNil) (\(s :> TNil) rE -> s `timesE` rE)
+                dssP = DSPAlphaHNC $ 1 (SP.build sigmaAlphaPDS :> TNil) (\(s :> TNil) rE -> s `timesE` rE)
             return (dssT, dssP)
           DSAlphaHCBetaNH oM -> do
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let bp = normal 0 0.5
-                dssT = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaTDS) bp
-                dssP = DSPAlphaHCBetaNH oM (SB.normal Nothing $ SB.var sigmaAlphaPDS) bp
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let dssT = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaTDS :> TNil) $ normal 0 0.5
+                dssP = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaPDS :> TNil) $ normal 0 0.5
             return (dssT, dssP)
           DSAlphaHNCBetaNH oM -> do
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let alphaF sigma t = do
-                  raw <- SMP.addParameter ("alpha_" <> t <> "_raw") SB.StanReal "" (SB.UnVectorized SB.stdNormal)
-                  SB.inBlock SB.SBTransformedParameters
-                    $ SB.stanDeclareRHS ("alpha_" <> t) SB.StanReal ""
-                    $ SB.var sigma `SB.times` SB.var raw
-            let bp = normal 0 0.5
-                dssT = DSPAlphaHNCBetaNH oM (alphaF sigmaAlphaTDS) bp
-                dssP = DSPAlphaHNCBetaNH oM (alphaF sigmaAlphaPDS) bp
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let dssT = DSPAlphaHNCBetaNH oM 1 (SP.build sigmaAlphaTDS :> TNil) (\(s :> TNil) rE -> s `timesE` rE) $ normal 0 0.5
+                dssP = DSPAlphaHNCBetaNH oM 1 (SP.build sigmaAlphaPDS :> TNil) (\(s :> TNil) rE -> s `timesE` rE) bp
             return (dssT, dssP)
-          DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
-          DSAlphaBetaNH oM -> do
-            let ap = normal 0 0.5
-                bp = normal 0 0.5
-            return $ (DSPAlphaBetaNH oM ap bp, DSPAlphaBetaNH oM ap bp)
-          DSAlphaBetaHC -> SB.useDataSetForBindings elexData $ do
-            SB.addDeclBinding' dmColIndexT dmColExprT
-            SB.addDeclBinding' dmColIndexP dmColExprP
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaBetaTDS <- SMP.addParameter "sigmaThetaT_DS" (SB.StanVector $ SB.NamedDim dmColIndexT) "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
-            let wpt = DSPAlphaBetaHC (SB.normal Nothing $ SB.var sigmaAlphaTDS) (SB.normal Nothing $ SB.var sigmaBetaTDS)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            sigmaBetaPDS <- SMP.addParameter "sigmaThetaP_DS" (SB.StanVector $ SB.NamedDim dmColIndexP) "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
-            let wpp = DSPAlphaBetaHC (SB.normal Nothing $ SB.var sigmaAlphaPDS) (SB.normal Nothing $ SB.var sigmaBetaPDS)
+--          DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
+          DSAlphaBetaNH oM -> pure (DSPAlphaBetaNH oM (normal 0 0.5) (normal 0 0.5), DSPAlphaBetaNH oM (normal 0 0.5) (normal 0 0.5))
+          DSAlphaBetaHC -> do
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaBetaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaThetaT_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let wpt = DSPAlphaBetaHC
+                      (TE.given (TE.realE 0) :> TE.build sigmaAlphaTDS :> TNil) TE.normal
+                      (TE.given (repVec colsTE $ TE.realE 0) :> TE.build sigmaBetaTDS :> TNil) TE.normal
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaBetaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaThetaP_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let wpp = DSPAlphaBetaHC
+                      (TE.given (TE.realE 0) :> TE.build sigmaAlphaPDS :> TNil) TE.normal
+                      (TE.given (repVec colsPE $ TE.realE 0) :> TE.build sigmaBetaPDS :> TNil) TE.normal
             return (wpt, wpp)
-          DSAlphaBetaHNC -> SB.useDataSetForBindings elexData $ do
-            SB.addDeclBinding' dmColIndexT dmColExprT
-            let vecT =  (SB.StanVector $ SB.NamedDim dmColIndexT)
+          DSAlphaBetaHNC -> do
+--            let vecT =  (SB.StanVector $ SB.NamedDim dmColIndexT)
+            -- Hyper-parameters
+            sigmaAlphaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaBetaTDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaThetaT_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaAlphaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            sigmaBetaPDS <- SP.simpleParameter (TE.NamedDeclSpec "sigmaThetaP_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+            let ncF :: (TE.BinaryResultT TE.BMultiply t' t ~ t) => TE.ExprList '[t'] -> TE.UExpr t -> TE.UExpr t
+                ncF (s :> TNil) r = s `TE.timesE` r
+                forT = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaTDS :> TNil) ncF 1 (SP.build sigmaBetaTDS :> TNil) ncF
+                forP = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaPDS :> TNil) ncF 1 (SP.build sigmaBetaPDS :> TNil) ncF
+            return (forT, foprP)
+{-
             sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
             let alphaTF t = SMP.addParameter ("alphaT_" <> t) SB.StanReal "" (SB.UnVectorized $ (SB.normal Nothing $ SB.var sigmaAlphaTDS))
             tauTDS <- SMP.addParameter "tauDSThetaT" vecT "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
@@ -1231,6 +1252,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                     $ SB.vectorizedOne dmColIndexP
                     $ SB.function "diag_pre_multiply" (SB.var tauPDS :| [SB.var corrPDS]) `SB.times` SB.var raw
             return (DSPAlphaBetaHNC alphaTF betaTNonCenterF, DSPAlphaBetaHNC alphaPF betaPNonCenterF)
+-}
 --        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
               Binomial -> do
@@ -1249,9 +1271,10 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial n -> do
                 let lnPriorMu = 2 * (round $ Numeric.log $ realToFrac n)
-                    betaWidthPrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
-                betaWidthT <- SMP.addParameter "betaWidthT" SB.StanReal ("<lower=" <> show n <> ">") betaWidthPrior
-                betaWidthP <- SMP.addParameter "betaWidthP" SB.StanReal ("<lower=" <> show n <> ">") betaWidthPrior
+                    betaWidthPrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
+--                      SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
+                betaWidthT <- TE.parameterTagExpr <$> SP.simpleParameter (TE.NamedDeclSpec "betaWidthT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) betaWidthPrior
+                betaWidthP <- TE.parameterTagExpr <$> SP.simpleParameter (TE.NamedDeclSpec "betaWidthP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) betaWidthPrior
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
                         office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))
@@ -1268,9 +1291,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 return (eF, cpsTF', ccesTF', ccesPF')
               CountScaledBB n -> do
                 let lnPriorMu = (round $ Numeric.log $ realToFrac n) `div` 2
-                    scalePrior = SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
-                scaleT <- SMP.addParameter "betaScaleT" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
-                scaleP <- SMP.addParameter "betaScaleP" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
+                    scalePrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
+                scaleT <- TE.parameterTagExpr <$> SP.simpleParameter (TE.NamedDeclSpec "betaScaleT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
+--                  SMP.addParameter "betaScaleT" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
+                scaleP <- TE.parameterTagExpr <$> SP.simpleParameter (TE.NamedDeclSpec "betaScaleP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
+--                  SMP.addParameter "betaScaleP" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
                         office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))
@@ -1517,12 +1542,12 @@ data DSSpecificWithPriors where
   DSPNone :: DSSpecificWithPriors
   DSPAlpha :: TE.DensityWithArgs TE.EReal -> DSSpecificWithPriors
   DSPAlphaHC :: TE.Density TE.EReal ts -> TE.Parameters ts -> DSSpecificWithPriors
-  DSPAlphaHN :: Double -> TE.Parameters ts -> (TE.ExprList ts -> TE.RealE -> TE.RealE) -> DSSpecificWithPriors
+  DSPAlphaHNC :: Double -> TE.Parameters ts -> (TE.ExprList ts -> TE.RealE -> TE.RealE) -> DSSpecificWithPriors
   DSPAlphaHCBetaNH :: Maybe ET.OfficeT -> TE.Density TE.EReal ts -> TE.Parameters ts -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
   DSPAlphaHNCBetaNH :: Maybe ET.OfficeT -> Double -> TE.Parameters ts -> (TE.ExprList ts -> TE.RealE -> TE.RealE) -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
 --  DSPAlphaGroup :: SB.GroupTypeTag k -> TE.DensityWithArgs TE.EReal -> TE.DensityWithArgs TE.EReal -> DSSpecificWithPriors
   DSPAlphaBetaNH :: Maybe ET.OfficeT -> TE.DensityWithArgs TE.EReal -> TE.DensityWithArgs TE.ECVec -> DSSpecificWithPriors
-  DSPAlphaBetaHC :: TE.Parameters aps -> TE.Density TE.EReal aps ->  TE.Parameters bps -> TE.Density TE.ECVec bps -> DSSpecificWithPriors
+  DSPAlphaBetaHC :: TE.Parameters aps -> TE.Density TE.EReal aps -> TE.Parameters bps -> TE.Density TE.ECVec bps -> DSSpecificWithPriors
   DSPAlphaBetaHNC :: Double -> TE.Parameters aps -> (TE.ExprList aps -> TE.RealE -> TE.RealE)
                   -> Double -> TE.Parameters bps -> (TE.ExprList bps -> TE.VectorE -> TE.VectorE) -> DSSpecificWithPriors
 

@@ -74,10 +74,15 @@ array_num_elements :: (SNatI n, GenSType t) => Function EInt '[EArray n t]
 array_num_elements = simpleFunction "inv"
 {-# INLINEABLE array_num_elements #-}
 
-to_vector :: (TypeOneOf t [ECVec, ERVec, EArray1 EInt, EArray1 EReal], GenSType t)
+to_vector :: (TypeOneOf t [ECVec, ERVec, EArray1 EInt, EArray1 EReal, EMat, ESqMat], GenSType t)
           => Function ECVec '[t]
 to_vector = simpleFunction "to_vector"
 {-# INLINEABLE to_vector #-}
+
+to_row_vector :: (TypeOneOf t [ECVec, ERVec, EArray1 EInt, EArray1 EReal, EMat, ESqMat], GenSType t)
+          => Function ERVec '[t]
+to_row_vector = simpleFunction "to_row_vector"
+{-# INLINEABLE to_row_vector #-}
 
 size :: (IsContainer t, GenSType t) => Function EInt '[t]
 size = simpleFunction "size"
@@ -100,7 +105,8 @@ rep_array :: (GenSType t, GenTypeList (NInts n), SNatI n) => Function (EArray n 
 rep_array = simpleFunction "rep_array"
 {-# INLINEABLE rep_array #-}
 
-dot_product :: Function EReal '[ECVec, ECVec]
+dot_product :: (TypeOneOf t '[ECVec, ERVec], GenSType t, TypeOneOf t' '[ECVec, ERVec], GenSType t')
+            => Function EReal '[t, t']
 dot_product = simpleFunction "dot_product"
 {-# INLINEABLE dot_product #-}
 
@@ -123,12 +129,21 @@ rep_matrix :: Function EMat '[EReal, EInt, EInt]
 rep_matrix = simpleFunction "rep_matrix"
 {-# INLINEABLE rep_matrix #-}
 
+repV_matrix :: (TypeOneOf t '[ECVec, ERVec], GenSType t) => Function EMat '[t, EInt]
+repV_matrix = simpleFunction "rep_matrix"
+{-# INLINEABLE repV_matrix #-}
+
+
 rep_sq_matrix :: Function ESqMat '[EReal, EInt]
 rep_sq_matrix = Function "rep_matrix" SSqMat (SReal ::> SInt ::> TypeNil) f
   where
     f :: TypedList u '[EReal, EInt] -> TypedList u '[EReal, EInt, EInt]
     f (a :> b :> TNil) = a :> b :> b :> TNil
 {-# INLINEABLE rep_sq_matrix #-}
+
+vecArrayToMatrix :: (TypeOneOf t [ECVec, ERVec], GenSType t) => Function EMat '[EArray1 t]
+vecArrayToMatrix = simpleFunction "to_matrix"
+{-# INLINEABLE vecArrayToMatrix #-}
 
 segment :: (IsContainer t, GenSType t) => Function t [t, EInt, EInt]
 segment = simpleFunction "segment"
@@ -166,56 +181,91 @@ cols :: (TypeOneOf t [EMat, ESqMat], GenSType t) => Function EInt '[t]
 cols = simpleFunction "cols"
 {-# INLINEABLE cols #-}
 
+diag_pre_multiply :: (TypeOneOf t [ECVec, ERVec], GenSType t) => Function EMat [t, EMat]
+diag_pre_multiply = simpleFunction "diag_pre_multiply"
 
 -- Densities & RNGs
 
-normal :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+normal :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
 normal = simpleDensity "normal"
 {-# INLINEABLE normal #-}
 
-normal_lpdf :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+normal_lpdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
 normal_lpdf = simpleDensity "normal_lpdf"
 {-# INLINEABLE normal_lpdf #-}
 
-normal_lupdf :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
+normal_lupdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
 normal_lupdf = simpleDensity "normal_lupdf"
 {-# INLINEABLE normal_lupdf #-}
 
-normal_rng :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[t, t]
+normal_rng :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Function t '[t, t]
 normal_rng = simpleFunction "normal_rng"
 {-# INLINEABLE normal_rng #-}
 
-normalS :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalS :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
 normalS = simpleDensity "normal"
 {-# INLINEABLE normalS #-}
 
-normalS_lpdf :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalS_lpdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
 normalS_lpdf = simpleDensity "normal_lpdf"
 {-# INLINEABLE normalS_lpdf #-}
 
-normalS_lupdf :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Density t '[EReal, EReal]
+normalS_lupdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
 normalS_lupdf = simpleDensity "normal_lupdf"
 {-# INLINEABLE normalS_lupdf #-}
 
-normalS_rng :: (TypeOneOf t [EReal, ECVec, EMat, ESqMat], GenSType t) => Function t '[EReal, EReal]
+normalS_rng :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Function t '[EReal, EReal]
 normalS_rng = simpleFunction "normal_rng"
 {-# INLINEABLE normalS_rng #-}
 
-std_normal :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+std_normal :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[]
 std_normal = simpleDensity "std_normal"
 {-# INLINEABLE std_normal #-}
 
-std_normal_lpdf :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+std_normal_lpdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[]
 std_normal_lpdf = simpleDensity "std_normal_lpdf"
 {-# INLINEABLE std_normal_lpdf #-}
 
-std_normal_lupdf :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[]
+std_normal_lupdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[]
 std_normal_lupdf = simpleDensity "std_normal_lupdf"
 {-# INLINEABLE std_normal_lupdf #-}
 
-std_normal_rng :: (TypeOneOf t [EReal, ECVec], GenSType t) => Function t '[]
+std_normal_rng :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Function t '[]
 std_normal_rng = simpleFunction "std_normal_rng"
 {-# INLINEABLE std_normal_rng #-}
+
+lognormal :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
+lognormal = simpleDensity "lognormal"
+{-# INLINEABLE lognormal #-}
+
+lognormal_lpdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
+lognormal_lpdf = simpleDensity "lognormal_lpdf"
+{-# INLINEABLE lognormal_lpdf #-}
+
+lognormal_lupdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[t, t]
+lognormal_lupdf = simpleDensity "lognormal_lupdf"
+{-# INLINEABLE lognormal_lupdf #-}
+
+lognormal_rng :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Function t '[t, t]
+lognormal_rng = simpleFunction "lognormal_rng"
+{-# INLINEABLE lognormal_rng #-}
+
+lognormalS :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
+lognormalS = simpleDensity "lognormal"
+{-# INLINEABLE lognormalS #-}
+
+lognormalS_lpdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
+lognormalS_lpdf = simpleDensity "lognormal_lpdf"
+{-# INLINEABLE lognormalS_lpdf #-}
+
+lognormalS_lupdf :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Density t '[EReal, EReal]
+lognormalS_lupdf = simpleDensity "lognormal_lupdf"
+{-# INLINEABLE lognormalS_lupdf #-}
+
+lognormalS_rng :: (TypeOneOf t [EReal, ECVec, ERVec], GenSType t) => Function t '[EReal, EReal]
+lognormalS_rng = simpleFunction "lognormal_rng"
+{-# INLINEABLE lognormalS_rng #-}
+
 
 cauchy :: (TypeOneOf t [EReal, ECVec], GenSType t) => Density t '[t, t]
 cauchy = simpleDensity "cauchy"

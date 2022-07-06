@@ -54,7 +54,7 @@ familyRNG :: StanDist t ts -> TE.ExprList ts -> TE.UExpr t
 familyRNG (StanDist _ _ _ _ rng ) = rng
 
 
-normalDist :: forall t.(TE.TypeOneOf t [TE.EReal, TE.ECVec], TE.GenSType t) => StanDist t '[t, t]
+normalDist :: forall t.(TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => StanDist t '[t, t]
 normalDist = StanDist Continuous sample lpdf lupdf rng
   where
     sample x = TE.sample x TE.normal
@@ -63,6 +63,7 @@ normalDist = StanDist Continuous sample lpdf lupdf rng
     rng ps = case TE.genSType @t of
       TE.SReal -> TE.functionE TE.normal_rng ps
       TE.SCVec -> TE.functionE TE.to_vector (TE.functionE TE.normal_rng ps :> TNil) -- why does the stan version return array[] real??
+      TE.SRVec -> TE.functionE TE.to_row_vector (TE.functionE TE.normal_rng ps :> TNil) -- why does the stan version return array[] real??
 
 
 scalarNormalDist :: StanDist TE.ECVec '[TE.EReal, TE.EReal]

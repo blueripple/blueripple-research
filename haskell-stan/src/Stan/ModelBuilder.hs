@@ -74,6 +74,7 @@ import Stan.ModelConfig (InputDataType(..))
 import qualified Stan.ModelConfig as SC
 import qualified Data.Massiv.Array.Unsafe as X
 import qualified Data.Vinyl as TE
+import Data.Vector.Internal.Check (Checks(Bounds))
 
 {-
 stanCodeToStanModel :: StanCode -> StanModel
@@ -1333,12 +1334,12 @@ addColumnJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
               -> StanBuilderM md gq (TE.UExpr t)
 addColumnJson rtt ndsF toX = do
   let dsName = dataSetName rtt
-      sizeName = "N" <> underscoredIf dsName
+      sizeName = dataSetName rtt --"N" <> underscoredIf dsName
   lE <- addLengthJson rtt sizeName dsName -- ??
   let nds = ndsF lE
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayF toX)
 
-{-
+
 addColumnJsonOnce :: (Typeable md, Typeable gq, Aeson.ToJSON x
                      , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                      )
@@ -1347,11 +1348,15 @@ addColumnJsonOnce :: (Typeable md, Typeable gq, Aeson.ToJSON x
                   -> (r -> x)
                   -> StanBuilderM md gq (TE.UExpr t)
 addColumnJsonOnce rtt ndsF toX = do
+  let lE = TE.namedE (dataSetSizeName rtt) TE.SInt
+      nds = ndsF lE
+      name = TE.declName nds
+      sType = TE.sTypeFromStanType $ TE.declType $ TE.decl nds
   alreadyDeclared <- isDeclared name
   if not alreadyDeclared
     then addColumnJson rtt ndsF toX
-    else return $ TE.namedE name $ TE.sTypeFromStanType $ TE.declType ds
--}
+    else pure $ TE.namedE name sType
+
 
 addColumnMJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
                   , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
@@ -1368,21 +1373,23 @@ addColumnMJson rtt ndsF toMX = do
 --  let fullName = name <> "_" <> dsName
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayEF toMX)
 
-{-
+
 addColumnMJsonOnce :: (Typeable md, Typeable gq, Aeson.ToJSON x
                       , TE.TypeOneOf t [TE.EArray (S Z) TE.EInt, TE.ECVec, TE.EMat]
                       )
                => RowTypeTag r
-               -> TE.NamedDeclSpec t
+               -> (TE.UExpr TE.EInt -> TE.NamedDeclSpec t)
                -> (r -> Either Text x)
                -> StanBuilderM md gq (TE.UExpr t)
-addColumnMJsonOnce rtt nds toMX = do
-  let name = TE.declName nds
+addColumnMJsonOnce rtt ndsF toMX = do
+  let lE = TE.namedE (dataSetSizeName rtt) TE.SInt
+      nds = ndsF lE
+      name = TE.declName nds
+      sType = TE.sTypeFromStanType $ TE.declType $ TE.decl nds
   alreadyDeclared <- isDeclared name
   if not alreadyDeclared
-    then addColumnMJson rtt nds toMX
-    else return $ TE.namedE name $ TE.sTypeFromStanType $ TE.declType $ TE.decl nds --SME.StanVar name st
--}
+    then addColumnMJson rtt ndsF toMX
+    else pure $ TE.namedE name sType
 
 -- NB: name has to be unique so it can also be the suffix of the num columns.  Presumably the name carries the data-set suffix if nec.
 data MatrixRowFromData r = MatrixRowFromData { rowName :: Text, colIndexM :: Maybe SME.IndexKey, rowLength :: Int, rowVec :: r -> VU.Vector Double }

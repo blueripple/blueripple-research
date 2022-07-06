@@ -144,8 +144,7 @@ data FunctionToDeclare = FunctionToDeclare Text TE.UStmt
 
 data DeclCode t where
   DeclRHS :: TE.UExpr t -> DeclCode t
-  DeclCodeF :: (TE.UExpr t -> [TE.UStmt]) -> DeclCode t
-
+  DeclCodeF :: (TE.UExpr t -> TE.CodeWriter ()) -> DeclCode t
 
 data TData :: TE.EType -> Type where
   TData :: TE.NamedDeclSpec t
@@ -173,7 +172,7 @@ data BuildParameter :: TE.EType -> Type where
   UntransformedP :: TE.NamedDeclSpec t
                  -> [FunctionToDeclare]
                  -> Parameters qs
-                 -> (TE.ExprList qs -> TE.UExpr t -> [TE.UStmt]) -- prior in model block
+                 -> (TE.ExprList qs -> TE.UExpr t -> TE.CodeWriter ()) -- prior in model block
                  -> BuildParameter t
   TransformedP :: TE.NamedDeclSpec t
                -> [FunctionToDeclare]

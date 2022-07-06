@@ -13,6 +13,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use for_" #-}
 {-# HLINT ignore "Use camelCase" #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Stan.ModelBuilder.BuildingBlocks where
 
@@ -436,6 +437,7 @@ lengthE v = TE.functionE TE.size (v :> TNil)
 
 reIndex :: IntArrayE -> (TE.IntE -> TE.UExpr t) -> TE.IntE -> TE.UExpr t
 reIndex ia eF ke = eF $ TE.sliceE TE.s0 ke ia
+
 
 
 

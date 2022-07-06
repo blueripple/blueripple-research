@@ -56,11 +56,19 @@ import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import Stan.ModelRunner (RScripts)
 import qualified Stan.ModelBuilder as SB
-import qualified Stan.ModelBuilder.Expressions as SME
-import Stan.ModelBuilder.TypedExpressions.DAG (runStanBuilderDAG)
+--import qualified Stan.ModelBuilder.Expressions as SME
+import qualified Stan.ModelBuilder.TypedExpressions.Types as  TE
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
+import qualified Stan.ModelBuilder.TypedExpressions.Expressions as  TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as  TE
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as  TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as  TE
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as  TE
 import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
+import Stan.ModelBuilder.TypedExpressions.DAG (runStanBuilderDAG)
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.Distributions as SB
+
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
 import Stan.RScriptBuilder (UnwrapJSON)
@@ -168,6 +176,156 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
       ()
       modelData_C
       gqData_C
+
+
+data PostStratificationType a = PSRaw | PSShare (Maybe (a -> TE.RealE))
+
+-- TODO: order groups differently than the order coming from the built in group sets??
+addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
+                      => (TE.CodeWriter a, a -> TE.IntE -> TE.CodeWriter TE.RealE) -- (outside of loop, inside of loop)
+                      -> Maybe Text
+                      -> SB.RowTypeTag rModel
+                      -> SB.RowTypeTag rPS
+                      -> (rPS -> Double) -- PS weight
+                      -> PostStratificationType a -- raw or share
+                      -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
+                      -> BuilderM md gq TE.VectorE
+addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF psType mPSGroup = do
+  -- check that all model groups in environment are accounted for in PS groups
+  let psDataSetName = SB.dataSetName rttPS
+      modelDataSetName = SB.dataSetName rttModel
+      psGroupName = maybe "" SB.taggedGroupName mPSGroup
+      uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
+      psSuffix = psDataSetName <> uPSGroupName
+      namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
+      sizeName = "N_" <> namedPS
+      indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
+      psDataSizeE = SB.dataSetSizeE rttPS
+      psResultSizeE = TE.namedE sizeName TE.SInt
+      wgtsName = namedPS <> "_wgts"
+--  SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
+  modelRowInfos <- SB.modelRowBuilders <$> get
+  gqRowInfos <- SB.gqRowBuilders <$> get
+  modelGroupsDHM <- do
+    case DHash.lookup rttModel modelRowInfos of
+      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in model rowBuilders."
+      Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
+  psGroupsDHM <- do
+     case DHash.lookup rttPS gqRowInfos of
+       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
+       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
+  toFoldable <- case DHash.lookup rttPS gqRowInfos of
+    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
+    Just (SB.RowInfo tf _ _ _ _) -> return tf
+  psGroupIndexE <- case mPSGroup of
+    Nothing -> do
+      SB.inBlock SB.SBDataGQ $ SB.stanDeclareRHSN (TE.NamedDeclSpec sizeName $ TE.intSpec []) $ TE.intE 1 --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+      pure $ TE.namedE "ErrorToUsePSIndex" $ TE.sIndexArray
+    Just gtt -> do
+      rims <- SB.gqRowBuilders <$> get
+      let psDataMissingErr = "addPostStratification: Post-stratification data-set "
+                             <> psDataSetName
+                             <> " is missing from GQ rowBuilders."
+          groupIndexMissingErr =  "addPostStratification: group "
+                                  <> SB.taggedGroupName gtt
+                                  <> " is missing from post-stratification data-set ("
+                                  <> psDataSetName
+                                  <> ")."
+          psGroupMissingErr = "Specified group for PS sum (" <> SB.taggedGroupName gtt
+                              <> ") is not present in post-stratification data-set: " <> showNames psGroupsDHM --Maps
+
+      (SB.GroupIndexes gis) <- SB.groupIndexes <$> SB.stanBuildMaybe psDataMissingErr (DHash.lookup rttPS rims)
+      kToIntE <- SB.groupKeyToGroupIndex <$> SB.stanBuildMaybe groupIndexMissingErr (DHash.lookup gtt gis)
+      rowToK <- SB.rowToGroup <$> SB.stanBuildMaybe psGroupMissingErr (DHash.lookup gtt psGroupsDHM)
+      SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
+      -- This is hacky.  We need a more principled way to know if re-adding same data is an issue.
+
+      SB.addJson rttPS (TE.NamedDeclSpec sizeName $ TE.intSpec [TE.lowerM $ TE.intE 0])
+        $ SJ.valueToPairF sizeName
+        $ fmap (A.toJSON . Set.size)
+        $ FL.premapM (kToIntE . rowToK)
+        $ FL.generalize FL.set
+--      SB.addDeclBinding indexName $ SME.StanVar sizeName SME.StanInt
+--      SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
+--      SB.addUseBindingToDataSet rttPS indexName $ SB.StanVar indexName indexType
+      let indexNDSF sizeE = TE.NamedDeclSpec indexName $ TE.array1Spec sizeE $ TE.intSpec [TE.lowerM $ TE.intE 0]
+      SB.addColumnMJsonOnce rttPS indexNDSF (kToIntE . rowToK)
+
+  let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+  wgtsV <-  SB.addJson rttPS (TE.NamedDeclSpec wgtsName $ TE.vectorSpec psDataSizeE [])
+            $ SJ.valueToPairF wgtsName
+            $ SJ.jsonArrayF weightF
+  SB.inBlock SB.SBGeneratedQuantities $ do
+    let errCtxt = "addPostStratification"
+        divEq = TE.opAssign TE.SDivide
+        plusEq = TE.opAssign TE.SAdd
+--      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
+    case mPSGroup of
+      Nothing -> do
+        psV <- SB.stanDeclareRHSN (TE.NamedDeclSpec namedPS $ TE.realSpec []) $ TE.realE 0
+        SB.scoped $ SB.addStmtToCode $ TE.scoped $ TE.writerL' $ do
+          preComputed <- preComputeF
+          wgtSumE <- case psType of
+            PSShare _ -> TE.declareRHSNW (TE.NamedDeclSpec (namedPS <> "_WgtSum") $ TE.realSpec []) $ TE.realE 0
+            _ -> pure $ TE.namedE "ErrorIfUsed!" TE.SReal
+          TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) psDataSizeE)
+            $ \nE -> TE.writerL' $ do
+            let atn = TE.sliceE TE.s0 nE
+            psExpr <- psExprF preComputed nE
+            e <- TE.declareRHSNW (TE.NamedDeclSpec ("e" <> namedPS) $ TE.realSpec []) psExpr
+            TE.addStmt $ psV `plusEq` (e `TE.timesE` atn wgtsV)
+            case psType of
+              PSShare Nothing -> TE.addStmt $ wgtSumE `plusEq` atn wgtsV
+              PSShare (Just f) -> TE.addStmt$ wgtSumE `plusEq` (f preComputed `TE.timesE` atn wgtsV)
+              _ -> pure ()
+          case psType of
+            PSShare _ -> TE.addStmt $ psV `divEq` wgtSumE
+            _ -> pure ()
+        pure $ TE.functionE TE.rep_vector (psV :> TE.intE 1 :> TNil)
+      Just (SB.GroupTypeTag gn) -> do
+        let zeroVec = TE.functionE TE.rep_vector (TE.realE 0 :> psResultSizeE :> TNil)
+        psV <- SB.stanDeclareRHSN (TE.NamedDeclSpec namedPS $ TE.vectorSpec psResultSizeE []) zeroVec
+        SB.scoped $ SB.addStmtToCode $ TE.scoped $ TE.writerL' $ do
+          preComputed <- preComputeF
+          wgtSumE <- case psType of
+            PSShare _ -> TE.declareRHSNW (TE.NamedDeclSpec (namedPS <> "_WgtSum") $ TE.vectorSpec psResultSizeE []) zeroVec
+            _ -> pure $ TE.namedE "ErrorIfUsed!" TE.SCVec
+          TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) psDataSizeE)
+            $ \nE -> TE.writerL' $ do
+            let atn = TE.sliceE TE.s0 nE
+                indexed = TE.indexE TE.s0 psGroupIndexE
+            psExpr <- psExprF preComputed nE
+            e <- TE.declareRHSNW (TE.NamedDeclSpec ("e" <> namedPS) $ TE.realSpec []) $ psExpr
+            TE.addStmt $ atn (indexed psV) `plusEq` (e `TE.timesE` atn wgtsV)
+            case psType of
+              PSShare Nothing -> TE.addStmt $ atn (indexed wgtSumE) `plusEq` atn wgtsV
+              PSShare (Just f) -> TE.addStmt $ atn (indexed wgtSumE) `plusEq` (f preComputed `TE.timesE` atn wgtsV)
+              _ -> pure ()
+          case psType of
+            PSShare _ -> TE.addStmt $ TE.opAssign (TE.SElementWise TE.SDivide) psV wgtSumE -- (UExpr ta) (UExpr tb)
+            _ -> pure ()
+        pure psV
+
+showNames :: DHash.DHashMap SB.GroupTypeTag a -> Text
+showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
+
+checkGroupSubset :: Text
+                 -> Text
+                 -> DHash.DHashMap SB.GroupTypeTag a
+                 -> DHash.DHashMap SB.GroupTypeTag b
+                 -> SB.StanBuilderM env d ()
+checkGroupSubset n1 n2 gs1 gs2 = do
+  let gDiff = DHash.difference gs1 gs2
+  when (DHash.size gDiff /= 0)
+    $ SB.stanBuildError
+    $ n1 <> "(" <> showNames gs1 <> ") is not a subset of "
+    <> n2 <> "(" <> showNames gs2 <> ")."
+    <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
+    <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
+
+
+
+
 
 -- Basic group declarations, indexes and Json are produced automatically
 {-
@@ -338,147 +496,4 @@ buildIntMapBuilderF eIntF keyF = FL.FoldM step (return IM.empty) return where
   step im r = case eIntF $ keyF r of
     Left msg -> Left $ "Indexing error when trying to build IntMap index: " <> msg
     Right n -> Right $ IM.insert n (keyF r) im
-
-data PostStratificationType a = PSRaw | PSShare (Maybe (a -> SB.StanExpr))
-
--- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
-                      => (BuilderM md gq a, a -> BuilderM md gq SB.StanExpr) -- (outside of loop, inside of loop)
-                      -> Maybe Text
-                      -> SB.RowTypeTag rModel
-                      -> SB.RowTypeTag rPS
-                      -> (rPS -> Double) -- PS weight
-                      -> PostStratificationType a -- raw or share
-                      -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
-                      -> BuilderM md gq SB.StanVar
-addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF psType mPSGroup = do
-  -- check that all model groups in environment are accounted for in PS groups
-  let psDataSetName = SB.dataSetName rttPS
-      modelDataSetName = SB.dataSetName rttModel
-      psGroupName = maybe "" SB.taggedGroupName mPSGroup
-      uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
-      psSuffix = psDataSetName <> uPSGroupName
-      namedPS = fromMaybe "PS" mNameHead <> "_" <> psSuffix
-      sizeName = "N_" <> namedPS
-      indexName = psDataSetName <> "_" <> psGroupName <> "_Index"
-  SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
-  modelRowInfos <- SB.modelRowBuilders <$> get
-  gqRowInfos <- SB.gqRowBuilders <$> get
-  modelGroupsDHM <- do
-    case DHash.lookup rttModel modelRowInfos of
-      Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in model rowBuilders."
-      Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
-  psGroupsDHM <- do
-     case DHash.lookup rttPS gqRowInfos of
-       Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
-       Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
-  toFoldable <- case DHash.lookup rttPS gqRowInfos of
-    Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
-    Just (SB.RowInfo tf _ _ _ _) -> return tf
-  case mPSGroup of
-    Nothing -> do
-      SB.inBlock SB.SBDataGQ $ SB.stanDeclareRHS sizeName SB.StanInt "" $ SB.scalar "1" --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
-      pure ()
-    Just gtt -> do
-      rims <- SB.gqRowBuilders <$> get
-      let psDataMissingErr = "addPostStratification: Post-stratification data-set "
-                             <> psDataSetName
-                             <> " is missing from GQ rowBuilders."
-          groupIndexMissingErr =  "addPostStratification: group "
-                                  <> SB.taggedGroupName gtt
-                                  <> " is missing from post-stratification data-set ("
-                                  <> psDataSetName
-                                  <> ")."
-          psGroupMissingErr = "Specified group for PS sum (" <> SB.taggedGroupName gtt
-                              <> ") is not present in post-stratification data-set: " <> showNames psGroupsDHM --Maps
-
-      (SB.GroupIndexes gis) <- SB.groupIndexes <$> SB.stanBuildMaybe psDataMissingErr (DHash.lookup rttPS rims)
-      kToIntE <- SB.groupKeyToGroupIndex <$> SB.stanBuildMaybe groupIndexMissingErr (DHash.lookup gtt gis)
-      rowToK <- SB.rowToGroup <$> SB.stanBuildMaybe psGroupMissingErr (DHash.lookup gtt psGroupsDHM)
-      SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
-      -- This is hacky.  We need a more principled way to know if re-adding same data is an issue.
-      let indexType = SB.StanArray [SB.NamedDim psDataSetName] SB.StanInt
-      SB.addColumnMJsonOnce rttPS indexName indexType "<lower=0>" (kToIntE . rowToK)
-      SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
-        $ SJ.valueToPairF sizeName
-        $ fmap (A.toJSON . Set.size)
-        $ FL.premapM (kToIntE . rowToK)
-        $ FL.generalize FL.set
-      SB.addDeclBinding indexName $ SME.StanVar sizeName SME.StanInt
---      SB.addUseBindingToDataSet rttPS indexName $ SB.indexBy (SB.name indexName) psDataSetName
-      SB.addUseBindingToDataSet rttPS indexName $ SB.StanVar indexName indexType
-      return ()
-
-  let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
-  wgtsV <-  SB.addJson rttPS (namedPS <> "_wgts") weightArrayType ""
-            $ SJ.valueToPairF (namedPS <> "_wgts")
-            $ SJ.jsonArrayF weightF
-  SB.inBlock SB.SBGeneratedQuantities $ do
-    let errCtxt = "addPostStratification"
-        divEq = SB.binOp "/="
-    SB.useDataSetForBindings rttPS $ do
---      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
-      case mPSGroup of
-        Nothing -> do
-          psV <- SB.stanDeclareRHS namedPS SB.StanReal "" (SB.scalar "0")
-          SB.bracketed 2 $ do
-            preComputed <- preComputeF
-            wgtSumE <- case psType of
-                         PSShare _ -> fmap SB.var
-                                      $ SB.stanDeclareRHS (namedPS <> "_WgtSum") SB.StanReal "" (SB.scalar "0")
-                         _ -> return SB.nullE
-            SB.stanForLoopB "n" Nothing psDataSetName $ do
-              psExpr <- psExprF preComputed
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
-              SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
-              case psType of
-                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
-                PSShare (Just f) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (f preComputed `SB.times` SB.var wgtsV)
-                _ -> return ()
-            case psType of
-              PSShare _ -> SB.addExprLine errCtxt $ SB.var psV `divEq` wgtSumE
-              _ -> return ()
-          return psV
-        Just (SB.GroupTypeTag gn) -> do
---          SB.addUseBinding namedPS $ SB.indexBy (SB.name namedPS) psDataSetName
---          SB.addUseBinding namedPS $ SB.StanVar namedPS (SB.StanVector $ SB.NamedDim psDataSetName) --SB.indexBy (SB.name namedPS) psDataSetName
-
-          let zeroVec = SB.function "rep_vector" (SB.scalar "0" :| [SB.indexSize namedPS])
-          psV <- SB.stanDeclareRHS namedPS (SB.StanVector $ SB.NamedDim indexName) "" zeroVec
-          SB.bracketed 2 $ do
-            preComputed <- preComputeF
-            wgtSumE <- case psType of
-                         PSShare _ -> fmap SB.var
-                                      $ SB.stanDeclareRHS (namedPS <> "_WgtSum") (SB.StanVector (SB.NamedDim indexName)) "" zeroVec
-                         _ -> return SB.nullE
-            SB.stanForLoopB "n" Nothing psDataSetName $ do
-              psExpr <-  psExprF preComputed
-              e <- SB.stanDeclareRHS ("e" <> namedPS) SB.StanReal "" psExpr --SB.multiOp "+" $ fmap eFromDistAndArgs sDistAndArgs
-              SB.addExprLine errCtxt $ SB.var psV `SB.plusEq` (SB.var e `SB.times` SB.var wgtsV)
-              case psType of
-                PSShare Nothing -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` SB.var wgtsV
-                PSShare (Just f) -> SB.addExprLine errCtxt $ wgtSumE `SB.plusEq` (f preComputed `SB.times` SB.var wgtsV)
-                _ -> return ()
-            case psType of
-              PSShare _ -> SB.stanForLoopB "n" Nothing indexName $ do
-                SB.addExprLine errCtxt $ SB.var psV `divEq` wgtSumE
-              _ -> return ()
-          return psV
-
-showNames :: DHash.DHashMap SB.GroupTypeTag a -> Text
-showNames = T.intercalate "," . fmap (\(gtt DSum.:=> _) -> SB.taggedGroupName gtt) . DHash.toList
-
-checkGroupSubset :: Text
-                 -> Text
-                 -> DHash.DHashMap SB.GroupTypeTag a
-                 -> DHash.DHashMap SB.GroupTypeTag b
-                 -> SB.StanBuilderM env d ()
-checkGroupSubset n1 n2 gs1 gs2 = do
-  let gDiff = DHash.difference gs1 gs2
-  when (DHash.size gDiff /= 0)
-    $ SB.stanBuildError
-    $ n1 <> "(" <> showNames gs1 <> ") is not a subset of "
-    <> n2 <> "(" <> showNames gs2 <> ")."
-    <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
-    <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
 -}
