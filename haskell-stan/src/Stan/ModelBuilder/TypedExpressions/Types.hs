@@ -176,6 +176,8 @@ sIntArray = SArray SS SInt
 sIndexArray :: SType EIndexArray
 sIndexArray = sIntArray
 
+type SArray1 t = SType (EArray (S Z) t)
+
 instance Show (SType t) where
   show x = "SType: " <> show (sTypeToEType x)
 

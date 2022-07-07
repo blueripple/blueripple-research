@@ -24,6 +24,7 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
+import Data.Type.Equality ((:~:)(Refl),TestEquality(testEquality))
 
 import Prelude hiding (All)
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
@@ -146,7 +147,7 @@ betaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
 scalarBetaBinomialDist' :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]
 scalarBetaBinomialDist' sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
-    (StanDist _ sample' lpmf' lupmf' rng') = (betaBinomialDist' @(TE.EArray1 TE.EInt) @TE.ECVec) sampleWithConstants
+    (StanDist _ sample' lpmf' lupmf' rng') = betaBinomialDist' @(TE.EArray1 TE.EInt) @TE.ECVec sampleWithConstants
     sample x  = sample' x . argsToVecs
     lpmf x = lpmf' x . argsToVecs
     lupmf x = lupmf' x . argsToVecs
@@ -157,20 +158,27 @@ scaledIntVec :: TE.UExpr TE.EReal
              -> TE.UExpr TE.ECVec
 scaledIntVec x iv = x `TE.timesE` intsToVec iv
 
-countScaledBetaBinomialDist :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+countScaledBetaBinomialDist :: forall t t'.TE.BinDensityC t t'
+                            => Bool -> StanDist t '[t, t', t']
 countScaledBetaBinomialDist sampleWithConstants = StanDist Discrete sample lpmf lupmf rng
   where
-    f :: TE.UExpr TE.ECVec -> TE.UExpr (TE.EArray1 TE.EInt) -> TE.UExpr TE.ECVec
-    f x = TE.binaryOpE (TE.SElementWise TE.SMultiply) x . intsToVec
-    sample :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UStmt
+    f :: TE.UExpr t' -> TE.UExpr t -> TE.UExpr t'
+    f x = case TE.genSType @t' of
+      TE.SCVec -> case testEquality (TE.genSType @t) (TE.genSType @(TE.EArray1 TE.EInt))  of
+        Just Refl -> TE.binaryOpE (TE.SElementWise TE.SMultiply) x . intsToVec
+        _ -> undefined -- this case can't occur based on the constraint above
+      TE.SReal -> case testEquality (TE.genSType @t) (TE.genSType @TE.EInt)  of
+        Just Refl -> TE.timesE x
+        _ -> undefined -- this case can't occur based on the constraint above
+--    sample :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UStmt
     sample x (t :> a :> b :> TNil) = if sampleWithConstants
                                      then TE.target $ TE.densityE TE.beta_binomial_lpmf x (t :> f a t :> f b t :> TNil)
                                      else TE.sample x TE.beta_binomial (t :> f a t :> f b t :> TNil)
-    lpmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
+--    lpmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
     lpmf x (t :> a :> b :> TNil)  = TE.densityE TE.beta_binomial_lpmf x (t :> f a t :> f b t :> TNil)
-    lupmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
+--    lupmf :: TE.UExpr (TE.EArray1 TE.EInt) -> TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr TE.EReal
     lupmf x (t :> a :> b :> TNil)  = TE.densityE TE.beta_binomial_lupmf x (t :> f a t :> f b t :> TNil)
-    rng :: TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr (TE.EArray1 TE.EInt)
+--    rng :: TE.ExprList '[TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec] -> TE.UExpr (TE.EArray1 TE.EInt)
     rng (t :> a :> b :> TNil)  = TE.functionE TE.beta_binomial_rng (t :> f a t :> f b t :> TNil)
 
 countScaledScalarBetaBinomialDist :: Bool -> StanDist (TE.EArray1 TE.EInt) '[TE.EArray1 TE.EInt, TE.EReal, TE.EReal]

@@ -646,7 +646,7 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                      -> TE.VectorE -- alpha (one per States)
                      -> TE.MatrixE -- beta (predictors x States)
                      -> SB.LLSet
-                     -> SB.StanBuilderM md gq (CenterDM m gq
+                     -> SB.StanBuilderM md gq (CenterDM md gq
                                               , QR
                                               , SB.LLSet
                                               , TE.MatrixE -> SB.StanBuilderM md gq (TE.IntE -> TE.RealE) -- probabilities indexed to data
@@ -657,7 +657,7 @@ addBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr alph
   (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
   (dmC, centerF) <- centerIf dm centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR qr dmC beta
-  let muE' dm = indexedMuE dsAlphaM dsBetaM alpha dm beta
+  let muE' dm = indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha dm beta
       muE = muE' dmQR
       dist = SD.binomialLogitDist
       stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
@@ -668,12 +668,12 @@ addBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr alph
     -- muVec <- TE.indexE TE.s0 stateByDataIndexE <$> SB.vectorizeExpr (TE.groupSizE stateGroup) (addLabel "mu")
     pure $ counts :> muVec :> TNil
   let indexedParams :: TE.IntE -> TE.ExprList [TE.EInt, TE.EReal]
-      indexedParams k = (counts `at` k) :> ((muE `by` stateByDataIndexE) `at` k) :> TNil
-      indexedY k = successes `at` k
-      llSet' = updateLLSet rtt dist indexedY (pure indexedParams) llSet
-  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams)
+      indexedParams k = (counts `at` k) :> (SB.reIndex stateByDataIndexE muE k) :> TNil
+--      indexedY k = successes `at` k
+      llSet' = updateLLSet rtt dist successes (pure indexedParams) llSet
+  when includePP $ (addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams) >> pure ())
   let probE m k = invLogit $ muE' m k
-  return (CenterWith centerF, retQR, llSet', applyQR retQR probE)
+  return (CenterWith (dataSetLabel <> "_DM") centerF, retQR, llSet', applyQR retQR probE)
 
 addBBLModelForDataSet :: (Typeable md, Typeable gq)
                       => SB.RowTypeTag r
@@ -699,22 +699,25 @@ addBBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr cou
   (dsAlphaM, dsBetaM) <-  dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
   (dmC, centerF) <- centerIf dm centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR qr dmC beta
-  let muE' mE = invLogit $ indexedMuE dsAlphaM dsBetaM (at alpha) mE (at beta)
+  let muE' mE = invLogit . indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha mE beta
       muE = muE' dm
       bA kE = betaWidth `TE.timesE` muE kE
       bB kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE kE)
-      dist = (if countScaled then SD.countScaledScalarBetaBinomialDist else SB.scalarBetaBinomialDist') True
+      distV :: SD.StanDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+      distV = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
+      distS :: SD.StanDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
+      distS = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
       stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
-  modelCounts dist successes $ do
-    a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bAT") $ SB.reIndex bA stateByDataIndexE bA
-    a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bBT") $ SB.reIndex bA stateByDataIndexE bB
+  modelCounts distV successes $ do
+    a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bAT") $ SB.reIndex stateByDataIndexE bA
+    b <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bBT") $ SB.reIndex stateByDataIndexE bB
     pure $ successes :> a :> b :> TNil
-  let indexedParams kE = counts `at` kE :> bA `by` stateByDataIndexE `at` kE :> bA `by` stateByDataIndexE `at` kE :> TNil
+  let indexedParams kE = (counts `at` kE) :> SB.reIndex stateByDataIndexE bA kE :> SB.reIndex stateByDataIndexE bB kE :> TNil
       indexedY kE = successes `at` kE
-      llSet' = updateLLSet rtt dist indexedY (pure indexedParams) llSet
-  when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams)
+      llSet' = updateLLSet rtt distS successes (pure indexedParams) llSet
+  when includePP $ (addPosteriorPredictiveCheck (addLabel "PP") rtt distS (pure indexedParams) >> pure ())
 --  let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (CenterWith centerF, retQR, llSet', applyQR retQR muE')
+  return (CenterWith (dataSetLabel <> "_DM") centerF, retQR, llSet', applyQR retQR muE')
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
