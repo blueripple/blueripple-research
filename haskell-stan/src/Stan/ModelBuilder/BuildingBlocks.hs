@@ -44,7 +44,6 @@ import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
 import Stan.ModelBuilder (addFromCodeWriter)
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
-import Stan.ModelBuilder.TypedExpressions.Expressions (IntArrayE)
 
 {-
 namedVectorIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
@@ -194,13 +193,13 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
       llSizeE = TE.multiOpE TE.SAdd $ fmap namedIntE llSizeListNE
   logLikE <- SB.stanDeclareN $ TE.NamedDeclSpec "log_lik" $ TE.vectorSpec llSizeE []
   let doOne :: SB.RowTypeTag a -> LLDetails a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
-      doOne rtt (LLDetails dist pFCW yF) = do
+      doOne rtt (LLDetails d pFCW yF) = do
         prevSizes <- get
         let sizeE =  TE.multiOpE TE.SAdd $ namedIntE "n" :| prevSizes
         lift $ SB.addFromCodeWriter $ do
           pF <- pFCW
           TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (namedIntE $ dataSetSizeName rtt))
-            $ \nE -> [TE.sliceE TE.s0 nE logLikE `TE.assign` SB.familyLDF dist (yF nE) (pF nE)]
+            $ \nE -> [TE.sliceE TE.s0 nE logLikE `TE.assign` SMD.familyLDF d (yF nE) (pF nE)]
         put $ TE.namedSizeE (SB.dataSetSizeName rtt) : prevSizes
         pure rtt
       doList ::  SB.RowTypeTag a -> LLDetailsList a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
@@ -209,26 +208,35 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
   pure ()
 
 generatePosteriorPrediction :: SB.RowTypeTag r
-                            -> TE.NamedDeclSpec TE.ECVec
-                            -> SMD.StanDist TE.EReal pts
-                            -> (TE.IntE -> TE.ExprList pts)
-                            -> SB.StanBuilderM md gq TE.VectorE
-generatePosteriorPrediction rtt nds sDist pEsF = generatePosteriorPrediction' rtt nds sDist pEsF id
+                            -> TE.NamedDeclSpec (TE.EArray1 t)
+                            -> SMD.StanDist t pts
+                            -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
+                            -> SB.StanBuilderM md gq (TE.ArrayE t)
+generatePosteriorPrediction rtt nds sDist psFCW = generatePosteriorPrediction' rtt nds sDist psFCW id
 
 generatePosteriorPrediction' :: SB.RowTypeTag r
-                             -> TE.NamedDeclSpec TE.ECVec
-                             -> SMD.StanDist TE.EReal pts
-                             -> (TE.IntE -> TE.ExprList pts)
-                             -> (TE.RealE -> TE.RealE)
-                             -> SB.StanBuilderM md gq TE.VectorE
-generatePosteriorPrediction' rtt nds sDist pEsF f = SB.inBlock SB.SBGeneratedQuantities $ do
-  let rngE nE = SMD.familyRNG sDist (pEsF nE)
+                             -> TE.NamedDeclSpec (TE.EArray1 t)
+                             -> SMD.StanDist t pts
+                             -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
+                             -> (TE.UExpr t -> TE.UExpr t)
+                             -> SB.StanBuilderM md gq (TE.ArrayE t)
+generatePosteriorPrediction' rtt nds sDist psFCW f = SB.inBlock SB.SBGeneratedQuantities $ do
+  psF <- SB.addFromCodeWriter psFCW
+  let rngE nE = SMD.familyRNG sDist (psF nE)
   ppE <- SB.stanDeclareN nds
   SB.addStmtToCode
     $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ SB.dataSetSizeName rtt))
     $ \nE -> [TE.sliceE TE.s0 nE ppE `TE.assign` f (rngE nE)]
   return ppE
 
+generatePosteriorPredictionV :: SB.RowTypeTag r
+                             -> TE.NamedDeclSpec TE.ECVec
+                             -> SMD.StanDist TE.ECVec pts
+                             -> TE.ExprList pts
+                             -> SB.StanBuilderM md gq TE.VectorE
+generatePosteriorPredictionV rtt nds sDist ps =
+  SB.inBlock SB.SBGeneratedQuantities
+  $ SB.stanDeclareRHSN nds $ SMD.familyRNG sDist ps
 
 diagVectorFunction :: SB.StanBuilderM md gq (TE.Function TE.ECVec '[TE.EArray1 TE.ECVec, TE.EInt])
 diagVectorFunction = do
@@ -435,7 +443,7 @@ lengthE :: (TE.TypeOneOf t [TE.ECVec, TE.ERVec, TE.EArray1 t'], TE.GenSType t, T
 lengthE v = TE.functionE TE.size (v :> TNil)
 
 
-reIndex :: IntArrayE -> (TE.IntE -> TE.UExpr t) -> TE.IntE -> TE.UExpr t
+reIndex :: TE.IntArrayE -> (TE.IntE -> TE.UExpr t) -> TE.IntE -> TE.UExpr t
 reIndex ia eF ke = eF $ TE.sliceE TE.s0 ke ia
 
 

@@ -66,7 +66,7 @@ normalDist = StanDist Continuous sample lpdf lupdf rng
       TE.SRVec -> TE.functionE TE.to_row_vector (TE.functionE TE.normal_rng ps :> TNil) -- why does the stan version return array[] real??
 
 
-scalarNormalDist :: StanDist TE.ECVec '[TE.EReal, TE.EReal]
+scalarNormalDist :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => StanDist t '[TE.EReal, TE.EReal]
 scalarNormalDist = StanDist Continuous sample lpdf lupdf rng
   where
     sample x  = TE.sample x TE.normalS

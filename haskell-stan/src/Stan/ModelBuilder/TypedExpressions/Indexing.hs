@@ -73,11 +73,13 @@ s4 :: SNat (S (S (S (S Z)))) = DT.SS
 -- popRandom v = (a, vL DT.++ vR)
 --  where (vL, a ::: vR) = DT.split v :: (Vec n a, Vec (S m) a)
 
-type family DiffOrZero (n :: Nat) (m :: Nat) :: Nat where
-  DiffOrZero Z Z = Z
-  DiffOrZero (S n) Z = S n
-  DiffOrZero Z (S m) = Z
-  DiffOrZero (S n) (S m) = DiffOrZero n m
+data DiffHolder = PosDiff Nat | Same | NegDiff Nat
+
+type family Diff (n :: Nat) (m :: Nat) :: DiffHolder where
+  Diff Z Z = Same
+  Diff (S n) Z = PosDiff (S n)
+  Diff Z (S n) = NegDiff (S n) --TE.TypeError (TE.Text "Diff: attempt to take diff of m and n where n is larger than m.")
+  Diff (S n) (S m) = Diff n m
 
 type family DeclDimension (e :: EType) :: Nat where
   DeclDimension EInt = Z
@@ -99,12 +101,14 @@ type family Dimension (e :: EType) :: Nat where
   Dimension ESqMat = S (S Z)
   Dimension (EArray n t) = n `DT.Plus` Dimension t
 
-type family ApplyDiffOrZeroToEType (n :: Nat) (e :: EType) :: EType where
-  ApplyDiffOrZeroToEType Z (EArray Z t) = TE.TypeError (TE.Text "Attempt to slice a zero-dimensional array.  Which means you had a zero dimensional array?")
-  ApplyDiffOrZeroToEType Z (EArray (S Z) t) = t
-  ApplyDiffOrZeroToEType Z (EArray (S (S n)) t) = EArray (S n) t
-  ApplyDiffOrZeroToEType d (EArray m t) = EArray m (Sliced d t)
-  ApplyDiffOrZeroToEType _ x = TE.TypeError (TE.Text "Applied DiffOrZero to type other than EArray??")
+type family ApplyDiffToEType (n :: DiffHolder) (e :: EType) :: EType where
+  ApplyDiffToEType _ (EArray Z t) = TE.TypeError (TE.Text "Attempt to slice a zero-dimensional array.  Which means you had a zero dimensional array?")
+  ApplyDiffToEType (PosDiff _) (EArray (S Z) t) = TE.TypeError (TE.Text "ApplyDiffToEType: Impossible case of PosDiff but array of dimension 1.")
+  ApplyDiffToEType (PosDiff _) (EArray (S n) t) = EArray n t -- slice is in the array
+  ApplyDiffToEType Same (EArray (S Z) t) = t -- Slice a 1-d array case.
+  ApplyDiffToEType Same (EArray (S n) t) = EArray n t -- Slice a 1-d array case.
+  ApplyDiffToEType (NegDiff (S n)) (EArray o t) = EArray o (Sliced n t) -- array doesn not have enough dimensions.  Slice the rest from the contained type.
+  ApplyDiffToEType _ x = TE.TypeError (TE.Text "ApplyDiffToEtype to type other than EArray.")
 
 type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced _ EInt = TE.TypeError (TE.Text "Cannot slice (index) a scalar int.")
@@ -120,7 +124,7 @@ type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced Z ESqMat = ERVec
   Sliced (S Z) ESqMat = ECVec
   Sliced _ ESqMat = TE.TypeError (TE.Text "Cannot slice (index) a matrix at a position other than 0 or 1.")
-  Sliced n (EArray m t) = ApplyDiffOrZeroToEType (DiffOrZero m (S n)) (EArray m t)
+  Sliced n (EArray m t) = ApplyDiffToEType (Diff m (S n)) (EArray m t)
 
 type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
   SliceInnerN Z a = a

@@ -561,27 +561,27 @@ indexedMuE3 dm = do
   return f
 -}
 
-modelCounts :: SD.StanDist t ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
+modelCounts :: SD.StanDist (TE.EArray1 TE.EInt) ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
 modelCounts dist counts buildParams = do
   ps <- SB.inBlock SB.SBModel $ SB.addFromCodeWriter buildParams
-  SB.sampleDistV dist params counts
+  SB.sampleDistV dist ps counts
 
 updateLLSet ::  SB.RowTypeTag r
-            -> SD.StanDist t ps
+            -> SD.StanDist TE.EInt ps
             -> TE.IntArrayE
             -> TE.CodeWriter (TE.IntE -> TE.ExprList ps)
             -> SB.LLSet
             -> SB.LLSet
-updateLLSet rtt dist indexedY paramCode = SB.addToLLSet rtt llDetails where
-  llDetails = SB.LLDetails dist paramCode indexedParams indexedY
+updateLLSet rtt dist counts paramCode = SB.addToLLSet rtt llDetails where
+  llDetails = SB.LLDetails dist paramCode (\nE -> TE.sliceE TE.s0 nE counts)
 
 addPosteriorPredictiveCheck :: Text
                             -> SB.RowTypeTag r
-                            -> SD.StanDist t pts
+                            -> SD.StanDist TE.EInt pts
                             -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
-                            ->  SB.StanBuilderM md gq ()
+                            -> SB.StanBuilderM md gq TE.IntArrayE
 addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
-  let ppNDS = TE.NamedDeclSpec ppVarname  $ TE.vectorSpec (SB.dataSetSizeE rtt) []
+  let ppNDS = TE.NamedDeclSpec ppVarName  $ TE.array1Spec (SB.dataSetSizeE rtt) $ TE.intSpec []
   SB.generatePosteriorPrediction rtt ppNDS dist indexedParams
 
 invLogit x = TE.functionE TE.inv_logit (x :> TNil)
@@ -601,7 +601,7 @@ handleQR qr m theta =  case qr of
             colsE = TE.functionE TE.cols (m :> TNil)
         SB.inBlock SB.SBTransformedData
           $ SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
-    return (q, WithQR rI beta)
+    return (q, WithQR mName rI beta)
   DoQR mName thName -> do
     (q, _, rI, mBeta) <- DM.thinQR m mName (Just (theta, "ri_" <> thName))
     beta <- case mBeta of
@@ -618,7 +618,7 @@ applyQR (WithQR mName rI _) f m = SB.inBlock SB.SBTransformedDataGQ $ do
       qName = mName <> "_Q"
   mQ <- SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
   pure $ f mQ
-applyQR DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
+applyQR (DoQR _ _) _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
 applyQR' :: QR -> TE.MatrixE -> SB.StanBuilderM md gq TE.MatrixE
 applyQR' NoQR m = pure m
@@ -627,10 +627,10 @@ applyQR' (WithQR mName rI _) m = do
       colsE = TE.functionE TE.cols (m :> TNil)
       qName = mName <> "_Q"
   SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
-applyQR' DoQR _ _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
+applyQR' (DoQR _ _) _ = SB.stanBuildError "applyQR: DoQR given as QR argument."
 
-at :: TE.IntE -> TE.UExpr t -> TE.UExpr (TE.Sliced TE.N0 t)
-at = TE.sliceE TE.s0
+at :: TE.UExpr t -> TE.IntE -> TE.UExpr (TE.Sliced TE.N0 t)
+at x k = TE.sliceE TE.s0 k x
 
 by :: TE.UExpr t -> TE.IntArrayE -> TE.UExpr (TE.Indexed TE.N0 t)
 by x i = TE.indexE TE.s0 i x
@@ -664,10 +664,11 @@ addBLModelForDataSet rtt dataSetLabel includePP dataSetupM dsSp centerDM qr alph
   modelCounts dist successes $ do
     -- should we vectorize the re-indexed (states to data) or reindex after vectorizing?
     -- first is (potentially) contiguous in memory; second is smaller and faster to vectorize
-    muVec <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "mu") $ reIndex stateByDataIndexE muE
+    muVec <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "mu") $ SB.reIndex stateByDataIndexE muE
     -- muVec <- TE.indexE TE.s0 stateByDataIndexE <$> SB.vectorizeExpr (TE.groupSizE stateGroup) (addLabel "mu")
     pure $ counts :> muVec :> TNil
-  let indexedParams k = counts `at` k :> muE `by` stateByDataIndexE `at` k :> TNil
+  let indexedParams :: TE.IntE -> TE.ExprList [TE.EInt, TE.EReal]
+      indexedParams k = (counts `at` k) :> ((muE `by` stateByDataIndexE) `at` k) :> TNil
       indexedY k = successes `at` k
       llSet' = updateLLSet rtt dist indexedY (pure indexedParams) llSet
   when includePP $ addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams)
