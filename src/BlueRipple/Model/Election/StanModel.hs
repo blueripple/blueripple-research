@@ -789,29 +789,29 @@ elexPSF = do
       plusEq = TE.opAssign TE.SAdd
       eDivEq = TE.opAssign (TE.SElementWise TE.SDivide)
   SB.addFunctionOnce f (TE.DataArg "gIdx" :> TE.DataArg "psWgts" :> TE.Arg "aT" :> TE.Arg "bT" :> TE.DataArg "dT"
-                       :> TE.Arg "aP" :> TE.Arg "bP" :> TE.DataArg "dP", TE.DataArg "N_elex", TE.DataArg "elexIdx")
-    $ \(gIdx :> psWgts :> aT :> bT :> dT :> aP :> bP :> dP :> nElex :> elexIdx) -> TE.writerL $ do
+                        :> TE.Arg "aP" :> TE.Arg "bP" :> TE.DataArg "dP" :> TE.DataArg "N_elex":> TE.DataArg "elexIdx" :> TNil)
+    $ \(gIdx :> psWgts :> aT :> bT :> dT :> aP :> bP :> dP :> nElex :> elexIdx :> TNil) -> TE.writerL $ do
     let grp kE = gIdx `at` kE
     nPS <- TE.declareRHSNW (TE.NamedDeclSpec "N_ps" $ TE.intSpec []) $ SB.lengthE gIdx
     nGrp <- TE.declareRHSNW (TE.NamedDeclSpec "N_grp" $ TE.intSpec []) $ SB.lengthE aT
-    p <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nGrp (TE.intE 2))
+    p <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nGrp (TE.intE 2) [])
       $ TE.functionE TE.rep_matrix (TE.realE 0 :> nGrp :> TE.intE 2 :> TNil)
-    wgts <- TE.declareRHSNW (TE.NamedDeclSpec "wgts" $ TE.matrixSpec nGrp (TE.intE 2))
+    wgts <- TE.declareRHSNW (TE.NamedDeclSpec "wgts" $ TE.matrixSpec nGrp (TE.intE 2) [])
       $ TE.functionE TE.rep_matrix (TE.realE 0 :> nGrp :> TE.intE 2 :> TNil)
     TE.addStmt $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nPS) $ \kE -> TE.writerL' $ do
       pT <- TE.declareRHSNW (TE.NamedDeclSpec "pT" $ TE.realSpec [])
-        $ invLogit $ (aT `at` state kE) `TE.plusE` dotProduct (dT `at` kE) (bT `byCol` grp kE)
+        $ invLogit $ (aT `at` grp kE) `TE.plusE` dotProduct (dT `row` kE) (bT `col` grp kE)
       pP <- TE.declareRHSNW (TE.NamedDeclSpec "pP" $ TE.realSpec [])
-        $ invLogit $ (aP `at` state kE) `TE.plusE` dotProduct (dP `at` kE) (bP `byCol` grp kE)
+        $ invLogit $ (aP `at` grp kE) `TE.plusE` dotProduct (dP `row` kE) (bP `col` grp kE)
       wPT <- TE.declareRHSNW (TE.NamedDeclSpec "wPT" $ TE.realSpec []) $ (psWgts `at` kE) `TE.timesE` pT
-      TE.addStmt $ p `at` state kE `at` TE.intE 1 `plusEq` wPT
-      TE.addStmt $ p `at` state kE `at` TE.intE 2 `plusEq` (wPT `timesE` pP)
+      TE.addStmt $ p `at` grp kE `at` TE.intE 1 `plusEq` wPT
+      TE.addStmt $ p `at` grp kE `at` TE.intE 2 `plusEq` (wPT `TE.timesE` pP)
       TE.addStmt $ wgts `at` grp kE `at` TE.intE 1 `plusEq` (psWgts `at` kE)
       TE.addStmt $ wgts `at` grp kE `at` TE.intE 2 `plusEq` wPT
     TE.addStmt $ p `eDivEq` wgts
-    q <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nElex (TE.intE 2))
-    TE.addStmt $ q `col` TE.intE 1 `TE.assign` (p `by` elexIdx) `col` TE.intE 1
-    TE.addStmt $ q `col` TE.intE 2 `TE.assign` (p `by` elexIdx) `col` TE.intE 2
+    q <- TE.declareNW ( TE.NamedDeclSpec "q" $ TE.matrixSpec nElex (TE.intE 2) [])
+    TE.addStmt $ (q `col` TE.intE 1) `TE.assign` ((p `by` elexIdx) `col` TE.intE 1)
+    TE.addStmt $ (q `col` TE.intE 2) `TE.assign` ((p `by` elexIdx) `col` TE.intE 2)
     return q
 
 -- given J is group size, K is number of predictors, N is size of post-strat data-set
@@ -819,7 +819,7 @@ elexPSFunction :: Text
                -> SB.RowTypeTag r -- ps rows
                -> SB.RowTypeTag r' -- election rows
                -> SB.GroupTypeTag k
-               -> TE.RealArrayE -- psWgts
+               -> TE.VectorE -- psWgts
                -> TE.VectorE-- alphaT, J
                -> TE.MatrixE -- betaT, K x J
                -> TE.MatrixE -- dmT, N x K
@@ -833,9 +833,9 @@ elexPSFunction varNameSuffix rttPS rttElex gtt psWgts alphaT betaT dmT alphaP be
       elexIdx = SB.namedIndexE (SB.dataByGroupIndexName rttElex gtt)
   f <- elexPSF
   ps <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexProbs_" <> varNameSuffix) $ TE.matrixSpec nElex (TE.intE 2) [])
-        $ TE.functionE f (dataIdx :> psWgts :> alphaT :> betaT :> dmT :> alphaP :> betaP :> dmP :> nElex :> elexIdx)
-  pT <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPT_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 ps (TE.intE 1)
-  pP <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPP_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 ps (TE.intE 2)
+        $ TE.functionE f (dataIdx :> psWgts :> alphaT :> betaT :> dmT :> alphaP :> betaP :> dmP :> nElex :> elexIdx :> TNil)
+  pT <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPT_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 (TE.intE 1) ps
+  pP <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexPP_" <> varNameSuffix) $ TE.vectorSpec nElex []) $ TE.sliceE TE.s1 (TE.intE 2) ps
   pure (pT, pP)
 
 {-
