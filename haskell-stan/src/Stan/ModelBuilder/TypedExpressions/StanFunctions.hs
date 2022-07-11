@@ -181,8 +181,15 @@ cols :: (TypeOneOf t [EMat, ESqMat], GenSType t) => Function EInt '[t]
 cols = simpleFunction "cols"
 {-# INLINEABLE cols #-}
 
-diag_pre_multiply :: (TypeOneOf t [ECVec, ERVec], GenSType t) => Function EMat [t, EMat]
+diag_pre_multiply :: (TypeOneOf t [ECVec, ERVec], GenSType t, TypeOneOf t' [EMat, ESqMat], GenSType t')
+                  => Function t' [t, t']
 diag_pre_multiply = simpleFunction "diag_pre_multiply"
+{-# INLINEABLE diag_pre_multiply #-}
+
+diag_post_multiply :: (TypeOneOf t [ECVec, ERVec], GenSType t, TypeOneOf t' [EMat, ESqMat], GenSType t')
+                  => Function t' [t, t']
+diag_post_multiply = simpleFunction "diag_post_multiply"
+{-# INLINEABLE diag_post_multiply #-}
 
 -- Densities & RNGs
 

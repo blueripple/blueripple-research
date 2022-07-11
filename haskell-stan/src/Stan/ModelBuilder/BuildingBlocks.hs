@@ -14,6 +14,7 @@
 {-# HLINT ignore "Use for_" #-}
 {-# HLINT ignore "Use camelCase" #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 module Stan.ModelBuilder.BuildingBlocks where
 
@@ -438,9 +439,12 @@ mRowsE m = TE.functionE TE.rows (m :> TNil)
 mColsE :: (TE.TypeOneOf t [TE.EMat, TE.ESqMat], TE.GenSType t) => TE.UExpr t -> TE.IntE
 mColsE m = TE.functionE TE.cols (m :> TNil)
 
-lengthE :: (TE.TypeOneOf t [TE.ECVec, TE.ERVec, TE.EArray1 t'], TE.GenSType t, TE.IsContainer t)
-        => TE.UExpr t -> TE.IntE
-lengthE v = TE.functionE TE.size (v :> TNil)
+vecLengthE :: (TE.TypeOneOf t [TE.ECVec, TE.ERVec], TE.GenSType t, TE.IsContainer t)
+           => TE.UExpr t -> TE.IntE
+vecLengthE v = TE.functionE TE.size (v :> TNil)
+
+arr1LengthE :: TE.GenSType t => TE.UExpr (TE.EArray1 t) -> TE.IntE
+arr1LengthE v = TE.functionE TE.size (v :> TNil)
 
 
 reIndex :: TE.IntArrayE -> (TE.IntE -> TE.UExpr t) -> TE.IntE -> TE.UExpr t

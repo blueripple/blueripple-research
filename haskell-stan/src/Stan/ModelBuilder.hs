@@ -1403,7 +1403,7 @@ add2dMatrixJson :: (Typeable md, Typeable gq)
 add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) cs = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName
-      ndsF rowsE = TE.NamedDeclSpec name $ TE.matrixSpec rowsE (TE.namedSizeE colName) cs
+      ndsF rowsE = TE.NamedDeclSpec wdName $ TE.matrixSpec rowsE (TE.namedSizeE colName) cs
       colIndex = fromMaybe name colIndexM
       colName = "K" <> "_" <> colIndex
       colDimName = colIndex <> "_Cols"

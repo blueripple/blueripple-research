@@ -80,7 +80,7 @@ import Path (Rel, Abs, Dir, File)
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
 import Stan.ModelBuilder (binomialLogitDistWithConstants)
-import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
+--import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
 import BlueRipple.Model.DistrictClusters (districtsForClustering)
 import qualified Data.Vector.Unboxed as UVec
 import qualified BlueRipple.Utilities.KnitUtils as K

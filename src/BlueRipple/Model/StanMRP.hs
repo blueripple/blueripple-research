@@ -178,7 +178,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
       gqData_C
 
 
-data PostStratificationType a = PSRaw | PSShare (Maybe (a -> TE.RealE))
+data PostStratificationType a = PSRaw | PSShare (Maybe (a -> TE.IntE -> TE.RealE))
 
 -- TODO: order groups differently than the order coming from the built in group sets??
 addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
@@ -276,7 +276,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
             TE.addStmt $ psV `plusEq` (e `TE.timesE` atn wgtsV)
             case psType of
               PSShare Nothing -> TE.addStmt $ wgtSumE `plusEq` atn wgtsV
-              PSShare (Just f) -> TE.addStmt$ wgtSumE `plusEq` (f preComputed `TE.timesE` atn wgtsV)
+              PSShare (Just f) -> TE.addStmt$ wgtSumE `plusEq` (f preComputed nE `TE.timesE` atn wgtsV)
               _ -> pure ()
           case psType of
             PSShare _ -> TE.addStmt $ psV `divEq` wgtSumE
@@ -299,7 +299,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
             TE.addStmt $ atn (indexed psV) `plusEq` (e `TE.timesE` atn wgtsV)
             case psType of
               PSShare Nothing -> TE.addStmt $ atn (indexed wgtSumE) `plusEq` atn wgtsV
-              PSShare (Just f) -> TE.addStmt $ atn (indexed wgtSumE) `plusEq` (f preComputed `TE.timesE` atn wgtsV)
+              PSShare (Just f) -> TE.addStmt $ atn (indexed wgtSumE) `plusEq` (f preComputed nE `TE.timesE` atn wgtsV)
               _ -> pure ()
           case psType of
             PSShare _ -> TE.addStmt $ TE.opAssign (TE.SElementWise TE.SDivide) psV wgtSumE -- (UExpr ta) (UExpr tb)
