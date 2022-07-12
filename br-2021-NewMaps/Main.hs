@@ -89,6 +89,7 @@ import qualified BlueRipple.Data.CountFolds as BRQ
 import BlueRipple.Data.Quantiles (quantileLookup')
 import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
 import qualified Data.Array as Array
+import qualified Data.List as List
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -1022,12 +1023,32 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
       dMedian sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
       rMedian sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
+      dRanks sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) sortedFilteredModelAndDRA) >>= traverse qf . FL.fold FL.list
+      rRanks sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) sortedFilteredModelAndDRA) >>= traverse qf . FL.fold FL.list
       sameState r r' = F.rgetField @BR.StateAbbreviation r == F.rgetField @BR.StateAbbreviation r'
       addDistToSBC comp r (n, qf) = case comp of
         SBCNational -> SBComparison n <$> qf r <*> dMedian (const True) qf <*> rMedian (const True) qf
         SBCState -> SBComparison n <$> qf r <*> dMedian (sameState r) qf <*> rMedian (sameState r) qf
       addDistToSBCs comp r = traverse (addDistToSBC comp r) [("%Voters-of-color", nwQuantiles20), ("%Grad-among-White", gowQuantiles20), ("Density", densQuantiles20)]
+      getSBD :: Text -> [Double] -> SBData
+      getSBD n x = SBData n lo hi
+        where
+          l = length x
+          x' = sort x
+          quartileN = l `div` 4
+          lo = x' List.!! quartileN
+          hi = x' List.!! (l - quartileN)
 
+  dNWLoHi <- K.knitEither $  getSBD "%Voters-of-color" <$> dRanks (const True) nwQuantiles20
+  dGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> dRanks (const True) gowQuantiles20
+  dDensLoHi <- K.knitEither $ getSBD "Density" <$> dRanks (const True) densQuantiles20
+  rNWLoHi <- K.knitEither $ getSBD "%Voters-of-color" <$> rRanks (const True) nwQuantiles20
+  rGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> rRanks (const True) gowQuantiles20
+  rDensLoHi <- K.knitEither $ getSBD "Density" <$> rRanks (const True) densQuantiles20
+  let dRanksSBD = [dNWLoHi, dGOWLoHi, dDensLoHi]
+      rRanksSBD = [rNWLoHi, rGOWLoHi, rDensLoHi]
+--  putTextLn $ show dRanksSBD
+--  putTextLn $ show rRanksSBD
 --  BR.logFrame tsneResult
   let districtCompare x y =
         let
@@ -1099,17 +1120,17 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                 $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
               sbcsNatE <- getSBCs SBCNational $ F.rcast d
               sbcsNat <- lift $ K.knitEither sbcsNatE
-              lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) $ one (dk, True, sbcsNat)
+              lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
               sbcsStE <- getSBCs SBCState $ F.rcast d
               case sbcsStE of
                 Left _ -> pure ()
-                Right sbcsSt -> (lift $ K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) $ one (dk, True, sbcsSt)) >> pure ()
+                Right sbcsSt -> (lift $ K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
               let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
                   eachNear dNear = do
                     let dkNear = distKey dNear
                     sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
                     sbcsNear <- lift $ K.knitEither sbcsNearE
-                    lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
+                    lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
               traverse_ eachNear tsneNear'
               pure ()
     evalStateT
@@ -1167,32 +1188,44 @@ sbcToVGData :: Bool -> Double -> Double -> Text -> SBComparison -> [GV.DataRow]
 sbcToVGData p gr cr dn sbc = GV.dataRow [("Stat", GV.Str $ sbcName sbc)
                                       ,("Type",GV.Str dn)
                                       ,("Rank", GV.Number $ cr * (sbcDistVal sbc)/gr)
-                                      ,("Size", GV.Number $ if p then 25 else 10)
+                                      ,("Size", GV.Number $ if p then 50 else 25)
                                       ]
                            $ GV.dataRow [("Stat", GV.Str $ sbcName sbc)
-                                        ,("Type",GV.Str "Dem Median")
+                                        ,("Type",GV.Str "D Median")
                                         ,("Rank", GV.Number $ cr * (sbcDMid sbc)/gr)
-                                        ,("Size", GV.Number 50)
+                                        ,("Size", GV.Number 10)
                                         ]
                            $ GV.dataRow  [("Stat", GV.Str $ sbcName sbc)
-                                         ,("Type",GV.Str "Rep Median")
+                                         ,("Type",GV.Str "R Median")
                                          ,("Rank", GV.Number $ cr * (sbcRMid sbc)/gr)
-                                         ,("Size", GV.Number 50)
+                                         ,("Size", GV.Number 10)
                                          ]
                   []
-sbcChart :: SBCComp -> Int -> Int -> FV.ViewConfig -> NonEmpty (Text, Bool, [SBComparison]) -> GV.VegaLite
-sbcChart comp givenRange chartRange vc sbcsByDist =
+
+data SBData = SBData { sbdName :: Text, sbdLo :: Double, sbdHi :: Double} deriving Show
+sbdToVGData :: Double -> Double -> SBData -> [GV.DataRow]
+sbdToVGData gr cr sbd = GV.dataRow [("Stat", GV.Str $ sbdName sbd)
+                                   , ("Lo", GV.Number $ cr * (sbdLo sbd)/gr)
+                                   , ("Hi", GV.Number $ cr * (sbdHi sbd)/gr)
+                                   ]
+                        []
+
+sbcChart :: SBCComp -> Int -> Int -> FV.ViewConfig -> [SBData] -> [SBData] -> NonEmpty (Text, Bool, [SBComparison]) -> GV.VegaLite
+sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
   let datEach (dn, p, sbcs) =  concatMap (sbcToVGData p (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
       dName (dn, _, _) = dn
-      dat = GV.dataFromRows [] $ concatMap datEach sbcsByDist --GV.dataFromRows [] $ concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
+      distDat = GV.dataFromRows [] $ concatMap datEach sbcsByDist --GV.dataFromRows [] $ concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
+      dRanksDat = GV.dataFromRows [] $ concatMap (sbdToVGData (realToFrac givenRange) (realToFrac chartRange)) dSBDs
+      rRanksDat = GV.dataFromRows [] $ concatMap (sbdToVGData (realToFrac givenRange) (realToFrac chartRange)) rSBDs
+      dat = GV.datasets [("districts", distDat), ("dRanks", dRanksDat), ("rRanks", rRanksDat)]
       encStatName = GV.position GV.Y [GV.PName "Stat", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
                                      ,GV.PSort [GV.CustomSort (GV.Strings ["Density", "%Voters-of-color", "%Grad-among-White"])]]
-      encVal = GV.position GV.X [GV.PName "Rank", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0, realToFrac chartRange]]]
+      encRank = GV.position GV.X [GV.PName "Rank", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0, realToFrac chartRange]]]
       typeScale = case length sbcsByDist of
                     1 -> let dn = dName $ head sbcsByDist
-                         in  [GV.MScale [GV.SDomain (GV.DStrings ["Rep Median", dn, "Dem Median"]), GV.SRange (GV.RStrings ["red", "orange", "blue"])]]
+                         in  [GV.MScale [GV.SDomain (GV.DStrings ["R Median", dn, "D Median"]), GV.SRange (GV.RStrings ["red", "orange", "blue"])]]
                     2 -> let [dn1, dn2] = dName <$> toList sbcsByDist
-                         in [GV.MScale [GV.SDomain (GV.DStrings ["Rep Median", dn1, dn2, "Dem Median"]), GV.SRange (GV.RStrings ["red", "orange", "green", "blue"])]]
+                         in [GV.MScale [GV.SDomain (GV.DStrings ["R Median", dn1, dn2, "D Median"]), GV.SRange (GV.RStrings ["red", "orange", "green", "blue"])]]
                     _ -> []
       encTypeC = GV.color ([GV.MName "Type", GV.MmType GV.Nominal{-,  GV.MSort [GV.CustomSort (GV.Strings ["Rep Median", dn, "Dem Median"])] -}
                          , GV.MNoTitle, GV.MLegend [GV.LOrient GV.LOBottom]] ++ typeScale)
@@ -1200,13 +1233,22 @@ sbcChart comp givenRange chartRange vc sbcsByDist =
 --      encTypeS = GV.shape [GV.MName "Type", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort (GV.Strings ["Dem Median", dn, "Rep Median"])]
 --                         , GV.MNoTitle]
 --      encTypeD = GV.detail [GV.DName "Type", GV.DmType GV.Nominal]
-      enc = GV.encoding . encStatName . encVal . encTypeC . encSize
-      mark = GV.mark GV.Point [] --[GV.MSize 50, GV.MOpacity 0.7]
+      districtsEnc = GV.encoding . encStatName . encRank . encTypeC . encSize
+      distMark = GV.mark GV.Point [] --[GV.MSize 50, GV.MOpacity 0.7]
       cText = case comp of
         SBCNational -> "National"
         SBCState -> "State"
+      districtSpec = GV.asSpec [districtsEnc [], distMark, GV.dataFromSource "districts" []]
+      encLo = GV.position GV.X [GV.PName "Lo", GV.PmType GV.Quantitative, GV.PNoTitle]
+      encHi = GV.position GV.X2 [GV.PName "Hi", GV.PmType GV.Quantitative, GV.PNoTitle]
+      dRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "blue", GV.MSize 3, GV.MYOffset (-1)]
+      dRuleEnc = GV.encoding . encStatName . encLo . encHi
+      dRuleSpec = GV.asSpec [dRuleEnc [], dRule, GV.dataFromSource "dRanks" []]
+      rRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "red", GV.MSize 3, GV.MYOffset 1]
+      rRuleEnc = GV.encoding . encStatName . encLo . encHi
+      rRuleSpec = GV.asSpec [rRuleEnc [], rRule, GV.dataFromSource "rRanks" []]
       title = if length sbcsByDist == 1 then (dName $ head sbcsByDist) <> ": " <> cText <> " Demographics" else "National Demographic Comparison"
-  in FV.configuredVegaLite vc [FV.title title, enc [], mark, dat]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [districtSpec, dRuleSpec, rRuleSpec], dat]
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
             => Text
