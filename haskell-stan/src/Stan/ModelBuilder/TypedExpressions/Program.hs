@@ -58,13 +58,13 @@ programToStmt gq p = TE.SContext Nothing fullProgramStmt
     functionsStmtM = let x = stmtsArray ! SBT.SBFunctions in if null x then Nothing else Just (TE.SBlock TE.FunctionsStmts x)
     dataStmt =
         let d = stmtsArray ! SBT.SBData
-            gqd = stmtsArray ! SBT.SBDataGQ
+            gqd = TE.comment ("For Generated Quantities" :| []) : stmtsArray ! SBT.SBDataGQ
          in TE.SBlock TE.DataStmts (d ++ if gq /= SBT.NoGQ then gqd else [])
     tDataStmtM =
       let
         x = stmtsArray ! SBT.SBTransformedData
-        xGQ = stmtsArray ! SBT.SBTransformedDataGQ
-      in if null x && null xGQ then Nothing else Just (TE.SBlock TE.TDataStmts $ x ++ xGQ)
+        xGQ =  TE.comment ("For Generated Quantities" :| []) : stmtsArray ! SBT.SBTransformedDataGQ
+      in if null x && null xGQ then Nothing else Just (TE.SBlock TE.TDataStmts $ x ++ if gq /= SBT.NoGQ then xGQ else [])
     paramsStmt = TE.SBlock TE.ParametersStmts $ stmtsArray ! SBT.SBParameters
     tParamsStmtM = let x = stmtsArray ! SBT.SBTransformedParameters in if null x then Nothing else Just (TE.SBlock TE.TParametersStmts x)
     modelStmt = TE.SBlock TE.ModelStmts $ stmtsArray ! SBT.SBModel
@@ -93,6 +93,8 @@ addStmtToBlock' addF sb s = do
       then case s of
              TE.SDeclare {} -> Right f
              TE.SComment {} -> Right f
+--             TE.SPrint {} -> Right f
+--             TE.SReject {} -> Right f
              _ -> Left $ "Statement other than declaration or comment in data or parameters block: \n"
                <> (case stmtAsText s of
                      Left err -> "Error trying to render statement (" <> err <> ")"

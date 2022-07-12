@@ -295,7 +295,7 @@ weightedMeanVarianceFunction = do
     mv <- TE.declareW "meanVar" (TE.vectorSpec (TE.intE 2) [])
     let meanVar i = TE.sliceE TE.s0 (TE.intE i) mv
     TE.addStmt $ meanVar 1 `TE.assign` (sum wgtdXs `TE.divideE` sum ws)
-    y <- TE.declareRHSW "y" (TE.vectorSpec n []) $ xs `TE.minusE` meanVar 2
+    y <- TE.declareRHSW "y" (TE.vectorSpec n []) $ xs `TE.minusE` meanVar 1
     TE.addStmt $ meanVar 2 `TE.assign` (sum (ws `eTimes` y `eTimes` y) `TE.divideE` sum ws)
     return mv
 {-

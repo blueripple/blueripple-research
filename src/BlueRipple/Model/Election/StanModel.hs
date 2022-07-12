@@ -99,7 +99,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as SP
-import Stan.ModelBuilder.TypedExpressions.Recursion (HFunctor(hfmap))
+import Stan.ModelBuilder.TypedExpressions.Recursion (HFunctor(hfmap), HTraversable(htraverse))
 
 --import qualified Stan.ModelBuilder.StanFunctionBuilder as SFB
 --import BlueRipple.Data.CCESFrame (cces2018C_CSV)
@@ -565,7 +565,10 @@ indexedMuE3 dm = do
 
 modelCounts :: SD.StanDist (TE.EArray1 TE.EInt) ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
 modelCounts dist counts buildParams = do
-  ps <- SB.inBlock SB.SBModel $ SB.addFromCodeWriter buildParams
+  ps <- SB.inBlock SB.SBModel $ do
+    x <- SB.addFromCodeWriter buildParams
+--    TE.addStmtToCode $ TE.print x
+    pure x
   SB.sampleDistV dist ps counts
 
 updateLLSet ::  SB.RowTypeTag r
@@ -664,7 +667,7 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha be
   let muE' dm = indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha dm beta
       muE = muE' dmQR
       dist = SD.binomialLogitDist
-      stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
+      stateByDataIndexE = TE.namedE (SB.dataByGroupIndexName rtt stateGroup) TE.sIntArray
   modelCounts dist successes $ do
     -- should we vectorize the re-indexed (states to data) or reindex after vectorizing?
     -- first is (potentially) contiguous in memory; second is smaller and faster to vectorize
@@ -711,7 +714,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countSc
       distV = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
       distS :: SD.StanDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
       distS = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
-      stateByDataIndexE = TE.namedIndexE $ SB.dataByGroupIndexName rtt stateGroup
+      stateByDataIndexE = TE.namedE (SB.dataByGroupIndexName rtt stateGroup) TE.sIntArray
   modelCounts distV successes $ do
     a <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bAT") $ SB.reIndex stateByDataIndexE bA
     b <- SB.vectorizeExpr (TE.dataSetSizeE rtt) (addLabel "bBT") $ SB.reIndex stateByDataIndexE bB
@@ -796,6 +799,10 @@ elexPSF = do
                         :> TE.Arg "aP" :> TE.Arg "bP" :> TE.DataArg "dP" :> TE.DataArg "N_elex":> TE.DataArg "elexIdx" :> TNil)
     $ \((gIdx :> psWgts :> aT :> bT :> dT :> aP :> bP :> dP :> nElex :> elexIdx :> TNil) :: TE.ExprList ElexPSArgs) -> TE.writerL $ do
     let grp kE = gIdx `at` kE
+--    TE.addStmt $ TE.print (TE.stringE "dT=" :> dT :> TNil)
+--    TE.addStmt $ TE.print (TE.stringE "dP=" :> dP :> TNil)
+--    TE.addStmt $ TE.print (TE.stringE "aT=" :> aT :> TNil)
+
     nPS <- TE.declareRHSNW (TE.NamedDeclSpec "N_ps" $ TE.intSpec []) $ SB.arr1LengthE gIdx
     nGrp <- TE.declareRHSNW (TE.NamedDeclSpec "N_grp" $ TE.intSpec []) $ SB.vecLengthE aT
     p <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.matrixSpec nGrp (TE.intE 2) [])
@@ -816,6 +823,7 @@ elexPSF = do
     q <- TE.declareNW ( TE.NamedDeclSpec "q" $ TE.matrixSpec nElex (TE.intE 2) [])
     TE.addStmt $ (q `col` TE.intE 1) `TE.assign` ((p `by` elexIdx) `col` TE.intE 1)
     TE.addStmt $ (q `col` TE.intE 2) `TE.assign` ((p `by` elexIdx) `col` TE.intE 2)
+--    TE.addStmt $ TE.print (TE.stringE "q=" :> q :> TNil)
     return q
 
 -- given J is group size, K is number of predictors, N is size of post-strat data-set
@@ -832,9 +840,9 @@ elexPSFunction :: Text
                -> TE.MatrixE -- dmP, N x K
                -> SB.StanBuilderM md gq (TE.VectorE, TE.VectorE)
 elexPSFunction varNameSuffix rttPS rttElex gtt psWgts alphaT betaT dmT alphaP betaP dmP = do
-  let dataIdx = SB.namedIndexE (SB.dataByGroupIndexName rttPS gtt)
+  let dataIdx = SB.namedE (SB.dataByGroupIndexName rttPS gtt) TE.sIntArray
       nElex = TE.dataSetSizeE rttElex
-      elexIdx = SB.namedIndexE (SB.dataByGroupIndexName rttElex gtt)
+      elexIdx = SB.namedE (SB.dataByGroupIndexName rttElex gtt) TE.sIntArray
   f <- elexPSF
   ps <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("elexProbs_" <> varNameSuffix) $ TE.matrixSpec nElex (TE.intE 2) [])
         $ TE.functionE f (dataIdx :> psWgts :> alphaT :> betaT :> dmT :> alphaP :> betaP :> dmP :> nElex :> elexIdx :> TNil)
@@ -1169,7 +1177,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                           (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE []) $ normal 0 0.4
-              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrT" $ TE.corrMatrixSpec colsTE [])
+              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrT" $ TE.choleskyFactorCorrSpec colsTE [])
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
@@ -1195,7 +1203,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                           (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE []) $ normal 0 0.4
-              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrP" $ TE.corrMatrixSpec colsPE [])
+              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrP" $ TE.choleskyFactorCorrSpec colsPE [])
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
@@ -1204,6 +1212,18 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 ncF
 --                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
               pure $ SP.parameterTagExpr thetaPT
+{-
+        SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "alphaT="
+                                                              :> alphaT
+                                                              :> TE.stringE "; thetaT="
+                                                              :> thetaT
+                                                              :> TNil)
+        SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "alphaP="
+                                                              :> alphaP
+                                                              :> TE.stringE "; thetaP="
+                                                              :> thetaP
+                                                              :> TNil)
+-}
         let multP :: TE.ExprList '[TE.EReal] -> TE.RealE -> TE.RealE
             multP (s :> TNil)  rE = s `TE.timesE` rE
         (dssWPT, dssWPP) <- case dataSetSpecific model of
@@ -1218,6 +1238,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           DSAlphaHNC -> do
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaAlphaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
+{-
+            SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "sigmaAlphaTDS="
+                                                                 :> TE.parameterTagExpr sigmaAlphaTDS
+                                                                 :> TE.stringE "; sigmaAlphaPDS="
+                                                                 :> TE.parameterTagExpr sigmaAlphaPDS
+                                                                 :> TNil)
+-}
             let dssT = DSPAlphaHNC 1 (SP.build sigmaAlphaTDS :> TNil) multP
                 dssP = DSPAlphaHNC 1 (SP.build sigmaAlphaPDS :> TNil) multP
             return (dssT, dssP)
@@ -1261,35 +1288,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 forT = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaTDS :> TNil) ncFS 1 (SP.build sigmaBetaTDS :> TNil) ncFV
                 forP = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaPDS :> TNil) ncFS 1 (SP.build sigmaBetaPDS :> TNil) ncFV
             return (forT, forP)
-{-
-            sigmaAlphaTDS <- SMP.addParameter "sigmaAlphaT_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let alphaTF t = SMP.addParameter ("alphaT_" <> t) SB.StanReal "" (SB.UnVectorized $ (SB.normal Nothing $ SB.var sigmaAlphaTDS))
-            tauTDS <- SMP.addParameter "tauDSThetaT" vecT "<lower=0>" (SB.Vectorized (one dmColIndexT) (normal 0 0.4))
-            corrTDS <- SMP.lkjCorrelationMatrixParameter "corrDST" dmColIndexT 1
-            let betaTNonCenterF t = do
-                  SB.addDeclBinding' dmColIndexT dmColExprT
-                  SB.addUseBinding' dmColIndexT dmColExprT
-                  raw <- SMP.addParameter ("theta_" <> t <> "_raw") vecT "" (SB.Vectorized (one dmColIndexT) SB.stdNormal)
-                  SB.inBlock SB.SBTransformedParameters
-                    $ SB.stanDeclareRHS ("theta" <> t) vecT ""
-                    $ SB.vectorizedOne dmColIndexT
-                    $ SB.function "diag_pre_multiply" (SB.var tauTDS :| [SB.var corrTDS]) `SB.times` SB.var raw
-            SB.addDeclBinding' dmColIndexP dmColExprP
-            let vecP =  (SB.StanVector $ SB.NamedDim dmColIndexP)
-            sigmaAlphaPDS <- SMP.addParameter "sigmaAlphaP_DS" SB.StanReal "<lower=0>" (SB.UnVectorized $ normal 0 0.5)
-            let alphaPF t = SMP.addParameter ("alpha" <> t) SB.StanReal "" (SB.UnVectorized $ (SB.normal Nothing $ SB.var sigmaAlphaPDS))
-            tauPDS <- SMP.addParameter "tauDSThetaP" vecP "<lower=0>" (SB.Vectorized (one dmColIndexP) (normal 0 0.4))
-            corrPDS <- SMP.lkjCorrelationMatrixParameter "corrDSP" dmColIndexP 1
-            let betaPNonCenterF t = do
-                  SB.addDeclBinding' dmColIndexP dmColExprP
-                  SB.addUseBinding' dmColIndexP dmColExprP
-                  raw <- SMP.addParameter ("theta" <> t <> "_raw") vecP "" (SB.Vectorized (one dmColIndexP) SB.stdNormal)
-                  SB.inBlock SB.SBTransformedParameters
-                    $ SB.stanDeclareRHS ("theta" <> t) vecP ""
-                    $ SB.vectorizedOne dmColIndexP
-                    $ SB.function "diag_pre_multiply" (SB.var tauPDS :| [SB.var corrPDS]) `SB.times` SB.var raw
-            return (DSPAlphaBetaHNC alphaTF betaTNonCenterF, DSPAlphaBetaHNC alphaPF betaPNonCenterF)
--}
 --        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         let acsPSWgtsV = TE.functionE TE.to_vector (acsPSWgts :> TNil)
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
@@ -1313,6 +1311,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 --                      SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
                 betaWidthT <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) betaWidthPrior
                 betaWidthP <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) betaWidthPrior
+{-
+                SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "betaWidthT="
+                                                                      :> betaWidthT
+                                                                      :> TE.stringE "; betaWidthP="
+                                                                      :> betaWidthP
+                                                                      :> TNil)
+-}
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
                         office centerTFM centerPFM qrT qrP dssWPT dssWPP --(elexDSSp (votesFrom model) office (dataSetSpecific model))

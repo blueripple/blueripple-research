@@ -174,12 +174,13 @@ addDesignMatrix :: (Typeable md, Typeable gq) => SB.RowTypeTag r -> DesignMatrix
 addDesignMatrix rtt dmr colIndexM = SB.add2dMatrixJson rtt (matrixFromRowData dmr colIndexM) []
 {-# INLINEABLE addDesignMatrix #-}
 
+
 designMatrixColDimBinding ::  DesignMatrixRow r -> Maybe SB.IndexKey -> (SB.IndexKey, TE.UExpr TE.EInt)
 designMatrixColDimBinding dmr indexKeyM = (colIndex, colExpr)
   where
     ik = fromMaybe (dmName dmr) indexKeyM
     colIndex = ik  <> "_Cols"
-    colExpr = TE.namedSizeE $ "K_" <> ik
+    colExpr = TE.namedE ("K_" <> ik) TE.SInt
 {-# INLINEABLE designMatrixColDimBinding #-}
 
 designMatrixIndexes :: DesignMatrixRow r -> [(DesignMatrixRowPart r, Int, Int)]
@@ -359,7 +360,7 @@ fixSDZeroFunction =  do
   let f :: TE.Function TE.EReal '[TE.EReal]
       f = TE.simpleFunction "fixSDZero"
   SB.addFunctionOnce f (TE.Arg "x" :> TNil)
-    $ \(x :> TNil) -> TE.writerL $ return $ TE.condE (TE.binaryOpE (TE.SBoolean TE.SEq) x (TE.realE 0)) (TE.realE 0) x
+    $ \(x :> TNil) -> TE.writerL $ return $ TE.condE (TE.binaryOpE (TE.SBoolean TE.SEq) x (TE.realE 0)) (TE.realE 1) x
 
 shiftAndScaleDataMatrixFunction :: SB.StanBuilderM md gq (TE.Function TE.EMat '[TE.EMat, TE.ECVec, TE.ECVec])
 shiftAndScaleDataMatrixFunction =  do
@@ -372,8 +373,9 @@ shiftAndScaleDataMatrixFunction =  do
       $ \ke ->
           let colk :: TE.UExpr q -> TE.UExpr (TE.Sliced TE.N1 q)
               colk = TE.sliceE TE.s1 ke
+              atk = TE.sliceE TE.s0 ke
               elDivide = TE.binaryOpE (TE.SElementWise TE.SDivide)
-          in [colk newMatrix `TE.assign` ((colk m `TE.minusE` means) `elDivide` sds)]
+          in [colk newMatrix `TE.assign` ((colk m `TE.minusE` atk means) `TE.divideE` atk sds)]
     return newMatrix
 
 
@@ -407,7 +409,7 @@ centerDataMatrix dms m mwgtsV namePrefix = do
       TE.addStmt $ atk mVec `TE.assign` (TE.sliceE TE.s0 (TE.intE 1) mv)
       TE.addStmt $ atk sVec `TE.assign` TE.functionE fixSDZero (TE.functionE TE.sqrt ((TE.sliceE TE.s0 (TE.intE 2) mv) :> TNil) :> TNil)
     shiftAndScaleF <- shiftAndScaleDataMatrixFunction
-    let stdize x = TE.functionE shiftAndScaleF (m :> mVec :> sVec :> TNil)
+    let stdize x = TE.functionE shiftAndScaleF (x :> mVec :> sVec :> TNil)
     mStd <- SB.stanDeclareRHSN (TE.NamedDeclSpec (namePrefix <> "_standardized") $ TE.matrixSpec (SBB.mRowsE m) (SBB.mColsE m) [])
             $ stdize m
     let centerF idt m' n = do
@@ -483,8 +485,10 @@ thinQR :: forall t md gq.(TE.GenSType t, TE.TypeOneOf t [TE.ECVec, TE.EMat, TE.E
        -> SB.StanBuilderM md gq (TE.UExpr TE.EMat, TE.UExpr TE.EMat, TE.UExpr TE.EMat, Maybe (TE.UExpr t))
 thinQR xE xName mThetaBeta = do
   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
-    qE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("Q_" <> xName) $ TE.matrixSpec (SBB.mRowsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.qr_thin_Q (xE :> TNil)
-    rE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("R_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.qr_thin_R (xE :> TNil)
+    qE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("Q_" <> xName) $ TE.matrixSpec (SBB.mRowsE xE) (SBB.mColsE xE) [])
+           $ TE.functionE TE.qr_thin_Q (xE :> TNil) `TE.divideE` TE.functionE TE.sqrt (SBB.mRowsE xE `TE.minusE` TE.realE 1 :> TNil)
+    rE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("R_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) [])
+           $ TE.functionE TE.qr_thin_R (xE :> TNil) `TE.divideE` TE.functionE TE.sqrt (SBB.mRowsE xE `TE.minusE` TE.realE 1 :> TNil)
     rInvE <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("invR_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.inverse (rE :> TNil)
     return (qE, rE, rInvE)
   mBeta <-  SB.inBlock SB.SBGeneratedQuantities $ case mThetaBeta of

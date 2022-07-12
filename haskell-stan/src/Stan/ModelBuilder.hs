@@ -897,9 +897,9 @@ addFunctionOnce :: (Traversable g, TE.GenSType rt)
                 => TE.Function rt ats -> TE.TypedArgNames ats -> (TE.ExprList ats -> (g TE.UStmt, TE.UExpr rt)) -> StanBuilderM md gq (TE.Function rt ats)
 addFunctionOnce f@(TE.Function fn _ _ _) argNames fBF = do
   fsNames <- gets hasFunctions
-  when (not $  fn `Set.member` fsNames)
-    $ inBlock SBFunctions
-    $ addStmtToCode $ TE.function f argNames fBF
+  when (not $  fn `Set.member` fsNames) $ do
+    inBlock SBFunctions $ addStmtToCode $ TE.function f argNames fBF
+    modify $ modifyFunctionNames (Set.insert fn)
   return f
 
 -- TODO: We should error if added twice but that doesn't quite work with post-stratifation code now.  Fix.
@@ -1319,7 +1319,7 @@ addLengthJson :: (Typeable md, Typeable gq)
               -> SME.IndexKey
               -> StanBuilderM md gq (TE.UExpr TE.EInt)
 addLengthJson rtt name iKey = do
-  addDeclBinding iKey name
+--  addDeclBinding iKey name
   addJsonOnce rtt (TE.NamedDeclSpec name (TE.intSpec [TE.lowerM $ TE.intE 1])) (Stan.namedF name Foldl.length)
 
 nameSuffixMsg :: TE.StanName -> Text -> Text
@@ -1403,16 +1403,16 @@ add2dMatrixJson :: (Typeable md, Typeable gq)
 add2dMatrixJson rtt (MatrixRowFromData name colIndexM cols vecF) cs = do
   let dsName = dataSetName rtt
       wdName = name <> underscoredIf dsName
-      ndsF rowsE = TE.NamedDeclSpec wdName $ TE.matrixSpec rowsE (TE.namedSizeE colName) cs
+      ndsF rowsE = TE.NamedDeclSpec wdName $ TE.matrixSpec rowsE (TE.namedE colName TE.SInt) cs
       colIndex = fromMaybe name colIndexM
       colName = "K" <> "_" <> colIndex
       colDimName = colIndex <> "_Cols"
 --      colDimVar = SME.StanVar colIndex SME.StanInt
   _ <- addFixedIntJson' (inputDataType rtt) colName Nothing cols
 --  addDeclBinding' colDimName (SME.name colName)
-  addDeclBinding colDimName colName
+--  addDeclBinding colDimName colName
 --  addUseBindingToDataSet rtt colDimName (SME.name colName)
-  addUseBindingToDataSet rtt colDimName colIndex
+--  addUseBindingToDataSet rtt colDimName colIndex
   addColumnJson rtt ndsF vecF
 
 modifyCode' :: (TE.StanProgram -> TE.StanProgram) -> BuilderState md gq -> BuilderState md gq

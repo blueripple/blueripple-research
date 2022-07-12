@@ -76,7 +76,7 @@ stmtToCodeAlg = \case
   SBreakF -> Right $ "break"
   SContinueF -> Right $ "continue"
   SFunctionF (Function fname rt ats rF) al body re ->
-    (\b -> PP.pretty (sTypeName rt) <+> "function" <+> PP.pretty fname <> functionArgs (applyTypedListFunctionToTypeList rF ats) (rF al)
+    (\b -> PP.pretty (sTypeName rt) <+> PP.pretty fname <> functionArgs (applyTypedListFunctionToTypeList rF ats) (rF al)
            <+> bracketBlock (b `appendAsList` ["return" <+> unK re <> PP.semi])) <$> sequence body
   SFunctionF (IdentityFunction _) _ _ _ -> Left "Attempt to *declare* Identity function!"
   SCommentF cs -> case toList cs of
