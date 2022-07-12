@@ -479,9 +479,9 @@ centerDataMatrix dms m mwgtsV namePrefix = do
 -- as Q_x, R_x, invR_x
 -- see https://mc-stan.org/docs/2_28/stan-users-guide/QR-reparameterization.html
 thinQR :: forall t md gq.(TE.GenSType t, TE.TypeOneOf t [TE.ECVec, TE.EMat, TE.EArray (TE.S TE.Z) TE.ECVec])
-       => TE.UExpr TE.EMat -- matrix of predictors
+       => TE.MatrixE -- matrix of predictors
        -> TE.StanName -- names prefix
-       -> Maybe (TE.UExpr t, TE.StanName) -- theta and name for beta
+       -> Maybe (TE.UExpr t, TE.NamedDeclSpec t) -- theta and name for beta
        -> SB.StanBuilderM md gq (TE.UExpr TE.EMat, TE.UExpr TE.EMat, TE.UExpr TE.EMat, Maybe (TE.UExpr t))
 thinQR xE xName mThetaBeta = do
   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
@@ -493,19 +493,17 @@ thinQR xE xName mThetaBeta = do
     return (qE, rE, rInvE)
   mBeta <-  SB.inBlock SB.SBGeneratedQuantities $ case mThetaBeta of
     Nothing -> return Nothing
-    Just (theta, betaName) -> fmap Just $ case TE.genSType @t of
+    Just (theta, betaNDS) -> fmap Just $ case TE.genSType @t of
       TE.SMat ->
-           SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.matrixSpec (SBB.mRowsE theta) (SBB.mColsE theta) [])
-           $ rI `TE.timesE` theta
+           SB.stanDeclareRHSN betaNDS $ rI `TE.timesE` theta
       TE.SCVec ->
-           SB.stanDeclareRHSN (TE.NamedDeclSpec betaName $ TE.vectorSpec (TE.functionE TE.size (theta :> TNil)) [])
-           $ rI `TE.timesE` theta
+           SB.stanDeclareRHSN betaNDS $ rI `TE.timesE` theta
       TE.SArray sn TE.SCVec -> case testEquality sn (DT.SS @DT.Nat0) of
         Just Refl -> do
           let arrSizeE = TE.functionE TE.size (theta :> TNil)
               vecSize = TE.functionE TE.rows (rI :> TNil)
           TE.addFromCodeWriter (do
-                                   beta <- TE.declareNW (TE.NamedDeclSpec betaName $ TE.array1Spec arrSizeE (TE.vectorSpec vecSize []))
+                                   beta <- TE.declareNW betaNDS
                                    TE.addStmt $ TE.for "j" (TE.SpecificNumbered (TE.intE 0) arrSizeE)
                                            $ \j -> let atj = TE.sliceE TE.s0 j in [atj beta `TE.assign` (rI `TE.timesE` atj theta)]
                                    return beta

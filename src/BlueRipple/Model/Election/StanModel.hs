@@ -591,7 +591,7 @@ addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
 
 invLogit x = TE.functionE TE.inv_logit (x :> TNil)
 
-data QR = NoQR | DoQR TE.StanName | WithQR TE.MatrixE TE.MatrixE
+data QR = NoQR | DoQR (TE.NamedDeclSpec TE.EMat) | WithQR TE.MatrixE TE.MatrixE
 
 handleQR :: TE.StanName -> QR -> TE.MatrixE -> TE.MatrixE -> SB.StanBuilderM md gq (TE.MatrixE, QR)
 handleQR mName qr m theta =  case qr of
@@ -607,8 +607,8 @@ handleQR mName qr m theta =  case qr of
         SB.inBlock SB.SBTransformedData
           $ SB.stanDeclareRHSN (TE.NamedDeclSpec qName $ TE.matrixSpec rowsE colsE []) $ m `TE.timesE` rI
     return (q, WithQR rI beta)
-  DoQR thName -> do
-    (q, _, rI, mBeta) <- DM.thinQR m mName (Just (theta, "ri_" <> thName))
+  DoQR betaNDS -> do
+    (q, _, rI, mBeta) <- DM.thinQR m mName (Just (theta, betaNDS))
     beta <- case mBeta of
       Just b -> return b
       Nothing -> SB.stanBuildError "handleQR: thinQR returned nothing for beta!"
@@ -1139,8 +1139,6 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             --(dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
             centerMatrices = True
             initialCenterFM = if centerMatrices then WeightedCenter (TE.functionE TE.to_vector (acsPSWgts :> TNil)) else NoCenter
-            initialQRT = DoQR "thetaT"
-            initialQRP = DoQR "thetaP"
             meanTurnout = 0.6
             logit x = Numeric.log (x / (1 - x))
             logitMeanTurnout = logit meanTurnout
@@ -1158,6 +1156,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         colsPE <- SB.stanBuildMaybe "No Preference matrices in ACS data prep?" $ do
           dmACSP <- snd . head <$> nonEmpty (M.toList acsDMPs)
           pure $ SB.mColsE dmACSP
+        let initialQRT = DoQR $ TE.NamedDeclSpec "betaT" $ TE.matrixSpec colsTE (SB.groupSizeE stateGroup) []
+            initialQRP = DoQR $ TE.NamedDeclSpec "betaP" $ TE.matrixSpec colsPE (SB.groupSizeE stateGroup) []
         elexData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "Elections_President"
         alphaT <- do
           muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaT" $ TE.realSpec []) $ normal logitMeanTurnout 1
