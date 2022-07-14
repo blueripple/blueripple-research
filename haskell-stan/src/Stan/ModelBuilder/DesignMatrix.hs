@@ -486,7 +486,7 @@ thinQR :: forall t md gq.(TE.GenSType t, TE.TypeOneOf t [TE.ECVec, TE.EMat, TE.E
 thinQR xE xName mThetaBeta = do
   (q, r, rI) <- SB.inBlock SB.SBTransformedData $ do
     qE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("Q_" <> xName) $ TE.matrixSpec (SBB.mRowsE xE) (SBB.mColsE xE) [])
-           $ TE.functionE TE.qr_thin_Q (xE :> TNil) `TE.divideE` TE.functionE TE.sqrt (SBB.mRowsE xE `TE.minusE` TE.realE 1 :> TNil)
+           $ TE.functionE TE.qr_thin_Q (xE :> TNil) `TE.timesE` TE.functionE TE.sqrt (SBB.mRowsE xE `TE.minusE` TE.realE 1 :> TNil)
     rE  <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("R_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) [])
            $ TE.functionE TE.qr_thin_R (xE :> TNil) `TE.divideE` TE.functionE TE.sqrt (SBB.mRowsE xE `TE.minusE` TE.realE 1 :> TNil)
     rInvE <- SB.stanDeclareRHSN (TE.NamedDeclSpec ("invR_" <> xName) $ TE.matrixSpec (SBB.mColsE xE) (SBB.mColsE xE) []) $ TE.functionE TE.inverse (rE :> TNil)

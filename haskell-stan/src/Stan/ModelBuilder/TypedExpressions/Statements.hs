@@ -144,7 +144,7 @@ assign = SAssign
 -- doing it this way avoids using Stans += syntax.  I just expand.
 -- to do otherwise I would have to add a constructor to Stmt
 opAssign :: (ta ~ BinaryResultT bop ta tb) => SBinaryOp bop -> UExpr ta -> UExpr tb -> UStmt
-opAssign op ea eb = assign ea $ binaryOpE op ea eb
+opAssign = SOpAssign
 
 plusEq :: (ta ~ BinaryResultT BAdd ta tb) => UExpr ta -> UExpr tb -> UStmt
 plusEq = opAssign SAdd
@@ -337,6 +337,7 @@ data Stmt :: (EType -> Type) -> Type where
   SDeclare ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> Stmt r
   SDeclAssign :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> Stmt r
   SAssign :: r t -> r t -> Stmt r
+  SOpAssign :: (ta ~ BinaryResultT op ta tb) => SBinaryOp op -> r ta -> r tb -> Stmt r
   STarget :: r EReal -> Stmt r
   SSample :: r st -> Density st args -> TypedList r args -> Stmt r
   SFor :: Traversable f => Text -> r EInt -> r EInt -> f (Stmt r) -> Stmt r
@@ -358,6 +359,7 @@ data StmtF :: (EType -> Type) -> Type -> Type where
   SDeclareF ::  Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> StmtF r a
   SDeclAssignF :: Text -> StanType et -> DeclIndexVecF r et -> [VarModifier r (ScalarType et)] -> r et -> StmtF r a
   SAssignF :: r t -> r t -> StmtF r a
+  SOpAssignF :: (ta ~ BinaryResultT op ta tb) => SBinaryOp op -> r ta -> r tb -> StmtF r a
   STargetF :: r EReal -> StmtF r a
   SSampleF :: r st -> Density st args -> TypedList r args -> StmtF r a
   SForF :: Traversable f => Text -> r EInt -> r EInt -> f a -> StmtF r a
@@ -399,6 +401,7 @@ instance Functor (StmtF f) where
     SDeclareF txt st divf vms -> SDeclareF txt st divf vms
     SDeclAssignF txt st divf vms rhse -> SDeclAssignF txt st divf vms rhse
     SAssignF ft ft' -> SAssignF ft ft'
+    SOpAssignF op ft ft' -> SOpAssignF op ft ft'
     STargetF f' -> STargetF f'
     SSampleF fst dis al -> SSampleF fst dis al
     SForF ctr startE endE body -> SForF ctr startE endE (f <$> body)
@@ -421,6 +424,7 @@ instance Foldable (StmtF f) where
     SDeclareF {} -> mempty
     SDeclAssignF {} -> mempty
     SAssignF {} -> mempty
+    SOpAssignF {} -> mempty
     STargetF {} -> mempty
     SSampleF {} -> mempty
     SForF _ _ _ body -> foldMap f body
@@ -443,6 +447,7 @@ instance Traversable (StmtF f) where
     SDeclareF txt st divf vms -> pure $ SDeclareF txt st divf vms
     SDeclAssignF txt st divf vms fet -> pure $ SDeclAssignF txt st divf vms fet
     SAssignF ft ft' -> pure $ SAssignF ft ft'
+    SOpAssignF op ft ft' -> pure $ SOpAssignF op ft ft'
     STargetF f -> pure $ STargetF f
     SSampleF fst dis al -> pure $ SSampleF fst dis al
     SForF txt f f' sfs -> SForF txt f f' <$> traverse g sfs
@@ -465,6 +470,7 @@ instance Functor (RS.Base (Stmt f)) => RS.Recursive (Stmt f) where
     SDeclare txt st divf vms -> SDeclareF txt st divf vms
     SDeclAssign txt st divf vms fet -> SDeclAssignF txt st divf vms fet
     SAssign ft ft' -> SAssignF ft ft'
+    SOpAssign op ft ft' -> SOpAssignF op ft ft'
     STarget f -> STargetF f
     SSample fst dis al -> SSampleF fst dis al
     SFor txt f f' sts -> SForF txt f f' sts
@@ -487,6 +493,7 @@ instance Functor (RS.Base (Stmt f)) => RS.Corecursive (Stmt f) where
     SDeclareF txt st divf vms -> SDeclare txt st divf vms
     SDeclAssignF txt st divf vms fet -> SDeclAssign txt st divf vms fet
     SAssignF ft ft' -> SAssign ft ft'
+    SOpAssignF op ft ft' -> SOpAssign op ft ft'
     STargetF f -> STarget f
     SSampleF fst dis al -> SSample fst dis al
     SForF txt f f' sts -> SFor txt f f' sts
@@ -509,6 +516,7 @@ instance TR.HFunctor StmtF where
     SDeclareF txt st divf vms -> SDeclareF txt st (TR.hfmap nat divf) (fmap (TR.hfmap nat) vms)
     SDeclAssignF txt st divf vms rhe -> SDeclAssignF txt st (TR.hfmap nat divf) (fmap (TR.hfmap nat) vms) (nat rhe)
     SAssignF lhe rhe -> SAssignF (nat lhe) (nat rhe)
+    SOpAssignF op lhe rhe -> SOpAssignF op (nat lhe) (nat rhe)
     STargetF rhe -> STargetF (nat rhe)
     SSampleF gst dis al -> SSampleF (nat gst) dis (TR.hfmap nat al)
     SForF txt se ee body -> SForF txt (nat se) (nat ee) body
@@ -531,6 +539,7 @@ instance TR.HTraversable StmtF where
     SDeclareF txt st indexEs vms -> SDeclareF txt st <$> TR.htraverse natM indexEs <*> traverse (TR.htraverse natM) vms
     SDeclAssignF txt st indexEs vms rhe -> SDeclAssignF txt st <$> TR.htraverse natM indexEs <*> traverse (TR.htraverse natM) vms <*> natM rhe
     SAssignF lhe rhe -> SAssignF <$> natM lhe <*> natM rhe
+    SOpAssignF op lhe rhe -> SOpAssignF op <$> natM lhe <*> natM rhe
     STargetF re -> STargetF <$> natM re
     SSampleF ste dist al -> SSampleF <$> natM ste <*> pure dist <*> TR.htraverse natM al
     SForF txt se ee body -> SForF txt <$> natM se <*> natM ee <*> pure body

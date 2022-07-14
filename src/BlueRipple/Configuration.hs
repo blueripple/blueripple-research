@@ -175,9 +175,9 @@ postPaths localRoot siP iP ldP postRel = do
   let pp = absPostPaths
            localRoot
            $ PostPaths
-           ([Path.reldir|research|] </> siP)
-           ([Path.reldir|research|] </> iP)
-           ([Path.reldir|research|] </> ldP)
+           ([Path.reldir|typedExpressions|] </> siP)
+           ([Path.reldir|typedExpressions|] </> iP)
+           ([Path.reldir|typedExpressions|] </> ldP)
            ([Path.reldir|blueripple.github.io/Draft|] </> postRel)
            ([Path.reldir|blueripple.github.io|] </> postRel)
            ([Path.absdir|/blueripple.github.io/Draft|] </> postRel)

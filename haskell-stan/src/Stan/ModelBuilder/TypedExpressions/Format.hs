@@ -67,6 +67,7 @@ stmtToCodeAlg = \case
   SDeclareF txt st divf vms -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <> PP.semi
   SDeclAssignF txt st divf vms rhs -> Right $ stanDeclHead st (unK <$> DT.toList (unDeclIndexVecF divf)) vms <+> PP.pretty txt <+> PP.equals <+> unK rhs <> PP.semi
   SAssignF lhs rhs -> Right $ unK lhs <+> PP.equals <+> unK rhs <> PP.semi
+  SOpAssignF op lhs rhs -> Right $ unK lhs <+> opDoc op <> PP.equals <+> unK rhs <> PP.semi
   STargetF rhs -> Right $ "target +=" <+> unK rhs <> PP.semi
   SSampleF lhs (Density dn _ _ rF) al -> Right $ unK lhs <+> "~" <+> PP.pretty dn <> PP.parens (csArgList $ rF al) <> PP.semi
   SForF txt fe te body -> (\b -> "for" <+> PP.parens (PP.pretty txt <+> "in" <+> unK fe <> PP.colon <> unK te) <+> bracketBlock b) <$> sequenceA body
@@ -100,7 +101,8 @@ stanDeclHead :: StanType t -> [CodePP] -> [VarModifier (K CodePP) (ScalarType t)
 stanDeclHead st il vms = case st of
   StanArray sn st -> let (adl, sdl) = List.splitAt (fromIntegral $ DT.snatToNatural sn) il
                      in "array" <> indexCodeL adl <+> stanDeclHead st sdl vms
-  _ -> PP.pretty (stanTypeName st)  <> indexCodeL il <> varModifiersToCode vms
+--  _ -> PP.pretty (stanTypeName st)  <> indexCodeL il <> varModifiersToCode vms
+  _ -> PP.pretty (stanTypeName st) <> varModifiersToCode vms <> indexCodeL il
   where
     vmToCode = \case
       VarLower x -> "lower" <> PP.equals <> unK x

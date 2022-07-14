@@ -109,6 +109,12 @@ type family IfNumber (et :: EType) (a :: k) (b :: k) :: k where
   IfNumber EComplex a _ = a
   IfNumber _ _ b = b
 
+type family IfRealNumber (et :: EType) (a :: k) (b :: k) :: k where
+  IfRealNumber EInt a _ = a
+  IfRealNumber EReal a _ = a
+  IfRealNumber _ _ b = b
+
+
 type family IfNumbers (a :: EType) (b :: EType) (c :: k) (d :: k) where
   IfNumbers a b c d = IfNumber a (IfNumber b c d) d
 

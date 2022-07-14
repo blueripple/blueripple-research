@@ -201,7 +201,7 @@ generateLogLikelihood' llSet =  SB.inBlock SB.SBLogLikelihood $ do
           pF <- pFCW
           TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (namedIntE $ dataSetSizeName rtt))
             $ \nE -> [TE.sliceE TE.s0 nE logLikE `TE.assign` SMD.familyLDF d (yF nE) (pF nE)]
-        put $ TE.namedSizeE (SB.dataSetSizeName rtt) : prevSizes
+        put $ TE.namedE (SB.dataSetSizeName rtt) TE.SInt: prevSizes
         pure rtt
       doList ::  SB.RowTypeTag a -> LLDetailsList a -> StateT [TE.UExpr TE.EInt] (SB.StanBuilderM md gq) (SB.RowTypeTag a)
       doList rtt (LLDetailsList lls) = traverse_ (doOne rtt) lls >> pure rtt
@@ -226,7 +226,7 @@ generatePosteriorPrediction' rtt nds sDist psFCW f = SB.inBlock SB.SBGeneratedQu
   let rngE nE = SMD.familyRNG sDist (psF nE)
   ppE <- SB.stanDeclareN nds
   SB.addStmtToCode
-    $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedSizeE $ SB.dataSetSizeName rtt))
+    $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (TE.namedE (SB.dataSetSizeName rtt) TE.SInt))
     $ \nE -> [TE.sliceE TE.s0 nE ppE `TE.assign` f (rngE nE)]
   return ppE
 
@@ -409,8 +409,8 @@ postStratifiedParameterF prof block varNameM rtt gtt grpIndex wgtsV pV reIndexRt
   psByGroupFunction
   let dsName = SB.dataSetName rtt
       gName = SB.taggedGroupName gtt
-      dsSizeE = TE.namedSizeE $ SB.dataSetSizeName rtt
-      grpSizeE = TE.namedSizeE $ SB.groupSizeName gtt
+      dsSizeE = TE.namedE (SB.dataSetSizeName rtt) TE.SInt
+      grpSizeE = TE.namedE (SB.groupSizeName gtt) TE.SInt
       psDataByGroupName = dsName <> "_By_" <> gName
       indexName = SB.dataSetName rtt <> "_" <> SB.taggedGroupName gtt
       varName = case reIndexRttM of
@@ -427,7 +427,7 @@ postStratifiedParameterF prof block varNameM rtt gtt grpIndex wgtsV pV reIndexRt
         [probV `TE.assign` TE.functionE ps_by_group (dsSizeE :>  grpSizeE :> grpIndex :> wgtsV :> pV :> TNil)]
       pure probV
     Just (reIndexRtt, reIndex) -> do
-      riProb <-  SB.stanDeclare varName $ TE.vectorSpec (TE.namedSizeE $ SB.dataSetSizeName reIndexRtt) [] --(SB.StanVector $ SB.NamedDim reIndexKey) ""
+      riProb <-  SB.stanDeclare varName $ TE.vectorSpec (TE.namedE (SB.dataSetSizeName reIndexRtt) TE.SInt) [] --(SB.StanVector $ SB.NamedDim reIndexKey) ""
       SB.addStmtToCode $ scopeF $ TE.writerL' $ do
         gProb <- TE.declareRHSW psDataByGroupName grpVecDS $ TE.functionE ps_by_group (dsSizeE :>  grpSizeE :> grpIndex :> wgtsV :> pV :> TNil)
         TE.addStmt $ riProb `TE.assign` TE.indexE TE.s0 reIndex gProb

@@ -1333,9 +1333,7 @@ addColumnJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
               -> (r -> x)
               -> StanBuilderM md gq (TE.UExpr t)
 addColumnJson rtt ndsF toX = do
-  let dsName = dataSetName rtt
-      sizeName = dataSetName rtt --"N" <> underscoredIf dsName
-  lE <- addLengthJson rtt sizeName dsName -- ??
+  lE <- addLengthJson rtt (dataSetSizeName rtt) (dataSetName rtt)
   let nds = ndsF lE
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayF toX)
 
@@ -1366,9 +1364,7 @@ addColumnMJson :: (Typeable md, Typeable gq, Aeson.ToJSON x
                -> (r -> Either Text x)
                -> StanBuilderM md gq (TE.UExpr t)
 addColumnMJson rtt ndsF toMX = do
-  let dsName = dataSetName rtt
-  let sizeName = "N_" <> dsName
-  lE <- addLengthJson rtt sizeName dsName -- ??
+  lE <- addLengthJson rtt (dataSetSizeName rtt) (dataSetName rtt) -- ??
   let nds = ndsF lE
 --  let fullName = name <> "_" <> dsName
   addJson rtt nds (Stan.valueToPairF (TE.declName nds) $ Stan.jsonArrayEF toMX)
