@@ -86,6 +86,10 @@ import qualified Data.Vector.Unboxed as UVec
 import qualified BlueRipple.Utilities.KnitUtils as K
 import qualified BlueRipple.Data.Loaders.Redistricting as BR
 import qualified BlueRipple.Data.CountFolds as BRQ
+import BlueRipple.Data.Quantiles (quantileLookup')
+import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
+import qualified Data.Array as Array
+import qualified Data.List as List
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -999,10 +1003,52 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   tsneResult <- K.ignoreCacheTime tsneResult_C
   let (tsneWith, tsneWithMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] tsneResult sortedFilteredModelAndDRA
   when (not $ null tsneWithMissing) $ K.knitError $ "Missing keys tsneWith join."
-  let nwQuantiles = BRQ.quantileLookup (\r -> 1 - F.rgetField @BR.WhiteFrac r) 10 sortedFilteredModelAndDRA
-      gowQuantiles = BRQ.quantileLookup (F.rgetField @BRE.FracGradOfWhite) 10 sortedFilteredModelAndDRA
-      densQuantiles = BRQ.quantileLookup (F.rgetField @DT.PopPerSqMile) 10 sortedFilteredModelAndDRA
+  let nwShare r = 1 - F.rgetField @BR.WhiteFrac r
+      gowShare = F.rgetField @BRE.FracGradOfWhite
+      dens = F.rgetField @DT.PopPerSqMile
+      nwQBs = BRQ.quantileBreaks nwShare 10 sortedFilteredModelAndDRA
+      gowQBs = BRQ.quantileBreaks gowShare 10 sortedFilteredModelAndDRA
+      densQBs = BRQ.quantileBreaks dens 10 sortedFilteredModelAndDRA
+      nwQuantiles = BRQ.quantileLookup' nwShare nwQBs
+      gowQuantiles = BRQ.quantileLookup' gowShare gowQBs
+      densQuantiles = BRQ.quantileLookup' dens densQBs
+      histDFilter r = F.rgetField @TwoPartyDShare r >= 0.5
+      histRFilter r = F.rgetField @TwoPartyDShare r < 0.5
+      nwQBs20 = BRQ.quantileBreaks nwShare 20 sortedFilteredModelAndDRA
+      gowQBs20 = BRQ.quantileBreaks gowShare 20 sortedFilteredModelAndDRA
+      densQBs20 = BRQ.quantileBreaks dens 20 sortedFilteredModelAndDRA
+      nwQuantiles20 = fmap realToFrac . quantileLookup' nwShare nwQBs20
+      gowQuantiles20 = fmap realToFrac . quantileLookup' gowShare gowQBs20
+      densQuantiles20 = fmap realToFrac . quantileLookup' dens densQBs20
+      notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
+      dMedian sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
+      rMedian sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) sortedFilteredModelAndDRA) >>= BRQ.medianE qf
+      dRanks sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) sortedFilteredModelAndDRA) >>= traverse qf . FL.fold FL.list
+      rRanks sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) sortedFilteredModelAndDRA) >>= traverse qf . FL.fold FL.list
+      sameState r r' = F.rgetField @BR.StateAbbreviation r == F.rgetField @BR.StateAbbreviation r'
+      addDistToSBC comp r (n, qf) = case comp of
+        SBCNational -> SBComparison n <$> qf r <*> dMedian (const True) qf <*> rMedian (const True) qf
+        SBCState -> SBComparison n <$> qf r <*> dMedian (sameState r) qf <*> rMedian (sameState r) qf
+      addDistToSBCs comp r = traverse (addDistToSBC comp r) [("%Voters-of-color", nwQuantiles20), ("%Grad-among-White", gowQuantiles20), ("Density", densQuantiles20)]
+      getSBD :: Text -> [Double] -> SBData
+      getSBD n x = SBData n lo hi
+        where
+          l = length x
+          x' = sort x
+          quartileN = l `div` 4
+          lo = x' List.!! quartileN
+          hi = x' List.!! (l - quartileN)
 
+  dNWLoHi <- K.knitEither $  getSBD "%Voters-of-color" <$> dRanks (const True) nwQuantiles20
+  dGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> dRanks (const True) gowQuantiles20
+  dDensLoHi <- K.knitEither $ getSBD "Density" <$> dRanks (const True) densQuantiles20
+  rNWLoHi <- K.knitEither $ getSBD "%Voters-of-color" <$> rRanks (const True) nwQuantiles20
+  rGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> rRanks (const True) gowQuantiles20
+  rDensLoHi <- K.knitEither $ getSBD "Density" <$> rRanks (const True) densQuantiles20
+  let dRanksSBD = [dNWLoHi, dGOWLoHi, dDensLoHi]
+      rRanksSBD = [rNWLoHi, rGOWLoHi, rDensLoHi]
+--  putTextLn $ show dRanksSBD
+--  putTextLn $ show rRanksSBD
 --  BR.logFrame tsneResult
   let districtCompare x y =
         let
@@ -1036,9 +1082,24 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     let withCategories = addCategoriesToRecords categorized
         (tsneWithCategories, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] tsneResult withCategories
     traverse_ (uncurry fTable) categorized
+--    let getSBCs :: Monad m
+--                => F.Record [BR.StateAbbreviation, ET.DistrictName]
+--                -> StateT (Map (F.Record [BR.StateAbbreviation, ET.DistrictName]) (Either Text [SBComparison])) m (Either Text [SBComparison])
+    let getSBCs comp d = do
+          let dk = (F.rgetField @BR.StateAbbreviation d, F.rgetField @ET.DistrictName d)
+          m <- gets (getSBCMap comp)
+          case M.lookup dk m of
+            Just sbcs -> return sbcs
+            Nothing -> do
+              let sbcs = addDistToSBCs comp d
+                  newMap = M.insert dk sbcs m
+              modify $ updateSBCMap comp newMap
+              return sbcs
+
     K.addHvega Nothing Nothing
       $ BRDC.tsneChartCat @DistCategory "All" "Category" (FV.ViewConfig 600 600 5) (fmap F.rcast tsneWithCategories)
-    let distKey r = F.rgetField @BR.StateAbbreviation r <> "-"  <> F.rgetField @ET.DistrictName r
+    let distKey r = F.rgetField @BR.StateAbbreviation r <> "-"
+                    <> (let dn = F.rgetField @ET.DistrictName r in if T.length dn == 1 then "0" <> dn else dn)
         tsneMapPair r = (distKey r, (F.rgetField @BRDC.TSNE1 r, F.rgetField @BRDC.TSNE2 r))
         tsneDistMap = FL.fold (FL.premap tsneMapPair FL.map) tsneResult
         tsneResFilter radius t1 t2 r =
@@ -1048,17 +1109,33 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     let tsneEach d = do
           let dk = distKey d
           case M.lookup dk tsneDistMap of
-            Nothing -> K.knitError $ dk <> " is missing from tsne Results"
+            Nothing -> lift $ K.knitError $ dk <> " is missing from tsne Results"
             Just (t1, t2) -> do
               let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) tsneWith
-              BR.brAddRawHtmlTable dk
+              lift $ BR.brAddRawHtmlTable dk
                 (BHA.class_ "brTable")
                 (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
                 (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
-              K.addHvega Nothing Nothing
+              lift $ K.addHvega Nothing Nothing
                 $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+              sbcsNatE <- getSBCs SBCNational $ F.rcast d
+              sbcsNat <- lift $ K.knitEither sbcsNatE
+              lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
+              sbcsStE <- getSBCs SBCState $ F.rcast d
+              case sbcsStE of
+                Left _ -> pure ()
+                Right sbcsSt -> (lift $ K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
+              let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
+                  eachNear dNear = do
+                    let dkNear = distKey dNear
+                    sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
+                    sbcsNear <- lift $ K.knitEither sbcsNearE
+                    lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
+              traverse_ eachNear tsneNear'
               pure ()
-    traverse_ (traverse_ tsneEach) $ fmap snd $ categorized
+    evalStateT
+      (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized)
+      (SBCS mempty mempty)
     pure ()
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
@@ -1067,6 +1144,17 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 --      sortedFilteredModelAndDRA
   pure ()
 
+data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
+data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])
+                     , sbcState :: Map (Text, Text) (Either Text [SBComparison])
+                     }
+getSBCMap :: SBCComp -> SBCS ->  Map (Text, Text) (Either Text [SBComparison])
+getSBCMap SBCNational = sbcNational
+getSBCMap SBCState = sbcState
+
+updateSBCMap :: SBCComp -> Map (Text, Text) (Either Text [SBComparison]) -> SBCS -> SBCS
+updateSBCMap SBCNational m sbcs = sbcs { sbcNational = m }
+updateSBCMap SBCState m sbcs = sbcs { sbcState = m }
 
 
 allCDsColonnade nwQ gowQ dQ cas =
@@ -1093,31 +1181,74 @@ allCDsColonnade nwQ gowQ dQ cas =
      <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
      <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
 
-{-
-tseNearColonnade nwQ gowQ dQ cas =
-  let state = F.rgetField @DT.StateAbbreviation
-      dName = F.rgetField @ET.DistrictName
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      fracNW r = 1 - F.rgetField @BR.WhiteFrac r
-      qF x = case x of
-        Left _ -> BR.textToStyledHtml "Err"
-        Right n -> BR.numberToStyledHtml "%d" n
-      fracGOW r = F.rgetField @BRE.FracGradOfWhite r
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
-     <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
-     <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracNW))
-     <> C.headed "NW Quantile" (BR.toCell cas "NWQ" "NWQ" (qF . nwQ))
-     <> C.headed "%Grad-White" (BR.toCell cas "%GW" "%GW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracGOW))
-     <> C.headed "GOW Quantile" (BR.toCell cas "GOWQ" "GOWQ" (qF . gowQ))
-     <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . F.rgetField @DT.PopPerSqMile))
-     <> C.headed "Density Quantile" (BR.toCell cas "DQ" "DQ" (qF . dQ))
--}
 
+
+data SBComparison = SBComparison { sbcName :: Text, sbcDistVal :: Double, sbcDMid :: Double, sbcRMid :: Double}
+sbcToVGData :: Bool -> Double -> Double -> Text -> SBComparison -> [GV.DataRow]
+sbcToVGData p gr cr dn sbc = GV.dataRow [("Stat", GV.Str $ sbcName sbc)
+                                      ,("Type",GV.Str dn)
+                                      ,("Rank", GV.Number $ cr * (sbcDistVal sbc)/gr)
+                                      ,("Size", GV.Number $ if p then 50 else 25)
+                                      ]
+                           $ GV.dataRow [("Stat", GV.Str $ sbcName sbc)
+                                        ,("Type",GV.Str "D Median")
+                                        ,("Rank", GV.Number $ cr * (sbcDMid sbc)/gr)
+                                        ,("Size", GV.Number 10)
+                                        ]
+                           $ GV.dataRow  [("Stat", GV.Str $ sbcName sbc)
+                                         ,("Type",GV.Str "R Median")
+                                         ,("Rank", GV.Number $ cr * (sbcRMid sbc)/gr)
+                                         ,("Size", GV.Number 10)
+                                         ]
+                  []
+
+data SBData = SBData { sbdName :: Text, sbdLo :: Double, sbdHi :: Double} deriving Show
+sbdToVGData :: Double -> Double -> SBData -> [GV.DataRow]
+sbdToVGData gr cr sbd = GV.dataRow [("Stat", GV.Str $ sbdName sbd)
+                                   , ("Lo", GV.Number $ cr * (sbdLo sbd)/gr)
+                                   , ("Hi", GV.Number $ cr * (sbdHi sbd)/gr)
+                                   ]
+                        []
+
+sbcChart :: SBCComp -> Int -> Int -> FV.ViewConfig -> [SBData] -> [SBData] -> NonEmpty (Text, Bool, [SBComparison]) -> GV.VegaLite
+sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
+  let datEach (dn, p, sbcs) =  concatMap (sbcToVGData p (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
+      dName (dn, _, _) = dn
+      distDat = GV.dataFromRows [] $ concatMap datEach sbcsByDist --GV.dataFromRows [] $ concatMap (sbcToVGData (realToFrac givenRange) (realToFrac chartRange) dn) sbcs
+      dRanksDat = GV.dataFromRows [] $ concatMap (sbdToVGData (realToFrac givenRange) (realToFrac chartRange)) dSBDs
+      rRanksDat = GV.dataFromRows [] $ concatMap (sbdToVGData (realToFrac givenRange) (realToFrac chartRange)) rSBDs
+      dat = GV.datasets [("districts", distDat), ("dRanks", dRanksDat), ("rRanks", rRanksDat)]
+      encStatName = GV.position GV.Y [GV.PName "Stat", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
+                                     ,GV.PSort [GV.CustomSort (GV.Strings ["Density", "%Voters-of-color", "%Grad-among-White"])]]
+      encRank = GV.position GV.X [GV.PName "Rank", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0, realToFrac chartRange]]]
+      typeScale = case length sbcsByDist of
+                    1 -> let dn = dName $ head sbcsByDist
+                         in  [GV.MScale [GV.SDomain (GV.DStrings ["R Median", dn, "D Median"]), GV.SRange (GV.RStrings ["red", "orange", "blue"])]]
+                    2 -> let [dn1, dn2] = dName <$> toList sbcsByDist
+                         in [GV.MScale [GV.SDomain (GV.DStrings ["R Median", dn1, dn2, "D Median"]), GV.SRange (GV.RStrings ["red", "orange", "green", "blue"])]]
+                    _ -> []
+      encTypeC = GV.color ([GV.MName "Type", GV.MmType GV.Nominal{-,  GV.MSort [GV.CustomSort (GV.Strings ["Rep Median", dn, "Dem Median"])] -}
+                         , GV.MNoTitle, GV.MLegend [GV.LOrient GV.LOBottom]] ++ typeScale)
+      encSize = GV.size [GV.MName "Size", GV.MmType GV.Quantitative, GV.MNoTitle, GV.MLegend []]
+--      encTypeS = GV.shape [GV.MName "Type", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort (GV.Strings ["Dem Median", dn, "Rep Median"])]
+--                         , GV.MNoTitle]
+--      encTypeD = GV.detail [GV.DName "Type", GV.DmType GV.Nominal]
+      districtsEnc = GV.encoding . encStatName . encRank . encTypeC . encSize
+      distMark = GV.mark GV.Point [] --[GV.MSize 50, GV.MOpacity 0.7]
+      cText = case comp of
+        SBCNational -> "National"
+        SBCState -> "State"
+      districtSpec = GV.asSpec [districtsEnc [], distMark, GV.dataFromSource "districts" []]
+      encLo = GV.position GV.X [GV.PName "Lo", GV.PmType GV.Quantitative, GV.PNoTitle]
+      encHi = GV.position GV.X2 [GV.PName "Hi", GV.PmType GV.Quantitative, GV.PNoTitle]
+      dRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "blue", GV.MSize 3, GV.MYOffset (-1)]
+      dRuleEnc = GV.encoding . encStatName . encLo . encHi
+      dRuleSpec = GV.asSpec [dRuleEnc [], dRule, GV.dataFromSource "dRanks" []]
+      rRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "red", GV.MSize 3, GV.MYOffset 1]
+      rRuleEnc = GV.encoding . encStatName . encLo . encHi
+      rRuleSpec = GV.asSpec [rRuleEnc [], rRule, GV.dataFromSource "rRanks" []]
+      title = if length sbcsByDist == 1 then (dName $ head sbcsByDist) <> ": " <> cText <> " Demographics" else "National Demographic Comparison"
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [districtSpec, dRuleSpec, rRuleSpec], dat]
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
             => Text
@@ -1549,7 +1680,7 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
         where draCompetitive = fromMaybe False $ fmap (between draShareRangeCD) $ M.lookup n cdDRAMap
               brCompetitive = fromMaybe False $ fmap (between brShareRange) $ M.lookup n cdModelMap
       sortedModelAndDRA = reverse $ sortOn share50 $ FL.fold FL.list modelDRA
-  let overlapsMMap (dt, dn) = M.lookup dt (overlaps postSpec) >>= (\d -> DO.overlapsOverThresholdForRowByName 0.25 d dn)
+  let overlapsMMap (dt, dn) = M.lookup dt (overlaps postSpec) >>= (\d -> DO.overlapsOverThresholdForRowByName 0.5 d dn)
       tableCAS ::  (F.ElemOf rs BRE.ModeledShare, F.ElemOf rs TwoPartyDShare, F.ElemOf rs ET.DistrictName, F.ElemOf rs ET.DistrictTypeC)
                => BR.CellStyle (F.Record rs) String
       tableCAS =  modelVsHistoricalTableCellStyle brShareRange draShareRangeSLD <> "border: 3px solid green" `BR.cellStyleIf` \r h -> f r && h == "CD Overlaps"
@@ -1568,6 +1699,14 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       interestingFilter r = F.rcast @[ET.DistrictTypeC, ET.DistrictName] r `Set.member` interestingDistricts
   K.logLE K.Info $ "For " <> districtDescription postSpec <> " in " <> stateAbbr postSpec
     <> " there are " <> show (length interestingDistricts) <> " interesting districts."
+  -- for Sawbuck
+  let sawBuckFilter r = dra r >= (48 :: Int) && dra r <= (52 :: Int)
+      sawBuckDelta r = dra r - modMid r
+  BR.brAddRawHtmlTable
+    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: Sawbuck Sort")
+    (BHA.class_ "brTable")
+    (dmColonnadeOverlap overlapsMMap tableCAS)
+    (sortOn sawBuckDelta $ filter sawBuckFilter sortedModelAndDRA)
   categorized <- categorizeDistricts' (contested postSpec . F.rcast) brShareRange draShareRangeSLD dCategories3 sortedModelAndDRA
   let fTable t ds = do
         when (not $ null ds)
