@@ -48,6 +48,7 @@ import qualified Data.Map.Strict as Map
 
 import qualified Prettyprinter as PP
 import Prettyprinter ((<+>))
+import qualified Data.GADT.Compare as DT
 --import qualified Data.List.NonEmpty.Extra as List
 
 
@@ -155,52 +156,52 @@ ifElseCode ecNE c = do
   return $ blockCode' ecNE
 
 data  IExprCode :: Type where
-  Unsliced :: CodePP -> IExprCode
-  Oped :: SBinaryOp op -> CodePP -> IExprCode -- has an binary operator in it so might need parentheses
-  Sliced :: CodePP -> IM.IntMap IExprCode -> IExprCode -- needs indexing
+  Bare :: CodePP -> IExprCode
+  Oped :: CodePP -> IExprCode -- has a binary operator in it so might need parentheses
+  Indexed :: CodePP -> [Int] -> IM.IntMap IExprCode -> IExprCode -- needs indexing. Carries *already sliced* indices and index expressions
 
 data IExprCodeF :: Type -> Type where
-  UnslicedF :: CodePP -> IExprCodeF a
-  OpedF :: SBinaryOp op -> CodePP -> IExprCodeF a
-  SlicedF :: CodePP -> IM.IntMap a -> IExprCodeF a
+  BareF :: CodePP -> IExprCodeF a
+  OpedF :: CodePP -> IExprCodeF a
+  IndexedF :: CodePP -> [Int] -> IM.IntMap a -> IExprCodeF a
 
 instance Functor IExprCodeF where
   fmap f = \case
-    UnslicedF doc -> UnslicedF doc
-    OpedF b c -> OpedF b c
-    SlicedF c im -> SlicedF c (f <$> im)
+    BareF doc -> BareF doc
+    OpedF c -> OpedF c
+    IndexedF c si im -> IndexedF c si (f <$> im)
 
 instance Foldable IExprCodeF where
   foldMap f = \case
-    UnslicedF doc -> mempty
-    OpedF _ _ -> mempty
-    SlicedF c im -> foldMap f im
+    BareF doc -> mempty
+    OpedF _ -> mempty
+    IndexedF _ _ im -> foldMap f im
 
 instance Traversable IExprCodeF where
   traverse g = \case
-    UnslicedF doc -> pure $ UnslicedF doc
-    OpedF b c -> pure $ OpedF b c
-    SlicedF c im -> SlicedF c <$> traverse g im
+    BareF doc -> pure $ BareF doc
+    OpedF c -> pure $ OpedF c
+    IndexedF c si im -> IndexedF c si <$> traverse g im
 
 type instance RS.Base IExprCode = IExprCodeF
 
 instance RS.Recursive IExprCode where
   project = \case
-    Unsliced doc -> UnslicedF doc
-    Oped b c -> OpedF b c
-    Sliced iec im -> SlicedF iec im
+    Bare doc -> BareF doc
+    Oped c -> OpedF c
+    Indexed iec si im -> IndexedF iec si im
 
 instance RS.Corecursive IExprCode where
   embed = \case
-    UnslicedF doc -> Unsliced doc
-    OpedF b c -> Oped b c
-    SlicedF doc im -> Sliced doc im
+    BareF doc -> Bare doc
+    OpedF c -> Oped c
+    IndexedF doc si im -> Indexed doc si im
 
 iExprToDocAlg :: IExprCodeF CodePP -> CodePP
 iExprToDocAlg = \case
-  UnslicedF doc -> doc
-  OpedF b c -> c
-  SlicedF doc im -> doc <> PP.brackets (mconcat $ PP.punctuate ", " $ withLeadingEmpty im) -- or hsep?
+  BareF doc -> doc
+  OpedF c -> c
+  IndexedF doc _ im -> doc <> PP.brackets (mconcat $ PP.punctuate ", " $ withLeadingEmpty im)
 
 withLeadingEmpty :: IntMap CodePP -> [CodePP]
 withLeadingEmpty im = imWLE where
@@ -216,38 +217,52 @@ csArgList = mconcat . PP.punctuate (PP.comma <> PP.space) . argsKToList
 -- I am not sure about/do not understand the quantified constraint here.
 exprToDocAlg :: IAlg LExprF (K IExprCode) -- LExprF ~> K IExprCode
 exprToDocAlg = K . \case
-  LNamed txt st -> Unsliced $ PP.pretty txt
-  LInt n -> Unsliced $ PP.pretty n
-  LReal x -> Unsliced $ PP.pretty x
-  LComplex x y -> Unsliced $ PP.parens $ PP.pretty x <+> "+" <+> "i" <> PP.pretty y -- (x + iy))
-  LString t -> Unsliced $ PP.dquotes $ PP.pretty t
-  LVector xs -> Unsliced $ PP.brackets $ PP.pretty $ T.intercalate ", " (show <$> xs)
-  LMatrix ms -> Unsliced $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
-  LArray nv -> Unsliced $ nestedVecToCode nv
-  LFunction (Function fn _ _) al -> Unsliced $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
-  LDensity (Density dn _ _) k al -> Unsliced $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
-  LBinaryOp sbo le re -> Oped sbo $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
-  LUnaryOp op e -> Unsliced $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
-  LCond ce te fe -> Unsliced $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
+  LNamed txt st -> Bare $ PP.pretty txt
+  LInt n -> Bare $ PP.pretty n
+  LReal x -> Bare $ PP.pretty x
+  LComplex x y -> Bare $ PP.parens $ PP.pretty x <+> "+" <+> "i" <> PP.pretty y -- (x + iy))
+  LString t -> Bare $ PP.dquotes $ PP.pretty t
+  LVector xs -> Bare $ PP.brackets $ PP.pretty $ T.intercalate ", " (show <$> xs)
+  LMatrix ms -> Bare $ unNestedToCode PP.brackets [length ms] $ PP.pretty <$> concatMap DT.toList ms--PP.brackets $ PP.pretty $ T.intercalate "," $ fmap (T.intercalate "," . fmap show . DT.toList) ms
+  LArray nv -> Bare $ nestedVecToCode nv
+  LIntRange leM ueM -> Oped $ maybe mempty (unK . f) leM <> PP.colon <> maybe mempty (unK . f) ueM
+  LFunction (Function fn _ _) al -> Bare $ PP.pretty fn <> PP.parens (csArgList $ hfmap f al)
+  LDensity (Density dn _ _) k al -> Bare $ PP.pretty dn <> PP.parens (unK (f k) <> PP.pipe <+> csArgList (hfmap f al))
+  LBinaryOp sbo le re -> Oped $ unK (f $ parenthesizeOped le) <+> opDoc sbo <+> unK (f $ parenthesizeOped re)
+  LUnaryOp op e -> Bare $ unaryOpDoc (unK (f $ parenthesizeOped e)) op
+  LCond ce te fe -> Bare $ unK (f ce) <+> "?" <+> unK (f te) <+> PP.colon <+> unK (f fe)
   LSlice sn ie e -> sliced sn ie e
+  LIndex sn ie e -> indexed sn ie e
   where
     f :: K IExprCode ~> K CodePP
     f = K . iExprToCode . unK
     parenthesizeOped :: K IExprCode ~> K IExprCode
     parenthesizeOped x = case unK x of
-       Oped bo doc -> K $ Oped bo $ PP.parens doc
+       Oped doc -> K $ Oped $ PP.parens doc
        x -> K x
-    slice :: SNat n -> K IExprCode EInt -> K IExprCode d -> IM.IntMap IExprCode -> IM.IntMap IExprCode
-    slice sn kei ke im = im'
+    addSlice :: SNat n -> K IExprCode EInt -> K IExprCode d -> [Int] -> IM.IntMap IExprCode -> ([Int], IM.IntMap IExprCode)
+    addSlice sn kei ke si im = (si', im')
       where
         newIndex :: Int = fromIntegral $ DT.snatToNatural sn
-        skip = IM.size $ IM.filterWithKey (\k _ -> k <= newIndex) im
-        im' = IM.insert (newIndex + skip) (unK kei) im
+        origIndex = let f n = if n `elem` si then f (n + 1) else n in f newIndex -- find the correct index in the original
+        si' = origIndex : si
+        im' = IM.alter (Just . maybe (unK kei) (sliced s0 kei . K)) origIndex im
     sliced :: SNat n -> K IExprCode EInt -> K IExprCode t -> IExprCode
     sliced sn kei ke = case unK ke of
-      Unsliced c -> Sliced c $ slice sn kei ke $ IM.empty
-      Oped _ c -> Sliced (PP.parens c) $ slice sn kei ke $ IM.empty
-      Sliced c im -> Sliced c $ slice sn kei ke im
+      Bare c -> let (si, im) = addSlice sn kei ke [] IM.empty in Indexed c si im
+      Oped c -> let (si, im) = addSlice sn kei ke [] IM.empty in Indexed (PP.parens c) si im
+      Indexed c si im -> let (si', im') = addSlice sn kei ke si im in Indexed c si' im'
+    addIndex :: SNat n -> K IExprCode (EArray (S Z) EInt) -> K IExprCode d -> [Int] -> IM.IntMap IExprCode -> IM.IntMap IExprCode
+    addIndex sn kre ke si im = im'
+      where
+        newIndex :: Int = fromIntegral $ DT.snatToNatural sn
+        origIndex = let f n = if n `elem` si then f (n + 1) else n in f newIndex
+        im' = IM.alter (Just . maybe (unK kre) (indexed s0 kre . K)) origIndex im
+    indexed :: SNat n -> K IExprCode (EArray (S Z) EInt) -> K IExprCode t -> IExprCode
+    indexed sn kei ke = case unK ke of
+      Bare c -> Indexed c [] $ addIndex sn kei ke [] IM.empty
+      Oped c -> Indexed (PP.parens c) [] $ addIndex sn kei ke [] IM.empty
+      Indexed c si im -> Indexed c si $ addIndex sn kei ke si im
 
 exprToIExprCode :: LExpr ~> K IExprCode
 exprToIExprCode = iCata exprToDocAlg

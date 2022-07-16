@@ -112,14 +112,15 @@ data ForType t = SpecificNumbered (UExpr EInt) (UExpr EInt)
                | SpecificIn (UExpr t)
                | IndexedIn SME.IndexKey (UExpr t)
 
-for :: Text -> ForType t -> NonEmpty UStmt -> UStmt
-for loopCounter ft body = case ft of
-  SpecificNumbered se' ee' -> SFor loopCounter se' ee' body
-  IndexedLoop ik -> SFor loopCounter (intE 1) (namedSizeE ik) $ bodyWithLoopCounterContext ik
-  SpecificIn e -> SForEach loopCounter e body
-  IndexedIn ik e -> SForEach loopCounter e $ bodyWithLoopCounterContext ik
+for :: Text -> ForType t -> (UExpr EInt -> NonEmpty UStmt) -> UStmt
+for loopCounter ft bodyF = case ft of
+  SpecificNumbered se' ee' -> SFor loopCounter se' ee' $ bodyF loopCounterE
+  IndexedLoop ik -> SFor loopCounter (intE 1) (namedSizeE ik) $ bodyF loopCounterE --bodyWithLoopCounterContext ik
+  SpecificIn e -> SForEach loopCounter e $ bodyF loopCounterE
+  IndexedIn ik e -> SForEach loopCounter e $ bodyF loopCounterE --bodyWithLoopCounterContext ik
   where
-    bodyWithLoopCounterContext ik = SContext (Just $ insertUseBinding ik (lNamedE loopCounter SInt)) body :| []
+    loopCounterE = namedE loopCounter SInt
+--    bodyWithLoopCounterContext ik = SContext (Just $ insertUseBinding ik (lNamedE loopCounter SInt)) body :| []
 
 ifThen :: UExpr EBool -> UStmt -> UStmt -> UStmt
 ifThen ce sTrue = SIfElse $ (ce, sTrue) :| []
@@ -158,8 +159,8 @@ scoped = SScoped
 context :: (IndexLookupCtxt -> IndexLookupCtxt) -> NonEmpty UStmt -> UStmt
 context cf = SContext (Just cf)
 
-insertUseBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
-insertUseBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
+insertIndexBinding :: SME.IndexKey -> LExpr (EArray (S Z) EInt) -> IndexLookupCtxt -> IndexLookupCtxt
+insertIndexBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt a (Map.insert k ie b)
 
 insertSizeBinding :: SME.IndexKey -> LExpr EInt -> IndexLookupCtxt -> IndexLookupCtxt
 insertSizeBinding k ie (IndexLookupCtxt a b) = IndexLookupCtxt (Map.insert k ie a) b
@@ -252,7 +253,7 @@ type instance RS.Base (Stmt f) = StmtF f
 type LStmt = Stmt LExpr
 type UStmt = Stmt UExpr
 
-data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indexes :: Map SME.IndexKey (LExpr EInt) }
+data IndexLookupCtxt = IndexLookupCtxt { sizes :: Map SME.IndexKey (LExpr EInt), indexes :: Map SME.IndexKey (LExpr (EArray (S Z) EInt)) }
 
 instance Functor (StmtF f) where
   fmap f x = case x of
@@ -366,7 +367,7 @@ instance TR.HFunctor StmtF where
     SAssignF lhe rhe -> SAssignF (nat lhe) (nat rhe)
     STargetF rhe -> STargetF (nat rhe)
     SSampleF gst dis al -> SSampleF (nat gst) dis (TR.hfmap nat al)
-    SForF txt se ee body -> SForF txt (nat se) (nat se) body
+    SForF txt se ee body -> SForF txt (nat se) (nat ee) body
     SForEachF txt gt body -> SForEachF txt (nat gt) body
     SIfElseF x0 sf -> SIfElseF (firstF nat x0) sf
     SWhileF g body -> SWhileF (nat g) body

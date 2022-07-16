@@ -60,7 +60,8 @@ import Stan.ModelBuilder.Expressions (LookupContext)
  - CStmt has index expressions to look up within statement and context changes in the lookup environment.
  - LStmt has all things looked up.  This is now a tree of statements with expressions.
 
-2. Optimization?
+2a. (Runtime) error checks?
+2b. Optimization (vectorization? CSE? Loop splitting or consolidating?)
 
 3a. LExpr ~> FormattedText (expressions to Text but in HFunctor form)
 3b. LStmt -> Stmt (FormattedText) (Statement tree with expressions to statement tree with Text for expressions.)
@@ -70,7 +71,7 @@ import Stan.ModelBuilder.Expressions (LookupContext)
 
 type LookupM = StateT IndexLookupCtxt (Either Text)
 
-lookupIndex :: SME.IndexKey -> LookupM (LExpr EInt)
+lookupIndex :: SME.IndexKey -> LookupM (LExpr (EArray (S Z) EInt))
 lookupIndex k = do
   im <- gets indexes
   case Map.lookup k im of
@@ -93,8 +94,16 @@ toLExprAlg = \case
 doLookups :: NatM LookupM UExpr LExpr
 doLookups = iCataM toLExprAlg
 
+
+handleContext :: StmtF r a -> LookupM (StmtF r a)
+handleContext = \case
+  SContextF mf body -> case mf of
+    Nothing -> pure $ SContextF Nothing body
+    Just f -> SContextF Nothing <$> withStateT f (pure body)
+  x -> pure x
+
 doLookupsInCStatement :: UStmt -> LookupM LStmt
-doLookupsInCStatement = RS.anaM (htraverse doLookups . RS.project)-- doLookupsInStatementC
+doLookupsInCStatement = RS.anaM (\x -> htraverse doLookups (RS.project x) >>= handleContext)
 
 doLookupsInStatementE :: IndexLookupCtxt -> UStmt -> Either Text LStmt
 doLookupsInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsInCStatement
@@ -122,24 +131,24 @@ type EExpr = IFix EExprF
 lExprToEExpr :: LExpr t -> EExpr t
 lExprToEExpr = iCata (IFix . EL)
 
-lookupIndexE :: SME.IndexKey -> LookupM (EExpr EInt)
+lookupIndexE :: SME.IndexKey -> LookupM (EExpr (EArray (S Z) EInt))
 lookupIndexE k =  do
   im <- gets indexes
   case Map.lookup k im of
     Just e -> pure $ lExprToEExpr e
-    Nothing -> pure $ IFix $ EE $ "<index: " <> k <> ">"
+    Nothing -> pure $ IFix $ EE $ "#index: " <> k <> "#"
 
 lookupSizeE :: SME.IndexKey -> LookupM (EExpr EInt)
 lookupSizeE k =  do
   im <- gets sizes
   case Map.lookup k im of
     Just e -> pure $ lExprToEExpr e
-    Nothing -> pure $ IFix $ EE $ "<size: " <> k <> ">"
+    Nothing -> pure $ IFix $ EE $ "#size: " <> k <> "#"
 
 type EStmt = Stmt EExpr
 
 doLookupsEInStatement :: UStmt -> LookupM EStmt
-doLookupsEInStatement = RS.anaM (htraverse doLookupsE . RS.project)
+doLookupsEInStatement = RS.anaM (\x -> htraverse doLookupsE (RS.project x) >>= handleContext)
 
 doLookupsEInStatementE :: IndexLookupCtxt -> UStmt -> Either Text EStmt
 doLookupsEInStatementE ctxt0 = flip evalStateT ctxt0 . doLookupsEInStatement
@@ -154,7 +163,7 @@ doLookupsE = iCataM $ \case
 eExprToIExprCode :: EExpr ~> K IExprCode
 eExprToIExprCode = iCata $ \case
   EL x -> exprToDocAlg x
-  EE t -> K $ Unsliced $ PP.pretty t
+  EE t -> K $ Bare $ PP.pretty t
 
 eExprToCode :: EExpr ~> K CodePP
 eExprToCode = K . iExprToCode . unK . eExprToIExprCode

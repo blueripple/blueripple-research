@@ -62,6 +62,8 @@ s2 :: SNat (S (S Z)) = DT.SS
 
 s3 :: SNat (S (S (S Z))) = DT.SS
 
+s4 :: SNat (S (S (S (S Z)))) = DT.SS
+
 -- popRandom :: forall n m a. (DT.SNatI n, DT.SNatI m) => Vec (DT.Plus n (S m)) a -> (a, Vec (DT.Plus n m) a)
 -- popRandom v = (a, vL DT.++ vR)
 --  where (vL, a ::: vR) = DT.split v :: (Vec n a, Vec (S m) a)
@@ -113,11 +115,31 @@ type family Sliced (n :: Nat) (a :: EType) :: EType where
   Sliced Z ESqMat = ERVec
   Sliced (S Z) ESqMat = ECVec
   Sliced _ ESqMat = TE.TypeError (TE.Text "Cannot slice (index) a matrix at a position other than 0 or 1.")
-  Sliced n (EArray m t) = ApplyDiffOrZeroToEType (DiffOrZero m n) (EArray m t)
+  Sliced n (EArray m t) = ApplyDiffOrZeroToEType (DiffOrZero m (S n)) (EArray m t)
 
 type family SliceInnerN (n :: Nat) (a :: EType) :: EType where
   SliceInnerN Z a = a
   SliceInnerN (S n) a = SliceInnerN n (Sliced Z a)
+
+type family IfLessOrEq (n :: Nat) (m :: Nat) (a :: EType) (b :: EType) :: EType where
+  IfLessOrEq Z Z a _ = a
+  IfLessOrEq Z (S n) a _ = a
+  IfLessOrEq (S n) Z _ b = b
+  IfLessOrEq (S n) (S m) a b = IfLessOrEq n m a b
+
+type family Indexed (n :: Nat) (a :: EType) :: EType where
+  Indexed Z ECVec = ECVec
+  Indexed _ ECVec = TE.TypeError (TE.Text "Attempt to index a vector at a position other than 0.")
+  Indexed Z ERVec = ERVec
+  Indexed _ ERVec = TE.TypeError (TE.Text "Attempt to index a row_vector at a position other than 0.")
+  Indexed Z EMat = EMat
+  Indexed (S Z) EMat = EMat
+  Indexed _ EMat = TE.TypeError (TE.Text "Attempt to index a matrix at a position other than 0 or 1.")
+  Indexed Z ESqMat = EMat
+  Indexed (S Z) ESqMat = EMat
+  Indexed _ ESqMat = TE.TypeError (TE.Text "Attempt to index a (square) matrix at a position other than 0 or 1.")
+  Indexed n (EArray m t) = IfLessOrEq (S n) (Dimension (EArray m t)) (EArray m t) (TE.TypeError (TE.Text "Attempt to index an array at too high an index."))
+  Indexed _ _ = TE.TypeError (TE.Text "Cannot index a scalar.")
 
 newtype DeclIndexVecF (r :: EType -> Type) (et :: EType) = DeclIndexVecF {unDeclIndexVecF :: Vec (DeclDimension et) (r EInt)}
 
