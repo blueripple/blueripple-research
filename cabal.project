@@ -16,11 +16,6 @@ source-repository-package
 
 source-repository-package
   type: git
-  location: https://github.com/sullyj3/relude
-  tag: 8f7e3a3be033fe11dbd00ebcf5cd7b00d1e459b6
-
-source-repository-package
-  type: git
   location: https://github.com/adamConnerSax/random-fu
   tag: a21105b269c77266bd74ec4a31e0924f7000e69a
   subdir: random-source
@@ -57,7 +52,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/knit-haskell
-  tag: e2ae66863861d8a677b70a4221c0df7a53ebbea4
+  tag: f93752d5fc21d443a52601181503ccda6c9e4d80
 
 source-repository-package
   type: git
@@ -78,12 +73,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: b172acf2035b153ee3f684477ece0d52a10a662d
+  tag: 1d6e991119a2fd75796f6508ad8f99343869a257
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 88838175c352792e0bbfdb7e66962da56e42b83f
+  tag: adbea69e59341ed6e0d5f315d06ed65214df782f
 
 --source-repository-package
 --  type: git
@@ -105,12 +100,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
-  tag: c10b6564524a83198389690f5c819e9405ba84f6
+  tag: 91c64d711f7222bec24ceae9f95ad31e6129e382
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/data-science-utils
-  tag: 99b195e34912c838b627adef6c563505e191e9f0
+  tag: fdab98f601cab75661ab6ae5792720d9ab69d668
 
 source-repository-package
   type: git
