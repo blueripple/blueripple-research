@@ -76,94 +76,6 @@ common deps
                , vector-builder >= 0.3.7 && < 0.4
                , vinyl >= 0.14 && < 0.15
 
-library  haskell-stan
-  build-depends: base >= 4.13 && < 4.17
-               , array >= 0.5.4 && < 0.6
-               , aeson >= 1.4 && < 2.1
-               , bytestring >= 0.10 && < 0.12
-               , cereal  >= 0.5.7 && < 0.6
-               , cereal-vector >= 0.2 && < 0.3
-               , colonnade
-               , constraints >= 0.12 && < 0.14
-               , constraints-extras >= 0.3.0 && < 0.4
-               , containers
-               , data-fix >= 0.3.0 && < 0.4
-               , dependent-hashmap >= 0.1.0.1 && < 0.2
-               , dependent-map >= 0.4 && < 0.5
-               , dependent-sum >= 0.7.0 && < 0.8
-               , directory >= 1.3.3 && < 1.4
-               , errors >= 2.3 && < 2.5
-               , extra >= 1.7.7 && < 1.8
---               , flat  >= 0.4.4 && < 0.5
-               , fin >= 0.2 && < 0.3
-               , foldl >= 1.4 && < 1.5
-               , Frames >= 0.6.1 && < 0.8
-               , Frames-streamly >= 0.2.0
-               , hashable >= 1.3 && < 1.6
-               , hs-cmdstan >= 0.1 && < 0.2
-               , here
-               , knit-haskell >= 0.9 && < 0.11
-               , massiv >= 1.0 && < 1.1
-               , megaparsec >= 9.0.0 && < 10.0
-               , monadic-recursion-schemes >= 0.1.11 && < 0.2
-               , mtl >= 2.2 && < 2.3
-               , parser-combinators > 1.0.0 && < 2.0
-               , polysemy
-               , pretty >= 1.1 && < 1.2
-               , prettyprinter >= 1.7 && < 1.8
-               , process >= 1.6 && < 1.7
-               , recursion-schemes >= 5.1.2 && < 5.3
-               , relude  >=1.0.0 && < 1.2
-               , say >= 0.1.0.1 && < 0.2
-               , scientific >= 0.3.5 && < 0.4
-               , some >= 1.0.2 && < 1.1
-               , streamly >= 0.7.2 && < 0.9
-               , text >= 1.2 && < 2.1
-               , time
-               , transformers-compat >= 0.6 && < 0.7
-               , vec >= 0.4 && < 0.5
-               , vector
-               , vector-builder >= 0.3.7 && < 0.4
-               , vinyl >= 0.13 && < 0.15
-  mixins:  base hiding (Prelude)
-         , relude (Relude as Prelude
-         , Relude.Extra)
-  exposed-modules: Stan.JSON
-                 , Stan.Parameters
-                 , Stan.Parameters.Massiv
-                 , Stan.ModelConfig
-                 , Stan.ModelRunner
-                 , Stan.SamplerCSV
-                 , Stan.ModelBuilder
-                 , Stan.ModelBuilder.BuilderTypes
-                 , Stan.ModelBuilder.BuildingBlocks
-                 , Stan.ModelBuilder.DesignMatrix
-                 , Stan.ModelBuilder.Distributions
-                 , Stan.ModelBuilder.Expressions
-                 , Stan.ModelBuilder.TypedExpressions.DAGTypes
-                 , Stan.ModelBuilder.TypedExpressions.DAG
-                 , Stan.ModelBuilder.TypedExpressions.Evaluate
-                 , Stan.ModelBuilder.TypedExpressions.Expressions
-                 , Stan.ModelBuilder.TypedExpressions.Format
-                 , Stan.ModelBuilder.TypedExpressions.Functions
-                 , Stan.ModelBuilder.TypedExpressions.StanFunctions
-                 , Stan.ModelBuilder.TypedExpressions.Indexing
-                 , Stan.ModelBuilder.TypedExpressions.Operations
-                 , Stan.ModelBuilder.TypedExpressions.Program
-                 , Stan.ModelBuilder.TypedExpressions.Recursion
-                 , Stan.ModelBuilder.TypedExpressions.Statements
-                 , Stan.ModelBuilder.TypedExpressions.TypedList
-                 , Stan.ModelBuilder.TypedExpressions.Types
---                 , Stan.ModelBuilder.FixedEffects
---                 , Stan.ModelBuilder.Parameters
---                 , Stan.ModelBuilder.ModelParameters
---                 , Stan.ModelBuilder.StanFunctionBuilder
-                 , Stan.ModelBuilder.SumToZero
-                 , Stan.RScriptBuilder
-                 , Stan.Frames
-  hs-source-dirs:   haskell-stan/src
-  default-language: Haskell2010
-
 library blueripple-glm
 --  import: deps
   ghc-options:
@@ -285,7 +197,7 @@ library
                      , hs-cmdstan
                      , hashable
                      , hashtables >= 1.2.3.4 && < 1.3
-                     , haskell-stan
+                     , haskell-stan >= 0.1.0.0
                      , hmatrix
                      , lens
                      , math-functions

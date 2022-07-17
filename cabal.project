@@ -1,4 +1,4 @@
-packages: ./ ../data-sets
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan
 jobs: 4
 with-compiler: ghc
 --ghc 8.10.7 ??
