@@ -66,6 +66,8 @@ import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Frames.Visualization.VegaLite.Data as FVD
 
+import qualified Polysemy.State as PS
+
 import qualified Relude.Extra as Extra
 
 import qualified Graphics.Vega.VegaLite.Configuration as FV
@@ -868,18 +870,19 @@ gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
   => (F.Record rs -> Int)
   -> (F.Record rs -> Bool)
   -> (F.Record rs -> Bool)
-  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracGradOfWhite])
+  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
 gradOfWhiteByDistrictFld ppl isWhite isGrad =
   let wgt = realToFrac . ppl
       isWhiteGrad r = isWhite r && isGrad r
+      wFld = (/) <$> (FL.prefilter isWhite $ FL.premap wgt FL.sum) <*> (FL.premap wgt FL.sum)
       wGradFld = (/) <$> (FL.prefilter isWhiteGrad $ FL.premap wgt FL.sum) <*> (FL.prefilter isWhite $ FL.premap wgt FL.sum)
---      gradFld ::  (F.Record rs -> Double) -> (F.Record rs -> Double) -> FL.Fold (F.Record rs) Double
---      gradFld wgt x = (/) <$> FL.premap (\r -> wgt r * isWhiteGrad r) FL.sum <*> FL.premap wgt FL.sum
+      mkRecord :: Double -> Double -> F.Record [BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]
+      mkRecord x y = x F.&: y F.&: V.RNil
   in FMR.concatFold
      $ FMR.mapReduceFold
      FMR.noUnpack
      (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
-     (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGradOfWhite) wGradFld))
+     (FMR.foldAndAddKey (mkRecord <$> wFld <*> wGradFld))
 
 
 rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
@@ -1008,7 +1011,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   tsneResult <- K.ignoreCacheTime tsneResult_C
   let (tsneWith, tsneWithMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] tsneResult sortedFilteredModelAndDRA
   when (not $ null tsneWithMissing) $ K.knitError $ "Missing keys tsneWith join."
-  let nwShare r = 1 - F.rgetField @BR.WhiteFrac r
+  let nwShare r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
       gowShare = F.rgetField @BRE.FracGradOfWhite
       dens = F.rgetField @DT.PopPerSqMile
       nwQBs = BRQ.quantileBreaks nwShare 10 sortedFilteredModelAndDRA
@@ -1092,13 +1095,13 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 --                -> StateT (Map (F.Record [BR.StateAbbreviation, ET.DistrictName]) (Either Text [SBComparison])) m (Either Text [SBComparison])
     let getSBCs comp d = do
           let dk = (F.rgetField @BR.StateAbbreviation d, F.rgetField @ET.DistrictName d)
-          m <- gets (getSBCMap comp)
+          m <- PS.gets (getSBCMap comp)
           case M.lookup dk m of
             Just sbcs -> return sbcs
             Nothing -> do
               let sbcs = addDistToSBCs comp d
                   newMap = M.insert dk sbcs m
-              modify $ updateSBCMap comp newMap
+              PS.modify' $ updateSBCMap comp newMap
               return sbcs
 
     K.addHvega Nothing Nothing
@@ -1113,34 +1116,37 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
           in (x - t1)^2 + (y - t2)^2 <= radius^2
     let tsneEach d = do
           let dk = distKey d
-          case M.lookup dk tsneDistMap of
-            Nothing -> lift $ K.knitError $ dk <> " is missing from tsne Results"
-            Just (t1, t2) -> do
-              let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) tsneWith
-              lift $ BR.brAddRawHtmlTable dk
-                (BHA.class_ "brTable")
-                (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-                (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
-              lift $ K.addHvega Nothing Nothing
-                $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
-              sbcsNatE <- getSBCs SBCNational $ F.rcast d
-              sbcsNat <- lift $ K.knitEither sbcsNatE
-              lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
-              sbcsStE <- getSBCs SBCState $ F.rcast d
-              case sbcsStE of
-                Left _ -> pure ()
-                Right sbcsSt -> (lift $ K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
-              let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
-                  eachNear dNear = do
-                    let dkNear = distKey dNear
-                    sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
-                    sbcsNear <- lift $ K.knitEither sbcsNearE
-                    lift $ K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
-              traverse_ eachNear tsneNear'
-              pure ()
-    evalStateT
-      (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized)
+              noteName = BR.Used $ dk <> "_details"
+          mNoteUrl <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
+            case M.lookup dk tsneDistMap of
+              Nothing -> K.knitError $ dk <> " is missing from tsne Results"
+              Just (t1, t2) -> do
+                let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) tsneWith
+                BR.brAddRawHtmlTable dk
+                  (BHA.class_ "brTable")
+                  (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+                  (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
+                K.addHvega Nothing Nothing
+                  $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+                sbcsNatE <- getSBCs SBCNational $ F.rcast d
+                sbcsNat <- K.knitEither sbcsNatE
+                K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
+                sbcsStE <- getSBCs SBCState $ F.rcast d
+                case sbcsStE of
+                  Left _ -> pure ()
+                  Right sbcsSt -> (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
+                let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
+                    eachNear dNear = do
+                      let dkNear = distKey dNear
+                      sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
+                      sbcsNear <- K.knitEither sbcsNearE
+                      K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
+                      pure ()
+                traverse_ eachNear tsneNear'
+          pure ()
+    PS.evalState
       (SBCS mempty mempty)
+      (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized)
     pure ()
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
@@ -1224,7 +1230,7 @@ sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
       rRanksDat = GV.dataFromRows [] $ concatMap (sbdToVGData (realToFrac givenRange) (realToFrac chartRange)) rSBDs
       dat = GV.datasets [("districts", distDat), ("dRanks", dRanksDat), ("rRanks", rRanksDat)]
       encStatName = GV.position GV.Y [GV.PName "Stat", GV.PmType GV.Nominal, GV.PAxis [GV.AxNoTitle]
-                                     ,GV.PSort [GV.CustomSort (GV.Strings ["Density", "%Voters-of-color", "%Grad-among-White"])]]
+                                     ,GV.PSort [GV.CustomSort (GV.Strings ["Density", "%Grad-among-White", "%Voters-of-color"])]]
       encRank = GV.position GV.X [GV.PName "Rank", GV.PmType GV.Quantitative, GV.PScale [GV.SDomain $ GV.DNumbers [0, realToFrac chartRange]]]
       typeScale = case length sbcsByDist of
                     1 -> let dn = dName $ head sbcsByDist
@@ -1507,7 +1513,7 @@ dCategories4 =
   , DistrictCategory "Demographically Vulnerable But Historically Safe D" plausibleSafeRFilter
   , DistrictCategory "Demographically Surprising But Historically Safe D" implausibleSafeDFilter
   , DistrictCategory "Demographically Surprising But Historically Safe R" implausibleSafeRFilter
-  , DistrictCategory "Safe/Safe" safeSafeFilter
+--  , DistrictCategory "Safe/Safe" safeSafeFilter
   ]
 
 
