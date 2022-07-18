@@ -866,17 +866,20 @@ gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
                              , rs F.⊆ rs
                              )
   => (F.Record rs -> Int)
-  -> (F.Record rs -> Double)
+  -> (F.Record rs -> Bool)
+  -> (F.Record rs -> Bool)
   -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracGradOfWhite])
-gradOfWhiteByDistrictFld ppl f =
-  let fracPpl = realToFrac . ppl
-      gradFld ::  (F.Record rs -> Double) -> (F.Record rs -> Double) -> FL.Fold (F.Record rs) Double
-      gradFld wgt x = (/) <$> FL.premap (\r -> wgt r * x r) FL.sum <*> FL.premap wgt FL.sum
+gradOfWhiteByDistrictFld ppl isWhite isGrad =
+  let wgt = realToFrac . ppl
+      isWhiteGrad r = isWhite r && isGrad r
+      wGradFld = (/) <$> (FL.prefilter isWhiteGrad $ FL.premap wgt FL.sum) <*> (FL.prefilter isWhite $ FL.premap wgt FL.sum)
+--      gradFld ::  (F.Record rs -> Double) -> (F.Record rs -> Double) -> FL.Fold (F.Record rs) Double
+--      gradFld wgt x = (/) <$> FL.premap (\r -> wgt r * isWhiteGrad r) FL.sum <*> FL.premap wgt FL.sum
   in FMR.concatFold
      $ FMR.mapReduceFold
      FMR.noUnpack
      (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
-     (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGradOfWhite) $ gradFld fracPpl f))
+     (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGradOfWhite) wGradFld))
 
 
 rescaleDensity :: (F.ElemOf rs DT.PopPerSqMile, Functor f)
@@ -936,16 +939,18 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     let pwldByCD = FL.fold (pwldByDistrictFld (F.rgetField @BRC.Count)) prop
         (withDensity, missingDensity) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] modelAndDR pwldByCD
     when (not $ null missingDensity) $ K.knitError $ "allCDsPost: missing keys in modelAndDR/density join=" <> show missingDensity
-    let gradFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) then 1 else 0
-        gradByDistrict = FL.fold
-                         (gradByDistrictFld (F.rgetField @BRC.Count) gradFrac)
-                         (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC] <$> prop)
+    let -- gradFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) then 1 else 0
+--        gradByDistrict = FL.fold
+--                         (gradByDistrictFld (F.rgetField @BRC.Count) gradFrac)
+--                         (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC] <$> prop)
 --        (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradByDistrict
-        gradOfWhiteFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) && (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) then 1 else 0
-        gradOfWhiteByDistrict = FL.fold
-                                (gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) gradOfWhiteFrac)
-                                (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC, DT.Race5C] <$> prop)
-        (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradOfWhiteByDistrict
+--        gradOfWhiteFrac r = if (F.rgetField @DT.CollegeGradC r == DT.Grad) && (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic) then 1 else 0
+      isWhite r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic
+      isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
+      gradOfWhiteByDistrict = FL.fold
+                              (gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) isWhite isGrad)
+                              (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC, DT.Race5C] <$> prop)
+      (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradOfWhiteByDistrict
     when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingGrad
     return withGrad
 
