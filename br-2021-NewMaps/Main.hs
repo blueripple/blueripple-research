@@ -1230,15 +1230,21 @@ sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
       encTypeC = GV.color ([GV.MName "Type", GV.MmType GV.Nominal{-,  GV.MSort [GV.CustomSort (GV.Strings ["Rep Median", dn, "Dem Median"])] -}
                          , GV.MNoTitle, GV.MLegend [GV.LOrient GV.LOBottom]] ++ typeScale)
       encSize = GV.size [GV.MName "Size", GV.MmType GV.Quantitative, GV.MNoTitle, GV.MLegend []]
---      encTypeS = GV.shape [GV.MName "Type", GV.MmType GV.Nominal, GV.MSort [GV.CustomSort (GV.Strings ["Dem Median", dn, "Rep Median"])]
---                         , GV.MNoTitle]
---      encTypeD = GV.detail [GV.DName "Type", GV.DmType GV.Nominal]
+      typeDM = GV.FEqual "Type" (GV.Str "D Median")
+      typeRM = GV.FEqual "Type" (GV.Str "R Median")
+      filterDM = GV.filter typeDM
+      filterRM = GV.filter typeRM
+      filterDists = GV.filter (GV.FCompose $ GV.Not (GV.Or (GV.FilterOp typeDM) (GV.FilterOp typeRM)))
       districtsEnc = GV.encoding . encStatName . encRank . encTypeC . encSize
       distMark = GV.mark GV.Point [] --[GV.MSize 50, GV.MOpacity 0.7]
+      dMMark = GV.mark GV.Point [GV.MYOffset (-1)] --[GV.MSize 50, GV.MOpacity 0.7]
+      rMMark = GV.mark GV.Point [GV.MYOffset 1] --[GV.MSize 50, GV.MOpacity 0.7]
       cText = case comp of
         SBCNational -> "National"
         SBCState -> "State"
-      districtSpec = GV.asSpec [districtsEnc [], distMark, GV.dataFromSource "districts" []]
+      districtSpec = GV.asSpec [(GV.transform . filterDists) [],  districtsEnc [], distMark, GV.dataFromSource "districts" []]
+      dMSpec = GV.asSpec [(GV.transform . filterDM) [],  districtsEnc [], dMMark, GV.dataFromSource "districts" []]
+      rMSpec = GV.asSpec [(GV.transform . filterRM) [],  districtsEnc [], rMMark, GV.dataFromSource "districts" []]
       encLo = GV.position GV.X [GV.PName "Lo", GV.PmType GV.Quantitative, GV.PNoTitle]
       encHi = GV.position GV.X2 [GV.PName "Hi", GV.PmType GV.Quantitative, GV.PNoTitle]
       dRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "blue", GV.MSize 3, GV.MYOffset (-1)]
@@ -1248,7 +1254,7 @@ sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
       rRuleEnc = GV.encoding . encStatName . encLo . encHi
       rRuleSpec = GV.asSpec [rRuleEnc [], rRule, GV.dataFromSource "rRanks" []]
       title = if length sbcsByDist == 1 then (dName $ head sbcsByDist) <> ": " <> cText <> " Demographics" else "National Demographic Comparison"
-  in FV.configuredVegaLite vc [FV.title title, GV.layer [districtSpec, dRuleSpec, rRuleSpec], dat]
+  in FV.configuredVegaLite vc [FV.title title, GV.layer [districtSpec, dMSpec, rMSpec, dRuleSpec, rRuleSpec], dat]
 --
 diffVsChart :: (V.KnownField t, V.Snd t ~ Double)
             => Text
