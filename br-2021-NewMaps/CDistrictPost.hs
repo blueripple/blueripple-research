@@ -7,6 +7,7 @@ module CDistrictPost where
 import Data.String.Here (here, i)
 
 import qualified Path
+import Data.Massiv.Array (Load(makeArray))
 
 cdPostDir = [Path.reldir|cdPostComponents|]
 
@@ -48,6 +49,12 @@ But that data doesn't mean much without context. So we've done a few of things:
   measures and, when possible, in the same state, but often with a more D voting history, as further evidence that
   the district we are looking at can stay/go D.
 
+[^partisan]: Our model uses election results and surveys to estimate turnout and voter preference according to
+various demographic variables. But we don't use previous election results as a *predictor*, though that is clearly
+crucial if your goal is prediction.
+[^incumbency]: We do use incumbency as a predictor otherwise the strong effect of incumbency would make
+the rest of the fit less precise.  But we do not apply it when analyzing districts because our goal is
+to look at the potential for districts to change, not to predict a specific outcome.
 [ratings]: https://www.270towin.com/2022-house-election-predictions/
 [sawbuck]: https://www.sawbuckpatriots.com
 

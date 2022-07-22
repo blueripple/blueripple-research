@@ -976,7 +976,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
-                               <$> (traverse (FT.mutateM $ fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE)
+                               <$> (traverse (FT.mutateM (fmap (FT.recordSingleton @OldCDOverlap) . oldCDOverlapsE))
                                      $ sortOn brDF
                                      $ FL.fold FL.list modelAndDRWith
                                    )
@@ -1116,21 +1116,32 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
           let x = F.rgetField @BRDC.TSNE1 r
               y = F.rgetField @BRDC.TSNE2 r
           in (x - t1)^2 + (y - t2)^2 <= radius^2
-    let tsneEach d = do
+    let {- tsneEach :: (K.KnitMany r
+                    , F.ElemOf qs BR.StateAbbreviation
+                    , F.ElemOf qs ET.DistrictName
+                    , F.ElemOf qs SBComparison
+                    )
+                 => Maybe (F.Record [BR.StateAbbreviation, ET.DistrictName])
+                 -> F.Record qs
+                 -> K.Sem (PS.State SBCS ': r) ()-}
+        tsneEach spcdM d = do
           let dk = distKey d
-              noteName = BR.Used $ dk <> "_details"
+              noteName = BR.Used $ dk <> if sp then "_sawbuck" else "_details"
+              sp = isJust spcdM
           mNoteUrl <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
-            BR.brAddMarkDown $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d)
+            when sp $ BR.brAddMarkDown $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d)
             case M.lookup dk tsneDistMap of
               Nothing -> K.knitError $ dk <> " is missing from tsne Results"
               Just (t1, t2) -> do
-                let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) tsneWith
-                BR.brAddRawHtmlTable dk
-                  (BHA.class_ "brTable")
-                  (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
-                  (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
-                K.addHvega Nothing Nothing
-                  $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+                let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) $ tsneWith
+                when (not sp) $ do
+                  BR.brAddRawHtmlTable dk
+                    (BHA.class_ "brTable")
+                    (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+                    (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
+                  K.addHvega Nothing Nothing
+                    $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
+                  pure ()
                 sbcsNatE <- getSBCs SBCNational $ F.rcast d
                 sbcsNat <- K.knitEither sbcsNatE
                 K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
@@ -1145,12 +1156,22 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                       sbcsNear <- K.knitEither sbcsNearE
                       K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
                       pure ()
-                traverse_ eachNear tsneNear'
-                BR.brAddMarkDown $ cdPostBottom (BR.inputsDir allCDsPaths) (distKey d)
+                case spcdM of
+                  Nothing -> traverse_ eachNear tsneNear'
+                  Just cd -> eachNear cd
+                when sp $ BR.brAddMarkDown $ cdPostBottom (BR.inputsDir allCDsPaths) (distKey d)
           pure ()
-    PS.evalState
-      (SBCS mempty mempty)
-      (traverse_ (traverse_ tsneEach) $ fmap snd $ categorized)
+    precomputedSBCS <- PS.execState
+                       (SBCS mempty mempty)
+                       (traverse_ (traverse_ $ tsneEach Nothing) $ fmap snd $ categorized)
+    let distRecMap = FL.fold (FL.premap (\r -> (F.rcast @[BR.StateAbbreviation, ET.DistrictName] r, r)) FL.map) sortedFilteredModelAndDRA
+        tsneWithMap = FL.fold (FL.premap (\r -> (F.rcast @[BR.StateAbbreviation, ET.DistrictName] r, r)) FL.map) tsneWith
+        tsneEachFromKeys k1 k2 = do
+          d1 <- K.knitMaybe (show k1 <> " missing from distInfo") $ M.lookup k1 tsneWithMap
+          d2 <- K.knitMaybe (show k2 <> " missing from distInfo") $ M.lookup k2 distRecMap
+          tsneEach (Just d1) d2
+    _ <- PS.runState precomputedSBCS
+         (traverse_ (\(x, y) -> tsneEachFromKeys y x) spCD)
     pure ()
 --    BR.brAddRawHtmlTable
 --      ("Calculated Dem Vote Share 2022: Demographic Model vs. Historical Model (DR)")
@@ -1158,6 +1179,12 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 --      (allCDsColonnade $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
 --      sortedFilteredModelAndDRA
   pure ()
+
+mkCDKey :: Text -> Text -> F.Record [BR.StateAbbreviation, ET.DistrictName]
+mkCDKey sa dn = sa F.&: dn F.&: V.RNil
+
+spCD :: [(F.Record [BR.StateAbbreviation, ET.DistrictName], F.Record [BR.StateAbbreviation, ET.DistrictName])]
+spCD = [(mkCDKey "CA" "9", mkCDKey "AZ" "4")]
 
 data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
 data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])
