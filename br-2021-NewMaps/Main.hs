@@ -20,6 +20,8 @@
 
 module Main where
 
+import CDistrictPost (cdPostTop, cdPostBottom)
+
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -162,7 +164,7 @@ main = do
     Left err -> putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 modelDir :: Text
-modelDir = "br-2021-NewMaps/stan10"
+modelDir = "br-2021-NewMaps/stan"
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
@@ -958,7 +960,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     return withGrad
 
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
-  let dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+  let {-dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
       leans r = modelDRALeans brShareRange draShareRangeCD (share50 r) (dave r)
       notBoring r = case leans r of
@@ -970,7 +972,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         (LeanD, SafeR) -> True
         (Tossup, SafeR) -> True
         (LeanR, SafeR) -> True
-        _ -> False
+        _ -> False -}
       brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
@@ -1118,6 +1120,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
           let dk = distKey d
               noteName = BR.Used $ dk <> "_details"
           mNoteUrl <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
+            BR.brAddMarkDown $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d)
             case M.lookup dk tsneDistMap of
               Nothing -> K.knitError $ dk <> " is missing from tsne Results"
               Just (t1, t2) -> do
@@ -1143,6 +1146,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                       K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
                       pure ()
                 traverse_ eachNear tsneNear'
+                BR.brAddMarkDown $ cdPostBottom (BR.inputsDir allCDsPaths) (distKey d)
           pure ()
     PS.evalState
       (SBCS mempty mempty)
