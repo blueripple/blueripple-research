@@ -20,7 +20,7 @@
 
 module Main where
 
-import CDistrictPost (cdPostTop, cdPostBottom)
+import CDistrictPost (cdPostTop, cdPostBottom, cdPostCompChart, cdPostStateChart)
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BR
@@ -1129,7 +1129,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               noteName = BR.Used $ dk <> if sp then "_sawbuck" else "_details"
               sp = isJust spcdM
           mNoteUrl <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
-            when sp $ BR.brAddMarkDown $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d)
+            when sp $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d) >>= BR.brAddMarkDown
             case M.lookup dk tsneDistMap of
               Nothing -> K.knitError $ dk <> " is missing from tsne Results"
               Just (t1, t2) -> do
@@ -1148,7 +1148,9 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                 sbcsStE <- getSBCs SBCState $ F.rcast d
                 case sbcsStE of
                   Left _ -> pure ()
-                  Right sbcsSt -> (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
+                  Right sbcsSt -> do
+                    BR.brAddMarkDown $ cdPostStateChart (BR.inputsDir allCDsPaths) dk
+                    (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
                 let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
                     eachNear dNear = do
                       let dkNear = distKey dNear
@@ -1158,7 +1160,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                       pure ()
                 case spcdM of
                   Nothing -> traverse_ eachNear tsneNear'
-                  Just cd -> eachNear cd
+                  Just cd -> BR.brAddMarkDown (cdPostCompChart (BR.inputsDir allCDsPaths) dk (distKey cd)) >> eachNear cd
                 when sp $ BR.brAddMarkDown $ cdPostBottom (BR.inputsDir allCDsPaths) (distKey d)
           pure ()
     precomputedSBCS <- PS.execState
@@ -1184,7 +1186,7 @@ mkCDKey :: Text -> Text -> F.Record [BR.StateAbbreviation, ET.DistrictName]
 mkCDKey sa dn = sa F.&: dn F.&: V.RNil
 
 spCD :: [(F.Record [BR.StateAbbreviation, ET.DistrictName], F.Record [BR.StateAbbreviation, ET.DistrictName])]
-spCD = [(mkCDKey "CA" "9", mkCDKey "AZ" "4")]
+spCD = [(mkCDKey "CA" "9", mkCDKey "AZ" "4"), (mkCDKey "CA" "40", mkCDKey "NJ" "6")]
 
 data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
 data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])

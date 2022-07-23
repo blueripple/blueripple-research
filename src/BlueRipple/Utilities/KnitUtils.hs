@@ -154,15 +154,19 @@ brAddDates updated pubDate updateDate tMap =
    in tMap <> pubT <> updT
 
 
+brGetTextFromFile :: K.KnitEffects r => Path.Path Path.Abs Path.File -> K.Sem r (Maybe Text)
+brGetTextFromFile p = do
+  isPresent <- K.liftKnit $ SD.doesFileExist $ Path.toFilePath p
+  if isPresent
+    then Just <$> K.liftKnit (T.readFile $ Path.toFilePath p)
+    else return Nothing
 
 brAddToPostFromFile :: K.KnitOne r => (Text -> K.Sem r ()) -> Bool -> Path.Path Path.Abs Path.File -> K.Sem r ()
 brAddToPostFromFile toPost errorIfMissing p = do
-  isPresent <- K.liftKnit $ SD.doesFileExist $ Path.toFilePath p
-  case isPresent of
-    True -> do
-       fText <- K.liftKnit (T.readFile $ Path.toFilePath p)
-       toPost fText
-    False -> do
+  tM <- brGetTextFromFile p
+  case tM of
+    Just t -> toPost t
+    Nothing -> do
       case errorIfMissing of
         True -> K.knitError $ "Post input file " <> show p <> " not found!"
         False -> do
