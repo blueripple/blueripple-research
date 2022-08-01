@@ -1144,19 +1144,19 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                   pure ()
                 sbcsNatE <- getSBCs SBCNational $ F.rcast d
                 sbcsNat <- K.knitEither sbcsNatE
-                K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
+                K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
                 sbcsStE <- getSBCs SBCState $ F.rcast d
                 case sbcsStE of
                   Left _ -> pure ()
                   Right sbcsSt -> do
                     BR.brAddMarkDown $ cdPostStateChart (BR.inputsDir allCDsPaths) dk
-                    (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
+                    (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
                 let tsneNear' = F.filterFrame (\r -> distKey r /= distKey d) tsneNear
                     eachNear dNear = do
                       let dkNear = distKey dNear
                       sbcsNearE <- getSBCs SBCNational $ F.rcast dNear
                       sbcsNear <- K.knitEither sbcsNearE
-                      K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 200 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
+                      K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
                       pure ()
                 case spcdM of
                   Nothing -> traverse_ eachNear tsneNear'
@@ -1272,7 +1272,7 @@ sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
                          in [GV.MScale [GV.SDomain (GV.DStrings ["R Median", dn1, dn2, "D Median"]), GV.SRange (GV.RStrings ["red", "orange", "green", "blue"])]]
                     _ -> []
       encTypeC = GV.color ([GV.MName "Type", GV.MmType GV.Nominal{-,  GV.MSort [GV.CustomSort (GV.Strings ["Rep Median", dn, "Dem Median"])] -}
-                         , GV.MNoTitle, GV.MLegend [GV.LOrient GV.LOBottom]] ++ typeScale)
+                         , GV.MNoTitle, GV.MLegend [GV.LOrient GV.LORight]] ++ typeScale)
       encSize = GV.size [GV.MName "Size", GV.MmType GV.Quantitative, GV.MNoTitle, GV.MLegend []]
       typeDM = GV.FEqual "Type" (GV.Str "D Median")
       typeRM = GV.FEqual "Type" (GV.Str "R Median")
@@ -1289,7 +1289,7 @@ sbcChart comp givenRange chartRange vc dSBDs rSBDs sbcsByDist =
       districtSpec = GV.asSpec [(GV.transform . filterDists) [],  districtsEnc [], distMark, GV.dataFromSource "districts" []]
       dMSpec = GV.asSpec [(GV.transform . filterDM) [],  districtsEnc [], dMMark, GV.dataFromSource "districts" []]
       rMSpec = GV.asSpec [(GV.transform . filterRM) [],  districtsEnc [], rMMark, GV.dataFromSource "districts" []]
-      encLo = GV.position GV.X [GV.PName "Lo", GV.PmType GV.Quantitative, GV.PNoTitle]
+      encLo = GV.position GV.X [GV.PName "Lo", GV.PmType GV.Quantitative, GV.PTitle "Rank (Lines represent middle 50% of D/R districts)"]
       encHi = GV.position GV.X2 [GV.PName "Hi", GV.PmType GV.Quantitative, GV.PNoTitle]
       dRule = GV.mark GV.Bar [GV.MOrient GV.Horizontal, GV.MColor "blue", GV.MSize 3, GV.MYOffset (-1)]
       dRuleEnc = GV.encoding . encStatName . encLo . encHi

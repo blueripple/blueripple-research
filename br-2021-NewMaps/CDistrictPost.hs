@@ -41,25 +41,23 @@ cdPostTop :: K.KnitEffects r =>  Path.Path Path.Abs Path.Dir -> Text -> K.Sem r 
 cdPostTop p cd = do
   sbText <- cdTopSB p cd
   return
-    $ [i|At BlueRipple Politics we focus on demographics and location as an indicator of partisan lean,
+    $ [i|BlueRipple Politics focuses on demographics and location as an indicator of partisan lean,
 leaving out things like district specific partisan history[^partisan] and incumbency[^incumbency].
 There is plenty of good predictive modeling (e.g. FiveThirtyEight)
 and plenty of good district specific analysis (e.g., Cook or Sabato),
-all summarized at [270ToWin][ratings].
+all well summarized at [270ToWin][ratings].
 We're trying to provide something
 different, looking for possible surprises and districts on the cusp of change.
 
 |] <> sbText
    <> [i|
-We've put that data in context in the chart below.
+Our key data is summarized in the chart below.
 
-- We've ranked the data for ${cd} on a scale of 1-10 among all districts and
-  we plot rank instead of the number, putting all the numbers on the same scale and footing.
+- The data for all districts is put in order and binned into 10 equally populated bins.
 
 - We've included the national median (as a circle) for *historically* D leaning (blue)
   and R leaning (red) districts and we've added a blue/red line to indicate
-  the D/R range of districts. That line shows the middle
-  50% of D or R districts.
+  the middle 50% D/R range of districts.
 
 [^partisan]: Our model uses election results and surveys to estimate turnout and voter preference according to
 various demographic variables. But we don't use previous election results as a *predictor*, though that is clearly
@@ -74,7 +72,8 @@ to look at the potential for districts to change, not to predict a specific outc
 
 cdPostStateChart :: Path.Path Path.Abs Path.Dir -> Text -> Text
 cdPostStateChart p cd =
-  [i|Below, we replace the national medians with state medians.
+  [i|Below, we replace the national medians with state medians
+(while keeping the *national* ranges).
 Each state is different and seeing that context helps as well.
 |]
 
@@ -83,30 +82,30 @@ cdPostCompChart p cd compCD =
   [i|
 One final chart, this time with ${compCD} added.
 This is as similar a district as we can find on our demographic
-measures and, when possible, in the same state, but with a more D voting history,
-as further evidence that the district we are looking at can stay/go D.
+measures, but with a more D voting history.
+We take this as further evidence that the district we are looking at can stay/go D.
 |]
 
 cdPostBottom :: Path.Path Path.Abs Path.Dir -> Text -> Text
 cdPostBottom p cd =
-  [i| For the intrepid, a bit more about our key metrics:
+  [i| For the curious, a bit more about our key metrics:
 
-- Population Density is usually measured in people per square mile. We use a slightly more people-centered
-  version, so a district with a very dense city and then a lot of empty land around it will basically have
-  the density of the city in our calculations since that's the density all the voters actually live in.
+- Population Density is usually measured in people per square mile. We use a people-weighted
+  version, so a district with a very dense city and mostly empty land around it will basically have
+  the density of the city in our calculations.
   We do this by breaking each district into census blocks and then doing a people-weighted geometric average.
-  There is ample [evidence][pDensity] that population density has a high correlation with partisan lean, wit
+  There is ample [evidence][pDensity] that population density has a high correlation with partisan lean, with
   the crossover point from R to D at about 800 people per square mile.
 
 - The past few years have seen massive education polarization in US electoral politics, with college-educated
   voters swinging more towards D candidates and non-college voters swinging toward R candidates. This
-  is true amoing White voters and voters of color but voters of color are substantially more D leaning
+  is true amoing White voters and voters of color, but voters of color are substantially more D leaning
   to begin with so their educational attainment is less useful as a district predictor. It's not clear
   if education is explanatory or a proxy for other issues (for a good discussion of this, check out
   [SplitTicket][edPol]).
 
 - As we noted above, voters of color tend to lean strongly D though this varies across racial/ethnic groups.
-  Therr is some recent drift toward the Republican party, particularly among non-college-educated
+  Their is some recent drift toward the Republican party, particularly among non-college-educated
   Hispanic voters. Still, the fraction of a district which is non-White is heavily predictive.
 
 [pDensity]: https://engaging-data.com/election-population-density/
