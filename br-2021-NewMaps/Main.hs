@@ -184,6 +184,7 @@ postLocalDraft p mRSD = case mRSD of
   Just rsd -> postDir BR.</> p BR.</> rsd
 postOnline p =  [Path.reldir|research/NewMaps|] BR.</> p
 postOnlineExp p = [Path.reldir|explainer/model|] BR.</> p
+postOnlineSP p = {- [Path.reldir|SawbuckPatriots|] BR.</> -} p
 
 postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
           => Text
@@ -217,6 +218,21 @@ explainerPostPaths t cmdLine = do
     (postLocalDraft postSpecificP mRelSubDir)
     (postOnlineExp postSpecificP)
 
+sawbuckPostPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
+                   => Text
+                   -> BR.CommandLine
+                   -> K.Sem r (BR.PostPaths BR.Abs)
+sawbuckPostPaths t cmdLine = do
+  let mRelSubDir = case cmdLine of
+        BR.CLLocalDraft _ _ mS _ -> maybe Nothing BR.parseRelDir $ fmap toString mS
+        _ -> Nothing
+  postSpecificP <- K.knitEither $ first show $ Path.parseRelDir $ toString t
+  BR.postPaths
+    BR.defaultLocalRoot
+    sharedInputs
+    (postInputs postSpecificP)
+    (postLocalDraft postSpecificP mRelSubDir)
+    (postOnlineSP postSpecificP)
 
 -- data
 type CCESVoted = "CCESVoters" F.:-> Int
@@ -901,8 +917,8 @@ type OldCDOverlap = "OldCDOverlap" F.:-> Text
 allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
-  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-  allCDsPaths <- postPaths "All_CDs" cmdLine
+  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
+  allCDsPaths <- sawbuckPostPaths "SawbuckPatriots" cmdLine
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
@@ -1160,7 +1176,9 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                       pure ()
                 case spcdM of
                   Nothing -> traverse_ eachNear tsneNear'
-                  Just cd -> BR.brAddMarkDown (cdPostCompChart (BR.inputsDir allCDsPaths) dk (distKey cd)) >> eachNear cd
+                  Just cds -> do
+                    BR.brAddMarkDown (cdPostCompChart (BR.inputsDir allCDsPaths) dk (distKey <$> cds)) >> traverse_ eachNear cds
+
                 when sp $ BR.brAddMarkDown $ cdPostBottom (BR.inputsDir allCDsPaths) (distKey d)
           pure ()
     precomputedSBCS <- PS.execState
@@ -1169,9 +1187,9 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     let distRecMap = FL.fold (FL.premap (\r -> (F.rcast @[BR.StateAbbreviation, ET.DistrictName] r, r)) FL.map) sortedFilteredModelAndDRA
         tsneWithMap = FL.fold (FL.premap (\r -> (F.rcast @[BR.StateAbbreviation, ET.DistrictName] r, r)) FL.map) tsneWith
         tsneEachFromKeys k1 k2 = do
-          d1 <- K.knitMaybe (show k1 <> " missing from distInfo") $ M.lookup k1 tsneWithMap
+          comps <- K.knitMaybe ("missing at least one of " <> show k1 <> " from distInfo") $ traverse (flip M.lookup tsneWithMap) k1
           d2 <- K.knitMaybe (show k2 <> " missing from distInfo") $ M.lookup k2 distRecMap
-          tsneEach (Just d1) d2
+          tsneEach (Just comps) d2
     _ <- PS.runState precomputedSBCS
          (traverse_ (\(x, y) -> tsneEachFromKeys y x) spCD)
     pure ()
@@ -1185,8 +1203,27 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 mkCDKey :: Text -> Text -> F.Record [BR.StateAbbreviation, ET.DistrictName]
 mkCDKey sa dn = sa F.&: dn F.&: V.RNil
 
-spCD :: [(F.Record [BR.StateAbbreviation, ET.DistrictName], F.Record [BR.StateAbbreviation, ET.DistrictName])]
-spCD = [(mkCDKey "CA" "9", mkCDKey "AZ" "4"), (mkCDKey "CA" "40", mkCDKey "NJ" "6")]
+spCD :: [(F.Record [BR.StateAbbreviation, ET.DistrictName], NonEmpty (F.Record [BR.StateAbbreviation, ET.DistrictName]))]
+spCD = [(mkCDKey "CA" "9", one $ mkCDKey "AZ" "7" )
+--       , (mkCDKey "CA" "40", one $ mkCDKey "NJ" "6")
+       , (mkCDKey "NM" "3", one $ mkCDKey "NM" "2")
+       , (mkCDKey "CT" "5", one $ mkCDKey "MA" "3")
+--       , (mkCDKey "CA" "45", one $ mkCDKey "CA" "14")
+       , (mkCDKey "CA" "47", one $ mkCDKey "CA" "40")
+       , (mkCDKey "NJ" "11", mkCDKey "CT" "4" :| [mkCDKey "GA" "6", mkCDKey "TX" "24"])
+       , (mkCDKey "NV" "4", one $ mkCDKey "CA" "6")
+       , (mkCDKey "PA" "6", one $ mkCDKey "NJ" "7")
+       , (mkCDKey "NJ" "3", mkCDKey "FL" "5" :| [mkCDKey "GA" "11"])
+       , (mkCDKey "MI" "3", mkCDKey "NJ" "1" :| [mkCDKey "OK" "5"])
+       , (mkCDKey "NV" "3", one $ mkCDKey "CA" "6")
+       , (mkCDKey "NH" "1", one $ mkCDKey "CT" "2")
+       , (mkCDKey "ME" "2", one $ mkCDKey "IA" "1")
+       , (mkCDKey "KS" "3", one $ mkCDKey "CO" "7")
+       , (mkCDKey "IA" "3", one $ mkCDKey "OR" "4")
+       , (mkCDKey "NV" "1", one $ mkCDKey "CA" "6")
+       , (mkCDKey "MN" "2", one $ mkCDKey "WI" "2")
+       , (mkCDKey "CA" "13", one $ mkCDKey "CA" "25")
+       ]
 
 data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
 data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])
@@ -1546,7 +1583,7 @@ dCategories4 =
   , DistrictCategory "Demographically Vulnerable But Historically Safe D" plausibleSafeRFilter
   , DistrictCategory "Demographically Surprising But Historically Safe D" implausibleSafeDFilter
   , DistrictCategory "Demographically Surprising But Historically Safe R" implausibleSafeRFilter
---  , DistrictCategory "Safe/Safe" safeSafeFilter
+  , DistrictCategory "Safe/Safe" safeSafeFilter
   ]
 
 
