@@ -94,6 +94,7 @@ import BlueRipple.Data.Quantiles (quantileLookup')
 import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
 import qualified Data.Array as Array
 import qualified Data.List as List
+import Knit.Report (chartreuse)
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -1827,9 +1828,10 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
        (F.filterFrame interestingFilter sldDemo)
 
   let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
-                                    (F.filterFrame interestingFilter modelDRA)
-                                    (F.filterFrame interestingFilter sldDemo)
+                                    ({- F.filterFrame interestingFilter-} modelDRA)
+                                    ({- F.filterFrame interestingFilter-} sldDemo)
   when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
+  let interestingModelDRADemo = F.filterFrame interestingFilter modelDRADemo
   _ <- K.addHvega Nothing Nothing
       $ BRV.demoCompareXYCS
       "District"
@@ -1839,9 +1841,77 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       "log density"
       (stateAbbr postSpec <> " demographic scatter")
       (FV.ViewConfig 600 600 5)
-      (FL.fold (xyFold' sldDistLabel) modelDRADemo)
+      (FL.fold (xyFold' sldDistLabel) interestingModelDRADemo)
   BR.brAddMarkDown "## 3. Methods (for non-experts)"
   BR.brAddSharedMarkDownFromFile (paths postSpec) "modelExplainer"
+  -- Add sbc charts
+  let isWhite r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic
+      isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
+      densityAndGoWFld :: (F.ElemOf qs BR.StateAbbreviation
+                          , F.ElemOf qs ET.DistrictName
+                          , F.ElemOf qs DT.PopPerSqMile
+                          , F.ElemOf qs BRC.Count
+                          , F.ElemOf qs DT.Race5C
+                          , F.ElemOf qs DT.CollegeGradC
+                          , qs F.⊆ qs)
+        => FL.Fold (F.Record qs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
+      densityAndGoWFld = (\f1 f2 -> f1 `F.zipFrames` fmap (F.rcast @[BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]) f2)
+                         <$> pwldByDistrictFld (F.rgetField @BRC.Count)
+                         <*> gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) isWhite isGrad
+      (modelDRADemoPlus, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName]
+                                    modelDRADemo
+                                    (FL.fold densityAndGoWFld modelDRADemo)
+  when (not $ null missing) $ K.knitError $ "missing keys in state-leg modelDRADemo join with Density and GoW: " <> show missing
+  let  nwShare r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+       gowShare = F.rgetField @BRE.FracGradOfWhite
+       dens = F.rgetField @DT.PopPerSqMile
+--       nwQBs = BRQ.quantileBreaks nwShare 10 modelDRADemoPlus
+--       gowQBs = BRQ.quantileBreaks gowShare 10 modelDRADemoPlus
+--       densQBs = BRQ.quantileBreaks dens 10 modelDRADemoPlus
+       nwQBs20 = BRQ.quantileBreaks nwShare 20 modelDRADemoPlus
+       gowQBs20 = BRQ.quantileBreaks gowShare 20 modelDRADemoPlus
+       densQBs20 = BRQ.quantileBreaks dens 20 modelDRADemoPlus
+       histDFilter r = F.rgetField @TwoPartyDShare r >= 0.5
+       histRFilter r = F.rgetField @TwoPartyDShare r < 0.5
+--       nwQuantiles = BRQ.quantileLookup' nwShare nwQBs
+--       gowQuantiles = BRQ.quantileLookup' gowShare gowQBs
+--       densQuantiles = BRQ.quantileLookup' dens densQBs
+       nwQuantiles20 = fmap realToFrac . quantileLookup' nwShare nwQBs20
+       gowQuantiles20 = fmap realToFrac . quantileLookup' gowShare gowQBs20
+       densQuantiles20 = fmap realToFrac . quantileLookup' dens densQBs20
+       notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
+       dMedian sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) modelDRADemoPlus) >>= BRQ.medianE qf
+       rMedian sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) modelDRADemoPlus) >>= BRQ.medianE qf
+       dRanks sf qf = notNullE (F.filterFrame (\r -> histDFilter r && sf r) modelDRADemoPlus) >>= traverse qf . FL.fold FL.list
+       rRanks sf qf = notNullE (F.filterFrame (\r -> histRFilter r && sf r) modelDRADemoPlus) >>= traverse qf . FL.fold FL.list
+       addDistToSBC r (n, qf) = SBComparison n <$> qf r <*> dMedian (const True) qf <*> rMedian (const True) qf
+       addDistToSBCs r = traverse (addDistToSBC r) [("%Voters-of-color", nwQuantiles20), ("%Grad-among-White", gowQuantiles20), ("Density", densQuantiles20)]
+       getSBD :: Text -> [Double] -> SBData
+       getSBD n x = SBData n lo hi
+        where
+          l = length x
+          x' = sort x
+          quartileN = l `div` 4
+          lo = x' List.!! quartileN
+          hi = x' List.!! (l - quartileN)
+  dNWLoHi <- K.knitEither $  getSBD "%Voters-of-color" <$> dRanks (const True) nwQuantiles20
+  dGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> dRanks (const True) gowQuantiles20
+  dDensLoHi <- K.knitEither $ getSBD "Density" <$> dRanks (const True) densQuantiles20
+  rNWLoHi <- K.knitEither $ getSBD "%Voters-of-color" <$> rRanks (const True) nwQuantiles20
+  rGOWLoHi <- K.knitEither $ getSBD "%Grad-among-White" <$> rRanks (const True) gowQuantiles20
+  rDensLoHi <- K.knitEither $ getSBD "Density" <$> rRanks (const True) densQuantiles20
+  let dRanksSBD = [dNWLoHi, dGOWLoHi, dDensLoHi]
+      rRanksSBD = [rNWLoHi, rGOWLoHi, rDensLoHi]
+      makeSBCChart dk sbcsNatE = do
+        sbcsNat <- K.knitEither sbcsNatE
+        K.addHvega Nothing Nothing
+                                $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD
+                                $ one (dk, True, sbcsNat)
+
+  traverse_ (uncurry makeSBCChart)
+    $ fmap (\r -> (F.rgetField @ET.DistrictName r, addDistToSBCs r))
+    $ filter sawBuckFilter
+    $ FL.fold FL.list modelDRADemoPlus
   pure ()
 
 dmColonnadeOverlap olMM cas =

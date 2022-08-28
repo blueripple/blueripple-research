@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module CDistrictPost where
 
@@ -9,8 +10,8 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report as K
 import qualified Polysemy as P
-
 import Data.String.Here (here, i)
+import qualified Data.Text as T
 import qualified Data.Map as Map
 import qualified Path
 
@@ -20,7 +21,7 @@ cdPostDir = [Path.reldir|cdPostComponents|]
 cdTopSBDefault :: Text
 cdTopSBDefault =
   [i|
-For [Sawbuck Patriots][sawbuck] we're using our methodology to provde color commentary, to give you, the hardy
+For [Sawbuck Patriots][sawbuck] we're using our methodology to provide color commentary, to give you, the hardy
 daily donors, a different way to look at Alex's picks.
 So below we're giving you the demographic data we
 think is most relevant in any district: the population density, what percentage of the eligible-to-vote White
@@ -35,19 +36,29 @@ cdTopSB p cd = do
   fp <- K.liftKnit @IO $ Path.parseRelFile $ toString cd <> ".md"
   let districtSpecificPath = p Path.</> cdPostDir Path.</> fp
   tM <- BR.brGetTextFromFile districtSpecificPath
+  let link = "https://blueripple.github.io/SawbuckPatriots/" <> cd <> "_sawbuck.html"
+      linkTxt = "More details of this analysis are available at the  [Blue Ripple Web Site](" <> link <> ")."
+      checkTxt = "Checking " <> show districtSpecificPath <> " for blurb..."
+  case tM of
+    Nothing -> K.logLE K.Warning $ checkTxt <>  "not found. Using default."
+    Just _ -> K.logLE K.Info $ checkTxt <> "found. Using provided blurb."
   return $ fromMaybe cdTopSBDefault tM
 
 cdPostTop :: K.KnitEffects r =>  Path.Path Path.Abs Path.Dir -> Text -> K.Sem r Text
 cdPostTop p cd = do
   sbText <- cdTopSB p cd
   return
-    $ [i|BlueRipple Politics focuses on demographics and location as an indicator of partisan lean,
+    $ [i|Blue Ripple Politics focuses on demographics and location as an indicator of partisan lean,
 leaving out things like district specific partisan history[^partisan] and incumbency[^incumbency].
 There is plenty of good predictive modeling (e.g. FiveThirtyEight)
 and plenty of good district specific analysis (e.g., Cook or Sabato),
 all well summarized at [270ToWin][ratings].
 We're trying to provide something
-different, looking for possible surprises and districts on the cusp of change.
+different, looking for possible surprises and districts on the cusp of change. For
+more details about the model, please visit the
+[model-details section of our web-site][modelDetails].
+
+[modelDetails]: https://blueripple.github.io/explainer/model/ElectionModel/post.html
 
 |] <> sbText
    <> [i|
@@ -77,13 +88,12 @@ cdPostStateChart p cd =
 Each state is different and seeing that context helps as well.
 |]
 
-cdPostCompChart :: Path.Path Path.Abs Path.Dir -> Text -> Text -> Text
-cdPostCompChart p cd compCD =
-  [i|
-One final chart, this time with ${compCD} added.
-This is as similar a district as we can find on our demographic
-measures, but with a more D voting history.
-We take this as further evidence that the district we are looking at can stay/go D.
+cdPostCompChart :: Path.Path Path.Abs Path.Dir -> Text -> NonEmpty Text -> Text
+cdPostCompChart p cd compCDs =
+  let x1 :: Text = if length compCDs == 1 then "One final chart" else "Some final charts"
+      x2 :: Text = if length compCDs == 1 then head compCDs else T.intercalate ", " (init compCDs)  <> ", and " <> last compCDs
+  in [i|
+${x1}, this time adding ${x2} for comparison.
 |]
 
 cdPostBottom :: Path.Path Path.Abs Path.Dir -> Text -> Text

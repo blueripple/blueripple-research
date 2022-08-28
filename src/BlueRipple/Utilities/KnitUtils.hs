@@ -195,7 +195,8 @@ brAddSharedMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> Text -> 
 brAddSharedMarkDownFromFile pp postFileEnd = brAddSharedMarkDownFromFileWith pp postFileEnd Nothing
 
 
-brAddNoteMarkDownFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
+brAddNoteMarkDownFromFileWith :: K.KnitOne r
+  => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do
   notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".md")
   brAddToPostFromFileWith K.addMarkDown False notePath mRefs
@@ -203,8 +204,8 @@ brAddNoteMarkDownFromFileWith  pp nn noteFileEnd mRefs = do
 brAddNoteMarkDownFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> K.Sem r ()
 brAddNoteMarkDownFromFile  pp nn noteFileEnd = brAddNoteMarkDownFromFileWith pp nn noteFileEnd Nothing
 
-
-brAddNoteRSTFromFileWith :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
+brAddNoteRSTFromFileWith :: K.KnitOne r
+  => BRC.PostPaths Path.Abs -> BRC.NoteName -> Text -> Maybe Text -> K.Sem r ()
 brAddNoteRSTFromFileWith pp nn noteFileEnd mRefs = do
   notePath <- K.knitEither $ BRC.noteInputPath pp nn (noteFileEnd <> ".rst")
   brAddToPostFromFileWith K.addRST False notePath mRefs
@@ -213,14 +214,16 @@ brAddNoteRSTFromFile :: K.KnitOne r => BRC.PostPaths Path.Abs -> BRC.NoteName ->
 brAddNoteRSTFromFile  pp nn noteFileEnd = brAddNoteRSTFromFileWith pp nn noteFileEnd Nothing
 
 brDatesFromPostInfo :: K.KnitEffects r => BRC.PostInfo -> K.Sem r (M.Map String String)
-brDatesFromPostInfo (BRC.PostInfo _ (BRC.PubTimes ppt mUpt)) = do
+brDatesFromPostInfo (BRC.PostInfo postStage  (BRC.PubTimes ppt mUpt)) = do
   tz <- liftIO $ Time.getCurrentTimeZone
   let formatPTime t = Time.formatTime Time.defaultTimeLocale "%B %e, %Y" t
       formatUPTime t = formatPTime t <> Time.formatTime Time.defaultTimeLocale " (%H:%M:%S)" t
 --      getCurrentDay :: K.KnitEffects r => K.Sem r Time.Day
 --      getCurrentDay = K.getCurrentTime
       dayFromPT = \case
-        BRC.Unpublished -> formatUPTime . Time.utcToLocalTime tz <$> K.getCurrentTime
+        BRC.Unpublished -> case postStage of
+          BRC.OnlinePublished -> formatPTime . Time.utcToLocalTime tz <$> K.getCurrentTime
+          _ -> formatUPTime . Time.utcToLocalTime tz <$> K.getCurrentTime
         BRC.Published d -> return $ formatPTime d
   pt <- dayFromPT ppt
   let mp = one ("published", pt)

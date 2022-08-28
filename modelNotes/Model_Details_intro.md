@@ -243,7 +243,7 @@ $\phi$’s parameterize the dispersion in probabilities.
 
 We need to parameterize $u$ and $q$ in terms of our observed demographic
 variables. We use the [logit][WPlogit] function to map an unbounded
-range into a probability (and thus it's inverse to map back to probability):
+range into a probability (and thus its inverse to map back to probability):
 
 [WPlogit]: https://en.wikipedia.org/wiki/Logit
 
