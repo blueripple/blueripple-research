@@ -758,7 +758,7 @@ newStateLegMapPosts cmdLine = do
   drCDPlans <- Redistrict.allPassedCongressionalPlans
   let dType r = F.rgetField @ET.DistrictTypeC r
       dName r = toString $ F.rgetField @ET.DistrictName r
-      regSLDPost pi sa contested interestingOnly houses desc = do
+      regSLDPost pi sa contested interestingOnly houses desc spDists = do
         let houseList = Set.toList houses
         paPaths <- postPaths (sa <> "_StateLeg") cmdLine
         BR.brNewPost paPaths pi (sa <> "_SLD") $ do
@@ -768,7 +768,7 @@ newStateLegMapPosts cmdLine = do
           sldDRAs <- traverse draF houseList
           cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId sa "Passed" ET.Congressional)
 
-          let postSpec = NewSLDMapsPostSpec sa desc paPaths (mconcat sldDRAs) cdDRA (M.fromList overlapsL) contested
+          let postSpec = NewSLDMapsPostSpec sa desc paPaths (mconcat sldDRAs) cdDRA (M.fromList overlapsL) contested spDists
           newStateLegMapAnalysis cmdLine postSpec interestingOnly
             (K.liftActionWithCacheTime ccesAndCPSEM_C)
             (K.liftActionWithCacheTime acs_C)
@@ -781,6 +781,7 @@ newStateLegMapPosts cmdLine = do
       contestedNC = const True -- FIXME
   regSLDPost postInfoNC "NC" contestedNC bothHouses "StateBoth"
 -}
+  {-
   let postInfoNM = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedNM r = F.rgetField @ET.DistrictTypeC r == ET.StateLower -- state senate every four years, 2024 next
   regSLDPost postInfoNM "NM" contestedNM True bothHouses "StateBoth"
@@ -789,12 +790,13 @@ newStateLegMapPosts cmdLine = do
   let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedGA = const True
   regSLDPost postInfoGA "GA" contestedGA True bothHouses "StateBoth"
-
+-}
   -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
-  regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth"
-
+      spDistsPA = [(ET.StateLower,"144"), (ET.StateLower, "160"), (ET.StateUpper,"24"), (ET.StateUpper,"14"), (ET.StateLower, "18")]
+  regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth" spDistsPA
+{-
   -- MI senate is 4-year terms, all elected in *mid-term* years. So all in 2022 and none in 2024.
   let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedMI = const True
@@ -804,7 +806,7 @@ newStateLegMapPosts cmdLine = do
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedAZ = const True -- correct here
   regSLDPost postInfoAZ "AZ" contestedAZ False (Set.fromList [ET.StateUpper]) "StateUpper"
-
+-}
 
 addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
 addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -839,7 +841,8 @@ peopleWeightedLogDensityFld :: (F.ElemOf rs DT.PopPerSqMile)
 peopleWeightedLogDensityFld ppl =
   let dens = F.rgetField @DT.PopPerSqMile
       x r = if dens r >= 1 then realToFrac (ppl r) * Numeric.log (dens r) else 0
-      fld = (/) <$> FL.premap x FL.sum <*> fmap realToFrac (FL.premap ppl FL.sum)
+      safeDivInt y n = if n == 0 then 0 else y / realToFrac n
+      fld = safeDivInt <$> FL.premap x FL.sum <*> fmap realToFrac (FL.premap ppl FL.sum)
   in fld
 
 pwldByStateFld :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs DT.PopPerSqMile)
@@ -853,25 +856,28 @@ pwldByStateFld ppl = fmap M.fromList
 
 pwldByDistrictFld :: forall rs. (F.ElemOf rs BR.StateAbbreviation
                                 , F.ElemOf rs ET.DistrictName
+                                , F.ElemOf rs ET.DistrictTypeC
                                 , F.ElemOf rs DT.PopPerSqMile
                                 , rs F.⊆ rs
                                 )
                   => (F.Record rs -> Int)
-                  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, DT.PopPerSqMile])
+                  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, DT.PopPerSqMile])
 pwldByDistrictFld ppl = FMR.concatFold
                         $ FMR.mapReduceFold
                         FMR.noUnpack
-                        (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
+                        (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
                         (FMR.foldAndAddKey (fmap (FT.recordSingleton @DT.PopPerSqMile) $ peopleWeightedLogDensityFld ppl))
 
 
 gradByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
+                      , F.ElemOf rs ET.DistrictTypeC
                       , F.ElemOf rs ET.DistrictName
+                      , F.ElemOf rs DT.PopPerSqMile
                       , rs F.⊆ rs
                       )
                   => (F.Record rs -> Int)
                   -> (F.Record rs -> Double)
-                  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracGrad])
+                  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BRE.FracGrad])
 gradByDistrictFld ppl f =
   let fracPpl = realToFrac . ppl
       gradFld ::  (F.Record rs -> Double) -> (F.Record rs -> Double) -> FL.Fold (F.Record rs) Double
@@ -879,17 +885,18 @@ gradByDistrictFld ppl f =
   in FMR.concatFold
      $ FMR.mapReduceFold
      FMR.noUnpack
-     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
+     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
      (FMR.foldAndAddKey (fmap (FT.recordSingleton @BRE.FracGrad) $ gradFld fracPpl f))
 
 gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
                              , F.ElemOf rs ET.DistrictName
+                             , F.ElemOf rs ET.DistrictTypeC
                              , rs F.⊆ rs
                              )
   => (F.Record rs -> Int)
   -> (F.Record rs -> Bool)
   -> (F.Record rs -> Bool)
-  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
+  -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
 gradOfWhiteByDistrictFld ppl isWhite isGrad =
   let wgt = realToFrac . ppl
       isWhiteGrad r = isWhite r && isGrad r
@@ -900,7 +907,7 @@ gradOfWhiteByDistrictFld ppl isWhite isGrad =
   in FMR.concatFold
      $ FMR.mapReduceFold
      FMR.noUnpack
-     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictName])
+     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
      (FMR.foldAndAddKey (mkRecord <$> wFld <*> wGradFld))
 
 
@@ -971,7 +978,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
       gradOfWhiteByDistrict = FL.fold
                               (gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) isWhite isGrad)
-                              (F.rcast @[BR.StateAbbreviation, ET.DistrictName, BRC.Count, DT.CollegeGradC, DT.Race5C] <$> prop)
+                              (F.rcast @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BRC.Count, DT.CollegeGradC, DT.Race5C] <$> prop)
       (withGrad, missingGrad) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName] withDensity gradOfWhiteByDistrict
     when (not $ null missingGrad) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingGrad
     return withGrad
@@ -1714,6 +1721,7 @@ data NewSLDMapsPostSpec = NewSLDMapsPostSpec
                           , cdDRAnalysis :: F.Frame Redistrict.DRAnalysis
                           , overlaps :: Map ET.DistrictType (DO.DistrictOverlaps Int)
                           , contested :: F.Record [ET.DistrictTypeC, ET.DistrictName] -> Bool
+                          , spDists :: [(ET.DistrictType, Text)]
                           }
 
 
@@ -1848,34 +1856,32 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
   let isWhite r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic
       isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
       densityAndGoWFld :: (F.ElemOf qs BR.StateAbbreviation
+                          , F.ElemOf qs ET.DistrictTypeC
                           , F.ElemOf qs ET.DistrictName
                           , F.ElemOf qs DT.PopPerSqMile
                           , F.ElemOf qs BRC.Count
                           , F.ElemOf qs DT.Race5C
                           , F.ElemOf qs DT.CollegeGradC
                           , qs F.⊆ qs)
-        => FL.Fold (F.Record qs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictName, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
+        => FL.Fold
+        (F.Record qs)
+        (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
       densityAndGoWFld = (\f1 f2 -> f1 `F.zipFrames` fmap (F.rcast @[BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]) f2)
                          <$> pwldByDistrictFld (F.rgetField @BRC.Count)
                          <*> gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) isWhite isGrad
-      (modelDRADemoPlus, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictName]
-                                    modelDRADemo
+      (modelDRADemoPlus, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
+                                    modelDRA
                                     (FL.fold densityAndGoWFld modelDRADemo)
   when (not $ null missing) $ K.knitError $ "missing keys in state-leg modelDRADemo join with Density and GoW: " <> show missing
+  BR.logFrame modelDRADemoPlus
   let  nwShare r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
        gowShare = F.rgetField @BRE.FracGradOfWhite
        dens = F.rgetField @DT.PopPerSqMile
---       nwQBs = BRQ.quantileBreaks nwShare 10 modelDRADemoPlus
---       gowQBs = BRQ.quantileBreaks gowShare 10 modelDRADemoPlus
---       densQBs = BRQ.quantileBreaks dens 10 modelDRADemoPlus
        nwQBs20 = BRQ.quantileBreaks nwShare 20 modelDRADemoPlus
        gowQBs20 = BRQ.quantileBreaks gowShare 20 modelDRADemoPlus
        densQBs20 = BRQ.quantileBreaks dens 20 modelDRADemoPlus
        histDFilter r = F.rgetField @TwoPartyDShare r >= 0.5
        histRFilter r = F.rgetField @TwoPartyDShare r < 0.5
---       nwQuantiles = BRQ.quantileLookup' nwShare nwQBs
---       gowQuantiles = BRQ.quantileLookup' gowShare gowQBs
---       densQuantiles = BRQ.quantileLookup' dens densQBs
        nwQuantiles20 = fmap realToFrac . quantileLookup' nwShare nwQBs20
        gowQuantiles20 = fmap realToFrac . quantileLookup' gowShare gowQBs20
        densQuantiles20 = fmap realToFrac . quantileLookup' dens densQBs20
@@ -1907,10 +1913,10 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
         K.addHvega Nothing Nothing
                                 $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD
                                 $ one (dk, True, sbcsNat)
-
+  let sbcChartsFilter r =  (F.rgetField @ET.DistrictTypeC r, F.rgetField @ET.DistrictName r) `elem` spDists postSpec
   traverse_ (uncurry makeSBCChart)
-    $ fmap (\r -> (F.rgetField @ET.DistrictName r, addDistToSBCs r))
-    $ filter sawBuckFilter
+    $ fmap (\r -> (show (F.rgetField @ET.DistrictTypeC r) <> "-" <> F.rgetField @ET.DistrictName r, addDistToSBCs r))
+    $ filter sbcChartsFilter
     $ FL.fold FL.list modelDRADemoPlus
   pure ()
 
