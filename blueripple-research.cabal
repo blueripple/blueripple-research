@@ -381,7 +381,7 @@ executable br-2021-NewMaps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2021-NewMaps
   main-is: Main.hs
-  other-modules: CDistrictPost
+  other-modules: CDistrictPost, DemoCompChart
   build-depends: base
                , blueripple-research
                , blueripple-data-sets

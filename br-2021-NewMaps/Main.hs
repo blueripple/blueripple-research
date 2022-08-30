@@ -17,6 +17,7 @@
 {-# OPTIONS_GHC -O0 #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant <$>" #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Main where
 
@@ -794,7 +795,8 @@ newStateLegMapPosts cmdLine = do
   -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
-      spDistsPA = [(ET.StateLower,"144"), (ET.StateLower, "160"), (ET.StateUpper,"24"), (ET.StateUpper,"14"), (ET.StateLower, "18")]
+      spDistsPA = fmap (\x -> (ET.StateLower,x)) ["88", "142", "144", "160"]
+                  <> fmap (\x -> (ET.StateUpper,x))  ["14", "24"]
   regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth" spDistsPA
 {-
   -- MI senate is 4-year terms, all elected in *mid-term* years. So all in 2022 and none in 2024.
@@ -1914,8 +1916,13 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
                                 $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD
                                 $ one (dk, True, sbcsNat)
   let sbcChartsFilter r =  (F.rgetField @ET.DistrictTypeC r, F.rgetField @ET.DistrictName r) `elem` spDists postSpec
+      ppDType x = case x of
+        ET.Congressional -> "Congressional"
+        ET.StateUpper -> "Upper"
+        ET.StateLower -> "Lower"
+
   traverse_ (uncurry makeSBCChart)
-    $ fmap (\r -> (show (F.rgetField @ET.DistrictTypeC r) <> "-" <> F.rgetField @ET.DistrictName r, addDistToSBCs r))
+    $ fmap (\r -> (ppDType (F.rgetField @ET.DistrictTypeC r) <> "-" <> F.rgetField @ET.DistrictName r, addDistToSBCs r))
     $ filter sbcChartsFilter
     $ FL.fold FL.list modelDRADemoPlus
   pure ()
