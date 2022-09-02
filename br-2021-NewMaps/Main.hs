@@ -22,6 +22,7 @@
 module Main where
 
 import CDistrictPost (cdPostTop, cdPostBottom, cdPostCompChart, cdPostStateChart)
+import qualified DemoCompChart as DCC
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BR
@@ -846,6 +847,8 @@ peopleWeightedLogDensityFld ppl =
       safeDivInt y n = if n == 0 then 0 else y / realToFrac n
       fld = safeDivInt <$> FL.premap x FL.sum <*> fmap realToFrac (FL.premap ppl FL.sum)
   in fld
+
+--peopleWeightedLogDensityFld' :: (F.ElemOf rs DT.PopPerSqMile, F.ElemOf)
 
 pwldByStateFld :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs DT.PopPerSqMile)
                => (F.Record rs -> Int)
@@ -1855,27 +1858,54 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
   BR.brAddMarkDown "## 3. Methods (for non-experts)"
   BR.brAddSharedMarkDownFromFile (paths postSpec) "modelExplainer"
   -- Add sbc charts
-  let isWhite r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic
-      isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
-      densityAndGoWFld :: (F.ElemOf qs BR.StateAbbreviation
-                          , F.ElemOf qs ET.DistrictTypeC
-                          , F.ElemOf qs ET.DistrictName
-                          , F.ElemOf qs DT.PopPerSqMile
-                          , F.ElemOf qs BRC.Count
-                          , F.ElemOf qs DT.Race5C
-                          , F.ElemOf qs DT.CollegeGradC
-                          , qs F.⊆ qs)
-        => FL.Fold
-        (F.Record qs)
-        (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
-      densityAndGoWFld = (\f1 f2 -> f1 `F.zipFrames` fmap (F.rcast @[BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]) f2)
-                         <$> pwldByDistrictFld (F.rgetField @BRC.Count)
-                         <*> gradOfWhiteByDistrictFld (F.rgetField @BRC.Count) isWhite isGrad
+  let pwldFC :: (F.ElemOf ds DT.PopPerSqMile, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds DT.PopPerSqMile
+      pwldFC = DCC.FoldComponent $ peopleWeightedLogDensityFld (F.rgetField @BRC.Count)
+      isWhite r = F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic
+      wgt = realToFrac . F.rgetField @BRC.Count
+      wgtSumFld = FL.premap wgt FL.sum
+      wFC :: (F.ElemOf ds DT.Race5C, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds BRE.FracWhiteNonHispanic
+      wFC = DCC.FoldComponent $ (/) <$> (FL.prefilter isWhite $ wgtSumFld) <*> wgtSumFld
+      isWhiteGrad r = isWhite r && F.rgetField @DT.CollegeGradC r == DT.Grad
+      wgFC :: (F.ElemOf ds DT.CollegeGradC, F.ElemOf ds DT.Race5C, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds BRE.FracGradOfWhite
+      wgFC = DCC.FoldComponent $ (/) <$> (FL.prefilter isWhiteGrad $ wgtSumFld) <*> (FL.prefilter isWhite wgtSumFld)
+      densityAndGoWFld = DCC.buildMRFold
+                         @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
+                         @[BRC.Count, DT.PopPerSqMile, DT.Race5C, DT.CollegeGradC]
+                         (pwldFC V.:& wFC V.:& wgFC V.:& V.RNil)
       (modelDRADemoPlus, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
                                     modelDRA
                                     (FL.fold densityAndGoWFld modelDRADemo)
   when (not $ null missing) $ K.knitError $ "missing keys in state-leg modelDRADemo join with Density and GoW: " <> show missing
-  BR.logFrame modelDRADemoPlus
+--  BR.logFrame modelDRADemoPlus
+  let partyFilters = let f r =  F.rgetField @TwoPartyDShare r in DCC.SBCPartyData ((>= 0.5) . f) ((< 0.5) . f)
+      categoryNames = ["Density", "%Grad-Among-White", "%Voters-Of-Color"]
+      categoryFunctions = zipWith DCC.SBCCategoryData categoryNames
+                          [F.rgetField @DT.PopPerSqMile
+                          , F.rgetField @BRE.FracGradOfWhite
+                          , (\r -> 1 - F.rgetField @BRE.FracWhiteNonHispanic r)
+                          ]
+--      categoryFunctionsE = (\f -> Right . f) <<$>> categoryFunctions
+      quantileBreaks = DCC.sbcQuantileBreaks 20 categoryFunctions modelDRADemoPlus
+      quantileFunctionsE = DCC.sbcQuantileFunctions quantileBreaks
+      quantileFunctionsDblE = (fmap (realToFrac @Int @Double) .) <<$>> quantileFunctionsE
+      partyMediansE = DCC.partyMedians partyFilters quantileFunctionsDblE modelDRADemoPlus
+      partyRanksE = DCC.partyRanks partyFilters quantileFunctionsDblE modelDRADemoPlus
+      partyLoHisE = DCC.partyLoHis <$> partyRanksE
+  partyLoHis <- K.knitEither partyLoHisE
+  partyMedians <- K.knitEither partyMediansE
+  let --sbcE :: (F.ElemOf rs DT.PopPerSqMile, F.ElemOf rs BRE.FracGradOfWhite, F.ElemOf rs BRE.FracWhiteNonHispanic)
+--           => F.Record rs -> Either Text [DCC.SBCCategoryData DCC.SBComparison]
+      sbcE r = DCC.sbcComparison quantileFunctionsDblE partyMedians r
+      sbcChartE :: K.KnitOne r => Text -> Either Text [DCC.SBCCategoryData DCC.SBComparison] -> K.Sem r ()
+      sbcChartE dk sbcsNatE = do
+        sbcsNat <- K.knitEither sbcsNatE
+        K.addHvega Nothing Nothing
+          $ DCC.sbcChart DCC.SBCState 20 10 (FV.ViewConfig 300 80 5)
+          (Just categoryNames)
+          (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
+          $ one (dk, True, sbcsNat)
+        pure ()
+{-
   let  nwShare r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
        gowShare = F.rgetField @BRE.FracGradOfWhite
        dens = F.rgetField @DT.PopPerSqMile
@@ -1915,14 +1945,15 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
         K.addHvega Nothing Nothing
                                 $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD
                                 $ one (dk, True, sbcsNat)
+-}
   let sbcChartsFilter r =  (F.rgetField @ET.DistrictTypeC r, F.rgetField @ET.DistrictName r) `elem` spDists postSpec
       ppDType x = case x of
         ET.Congressional -> "Congressional"
         ET.StateUpper -> "Upper"
         ET.StateLower -> "Lower"
 
-  traverse_ (uncurry makeSBCChart)
-    $ fmap (\r -> (ppDType (F.rgetField @ET.DistrictTypeC r) <> "-" <> F.rgetField @ET.DistrictName r, addDistToSBCs r))
+  traverse_ (uncurry sbcChartE)
+    $ fmap (\r -> (ppDType (F.rgetField @ET.DistrictTypeC r) <> "-" <> F.rgetField @ET.DistrictName r, sbcE r))
     $ filter sbcChartsFilter
     $ FL.fold FL.list modelDRADemoPlus
   pure ()
