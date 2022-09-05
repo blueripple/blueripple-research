@@ -103,7 +103,7 @@ getSBD n x = SBCCategoryData n (lo, hi)
     x' = sort x
     quartileN = l `div` 4
     lo = x' List.!! quartileN
-    hi = x' List.!! (l - quartileN)
+    hi = x' List.!! (l - 1 - quartileN)
 
 loHi :: (Ord a, Foldable f) => SBCCategoryData (f a) -> SBCCategoryData (a, a)
 loHi cd = getSBD (sbcCategoryName cd) $ FL.fold FL.list (sbcCategoryData cd)
