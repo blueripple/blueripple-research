@@ -33,7 +33,7 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
-import qualified BlueRipple.Data.Quantiles as BRQ
+--import qualified BlueRipple.Data.Quantiles as BRQ
 import qualified BlueRipple.Data.Visualizations.DemoComparison as BRV
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -48,12 +48,14 @@ import qualified Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Control.Foldl as FL
 import qualified Data.Map.Strict as M
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Monoid as Monoid
 import Data.String.Here (here, i)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Time.Calendar            as Time
+import qualified Data.Vector as Vector
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified System.Console.CmdArgs as CmdArgs
@@ -96,6 +98,9 @@ import BlueRipple.Data.Quantiles (quantileLookup')
 import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
 import qualified Data.Array as Array
 import qualified Data.List as List
+import qualified BlueRipple.Data.CensusTables as DT
+import BlueRipple.Data.DistrictOverlaps (overlapFractionsForRowByName)
+--import qualified BlueRipple.Data.ElectionTypes as BR
 --import qualified Knit.Report as BR
 --import Knit.Report (chartreuse)
 --import qualified BlueRipple.Data.ElectionTypes as BR
@@ -152,6 +157,7 @@ main = do
     when (runThis "newSLDs") $ newStateLegMapPosts cmdLine
     when (runThis "allCDs") $ allCDsPost cmdLine
     when (runThis "stateAnalysis") $ stateAnalysis cmdLine
+    when (runThis "CAPA") $ capa cmdLine
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "24"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "11"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
@@ -861,19 +867,20 @@ newStateLegMapPosts cmdLine = do
   let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedGA = const True
   regSLDPost postInfoGA "GA" contestedGA True bothHouses "StateBoth"
--}
+
   -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
       spDistsPA = fmap (\x -> (ET.StateLower,x)) ["88", "142", "144", "160"]
                   <> fmap (\x -> (ET.StateUpper,x))  ["14", "24"]
   regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth" spDistsPA
-{-
+-}
+
   -- MI senate is 4-year terms, all elected in *mid-term* years. So all in 2022 and none in 2024.
   let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedMI = const True
-  regSLDPost postInfoMI "MI" contestedMI True bothHouses "StateBoth"
-
+  regSLDPost postInfoMI "MI" contestedMI True bothHouses "StateBoth" []
+{-
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedAZ = const True -- correct here
@@ -1015,27 +1022,155 @@ rescaleDensity s = fmap g
     g = FT.fieldEndo @DT.PopPerSqMile (*s)
 
 
-type OldCDOverlap = "OldCDOverlap" F.:-> Text
-
-allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
-allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
-  K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
+capa :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+capa cmdLine = do
+  K.logLE K.Info "Rebuilding CAPA post (if necessary)."
   let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
-  allCDsPaths <- sawbuckPostPaths "SawbuckPatriots" cmdLine
+      state = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+      histDS = F.rgetField @TwoPartyDShare
+      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
+      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+      density = F.rgetField @DT.PopPerSqMile
+  capaPaths <- postPaths "CAPA" cmdLine
+  (modelAndDRWith_C, _) <- newCDModeled cmdLine
+  let senateStates = Set.fromList ["CO", "AZ", "GA", "NV", "NH", "PA", "FL", "NC", "WI"]
+      capaFilter r = not (state r `Set.member` senateStates)
+                     && histDS r >= 0.47
+                     && histDS r <= 0.53
+                     && Numeric.exp (density r) < 2000
+                     && bipoc r >= 0.25
+  capaCDs <- (FL.fold FL.list . F.filterFrame capaFilter) <$> K.ignoreCacheTime modelAndDRWith_C
+  -- get overlapping SLDs
+  let capaStates = Set.fromList $ fmap (F.rgetField @BR.StateAbbreviation) capaCDs
+      capaStates' = Set.delete "NJ" capaStates -- no state-leg elections in NJ
+  capaOverlapsL <- DO.overlapCollection capaStates' (\sa -> toString $ "data/districtOverlaps/" <> sa <> "_SLDL" <> "_CD.csv") ET.StateLower ET.Congressional
+  capaOverlapsU <- DO.overlapCollection capaStates' (\sa -> toString $ "data/districtOverlaps/" <> sa <> "_SLDU" <> "_CD.csv") ET.StateUpper ET.Congressional
+  let overlappingSLDs' threshold cdn overlaps = do
+        let numLD = Vector.length $ DO.populations overlaps
+            pwo = Vector.zip (DO.populations overlaps) (DO.overlaps overlaps)
+            nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps
+            intDiv x y = realToFrac x/ realToFrac y
+            olFracM (pop, ols) = fmap (\x -> intDiv x pop) $ M.lookup cdn ols
+            olFracsM = traverse olFracM pwo
+        olFracs <- K.knitMaybe ("Missing CD in overlap data for " <> cdn) olFracsM
+        let namedOlFracs = zip nameByRow (Vector.toList olFracs)
+        return $ filter ((>=threshold) . snd) namedOlFracs
+
+      overlappingSLDs threshold sa cdn = do
+        overlapsU <- K.knitMaybe ("capa: Failed ot find opverlap data for upper chamber of " <> sa) $ M.lookup sa capaOverlapsU
+        overlapsL <- K.knitMaybe ("capa: Failed ot find opverlap data for lower chamber of " <> sa) $ M.lookup sa capaOverlapsL
+        namedOverU <- overlappingSLDs' threshold cdn overlapsU
+        namedOverL <- overlappingSLDs' threshold cdn overlapsL
+        return $ fmap (\(n,x) -> (ET.StateUpper, n, x)) namedOverU
+          <>  fmap (\(n,x) -> (ET.StateLower, n, x)) namedOverL
+
+      f r = fmap ((state r, distr r),) $ overlappingSLDs 0.5 (state r) (distr r)
+  overlapsByCD <- traverse f $ filter ((/= "NJ") . F.rgetField @BR.StateAbbreviation) capaCDs -- NJ state-leg elecitons in odd years
+  let olList = concatMap (\(k,slds) -> fmap (q k) slds) overlapsByCD
+        where q k (dt, dn, x) = (k, (dt, dn), x)
+--      flattenOL ((sa, dn), slds) = fmap ((sa, dn),) $ fmap (\(dt, dn, x) -> ((dt, dn) , x)) slds
+--      flattenedOLs = concatMap flattenOL overlapsByCD
+      sldsToModel' ((sa, _), slds) = fmap (sa,) $ fmap (\(dt, dn, _) -> (dt, dn)) slds
+      sldsToModel = Set.fromList $ concatMap sldsToModel' overlapsByCD
+      sldsToModelFilter r = (state r, (F.rgetField @ET.DistrictTypeC r, distr r)) `Set.member` sldsToModel
+  K.logLE K.Info $ "Overlaps: " <> show olList
+  -- FIX: We should do density rescaling here
+  proposedSLDs_C <- F.filterFrame sldsToModelFilter <<$>> (prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs)
+  ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
+  let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
+      stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
+      mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
+      postStratInfo = (mapGroup, "CAPA_SLDs")
+      model :: K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
+      model x = K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C x
+  modeledSLDs <- model $ fmap (FL.fold postStratRollupFld . fmap F.rcast) proposedSLDs_C
+  BR.logFrame modeledSLDs
+  let cdDataMap = FL.fold (FL.premap (\r -> ((state r, distr r), r)) FL.map) capaCDs
+      addCDDataM (k, y, z) = fmap (, y, z) $ M.lookup k cdDataMap
+      dType = F.rgetField @ET.DistrictTypeC
+      sldDataMap = FL.fold (FL.premap (\r -> ((state r, dType r, distr r), r)) FL.map) modeledSLDs
+      addSLDDataM (cd, (dt, dn), z) = fmap (cd, , z) $ M.lookup (state cd, dt, dn) sldDataMap
+  olList1 <- K.knitMaybe "capa: Missing CD in cd data map" $ traverse addCDDataM olList
+  olList2 <- K.knitMaybe "capa: Missing SLD in sld data map" $ traverse addSLDDataM olList1
+--  let (capaCDsAndSLDs, _) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.] (FrameRec bs)
+  BR.brNewPost capaPaths postInfo "CAPA" $ do
+    BR.brAddRawHtmlTable
+      "Possible CDs"
+      (BHA.class_ "brTable")
+      (capaCDColonnade mempty)
+      (reverse $ sortOn bipoc capaCDs)
+
+    BR.brAddRawHtmlTable
+      "Underlying SLDs With >50% in CD"
+      (BHA.class_ "brTable")
+      (capaSLDColonnade mempty)
+      olList2
+
+  --BR.logFrame capaCDs
+
+
+capaSLDColonnade cas =
+  let cdData (r, _, _) = r
+      state = F.rgetField @BR.StateAbbreviation . cdData
+      cd = F.rgetField @ET.DistrictName . cdData
+      histDS = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare . cdData
+      modelDS_CD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare . cdData
+      modelT_CD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . cdData
+      bipoc y = 1 - F.rgetField @BRE.FracWhiteNonHispanic (cdData y)
+      density = F.rgetField @DT.PopPerSqMile . cdData
+      sldData (_, y, _) = y
+      dType = F.rgetField @ET.DistrictTypeC . sldData
+      dName = F.rgetField @ET.DistrictName . sldData
+      overlapFrac (_, _, x) = x
+      sld y = show (dType y) <> "-" <> dName y
+      modelDS_SLD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare . sldData
+      modelT_SLD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . sldData
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      <> C.headed "Congressional District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . cd))
+      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . histDS))
+      <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS_CD))
+      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT_CD))
+      <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
+      <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
+      <> C.headed "State-Leg District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . sld))
+      <> C.headed "%SLD in CD" (BR.toCell cas "Overlap" "Overlap" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . overlapFrac))
+      <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS_SLD))
+      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT_SLD))
+capaCDColonnade cas =
+  let state = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+      histDS = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      modelDS = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+      modelT = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+      density = F.rgetField @DT.PopPerSqMile
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . distr))
+      <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . histDS))
+      <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS))
+      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT))
+      <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
+      <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
+
+type ModeledWithDRAndAggDemo = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName
+                               , BRE.ModelDesc, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare, BR.PlanName
+                               , BR.Population, ET.DemShare, ET.RepShare, BR.OthShare
+                               , ET.VAP, TwoPartyDShare, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]
+
+type RescaledProposedCD = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName
+                          , BR.Population, DT.PWPopPerSqMile, DT.SexC
+                          , DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile, DT.Race5C]
+
+newCDModeled :: forall r.(K.KnitEffects r, BR.CacheEffects r)
+             => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModeledWithDRAndAggDemo)
+                                          , K.ActionWithCacheTime r (F.FrameRec RescaledProposedCD))
+newCDModeled cmdLine = do
+  K.logLE K.Info "Rebuilding all CD model results (if necessary)."
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  overlaps <- DO.oldCDOverlapCollection
-  let state = F.rgetField @BR.StateAbbreviation
-      distr = F.rgetField @ET.DistrictName
-  let oldCDOverlapsE :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs ET.DistrictName) => F.Record rs -> Either Text Text
-      oldCDOverlapsE r = do
-        stateOverlaps <- maybe (Left $ "Failed to find stateAbbreviation=" <> state r <> " in " <> show overlaps) Right
-                         $ M.lookup (state r) overlaps
-        cdOverlaps <- maybe (Left $ "Failed to find dist=" <> distr r <> " in " <> state r <> " in " <> show overlaps) Right
-                      $ DO.overlapsOverThresholdForRowByName 0.5 stateOverlaps (distr r)
-        return $ T.intercalate "," . fmap (\(dn, fo) -> dn <> " (" <> show (round (100 * fo)) <> "%)") . M.toList $ cdOverlaps
-
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       rescaleDeps = (,) <$> acs2020_C <*> proposedCDs_C
@@ -1053,11 +1188,13 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
 
       modelDM :: Text -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR)))
       modelDM name =
-        BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
+        BRE.electionModelDM False cmdLine False
+        (Just stanParams) modelDir modelVariant 2020 (psInfoDM name)
+        ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
   modeled_C <- modelDM ("All_New_CD")
   drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
   let deps = (,) <$> modeled_C <*> proposedCDs_C
-  modelAndDRWith_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWith.bin" deps $ \(modeled, prop) -> do
+  result_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWith.bin" deps $ \(modeled, prop) -> do
     let (modelAndDR, missingDR) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] modeled (fmap addTwoPartyDShare drAnalysis)
     when (not $ null missingDR) $ K.knitError $ "allCDsPost: Missing keys in model/DR join=" <> show missingDR
     let densityAndGowFld = DCC.buildMRFold
@@ -1069,6 +1206,27 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                                            (FL.fold densityAndGowFld prop)
     when (not $ null missingDGW) $ K.knitError $ "allCDsPost: missing keys in modelWithDensity/FracGrad join=" <> show missingDGW
     return withDensityAndGow
+  return $ (F.rcast <<$>> result_C, F.rcast <<$>> rescaledProposed_C)
+
+
+type OldCDOverlap = "OldCDOverlap" F.:-> Text
+
+allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
+  K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
+  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
+      state = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+  allCDsPaths <- sawbuckPostPaths "SawbuckPatriots" cmdLine
+  (modelAndDRWith_C, rescaledProposed_C) <- newCDModeled cmdLine
+  overlaps <- DO.oldCDOverlapCollection
+  let oldCDOverlapsE :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs ET.DistrictName) => F.Record rs -> Either Text Text
+      oldCDOverlapsE r = do
+        stateOverlaps <- maybe (Left $ "Failed to find stateAbbreviation=" <> state r <> " in " <> show overlaps) Right
+                         $ M.lookup (state r) overlaps
+        cdOverlaps <- maybe (Left $ "Failed to find dist=" <> distr r <> " in " <> state r <> " in " <> show overlaps) Right
+                      $ DO.overlapsOverThresholdForRowByName 0.5 stateOverlaps (distr r)
+        return $ T.intercalate "," . fmap (\(dn, fo) -> dn <> " (" <> show (round (100 * fo)) <> "%)") . M.toList $ cdOverlaps
 
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
   let brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r)
@@ -1327,7 +1485,7 @@ allCDsColonnade nwQ gowQ dQ cas =
       dName = F.rgetField @ET.DistrictName
       was = F.rgetField @OldCDOverlap
       dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      fracNW r = 1 - F.rgetField @BR.WhiteFrac r
+      fracNW r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
       qF x = case x of
         Left _ -> BR.textToStyledHtml "Err"
         Right n -> BR.numberToStyledHtml "%d" n

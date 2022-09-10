@@ -57,12 +57,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-map-reduce
-  tag: 544cbbbf6767eeee0f4900a2e7b6ff7e0d5758af
+  tag: e3d4c8678098b2685b4115c5f52e8f0aac0bc160
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/map-reduce-folds
-  tag: e8928f5db385fdf18bbe7c613ff572e284c7adf3
+  tag: 997109a05bdeada4d41d3112c274d67c4cb94bca
 
 source-repository-package
   type: git
@@ -73,12 +73,12 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: 1d6e991119a2fd75796f6508ad8f99343869a257
+  tag: 27d00ed0026577fe443133c70e11317623b857c7
 
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: adbea69e59341ed6e0d5f315d06ed65214df782f
+  tag: a5a155dcc1c5dc9597fc598427b0b36d947534ec
 
 --source-repository-package
 --  type: git

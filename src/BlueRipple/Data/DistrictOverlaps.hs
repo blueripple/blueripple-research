@@ -25,7 +25,7 @@ import qualified Data.Vector as Vec
 import qualified Data.Csv as CSV hiding (header)
 import qualified Data.Csv.Parser as CSV
 import qualified Knit.Report as K
-import Database.SQLite3.Direct (errmsg)
+--import Database.SQLite3.Direct (errmsg)
 
 
 data DistrictOverlaps a = DistrictOverlaps { stateAbbreviation :: Text
@@ -74,7 +74,7 @@ overlapsOverThresholdForRowByName threshold x t = overlapsOverThresholdForRowByN
 
 overlapCollection :: K.KnitEffects r => Set Text -> (Text -> FilePath) -> ET.DistrictType -> ET.DistrictType -> K.Sem r (Map Text (DistrictOverlaps Int))
 overlapCollection stateAbbreviations abbrToOverlapFile rowDType colDType = do
-  let loadOne sa = loadOverlapsFromCSV  (abbrToOverlapFile sa) sa rowDType colDType >>= return . (sa,)
+  let loadOne sa = (sa, ) <$> loadOverlapsFromCSV  (abbrToOverlapFile sa) sa rowDType colDType
   fmap Map.fromList $ traverse loadOne $ Set.toList stateAbbreviations
 
 oldCDOverlapCollection :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Text (DistrictOverlaps Int))
