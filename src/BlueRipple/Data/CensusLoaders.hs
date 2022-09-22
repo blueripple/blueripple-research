@@ -172,7 +172,7 @@ censusTablesForDRACDs  :: (K.KnitEffects r
 censusTablesForDRACDs = censusTablesByDistrict fileByYear "DRA_CDs" where
   fileByYear = [ (BRC.TY2020, censusDataDir <> "/NC_DRA.csv")]
 
-noMaps = Set.fromList ["LA"]
+noMaps = Set.empty --fromList [""]
 
 censusTablesForProposedCDs :: (K.KnitEffects r
                               , BR.CacheEffects r)

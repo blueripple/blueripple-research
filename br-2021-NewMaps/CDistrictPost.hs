@@ -10,11 +10,12 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report as K
 import qualified Polysemy as P
-import Data.String.Here (here, i)
+import Data.String.Here (i)
 import qualified Data.Text as T
-import qualified Data.Map as Map
+--import qualified Data.Map as Map
 import qualified Path
 
+cdPostDir :: Path.Path Path.Rel Path.Dir
 cdPostDir = [Path.reldir|cdPostComponents|]
 
 
@@ -36,8 +37,8 @@ cdTopSB p cd = do
   fp <- K.liftKnit @IO $ Path.parseRelFile $ toString cd <> ".md"
   let districtSpecificPath = p Path.</> cdPostDir Path.</> fp
   tM <- BR.brGetTextFromFile districtSpecificPath
-  let link = "https://blueripple.github.io/SawbuckPatriots/" <> cd <> "_sawbuck.html"
-      linkTxt = "More details of this analysis are available at the  [Blue Ripple Web Site](" <> link <> ")."
+  let --link = "https://blueripple.github.io/SawbuckPatriots/" <> cd <> "_sawbuck.html"
+      --linkTxt = "More details of this analysis are available at the  [Blue Ripple Web Site](" <> link <> ")."
       checkTxt = "Checking " <> show districtSpecificPath <> " for blurb..."
   case tM of
     Nothing -> K.logLE K.Warning $ checkTxt <>  "not found. Using default."
@@ -82,14 +83,14 @@ to look at the potential for districts to change, not to predict a specific outc
 |]
 
 cdPostStateChart :: Path.Path Path.Abs Path.Dir -> Text -> Text
-cdPostStateChart p cd =
+cdPostStateChart _ _ =
   [i|Below, we replace the national medians with state medians
 (while keeping the *national* ranges).
 Each state is different and seeing that context helps as well.
 |]
 
 cdPostCompChart :: Path.Path Path.Abs Path.Dir -> Text -> NonEmpty Text -> Text
-cdPostCompChart p cd compCDs =
+cdPostCompChart _ _ compCDs =
   let x1 :: Text = if length compCDs == 1 then "One final chart" else "Some final charts"
       x2 :: Text = if length compCDs == 1 then head compCDs else T.intercalate ", " (init compCDs)  <> ", and " <> last compCDs
   in [i|
@@ -97,7 +98,7 @@ ${x1}, this time adding ${x2} for comparison.
 |]
 
 cdPostBottom :: Path.Path Path.Abs Path.Dir -> Text -> Text
-cdPostBottom p cd =
+cdPostBottom _ _ =
   [i| For the curious, a bit more about our key metrics:
 
 - Population Density is usually measured in people per square mile. We use a people-weighted

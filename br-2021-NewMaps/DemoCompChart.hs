@@ -12,11 +12,12 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
 module DemoCompChart where
 
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
+--import qualified BlueRipple.Data.DemographicTypes as DT
+--import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.Quantiles as BRQ
 
 import qualified Control.Foldl as FL
@@ -32,7 +33,7 @@ import qualified Frames.Streamly.InCore as FS
 
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data as FVD
+--import qualified Frames.Visualization.VegaLite.Data as FVD
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 
 import qualified Frames.MapReduce as FMR

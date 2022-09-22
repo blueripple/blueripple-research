@@ -4,6 +4,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -16,8 +17,9 @@
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -O0 #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
+{-# OPTIONS_GHC -Wno-type-defaults #-}
 {-# HLINT ignore "Redundant <$>" #-}
-{-# LANGUAGE LambdaCase #-}
 
 module Main where
 
@@ -48,10 +50,10 @@ import qualified Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Control.Foldl as FL
 import qualified Data.Map.Strict as M
-import qualified Data.IntMap.Strict as IM
+--import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Monoid as Monoid
-import Data.String.Here (here, i)
+import Data.String.Here (here)
 import qualified Data.Set as Set
 import qualified Data.Text as T
 import qualified Data.Time.Calendar            as Time
@@ -74,7 +76,7 @@ import qualified Frames.Visualization.VegaLite.Data as FVD
 
 import qualified Polysemy.State as PS
 
-import qualified Relude.Extra as Extra
+--import qualified Relude.Extra as Extra
 
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 
@@ -83,27 +85,23 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Text.Pandoc.Error as Pandoc
 import qualified Numeric
 import qualified Path
-import Path (Rel, Abs, Dir, File)
+import Path (Rel, Dir)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
-import Stan.ModelBuilder (binomialLogitDistWithConstants)
+--import Stan.ModelBuilder (binomialLogitDistWithConstants)
 --import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
-import BlueRipple.Model.DistrictClusters (districtsForClustering)
+--import BlueRipple.Model.DistrictClusters (districtsForClustering)
 import qualified Data.Vector.Unboxed as UVec
-import qualified BlueRipple.Utilities.KnitUtils as K
+--import qualified BlueRipple.Utilities.KnitUtils as K
 import qualified BlueRipple.Data.Loaders.Redistricting as BR
-import qualified BlueRipple.Data.CountFolds as BRQ
-import BlueRipple.Data.Quantiles (quantileLookup')
-import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
-import qualified Data.Array as Array
-import qualified Data.List as List
+--import qualified BlueRipple.Data.CountFolds as BRQ
+--import BlueRipple.Data.Quantiles (quantileLookup')
+--import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
+--import qualified Data.Array as Array
+--import qualified Data.List as List
 import qualified BlueRipple.Data.CensusTables as DT
-import BlueRipple.Data.DistrictOverlaps (overlapFractionsForRowByName)
---import qualified BlueRipple.Data.ElectionTypes as BR
---import qualified Knit.Report as BR
---import Knit.Report (chartreuse)
---import qualified BlueRipple.Data.ElectionTypes as BR
+--import BlueRipple.Data.DistrictOverlaps (overlapFractionsForRowByName)
 
 FS.declareColumn "DistCategory" ''Text
 
@@ -123,6 +121,7 @@ templateVars =
       --  , ("author"   , T.unpack yamlAuthor)
     ]
 
+pandocTemplate :: K.TemplatePath
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 
@@ -143,10 +142,10 @@ main = do
           , K.serializeDict = BR.flatSerializeDict
           , K.persistCache = KC.persistStrictByteString (\t -> toString (cacheDir <> "/" <> t))
           }
-  let stanParallelCfg = BR.clStanParallel cmdLine
-      parallel =  case BR.cores stanParallelCfg of
-        BR.MaxCores -> True
-        BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
+--  let stanParallelCfg = BR.clStanParallel cmdLine
+--      parallel =  case BR.cores stanParallelCfg of
+--        BR.MaxCores -> True
+--        BR.FixedCores n -> n > BR.parallelChains stanParallelCfg
   resE <- K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let runAll = null $ BR.postNames cmdLine
@@ -178,6 +177,8 @@ main = do
 
 modelDir :: Text
 modelDir = "br-2021-NewMaps/stan"
+
+modelVariant :: BRE.Model k
 modelVariant = BRE.Model
                ET.TwoPartyShare
                (Set.fromList [ET.President, ET.Senate, ET.House])
@@ -189,14 +190,28 @@ modelVariant = BRE.Model
                1
 
 --emptyRel = [Path.reldir||]
+postDir :: Path.Path Rel Dir
 postDir = [Path.reldir|br-2021-NewMaps/posts|]
+
+postInputs :: Path.Path Rel Dir -> Path.Path Rel Dir
 postInputs p = postDir BR.</> p BR.</> [Path.reldir|inputs|]
+
+sharedInputs :: Path.Path Rel Dir
 sharedInputs = postDir BR.</> [Path.reldir|Shared|] BR.</> [Path.reldir|inputs|]
+
+postLocalDraft :: Path.Path Rel Dir
+               -> Maybe (Path.Path Rel Dir) -> Path.Path Rel Dir
 postLocalDraft p mRSD = case mRSD of
   Nothing -> postDir BR.</> p BR.</> [Path.reldir|draft|]
   Just rsd -> postDir BR.</> p BR.</> rsd
+
+postOnline :: Path.Path Rel t -> Path.Path Rel t
 postOnline p =  [Path.reldir|research/NewMaps|] BR.</> p
+
+postOnlineExp :: Path.Path Rel t -> Path.Path Rel t
 postOnlineExp p = [Path.reldir|explainer/model|] BR.</> p
+
+postOnlineSP :: p -> p
 postOnlineSP p = {- [Path.reldir|SawbuckPatriots|] BR.</> -} p
 
 postPaths :: (K.KnitEffects r, MonadIO (K.Sem r))
@@ -317,7 +332,7 @@ showVACPS cps = do
   BR.logFrame aggregatedRaw
 -}
 onlyState :: (F.ElemOf xs BR.StateAbbreviation, FI.RecVec xs) => Text -> F.FrameRec xs -> F.FrameRec xs
-onlyState stateAbbr = F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)
+onlyState x = F.filterFrame ((== x) . F.rgetField @BR.StateAbbreviation)
 
 prepCensusDistrictData :: (K.KnitEffects r, BR.CacheEffects r)
                    => Bool
@@ -329,13 +344,13 @@ prepCensusDistrictData clearCaches cacheKey cdData_C = do
   let deps = (,) <$> cdData_C <*> stateAbbreviations
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey deps $ \(cdData, stateAbbrs) -> do
-    let addRace5 = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
+    let addRace5' = FT.mutate (\r -> FT.recordSingleton @DT.Race5C
                                     $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
         cdDataSER' = BRC.censusDemographicsRecode $ BRC.sexEducationRace cdData
         (cdDataSER, cdMissing) =  FJ.leftJoinWithMissing @'[BR.StateFips] cdDataSER'
                                   $ fmap (F.rcast @[BR.StateFips, BR.StateAbbreviation] . FT.retypeColumn @BR.StateFIPS @BR.StateFips) stateAbbrs
     when (not $ null cdMissing) $ K.knitError $ "state FIPS missing in proposed district demographics/stateAbbreviation join."
-    return $ (F.rcast . addRace5 <$> cdDataSER)
+    return $ (F.rcast . addRace5' <$> cdDataSER)
 
 modelDetails ::  forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r () --BR.StanParallel -> Bool -> K.Sem r ()
 modelDetails cmdLine = do
@@ -401,7 +416,7 @@ stateAnalysis cmdLine = do
         BR.brAddMarkDown $ "Modeled Share: " <> show (MT.ciMid $ F.rgetField @BRE.ModeledShare r)
         let sbcsE = DCC.sbcComparison quantileFunctionsDblE partyMedians
         sbcs <- K.knitEither $ sbcsE r
-        K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
+        _<- K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
           (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
           $ one (sa, True, sbcs)
         pure ()
@@ -412,27 +427,27 @@ stateAnalysis cmdLine = do
 deepDive2022CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Text -> K.Sem r ()
 deepDive2022CD cmdLine sa dn = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
-  deepDive cmdLine ("2022-" <> sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  let filter' r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictName r == dn
+  deepDive cmdLine ("2022-" <> sa <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter') proposedCDs_C)
 
 deepDive2022SLD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> ET.DistrictType -> Text -> K.Sem r ()
 deepDive2022SLD cmdLine sa dt dn = do
   proposedSLDs_C <- prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs
-  let filter r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictTypeC r == dt && F.rgetField @ET.DistrictName r == dn
-  deepDive cmdLine ("2022-" <> sa <> "_" <> houseChar dt <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedSLDs_C)
+  let filter' r = F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @ET.DistrictTypeC r == dt && F.rgetField @ET.DistrictName r == dn
+  deepDive cmdLine ("2022-" <> sa <> "_" <> houseChar dt <> dn) (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter') proposedSLDs_C)
 
 deepDive2020CD :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> Int -> K.Sem r ()
 deepDive2020CD cmdLine sa dn = do
   acs_C <- BRE.prepACS False
-  let filter r = F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @BR.CongressionalDistrict r == dn
-  deepDive cmdLine ("2020-" <> sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap fixACS . F.filterFrame filter) acs_C)
+  let filter' r = F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == sa && F.rgetField @BR.CongressionalDistrict r == dn
+  deepDive cmdLine ("2020-" <> sa <> show dn) (fmap (FL.fold postStratRollupFld . fmap fixACS . F.filterFrame filter') acs_C)
 
 
 deepDiveState :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.Sem r ()
 deepDiveState cmdLine sa = do
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
-  let filter r = F.rgetField @BR.StateAbbreviation r == sa
-  deepDive cmdLine sa (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter) proposedCDs_C)
+  let filter' r = F.rgetField @BR.StateAbbreviation r == sa
+  deepDive cmdLine sa (fmap (FL.fold postStratRollupFld . fmap F.rcast . F.filterFrame filter') proposedCDs_C)
 
 
 type FracPop = "FracPop" F.:-> Double
@@ -444,9 +459,9 @@ type DeepDiveR = [DT.SexC, DT.CollegeGradC, DT.Race5C]
 deepDive :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -> K.Sem r ()
 deepDive cmdLine ddName psData_C = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
-  acs_C <- BRE.prepACS False
+--  acs_C <- BRE.prepACS False
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
-      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
+--      acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       demographicGroup :: SB.GroupTypeTag (F.Record DeepDiveR) = SB.GroupTypeTag "Demographics"
       postStratInfo = (demographicGroup, "DeepDive_" <> ddName)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
@@ -456,7 +471,7 @@ deepDive cmdLine ddName psData_C = do
       postInfoDeepDive = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   deepDiveModel <- modelDM
   psData <- K.ignoreCacheTime psData_C
-  let (deepDive, missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
+  let (deepDive', missing) = FJ.leftJoinWithMissing @DeepDiveR deepDiveModel psData
   when (not $ null missing) $ K.knitError $ "Missing keys in depDiveModel/psData join:" <> show missing
   let turnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       pref = MT.ciMid . F.rgetField @BRE.ModeledPref
@@ -466,11 +481,11 @@ deepDive cmdLine ddName psData_C = do
       tvFld = FL.premap tvF FL.sum
       dvF r = realToFrac (cvap r) * turnout r * pref r
       dvFld = FL.premap dvF FL.sum
-      (totalCVAP, totalVotes, totalDVotes) = FL.fold ((,,) <$> cvFld <*> tvFld <*> dvFld) deepDive
+      (totalCVAP, totalVotes, totalDVotes) = FL.fold ((,,) <$> cvFld <*> tvFld <*> dvFld) deepDive'
       popFrac r = FT.recordSingleton @FracPop $ realToFrac (F.rgetField @BRC.Count r) / totalCVAP
       dSdP r = FT.recordSingleton @DSDP $ turnout r * (realToFrac $ cvap r) / totalVotes
       dSdT r = FT.recordSingleton @DSDT $ (pref r - (realToFrac totalDVotes/realToFrac totalVotes)) * (realToFrac $ cvap r) / totalVotes
-      deepDiveWFrac = fmap (FT.mutate dSdP . FT.mutate dSdT . FT.mutate popFrac) deepDive
+      deepDiveWFrac = fmap (FT.mutate dSdP . FT.mutate dSdT . FT.mutate popFrac) deepDive'
       deepDiveSummary = FL.fold deepDiveSummaryFld $ fmap F.rcast deepDiveWFrac
       deepDiveWSummary = (BR.dataRow <$> FL.fold FL.list deepDiveWFrac) ++ [BR.summaryRow deepDiveSummary]
 -- summarize
@@ -499,10 +514,10 @@ deepDiveSummaryFld =
       sFld = wgtdFld (\r -> realToFrac (F.rgetField @BRC.Count r) * (MT.ciMid . F.rgetField @BRE.ModeledTurnout $ r)) (MT.ciMid . F.rgetField @BRE.ModeledPref)
   in DeepDiveSummary <$> cntFld <*> fracPopFld <*> densFld <*> tFld <*> pFld<*> sFld
 
+--deepDiveColonnade :: _
 deepDiveColonnade cas =
   let orNA g = BR.dataOrSummary g (BR.textToStyledHtml . const "N/A")
       showOrNA f = orNA (BR.textToStyledHtml . show . f)
-      state = showOrNA $ F.rgetField @DT.StateAbbreviation
       density = F.rgetField @DT.PopPerSqMile `BR.dataOrSummary` ddsDensity
       mTurnout = (MT.ciMid . F.rgetField @BRE.ModeledTurnout) `BR.dataOrSummary` ddsTurnout
       mPref = (MT.ciMid . F.rgetField @BRE.ModeledPref) `BR.dataOrSummary` ddsPref
@@ -511,7 +526,6 @@ deepDiveColonnade cas =
       mDiff = orNA (\r -> let x = mShare' r in BR.numberToStyledHtml "%2.1f" . (100*) $ (2 * x - 1))
       cvap = F.rgetField @BRC.Count `BR.dataOrSummary` ddsCVAP
       fracPop = F.rgetField @FracPop `BR.dataOrSummary` ddsFracPop
-      ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
       sex = showOrNA $ F.rgetField @DT.SexC
       education = showOrNA $ F.rgetField @DT.CollegeGradC
       race = showOrNA $ F.rgetField @DT.Race5C
@@ -561,7 +575,7 @@ psDemographicsInnerFld =
       cntF = FL.premap cnt FL.sum
       fracF f = intRatio <$> FL.prefilter f cntF <*> cntF
       cntWgtdSumF f = FL.premap (\r -> realToFrac (cnt r) * f r) FL.sum
-      cntWgtdF f = (/) <$> cntWgtdSumF f <*> fmap realToFrac cntF
+--      cntWgtdF f = (/) <$> cntWgtdSumF f <*> fmap realToFrac cntF
   in FF.sequenceRecFold $
      FF.toFoldRecord (fracF ((== DT.Female) . sex))
      V.:& FF.toFoldRecord (fracF ((== DT.Grad) . grad))
@@ -632,7 +646,7 @@ modelDiagnostics cmdLine = do
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       fixedACS_C =  FL.fold postStratRollupFld . fmap fixACS <$> acs2020_C
-      ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
+--      ccesWD_C = fmap BRE.ccesEMRows ccesAndCPSEM_C
       pElexRowsFilter r = F.rgetField @ET.Office r == ET.President && F.rgetField @BR.Year r == 2020
       presElex2020_C = fmap (F.filterFrame pElexRowsFilter . BRE.stateElectionRows) $ ccesAndCPSEM_C
       hElexRowsFilter r = F.rgetField @ET.Office r == ET.House && F.rgetField @BR.Year r == 2020
@@ -664,7 +678,7 @@ modelDiagnostics cmdLine = do
           ccesAndCPS2020_C
           fixedACS_C
       postInfoDiagnostics = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-  fixedACS <- K.ignoreCacheTime fixedACS_C
+--  fixedACS <- K.ignoreCacheTime fixedACS_C
 --  K.logLE K.Info "Demographics By State"
 --  BR.logFrame $ FL.fold (psDemographicsFld (F.rcast @'[BR.StateAbbreviation])) fixedACS
 
@@ -752,7 +766,7 @@ byCategoryColonnade catName f cas =
       <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 stDiagTableColonnade cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
       mShare = MT.ciMid . F.rgetField @BRE.ModeledShare
@@ -770,7 +784,7 @@ stDiagTableColonnade cas =
       cpsTurnout r = ratio (F.rgetField @BRCF.Successes r) (F.rgetField @BRCF.Count r)
       rawDShare r = ratio (demVoters r) (demVoters r + repVoters r)
       ccesDShare r = ratio (F.rgetField @BRE.PresDVotes r) (F.rgetField @BRE.PresDVotes r + F.rgetField @BRE.PresRVotes r)
-  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
       <> C.headed "ACS CVAP" (BR.toCell cas "ACS CVAP" "ACS CVAP" (BR.numberToStyledHtml "%d" . acsCVAP))
       <> C.headed "Elex CVAP" (BR.toCell cas "Elex CVAP" "Elex CVAP" (BR.numberToStyledHtml "%d" . elexCVAP))
       <> C.headed "Elex Votes" (BR.toCell cas "Elex Votes" "Votes" (BR.numberToStyledHtml "%d" . voters))
@@ -788,7 +802,7 @@ stDiagTableColonnade cas =
       <> C.headed "Modeled 2-party D Diff" (BR.toCell cas "M Diff" "M Diff" (BR.numberToStyledHtml "%2.1f" . (100*) . mDiff))
 
 cdDiagTableColonnade cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dist = F.rgetField @BR.CongressionalDistrict
       mTurnout = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       mPref = MT.ciMid . F.rgetField @BRE.ModeledPref
@@ -804,7 +818,7 @@ cdDiagTableColonnade cas =
 --      ccesTurnout  r = ratio (F.rgetField @BRE.PSVoted r) (cvap r)
       rawDShare r = ratio (demVoters r) (demVoters r + repVoters r)
 --      ccesDShare r = ratio (F.rgetField @BRE.PresDVotes r) (F.rgetField @BRE.PresDVotes r + F.rgetField @BRE.PresRVotes r)
-  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
       <> C.headed "District" (BR.toCell cas "State" "State" (BR.textToStyledHtml . show . dist))
       <> C.headed "Elex CVAP" (BR.toCell cas "Elex CVAP" "Elex CVAP" (BR.numberToStyledHtml "%d" . elexCVAP))
       <> C.headed "Elex Votes" (BR.toCell cas "Elex Votes" "Votes" (BR.numberToStyledHtml "%d" . voters))
@@ -835,17 +849,17 @@ newStateLegMapPosts cmdLine = do
   drCDPlans <- Redistrict.allPassedCongressionalPlans
   let dType r = F.rgetField @ET.DistrictTypeC r
       dName r = toString $ F.rgetField @ET.DistrictName r
-      regSLDPost pi sa contested interestingOnly houses desc spDists = do
+      regSLDPost pi' sa contested' interestingOnly houses desc spDists' = do
         let houseList = Set.toList houses
         paPaths <- postPaths (sa <> "_StateLeg") cmdLine
-        BR.brNewPost paPaths pi (sa <> "_SLD") $ do
+        BR.brNewPost paPaths pi' (sa <> "_SLD") $ do
           let overlapF h = (h,) <$> DO.loadOverlapsFromCSV (toString $ "data/districtOverlaps/" <> sa <> "_SLD" <> houseChar h <> "_CD.csv") sa h ET.Congressional
           overlapsL <- traverse overlapF houseList
           let draF h = K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId sa "Passed" h)
           sldDRAs <- traverse draF houseList
           cdDRA <- K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId sa "Passed" ET.Congressional)
 
-          let postSpec = NewSLDMapsPostSpec sa desc paPaths (mconcat sldDRAs) cdDRA (M.fromList overlapsL) contested spDists
+          let postSpec = NewSLDMapsPostSpec sa desc paPaths (mconcat sldDRAs) cdDRA (M.fromList overlapsL) contested' spDists'
           newStateLegMapAnalysis cmdLine postSpec interestingOnly
             (K.liftActionWithCacheTime ccesAndCPSEM_C)
             (K.liftActionWithCacheTime acs_C)
@@ -853,11 +867,11 @@ newStateLegMapPosts cmdLine = do
             (K.liftActionWithCacheTime $ fmap (FL.fold postStratRollupFld . fmap F.rcast . onlyState sa) proposedSLDs_C)
 
   let bothHouses = Set.fromList [ET.StateUpper, ET.StateLower]
-{-
-      postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished (Just BR.Unpublished))
-      contestedNC = const True -- FIXME
-  regSLDPost postInfoNC "NC" contestedNC bothHouses "StateBoth"
--}
+
+      postInfoNC = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+      contestedNC = const True
+  regSLDPost postInfoNC "NC" contestedNC True bothHouses "StateBoth" []
+
   {-
   let postInfoNM = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedNM r = F.rgetField @ET.DistrictTypeC r == ET.StateLower -- state senate every four years, 2024 next
@@ -867,25 +881,32 @@ newStateLegMapPosts cmdLine = do
   let postInfoGA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedGA = const True
   regSLDPost postInfoGA "GA" contestedGA True bothHouses "StateBoth"
-
+-}
   -- PA senate seats are even numbered in mid-term years
   let postInfoPA = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedPA r = dType r == ET.StateLower || fromMaybe True (((==0) . flip mod 2) <$> readMaybe @Int (dName r))
       spDistsPA = fmap (\x -> (ET.StateLower,x)) ["88", "142", "144", "160"]
                   <> fmap (\x -> (ET.StateUpper,x))  ["14", "24"]
   regSLDPost postInfoPA "PA" contestedPA True (Set.fromList [ET.StateUpper, ET.StateLower]) "StateBoth" spDistsPA
--}
+
 
   -- MI senate is 4-year terms, all elected in *mid-term* years. So all in 2022 and none in 2024.
   let postInfoMI = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedMI = const True
-  regSLDPost postInfoMI "MI" contestedMI True bothHouses "StateBoth" []
-{-
+      spDistsMI = ((ET.StateLower,) <$> ["38", "46", "54", "58", "81", "84"])
+                  <> ((ET.StateUpper,) <$> ["11", "12", "30", "35"])
+  regSLDPost postInfoMI "MI" contestedMI True bothHouses "StateBoth" spDistsMI
+
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedAZ = const True -- correct here
-  regSLDPost postInfoAZ "AZ" contestedAZ False (Set.fromList [ET.StateUpper]) "StateUpper"
--}
+  regSLDPost postInfoAZ "AZ" contestedAZ False (Set.fromList [ET.StateUpper]) "StateUpper" []
+
+
+  let postInfoNH = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+      contestedNH = const True
+  regSLDPost postInfoNH "NH" contestedNH True bothHouses "StateBoth" []
+
 
 addRace5 :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> F.Record (rs V.++ '[DT.Race5C])
 addRace5 r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
@@ -978,11 +999,11 @@ gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
   -> (F.Record rs -> Bool)
   -> (F.Record rs -> Bool)
   -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
-gradOfWhiteByDistrictFld ppl isWhite isGrad =
+gradOfWhiteByDistrictFld ppl isWhite' isGrad =
   let wgt = realToFrac . ppl
-      isWhiteGrad r = isWhite r && isGrad r
-      wFld = (/) <$> (FL.prefilter isWhite $ FL.premap wgt FL.sum) <*> (FL.premap wgt FL.sum)
-      wGradFld = (/) <$> (FL.prefilter isWhiteGrad $ FL.premap wgt FL.sum) <*> (FL.prefilter isWhite $ FL.premap wgt FL.sum)
+      isWhiteGrad' r = isWhite' r && isGrad r
+      wFld = (/) <$> (FL.prefilter isWhite' $ FL.premap wgt FL.sum) <*> (FL.premap wgt FL.sum)
+      wGradFld = (/) <$> (FL.prefilter isWhiteGrad' $ FL.premap wgt FL.sum) <*> (FL.prefilter isWhite' $ FL.premap wgt FL.sum)
       mkRecord :: Double -> Double -> F.Record [BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]
       mkRecord x y = x F.&: y F.&: V.RNil
   in FMR.concatFold
@@ -1026,17 +1047,17 @@ capa :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r
 capa cmdLine = do
   K.logLE K.Info "Rebuilding CAPA post (if necessary)."
   let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
-      state = F.rgetField @BR.StateAbbreviation
+      state' = F.rgetField @BR.StateAbbreviation
       distr = F.rgetField @ET.DistrictName
       histDS = F.rgetField @TwoPartyDShare
-      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
-      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+--      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
+--      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
       bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
       density = F.rgetField @DT.PopPerSqMile
   capaPaths <- postPaths "CAPA" cmdLine
   (modelAndDRWith_C, _) <- newCDModeled cmdLine
   let senateStates = Set.fromList ["CO", "AZ", "GA", "NV", "NH", "PA", "FL", "NC", "WI"]
-      capaFilter r = not (state r `Set.member` senateStates)
+      capaFilter r = not (state' r `Set.member` senateStates)
                      && histDS r >= 0.47
                      && histDS r <= 0.53
                      && Numeric.exp (density r) < 2000
@@ -1047,10 +1068,10 @@ capa cmdLine = do
       capaStates' = Set.delete "NJ" capaStates -- no state-leg elections in NJ
   capaOverlapsL <- DO.overlapCollection capaStates' (\sa -> toString $ "data/districtOverlaps/" <> sa <> "_SLDL" <> "_CD.csv") ET.StateLower ET.Congressional
   capaOverlapsU <- DO.overlapCollection capaStates' (\sa -> toString $ "data/districtOverlaps/" <> sa <> "_SLDU" <> "_CD.csv") ET.StateUpper ET.Congressional
-  let overlappingSLDs' threshold cdn overlaps = do
-        let numLD = Vector.length $ DO.populations overlaps
-            pwo = Vector.zip (DO.populations overlaps) (DO.overlaps overlaps)
-            nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps
+  let overlappingSLDs' threshold cdn overlaps' = do
+        let --numLD = Vector.length $ DO.populations overlaps'
+            pwo = Vector.zip (DO.populations overlaps') (DO.overlaps overlaps')
+            nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps'
             intDiv x y = realToFrac x/ realToFrac y
             olFracM (pop, ols) = fmap (\x -> intDiv x pop) $ M.lookup cdn ols
             olFracsM = traverse olFracM pwo
@@ -1066,7 +1087,7 @@ capa cmdLine = do
         return $ fmap (\(n,x) -> (ET.StateUpper, n, x)) namedOverU
           <>  fmap (\(n,x) -> (ET.StateLower, n, x)) namedOverL
 
-      f r = fmap ((state r, distr r),) $ overlappingSLDs 0.5 (state r) (distr r)
+      f r = fmap ((state' r, distr r),) $ overlappingSLDs 0.5 (state' r) (distr r)
   overlapsByCD <- traverse f $ filter ((/= "NJ") . F.rgetField @BR.StateAbbreviation) capaCDs -- NJ state-leg elecitons in odd years
   let olList = concatMap (\(k,slds) -> fmap (q k) slds) overlapsByCD
         where q k (dt, dn, x) = (k, (dt, dn), x)
@@ -1074,7 +1095,7 @@ capa cmdLine = do
 --      flattenedOLs = concatMap flattenOL overlapsByCD
       sldsToModel' ((sa, _), slds) = fmap (sa,) $ fmap (\(dt, dn, _) -> (dt, dn)) slds
       sldsToModel = Set.fromList $ concatMap sldsToModel' overlapsByCD
-      sldsToModelFilter r = (state r, (F.rgetField @ET.DistrictTypeC r, distr r)) `Set.member` sldsToModel
+      sldsToModelFilter r = (state' r, (F.rgetField @ET.DistrictTypeC r, distr r)) `Set.member` sldsToModel
   K.logLE K.Info $ "Overlaps: " <> show olList
   -- FIX: We should do density rescaling here
   proposedSLDs_C <- F.filterFrame sldsToModelFilter <<$>> (prepCensusDistrictData False "model/NewMaps/newStateLegDemographics.bin" =<< BRC.censusTablesFor2022SLDs)
@@ -1087,13 +1108,23 @@ capa cmdLine = do
       model x = K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 postStratInfo ccesAndCPS2020_C x
   modeledSLDs <- model $ fmap (FL.fold postStratRollupFld . fmap F.rcast) proposedSLDs_C
   BR.logFrame modeledSLDs
-  let cdDataMap = FL.fold (FL.premap (\r -> ((state r, distr r), r)) FL.map) capaCDs
+  let cdDataMap = FL.fold (FL.premap (\r -> ((state' r, distr r), r)) FL.map) capaCDs
       addCDDataM (k, y, z) = fmap (, y, z) $ M.lookup k cdDataMap
       dType = F.rgetField @ET.DistrictTypeC
-      sldDataMap = FL.fold (FL.premap (\r -> ((state r, dType r, distr r), r)) FL.map) modeledSLDs
-      addSLDDataM (cd, (dt, dn), z) = fmap (cd, , z) $ M.lookup (state cd, dt, dn) sldDataMap
+      sldDataMap = FL.fold (FL.premap (\r -> ((state' r, dType r, distr r), r)) FL.map) modeledSLDs
+      addSLDDataM (cd, (dt, dn), z) = fmap (cd, , z) $ M.lookup (state' cd, dt, dn) sldDataMap
   olList1 <- K.knitMaybe "capa: Missing CD in cd data map" $ traverse addCDDataM olList
   olList2 <- K.knitMaybe "capa: Missing SLD in sld data map" $ traverse addSLDDataM olList1
+  drSLDPlans <- Redistrict.allPassedSLDPlans
+  let sldSet = Set.fromList $ fmap (\(cd, sld, _) -> (state' cd, dType sld)) olList2
+      draF sa h = FL.fold FL.list <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drSLDPlans (Redistrict.redistrictingPlanId sa "Passed" h))
+  sldDRAs' <- concat <$> (traverse (uncurry draF) $ Set.toList sldSet)
+  let sld2PSMap = FL.fold (FL.premap (\r -> (F.rcast @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] r, F.rgetField @TwoPartyDShare r)) FL.map)
+                            $ fmap addTwoPartyDShare sldDRAs'
+      addSLDDAM (cd, sld, ol) = (cd, sld, ol,) <$> M.lookup (state' cd F.&: dType sld F.&: distr sld F.&: V.RNil) sld2PSMap
+  olList3 <- K.knitMaybe "capa: Missing Dave's analysis for an sld" $ traverse addSLDDAM olList2
+  let sldFilter (_, _, _, hs) = hs >= 0.47 && hs <= 0.53
+      olList4 = filter sldFilter olList3
 --  let (capaCDsAndSLDs, _) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, BR.] (FrameRec bs)
   BR.brNewPost capaPaths postInfo "CAPA" $ do
     BR.brAddRawHtmlTable
@@ -1101,56 +1132,59 @@ capa cmdLine = do
       (BHA.class_ "brTable")
       (capaCDColonnade mempty)
       (reverse $ sortOn bipoc capaCDs)
-
-    BR.brAddRawHtmlTable
-      "Underlying SLDs With >50% in CD"
+    when False -- so this is switchabel without losing inference
+      $ BR.brAddRawHtmlTable
+      "Competitive Underlying SLDs With >50% in CD"
       (BHA.class_ "brTable")
-      (capaSLDColonnade mempty)
-      olList2
+      (capaSLDColonnade sld2PSMap mempty)
+      olList4
 
   --BR.logFrame capaCDs
 
 
-capaSLDColonnade cas =
-  let cdData (r, _, _) = r
-      state = F.rgetField @BR.StateAbbreviation . cdData
+capaSLDColonnade _ cas =
+  let cdData (r, _, _, _) = r
+      state' = F.rgetField @BR.StateAbbreviation . cdData
       cd = F.rgetField @ET.DistrictName . cdData
       histDS = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare . cdData
       modelDS_CD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare . cdData
-      modelT_CD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . cdData
+--      modelT_CD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . cdData
       bipoc y = 1 - F.rgetField @BRE.FracWhiteNonHispanic (cdData y)
       density = F.rgetField @DT.PopPerSqMile . cdData
-      sldData (_, y, _) = y
+      sldData (_, y, _, _) = y
       dType = F.rgetField @ET.DistrictTypeC . sldData
       dName = F.rgetField @ET.DistrictName . sldData
-      overlapFrac (_, _, x) = x
+      overlapFrac (_, _, x, _) = x
       sld y = show (dType y) <> "-" <> dName y
       modelDS_SLD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare . sldData
-      modelT_SLD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . sldData
-  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+--      modelT_SLD = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout . sldData
+      hs (_, _, _, d) = round @_ @Int (100 * d)
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
       <> C.headed "Congressional District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . cd))
       <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . histDS))
       <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS_CD))
-      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT_CD))
+--      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT_CD))
       <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
       <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
       <> C.headed "State-Leg District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . sld))
       <> C.headed "%SLD in CD" (BR.toCell cas "Overlap" "Overlap" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . overlapFrac))
-      <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS_SLD))
-      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT_SLD))
+--      <> C.headed "Model Turnout" (BR.toCell cas "SLD Turnout" "SLD Turnout" (BR.numberToStyledHtml "%d" . modelT_SLD))
+      <> C.headed "SLD Historical (Dave's)" (BR.toCell cas "SLD Historical" "SLD Historical" (BR.numberToStyledHtml "%d" . hs))
+      <> C.headed "Model D Share" (BR.toCell cas "SLD DShare" "SLD DShare" (BR.numberToStyledHtml "%d" . modelDS_SLD))
+
 capaCDColonnade cas =
-  let state = F.rgetField @BR.StateAbbreviation
+  let state' = F.rgetField @BR.StateAbbreviation
       distr = F.rgetField @ET.DistrictName
       histDS = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       modelDS = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-      modelT = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout
+--      modelT = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledTurnout
       bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
       density = F.rgetField @DT.PopPerSqMile
-  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
       <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . distr))
       <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . histDS))
       <> C.headed "Model D Share" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelDS))
-      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT))
+--      <> C.headed "Model Turnout" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . modelT))
       <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
       <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
 
@@ -1163,6 +1197,10 @@ type RescaledProposedCD = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNa
                           , BR.Population, DT.PWPopPerSqMile, DT.SexC
                           , DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, BRC.Count, DT.PopPerSqMile, DT.Race5C]
 
+
+cachedRows fn dsn x = K.ignoreCacheTime x >>= (\y ->  K.logLE K.Diagnostic (fn <> ": " <> dsn <> "has " <> show (FL.fold FL.length y) <> " rows."))
+cachedUnique fn dsn f x = K.ignoreCacheTime x >>= (\y ->  K.logLE K.Diagnostic (fn <> ": " <> dsn <> "has " <> show (Set.size $ FL.fold (FL.premap f FL.set) y) <> " uniques."))
+
 newCDModeled :: forall r.(K.KnitEffects r, BR.CacheEffects r)
              => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ModeledWithDRAndAggDemo)
                                           , K.ActionWithCacheTime r (F.FrameRec RescaledProposedCD))
@@ -1171,17 +1209,21 @@ newCDModeled cmdLine = do
   ccesAndCPSEM_C <-  BRE.prepCCESAndCPSEM False
   acs_C <- BRE.prepACS False
   proposedCDs_C <- prepCensusDistrictData False "model/newMaps/newCDDemographicsDR.bin" =<< BRC.censusTablesForProposedCDs
+  cachedRows "newCDModeled" "proposedCDs" proposedCDs_C
+  cachedUnique "newCDModeled" "proposedCDs" (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) proposedCDs_C
   let ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
       rescaleDeps = (,) <$> acs2020_C <*> proposedCDs_C
   rescaledProposed_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/rescaledProposed.bin" rescaleDeps $ \(acs, proposed) -> do
     let proposedPWLD = FL.fold (pwldByStateFld (F.rgetField @BRC.Count)) proposed
         acsPWLD = FL.fold (pwldByStateFld (F.rgetField @PUMS.Citizens)) acs
-        whenMissing _ _ = Nothing
-        whenMatched _ acsPWLD xPWLD = Numeric.exp (acsPWLD - xPWLD)
+--        whenMissing _ _ = Nothing
+        whenMatched _ acsPWLD' xPWLD = Numeric.exp (acsPWLD' - xPWLD)
         rescaleMap = M.merge M.dropMissing M.dropMissing (M.zipWithMatched whenMatched) acsPWLD proposedPWLD
         rescaleRow r = fmap (\s -> FT.fieldEndo @DT.PopPerSqMile (*s) r) $ M.lookup (F.rgetField @BR.StateAbbreviation r) rescaleMap
     F.toFrame <$> (K.knitMaybe "allCDsPost: missing key in traversal of proposed for density rescaling" $ traverse rescaleRow $ FL.fold FL.list proposed)
+  cachedRows "newCDModeled" "rescaledProposed" rescaledProposed_C
+
   let mapGroup :: SB.GroupTypeTag (F.Record CDLocWStAbbrR) = SB.GroupTypeTag "CD"
       psInfoDM name = (mapGroup, name)
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
@@ -1192,6 +1234,7 @@ newCDModeled cmdLine = do
         (Just stanParams) modelDir modelVariant 2020 (psInfoDM name)
         ccesAndCPS2020_C (fmap (F.rcast @PostStratR) <$> rescaledProposed_C)
   modeled_C <- modelDM ("All_New_CD")
+  cachedRows "newCDModeled" "modeled" modeled_C
   drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
   let deps = (,) <$> modeled_C <*> proposedCDs_C
   result_C <- BR.retrieveOrMakeFrame "posts/newMaps/allCDs/modelAndDRWith.bin" deps $ \(modeled, prop) -> do
@@ -1215,20 +1258,21 @@ allCDsPost :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K
 allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
   K.logLE K.Info "Rebuilding AllCDs post (if necessary)."
   let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
-      state = F.rgetField @BR.StateAbbreviation
+      state' = F.rgetField @BR.StateAbbreviation
       distr = F.rgetField @ET.DistrictName
   allCDsPaths <- sawbuckPostPaths "SawbuckPatriots" cmdLine
   (modelAndDRWith_C, rescaledProposed_C) <- newCDModeled cmdLine
-  overlaps <- DO.oldCDOverlapCollection
+  overlaps' <- DO.oldCDOverlapCollection
   let oldCDOverlapsE :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs ET.DistrictName) => F.Record rs -> Either Text Text
       oldCDOverlapsE r = do
-        stateOverlaps <- maybe (Left $ "Failed to find stateAbbreviation=" <> state r <> " in " <> show overlaps) Right
-                         $ M.lookup (state r) overlaps
-        cdOverlaps <- maybe (Left $ "Failed to find dist=" <> distr r <> " in " <> state r <> " in " <> show overlaps) Right
+        stateOverlaps <- maybe (Left $ "Failed to find stateAbbreviation=" <> state' r <> " in " <> show overlaps') Right
+                         $ M.lookup (state' r) overlaps'
+        cdOverlaps <- maybe (Left $ "Failed to find dist=" <> distr r <> " in " <> state' r <> " in " <> show overlaps') Right
                       $ DO.overlapsOverThresholdForRowByName 0.5 stateOverlaps (distr r)
         return $ T.intercalate "," . fmap (\(dn, fo) -> dn <> " (" <> show (round (100 * fo)) <> "%)") . M.toList $ cdOverlaps
 
   modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
+  K.logLE K.Diagnostic $ "allCDsPost: modelAndDRWith has " <> show (FL.fold FL.length modelAndDRWith) <> " rows."
   let brDF r = brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r)
   sortedFilteredModelAndDRA <- K.knitEither
                                $ F.toFrame
@@ -1289,8 +1333,8 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
             inState r = F.rgetField @BR.StateAbbreviation r == sa
         in DCC.SBCPartyData (\r -> inState r && f r >= 0.5) (\r -> inState r && f r < 0.5)
       sApMediansE sa = DCC.partyMedians (stateAndPartyFilters sa) quantileFunctionsDblE sortedFilteredModelAndDRA
-      sApRanksE sa = DCC.partyRanks (stateAndPartyFilters sa) quantileFunctionsDblE sortedFilteredModelAndDRA
-      sApLoHisE sa = DCC.partyLoHis <$> (sApRanksE sa)
+--      sApRanksE sa = DCC.partyRanks (stateAndPartyFilters sa) quantileFunctionsDblE sortedFilteredModelAndDRA
+--      sApLoHisE sa = DCC.partyLoHis <$> (sApRanksE sa)
 --      sApLoHisE sa = K.knitEither $ sApLoHisE sa
 --      sApMediansE sa = K.knitEither $ sApMediansE sa
 
@@ -1310,6 +1354,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         in compare (st x)  (st y) <> ET.districtNameCompare (dn x) (dn y)
 
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
+    BR.brAddMarkDown "**NB: AK, DE, MT, ND, SD, VT and WY are missing since each has only one district and so no redistricting data was available."
     let fTable t ds = do
           (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
             [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
@@ -1322,7 +1367,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
               (sortBy districtCompare ds)
             let dists :: Set (F.Record [BR.StateAbbreviation, ET.DistrictName]) = Set.fromList $ fmap (F.rcast @[BR.StateAbbreviation, ET.DistrictName]) ds
-            K.addHvega Nothing Nothing
+            _<- K.addHvega Nothing Nothing
               $ BRV.demoCompareXYCS
               "District"
               "% non-white"
@@ -1336,7 +1381,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
     K.logLE K.Info $ "sortedFilteredModelAndDRA has " <> show (FL.fold FL.length sortedFilteredModelAndDRA) <> " rows."
     categorized <- categorizeDistricts' (const True) brShareRange draShareRangeCD dCategories4 sortedFilteredModelAndDRA
     let withCategories = addCategoriesToRecords categorized
-        (tsneWithCategories, missing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] tsneResult withCategories
+        (tsneWithCategories, _) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] tsneResult withCategories
     traverse_ (uncurry fTable) categorized
 --    let getSBCs :: Monad m
 --                => F.Record [BR.StateAbbreviation, ET.DistrictName]
@@ -1352,7 +1397,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
               PS.modify' $ updateSBCMap comp newMap
               return sbcs
 
-    K.addHvega Nothing Nothing
+    _ <- K.addHvega Nothing Nothing
       $ BRDC.tsneChartCat @DistCategory "All" "Category" (FV.ViewConfig 600 600 5) (fmap F.rcast tsneWithCategories)
     let distKey r = F.rgetField @BR.StateAbbreviation r <> "-"
                     <> (let dn = F.rgetField @ET.DistrictName r in if T.length dn == 1 then "0" <> dn else dn)
@@ -1374,7 +1419,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
           let dk = distKey d
               noteName = BR.Used $ dk <> if sp then "_sawbuck" else "_details"
               sp = isJust spcdM
-          mNoteUrl <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
+          _ <- BR.brNewNote allCDsPaths postInfo noteName  ("District Details: " <> dk) $ do
             when sp $ cdPostTop (BR.inputsDir allCDsPaths) (distKey d) >>= BR.brAddMarkDown
             case M.lookup dk tsneDistMap of
               Nothing -> K.knitError $ dk <> " is missing from tsne Results"
@@ -1382,19 +1427,19 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                 (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
                   [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
                   _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
-                let tsneNear = F.filterFrame (tsneResFilter 7 t1 t2) $ tsneWith
+                let tsneNear = F.filterFrame (tsneResFilter 15 t1 t2) $ tsneWith
                 when (not sp) $ do
                   BR.brAddRawHtmlTable dk
                     (BHA.class_ "brTable")
                     (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
                     (sortBy districtCompare $ fmap F.rcast $ FL.fold FL.list tsneNear)
-                  K.addHvega Nothing Nothing
+                  _ <- K.addHvega Nothing Nothing
                     $ BRDC.tsneChartNum @TwoPartyDShare dk "Hist Share" (\x -> 100 * x - 50) (FV.ViewConfig 600 600 5) (fmap F.rcast tsneNear)
                   pure ()
                 sbcsNatE <- getSBCs DCC.SBCNational $ F.rcast d
                 sbcsNat <- K.knitEither sbcsNatE
 --                K.addHvega Nothing Nothing $ sbcChart SBCNational 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsNat)
-                K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
+                _ <- K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
                   (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
                   $ one (dk, True, sbcsNat)
                 sbcsStE <- getSBCs DCC.SBCState $ F.rcast d
@@ -1403,8 +1448,8 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                   Right sbcsSt -> do
                     BR.brAddMarkDown $ cdPostStateChart (BR.inputsDir allCDsPaths) dk
 --                    (K.addHvega Nothing Nothing $ sbcChart SBCState 20 10 (FV.ViewConfig 300 80 5) dRanksSBD rRanksSBD $ one (dk, True, sbcsSt)) >> pure ()
-                    sApLoHis <- K.knitEither $ sApLoHisE $ F.rgetField @BR.StateAbbreviation d
-                    K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCState 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
+--                    sApLoHis <- K.knitEither $ sApLoHisE $ F.rgetField @BR.StateAbbreviation d
+                    _ <- K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCState 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
                       (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
                       $ one (dk, True, sbcsSt)
                     pure ()
@@ -1412,9 +1457,10 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
                     eachNear dNear = do
                       let dkNear = distKey dNear
                       sbcsNearE <- getSBCs DCC.SBCNational $ F.rcast dNear
-                      K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
+                      sbcsNear <- K.knitEither sbcsNearE
+                      _ <- K.addHvega Nothing Nothing $ DCC.sbcChart DCC.SBCNational 20 10 (FV.ViewConfig 300 80 5) (Just categoryNames)
                         (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
-                        $ one (dk, True, sbcsNat)
+                        $ (dk, True, sbcsNat) :| [(dkNear, False, sbcsNear)]
                       pure ()
                 case spcdM of
                   Nothing -> traverse_ eachNear tsneNear'
@@ -1465,6 +1511,11 @@ spCD = [(mkCDKey "CA" "9", one $ mkCDKey "AZ" "7" )
        , (mkCDKey "NV" "1", one $ mkCDKey "CA" "6")
        , (mkCDKey "MN" "2", one $ mkCDKey "WI" "2")
        , (mkCDKey "CA" "13", one $ mkCDKey "CA" "25")
+       , (mkCDKey "OH" "9", one $ mkCDKey "MI" "8")
+       , (mkCDKey "NC" "13", one $ mkCDKey "NC" "4")
+       , (mkCDKey "TX" "28", one $ mkCDKey "TX" "34")
+       , (mkCDKey "IN" "1", one $ mkCDKey "IL" "13")
+       , (mkCDKey "PA" "8", mkCDKey "NY" "19" :| [mkCDKey "NY" "22"])
        ]
 
 --data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
@@ -1481,22 +1532,22 @@ updateSBCMap DCC.SBCState m sbcs = sbcs { sbcState = m }
 
 
 allCDsColonnade nwQ gowQ dQ cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
       was = F.rgetField @OldCDOverlap
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      dave' = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
       fracNW r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
       qF x = case x of
         Left _ -> BR.textToStyledHtml "Err"
         Right n -> BR.numberToStyledHtml "%d" n
       fracGOW r = F.rgetField @BRE.FracGradOfWhite r
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      share50' = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "Was" (BR.toCell cas "Was" "Was" (BR.textToStyledHtml . was))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50 r) (dave r))))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50'))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave'))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeCD (share50' r) (dave r))))
      <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracNW))
      <> C.headed "NW Quantile" (BR.toCell cas "NWQ" "NWQ" (qF . nwQ))
      <> C.headed "%Grad-White" (BR.toCell cas "%GW" "%GW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . fracGOW))
@@ -1518,7 +1569,7 @@ diffVsChart title (xLabel, f) vc rows =
                     V.:& FVD.asVLData (GV.Number . f) xLabel
                     V.:& V.RNil
       vlData = FVD.recordsToData toVLDataRec rows
-      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
+--      makeDistrictName = GV.transform . GV.calculateAs "datum.State + '-' + datum.District" "District Name"
       makeShareDiff = GV.transform . GV.calculateAs "datum.Modeled_Share - datum.Historical_Share" "Delta"
       encDiff = GV.position GV.Y ([GV.PName "Delta"
                                   , GV.PmType GV.Quantitative
@@ -1559,12 +1610,12 @@ newCongressionalMapPosts cmdLine = do
   drCDPlans <- Redistrict.allPassedCongressionalPlans
   let acsExtantCDs_C = fmap fixACS <$> acs_C
 
-  let regCDPost pi sa extantDemo_C = do
-        paths <- postPaths (sa <> "_Congressional") cmdLine
-        BR.brNewPost paths pi sa $ do
-          postSpec <- NewCDMapPostSpec sa paths
+  let regCDPost pi' sa extantDemo_C = do
+        paths' <- postPaths (sa <> "_Congressional") cmdLine
+        BR.brNewPost paths' pi' sa $ do
+          postSpec <- NewCDMapPostSpec sa paths'
             <$> (K.ignoreCacheTimeM $ Redistrict.lookupAndLoadRedistrictingPlanAnalysis drCDPlans (Redistrict.redistrictingPlanId sa "Passed" ET.Congressional))
-          newCongressionalMapAnalysis False cmdLine postSpec pi
+          newCongressionalMapAnalysis False cmdLine postSpec pi'
             (K.liftActionWithCacheTime ccesWD_C)
             (K.liftActionWithCacheTime ccesAndCPSEM_C)
             (K.liftActionWithCacheTime acs_C)
@@ -1602,15 +1653,15 @@ newCongressionalMapPosts cmdLine = do
   regCDPost postInfoTX "TX" acsExtantCDs_C
 
 districtColonnade cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
       share5 = MT.ciLower . F.rgetField @BRE.ModeledShare
-      share50 = MT.ciMid . F.rgetField @BRE.ModeledShare
+      share50' = MT.ciMid . F.rgetField @BRE.ModeledShare
       share95 = MT.ciUpper . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
-     <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50'))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
 modelCompColonnade states cas =
@@ -1772,7 +1823,7 @@ categorizeDistricts :: forall f rs r. (K.KnitEffects r, Foldable f
                                       )
                     => (F.Record rs -> Bool) -> (Int, Int) -> (Int, Int) -> f (F.Record rs) -> K.Sem r (CategorizedDistricts [] rs)
 categorizeDistricts cc brR draR allDists = do
-  let length = FL.fold FL.length
+  let length' = FL.fold FL.length
       bothCloseFld = FL.prefilter (bothCloseFilter cc brR draR) FL.list
       plausibleFld = FL.prefilter (plausibleSurpriseFilter cc brR draR) FL.list
       diffOfDegreeFld = FL.prefilter (diffOfDegreeFilter cc brR draR) FL.list
@@ -1789,8 +1840,8 @@ categorizeDistricts cc brR draR allDists = do
                <*> safeSafeFld
       (countAll, uninteresting, categorized) = FL.fold allFld allDists
       checkTotal =
-        let cnt x = length (x categorized)
-        in (countAll - length uninteresting == cnt bothClose + cnt plausibleSurprise + cnt diffOfDegree + cnt implausibleSurprise + cnt safeSafe)
+        let cnt x = length' (x categorized)
+        in (countAll - length' uninteresting == cnt bothClose + cnt plausibleSurprise + cnt diffOfDegree + cnt implausibleSurprise + cnt safeSafe)
   when (not checkTotal) $ K.logLE K.Info $ "Categorized Districts: count matches"
   let findOverlaps :: (Foldable g)
                    => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [ET.DistrictTypeC, ET.DistrictName])
@@ -1839,14 +1890,14 @@ categorizeDistricts' :: forall f rs r. (K.KnitEffects r
                      -> f (F.Record rs)
                      -> K.Sem r ([(Text, [F.Record rs])])
 categorizeDistricts' cc brR draR cats allDists = do
-  let length = FL.fold FL.length
+  let length' = FL.fold FL.length
       catFld c =  (,) <$> pure (districtCategoryName c) <*> FL.prefilter (districtCategoryCriteria c cc brR draR) FL.list
       catsFld = traverse catFld cats
       restFld = FL.prefilter (not . cc) FL.list
       allFld = (,,) <$> FL.length <*> catsFld <*> restFld
       (countAll, categorized, uninteresting) = FL.fold allFld allDists
-      checkTotal = (countAll - length uninteresting) == FL.fold (FL.premap (length . snd) FL.sum) categorized
-  K.logLE K.Info $ show (length uninteresting) <> " of " <> show countAll <> " are uninteresting districts."
+      checkTotal = (countAll - length' uninteresting) == FL.fold (FL.premap (length' . snd) FL.sum) categorized
+  K.logLE K.Info $ show (length' uninteresting) <> " of " <> show countAll <> " are uninteresting districts."
   when (not checkTotal) $ K.logLE K.Info "Categorized Districts: counts don't match!"
   let findOverlaps :: (Foldable g)
                    => g (F.Record rs) -> g (F.Record rs) -> Set.Set (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
@@ -1919,7 +1970,7 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (postStratInfo dd) ccesAndCPS2020_C x
   modeledCDs <- modelDM "Congressional" (rescaleCD . fmap F.rcast <$> cdDemo_C)
   modeledSLDs <- modelDM (districtDescription postSpec) (rescaleSLD . fmap F.rcast <$> sldDemo_C)
-  sldDemo <- K.ignoreCacheTime sldDemo_C
+  sldDemo' <- K.ignoreCacheTime sldDemo_C
   let (modelDRA, modelDRAMissing)
         = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
         modeledSLDs
@@ -1954,6 +2005,14 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       interestingFilter r = F.rcast @[ET.DistrictTypeC, ET.DistrictName] r `Set.member` interestingDistricts
   K.logLE K.Info $ "For " <> districtDescription postSpec <> " in " <> stateAbbr postSpec
     <> " there are " <> show (length interestingDistricts) <> " interesting districts."
+  let districtOrder ra rb = let cd = compare (dType ra) (dType rb)
+                            in if cd /= EQ then cd
+                               else ET.districtNameCompare (dName ra) (dName rb)
+  BR.brAddRawHtmlTable
+    ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: In District order")
+    (BHA.class_ "brTable")
+    (dmColonnadeOverlap overlapsMMap tableCAS)
+    (sortBy districtOrder sortedModelAndDRA)
   -- for Sawbuck
   let sawBuckFilter r = dra r >= (48 :: Int) && dra r <= (52 :: Int)
       sawBuckDelta r = dra r - modMid r
@@ -1992,11 +2051,11 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
        (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
        (stateAbbr postSpec <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
-       (F.filterFrame interestingFilter sldDemo)
+       (F.filterFrame interestingFilter sldDemo')
 
   let (modelDRADemo, demoMissing) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
                                     ({- F.filterFrame interestingFilter-} modelDRA)
-                                    ({- F.filterFrame interestingFilter-} sldDemo)
+                                    ({- F.filterFrame interestingFilter-} sldDemo')
   when (not $ null demoMissing) $ K.knitError $ "newStateLegAnalysis: missing keys in modelDRA/demo join. " <> show demoMissing
   let interestingModelDRADemo = F.filterFrame interestingFilter modelDRADemo
   _ <- K.addHvega Nothing Nothing
@@ -2041,7 +2100,7 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
       sbcChartE :: K.KnitOne r => Text -> Either Text [DCC.SBCCategoryData DCC.SBComparison] -> K.Sem r ()
       sbcChartE dk sbcsNatE = do
         sbcsNat <- K.knitEither sbcsNatE
-        K.addHvega Nothing Nothing
+        _ <- K.addHvega Nothing Nothing
           $ DCC.sbcChart DCC.SBCState 20 10 (FV.ViewConfig 300 80 5)
           (Just categoryNames)
           (fmap (\(n, m) -> (realToFrac n, realToFrac m)) <<$>> partyLoHis)
@@ -2060,18 +2119,18 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
   pure ()
 
 dmColonnadeOverlap olMM cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dType = F.rgetField @ET.DistrictTypeC
       dName = F.rgetField @ET.DistrictName
       dKey r = (dType r, dName r)
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      dave' = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50' = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "House" (BR.toCell cas "District" "District" (BR.textToStyledHtml . printDType . dType))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
-     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeSLD (share50 r) (dave r))))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50'))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave'))
+     <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brShareRange draShareRangeSLD (share50' r) (dave' r))))
      <> C.headed "CD Overlaps" (BR.toCell cas "CD Overlaps" "CD Overlaps" (BR.textToStyledHtml . T.intercalate "," . fmap fst . M.toList . fromMaybe mempty . olMM . dKey))
 
 data NewCDMapPostSpec = NewCDMapPostSpec Text (BR.PostPaths BR.Abs) (F.Frame Redistrict.DRAnalysis)
@@ -2091,22 +2150,22 @@ newCongressionalMapAnalysis :: forall r.(K.KnitMany r, K.KnitOne r, BR.CacheEffe
                             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- extant districts
                             -> K.ActionWithCacheTime r (F.FrameRec PostStratR) -- new districts
                             -> K.Sem r ()
-newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesAndCPSEM_C acs_C extantDemo_C proposedDemo_C = K.wrapPrefix "newCongressionalMapsAnalysis" $ do
-  let (NewCDMapPostSpec stateAbbr postPaths drAnalysis) = postSpec
-  K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr <> " post"
-  let ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
+newCongressionalMapAnalysis _ cmdLine postSpec postInfo _ ccesAndCPSEM_C acs_C extantDemo_C proposedDemo_C = K.wrapPrefix "newCongressionalMapsAnalysis" $ do
+  let (NewCDMapPostSpec stateAbbr' postPaths' drAnalysis) = postSpec
+  K.logLE K.Info $ "Re-building NewMaps " <> stateAbbr' <> " post"
+  let --ccesAndCPS2018_C = fmap (BRE.ccesAndCPSForYears [2018]) ccesAndCPSEM_C
       ccesAndCPS2020_C = fmap (BRE.ccesAndCPSForYears [2020]) ccesAndCPSEM_C
       acs2020_C = fmap (BRE.acsForYears [2020]) acs_C
   extant <- K.ignoreCacheTime extantDemo_C
   proposed <- K.ignoreCacheTime proposedDemo_C
-  acsForState <- fmap (F.filterFrame ((== stateAbbr) . F.rgetField @BR.StateAbbreviation)) $ K.ignoreCacheTime acs2020_C
+  acsForState <- fmap (F.filterFrame ((== stateAbbr') . F.rgetField @BR.StateAbbreviation)) $ K.ignoreCacheTime acs2020_C
   let extantPWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @BRC.Count)) extant
       proposedPWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @BRC.Count)) proposed
       acs2020PWLD = FL.fold (peopleWeightedLogDensityFld (F.rgetField @PUMS.Citizens)) acsForState
       rescaleExtant = rescaleDensity $ Numeric.exp (acs2020PWLD - extantPWLD)
       rescaleProposed = rescaleDensity $ Numeric.exp (acs2020PWLD - proposedPWLD)
   K.logLE K.Info $ "People-weighted log-density: acs=" <> show acs2020PWLD <> "; extant=" <> show extantPWLD <> "; proposed=" <> show proposedPWLD
-  let addDistrict r = r F.<+> ((ET.Congressional F.&: show (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
+  let addDistrict' r = r F.<+> ((ET.Congressional F.&: show (F.rgetField @ET.CongressionalDistrict r) F.&: V.RNil) :: F.Record [ET.DistrictTypeC, ET.DistrictName])
       addElexDShare r = let dv = F.rgetField @BRE.DVotes r
                             rv = F.rgetField @BRE.RVotes r
                         in r F.<+> (FT.recordSingleton @ElexDShare $ if (dv + rv) == 0 then 0 else (realToFrac dv/realToFrac (dv + rv)))
@@ -2117,24 +2176,24 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       stanParams = SC.StanMCParameters 4 4 (Just 1000) (Just 1000) (Just 0.8) (Just 10) Nothing
       modelDM :: BRE.Model k -> Text -> K.ActionWithCacheTime r (F.FrameRec PostStratR)
               -> K.Sem r (F.FrameRec (BRE.ModelResultsR CDLocWStAbbrR))
-      modelDM model name x = do
+      modelDM _ name x = do
         K.ignoreCacheTimeM $ BRE.electionModelDM False cmdLine False (Just stanParams) modelDir modelVariant 2020 (psInfoDM name) ccesAndCPS2020_C x
 
-  proposedBaseHV <- modelDM modelVariant (stateAbbr <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
-  extantBaseHV <- modelDM modelVariant (stateAbbr <> "_Extant") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
+  proposedBaseHV <- modelDM modelVariant (stateAbbr' <> "_Proposed") (rescaleProposed . fmap F.rcast <$> proposedDemo_C)
+  extantBaseHV <- modelDM modelVariant (stateAbbr' <> "_Extant") (rescaleExtant . fmap F.rcast <$> extantDemo_C)
 
   let extantForPost = extantBaseHV
       proposedForPost = proposedBaseHV
   elections_C <- BR.houseElectionsWithIncumbency
-  elections <- fmap (onlyState stateAbbr . F.filterFrame ((==2020) . F.rgetField @BR.Year)) $ K.ignoreCacheTime elections_C
+  elections <- fmap (onlyState stateAbbr' . F.filterFrame ((==2020) . F.rgetField @BR.Year)) $ K.ignoreCacheTime elections_C
   K.logLE K.Diagnostic $ "flattening "
-  flattenedElections <- fmap (addDistrict . addElexDShare)
+  flattenedElections <- fmap (addDistrict' . addElexDShare)
                         <$> (K.knitEither $ FL.foldM (BRE.electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]) $ F.rcast <$> elections)
   let
       oldDistrictsNoteName = BR.Used "Old_Districts"
   extantDemo <- K.ignoreCacheTime extantDemo_C
-  mOldDistrictsUrl <- BR.brNewNote postPaths postInfo oldDistrictsNoteName (stateAbbr <> ": Old Districts") $ do
-    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_intro"
+  mOldDistrictsUrl <- BR.brNewNote postPaths' postInfo oldDistrictsNoteName (stateAbbr' <> ": Old Districts") $ do
+    BR.brAddNoteMarkDownFromFile postPaths' oldDistrictsNoteName "_intro"
     let extantByModelShare = modelShareSort cdDistLabel extantBaseHV --extantPlusStateAndStateRace_RaceDensityNC
     _ <- K.addHvega Nothing Nothing
          $ BRV.demoCompare
@@ -2143,13 +2202,13 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
          (F.rgetField @BRC.Count)
          ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> F.rgetField @ET.DistrictName r, Just extantByModelShare)
          (Just ("log(Density)", Numeric.log . F.rgetField @DT.PopPerSqMile))
-         (stateAbbr <> " Old: By Race and Education")
+         (stateAbbr' <> " Old: By Race and Education")
          (FV.ViewConfig 600 600 5)
          extantDemo
-    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsBar"
+    BR.brAddNoteMarkDownFromFile postPaths' oldDistrictsNoteName "_afterDemographicsBar"
     let (demoElexModelExtant, missing1E, missing2E)
           = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
-            (onlyState stateAbbr extantDemo)
+            (onlyState stateAbbr' extantDemo)
             flattenedElections
             extantBaseHV
 --            extantPlusStateAndStateRace_RaceDensityNC
@@ -2164,10 +2223,10 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
       "% college grad"
       "Modeled D-Edge"
       "log density"
-      (stateAbbr <> " demographic scatter")
+      (stateAbbr' <> " demographic scatter")
       (FV.ViewConfig 600 600 5)
       (FL.fold (xyFold' cdDistLabel) demoElexModelExtant)
-    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterDemographicsScatter"
+    BR.brAddNoteMarkDownFromFile postPaths' oldDistrictsNoteName "_afterDemographicsScatter"
 
     let (oldMapsCompare, missing)
           = FJ.leftJoinWithMissing @[BR.Year, DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
@@ -2177,19 +2236,19 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
     _ <- K.addHvega Nothing Nothing
          $ modelAndElectionScatter
          True
-         (stateAbbr <> " 2020: Election vs Demographic Model")
+         (stateAbbr' <> " 2020: Election vs Demographic Model")
          (FV.ViewConfig 600 600 5)
          (fmap F.rcast oldMapsCompare)
-    BR.brAddNoteMarkDownFromFile postPaths oldDistrictsNoteName "_afterModelElection"
+    BR.brAddNoteMarkDownFromFile postPaths' oldDistrictsNoteName "_afterModelElection"
     BR.brAddRawHtmlTable
-      ("2020 Dem Vote Share, " <> stateAbbr <> ": Demographic Model vs. Election Results")
+      ("2020 Dem Vote Share, " <> stateAbbr' <> ": Demographic Model vs. Election Results")
       (BHA.class_ "brTable")
       (extantModeledColonnade mempty)
       oldMapsCompare
   oldDistrictsNoteUrl <- K.knitMaybe "extant districts Note Url is Nothing" $ mOldDistrictsUrl
   let oldDistrictsNoteRef = "[oldDistricts]:" <> oldDistrictsNoteUrl
-  BR.brAddPostMarkDownFromFileWith postPaths "_intro" (Just oldDistrictsNoteRef)
-  let (modelAndDR, missing)
+  BR.brAddPostMarkDownFromFileWith postPaths' "_intro" (Just oldDistrictsNoteRef)
+  let (modelAndDR, _)
         = FJ.leftJoinWithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
           proposedForPost
 --          proposedPlusStateAndStateRace_RaceDensityNC
@@ -2197,18 +2256,18 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
   _ <- K.addHvega Nothing Nothing
        $ modelAndDaveScatterChart
        True
-       (stateAbbr <> " 2022: Historical vs. Demographic models")
+       (stateAbbr' <> " 2022: Historical vs. Demographic models")
        (FV.ViewConfig 600 600 5)
        (fmap F.rcast modelAndDR)
-  BR.brAddPostMarkDownFromFile postPaths "_afterDaveModel"
+  BR.brAddPostMarkDownFromFile postPaths' "_afterDaveModel"
   let sortedModelAndDRA = reverse $ sortOn (MT.ciMid . F.rgetField @BRE.ModeledShare) $ FL.fold FL.list modelAndDR
   BR.brAddRawHtmlTable
-    ("Calculated Dem Vote Share, " <> stateAbbr <> " 2022: Demographic Model vs. Historical Model (DR)")
+    ("Calculated Dem Vote Share, " <> stateAbbr' <> " 2022: Demographic Model vs. Historical Model (DR)")
     (BHA.class_ "brTable")
     (daveModelColonnade brShareRange draShareRangeCD $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
     sortedModelAndDRA
-  BR.brAddPostMarkDownFromFile postPaths "_daveModelTable"
---  BR.brAddPostMarkDownFromFile postPaths "_beforeNewDemographics"
+  BR.brAddPostMarkDownFromFile postPaths' "_daveModelTable"
+--  BR.brAddPostMarkDownFromFile postPaths' "_beforeNewDemographics"
   let proposedByModelShare = modelShareSort cdDistLabel proposedBaseHV --proposedPlusStateAndStateRace_RaceDensityNC
   proposedDemo <- K.ignoreCacheTime proposedDemo_C
   _ <- K.addHvega Nothing Nothing
@@ -2218,18 +2277,18 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
        (F.rgetField @BRC.Count)
        ("District", \r -> F.rgetField @DT.StateAbbreviation r <> "-" <> F.rgetField @ET.DistrictName r, Just proposedByModelShare)
        (Just ("log(Density)", (\x -> x) . Numeric.log . F.rgetField @DT.PopPerSqMile))
-       (stateAbbr <> " New: By Race and Education")
+       (stateAbbr' <> " New: By Race and Education")
        (FV.ViewConfig 600 600 5)
        proposedDemo
   let (demoModelAndDR, missing1P, missing2P)
         = FJ.leftJoin3WithMissing @[DT.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
-          (onlyState stateAbbr proposedDemo)
+          (onlyState stateAbbr' proposedDemo)
           proposedForPost
 --          proposedPlusStateAndStateRace_RaceDensityNC
           (fmap addTwoPartyDShare drAnalysis)
   when (not $ null missing1P) $ K.knitError $ "Missing keys when joining demographics results and model: " <> show missing1P
   when (not $ null missing2P) $ K.knitError $ "Missing keys when joining demographics results and Dave's redistricting analysis: " <> show missing2P
---  BR.brAddPostMarkDownFromFile postPaths "_afterNewDemographicsBar"
+--  BR.brAddPostMarkDownFromFile postPaths' "_afterNewDemographicsBar"
   _ <- K.addHvega Nothing Nothing
     $ BRV.demoCompareXYCS
     "District"
@@ -2237,14 +2296,16 @@ newCongressionalMapAnalysis clearCaches cmdLine postSpec postInfo ccesWD_C ccesA
     "% college grad"
     "Modeled D-Edge"
     "log density"
-    (stateAbbr <> " demographic scatter")
+    (stateAbbr' <> " demographic scatter")
     (FV.ViewConfig 600 600 5)
     (FL.fold (xyFold' cdDistLabel) demoModelAndDR)
-  BR.brAddPostMarkDownFromFileWith postPaths "_afterNewDemographics" (Just oldDistrictsNoteRef)
-  BR.brAddSharedMarkDownFromFile postPaths "modelExplainer"
+  BR.brAddPostMarkDownFromFileWith postPaths' "_afterNewDemographics" (Just oldDistrictsNoteRef)
+  BR.brAddSharedMarkDownFromFile postPaths' "modelExplainer"
   return ()
 
+safeLog :: Double -> Double
 safeLog x = if x < 1e-12 then 0 else Numeric.log x
+
 xyFold' labelFunc = FMR.mapReduceFold
                     FMR.noUnpack
                     (FMR.assignKeysAndData @[DT.StateAbbreviation, ET.DistrictName, ET.DistrictTypeC] @[BRC.Count, DT.Race5C, DT.CollegeGradC, DT.PopPerSqMile, BRE.ModeledShare])
@@ -2405,27 +2466,27 @@ brDistrictFramework long inc brRange draRange brModel dra =
 
 
 daveModelColonnade brSR draSR cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
-      dave = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
-      share50 = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+      dave' = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+      share50' = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
-     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50'))
+     <> C.headed "Historical Model (Dave's Redistricting)" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . dave'))
      <> C.headed "BR Stance" (BR.toCell cas "BR Stance" "BR Stance" (BR.textToStyledHtml . (\r -> brDistrictFramework DFLong DFUnk brSR draSR (share50 r) (dave r))))
 
 
 extantModeledColonnade cas =
-  let state = F.rgetField @DT.StateAbbreviation
+  let state' = F.rgetField @DT.StateAbbreviation
       dName = F.rgetField @ET.DistrictName
-      share50 = round @_ @Int . (100*) . MT.ciMid . F.rgetField @BRE.ModeledShare
+      share50' = round @_ @Int . (100*) . MT.ciMid . F.rgetField @BRE.ModeledShare
       elexDVotes = F.rgetField @BRE.DVotes
       elexRVotes = F.rgetField @BRE.RVotes
       elexShare r = realToFrac @_ @Double (elexDVotes r)/realToFrac (elexDVotes r + elexRVotes r)
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . dName))
-     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50))
+     <> C.headed "Demographic Model (Blue Ripple)" (BR.toCell cas "Demographic" "Demographic" (BR.numberToStyledHtml "%d" . share50'))
      <> C.headed "2020 Election" (BR.toCell cas "Election" "Election" (BR.numberToStyledHtml "%2.0f" . (100*) . elexShare))
 --
 
@@ -2602,7 +2663,7 @@ modelAndDaveScatterChart single title vc rows =
       labelSpec = GV.asSpec [labelEnc [], GV.mark GV.Text [GV.MdX 20], makeDistrictName [] ]
       ptSpec = GV.asSpec [selection, ptEnc [], GV.mark GV.Circle []]
       lineSpec = GV.asSpec [lineEnc [], GV.mark GV.Line [GV.MTooltip GV.TTNone]]
-      resolve = GV.resolve . GV.resolution (GV.RAxis [(GV.ChY, GV.Shared)])
+--      resolve = GV.resolve . GV.resolution (GV.RAxis [(GV.ChY, GV.Shared)])
       finalSpec = if single
                   then [FV.title title, GV.layer [ciSpec, lineSpec, labelSpec, ptSpec], vlData]
                   else [FV.title title, facets, GV.specification (GV.asSpec [GV.layer [ptSpec, ciSpec, lineSpec, labelSpec]]), vlData]
