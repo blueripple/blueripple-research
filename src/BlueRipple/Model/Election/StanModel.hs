@@ -11,6 +11,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -113,6 +114,12 @@ import Data.Sequence.Internal.Sorting (TQList(TQNil))
 import Streamly.Data.Array.Foreign (getIndex)
 import Foreign (wordPtrToPtr)
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as SB
+
+FS.declareColumn "ModeledShare" ''MT.ConfidenceInterval
+FS.declareColumn "ModeledTurnout" ''MT.ConfidenceInterval
+FS.declareColumn "ModeledPref" ''MT.ConfidenceInterval
+FS.declareColumn "ModelDesc" ''Text
+
 
 groupBuilderDM :: forall rs ks k.
                   (F.ElemOf rs BR.StateAbbreviation
@@ -1661,10 +1668,6 @@ type SLDLocation = (Text, ET.DistrictType, Text)
 sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
 sldLocationToRec (sa, dt, dn) = sa F.&: dt F.&: dn F.&: V.RNil
 
-type ModeledShare = "ModeledShare" F.:-> MT.ConfidenceInterval
-type ModeledTurnout = "ModeledTurnout" F.:-> MT.ConfidenceInterval
-type ModeledPref = "ModeledPref" F.:-> MT.ConfidenceInterval
-type ModelDesc = "ModelDescription" F.:-> Text
 
 type ModelResultsR ks  = '[BR.Year] V.++ ks V.++ '[ModelDesc, ModeledTurnout, ModeledPref, ModeledShare]
 type ModelResults ks = F.FrameRec (ModelResultsR ks)

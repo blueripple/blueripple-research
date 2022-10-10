@@ -35,7 +35,6 @@ import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Loaders.Redistricting as Redistrict
---import qualified BlueRipple.Data.Quantiles as BRQ
 import qualified BlueRipple.Data.Visualizations.DemoComparison as BRV
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.TableUtils as BR
@@ -49,8 +48,8 @@ import qualified BlueRipple.Model.Election.StanModel as BRE
 import qualified Colonnade as C
 import qualified Text.Blaze.Html5.Attributes   as BHA
 import qualified Control.Foldl as FL
+import qualified Control.Lens as Lens
 import qualified Data.Map.Strict as M
---import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Monoid as Monoid
 import Data.String.Here (here)
@@ -89,21 +88,23 @@ import Path (Rel, Dir)
 
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder as SB
---import Stan.ModelBuilder (binomialLogitDistWithConstants)
---import Stan.ModelBuilder.BuildingBlocks (parallelSampleDistV)
---import BlueRipple.Model.DistrictClusters (districtsForClustering)
 import qualified Data.Vector.Unboxed as UVec
---import qualified BlueRipple.Utilities.KnitUtils as K
 import qualified BlueRipple.Data.Loaders.Redistricting as BR
---import qualified BlueRipple.Data.CountFolds as BRQ
---import BlueRipple.Data.Quantiles (quantileLookup')
---import BlueRipple.Data.ElectionTypes (VoteShareType(TwoPartyShare))
---import qualified Data.Array as Array
---import qualified Data.List as List
 import qualified BlueRipple.Data.CensusTables as DT
---import BlueRipple.Data.DistrictOverlaps (overlapFractionsForRowByName)
 
 FS.declareColumn "DistCategory" ''Text
+
+type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopPerSqMile]
+type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] V.++ ModelPredictorR V.++ '[BRC.Count]
+FS.declareColumn "ElexDShare" ''Double
+FS.declareColumn "TwoPartyDShare" ''Double
+
+addTwoPartyDShare r = r F.<+> f where
+  f =
+    let ds = F.rgetField @ET.DemShare r
+        rs = F.rgetField @ET.RepShare r
+    in FT.recordSingleton @TwoPartyDShare $ ds/(ds + rs)
+
 
 yamlAuthor :: T.Text
 yamlAuthor =
@@ -900,8 +901,14 @@ newStateLegMapPosts cmdLine = do
   -- NB: AZ has only one set of districts.  Upper and lower house candidates run in the same districts!
   let postInfoAZ = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedAZ = const True -- correct here
-  regSLDPost postInfoAZ "AZ" contestedAZ False (Set.fromList [ET.StateUpper]) "StateUpper" []
+      spDistsAZ = (ET.StateUpper,) <$> ["2", "4", "9", "13"]
+  regSLDPost postInfoAZ "AZ" contestedAZ False (Set.fromList [ET.StateUpper]) "StateUpper" spDistsAZ
 
+  let postInfoNV = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+      contestedNV r = dType r == ET.StateLower
+                      || (dType r == ET.StateUpper
+                           && dName r `elem` ["2", "8", "9", "10", "12", "13", "14", "16", "17", "20", "21"])
+  regSLDPost postInfoNV "NV" contestedNV False bothHouses "StateBoth" []
 
   let postInfoNH = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedNH = const True
@@ -1188,6 +1195,26 @@ capaCDColonnade cas =
       <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
       <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
 
+{-
+dobbs :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+dobbs cmdLine = do
+  K.logLE K.Info "Rebuilding Dobbs post (if necessary)."
+  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
+      state' = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+      histDS = F.rgetField @TwoPartyDShare
+      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
+      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+      modelP = MT.ciMid . F.rgetField @BRE.ModeledPref
+      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+      density = F.rgetField @DT.PopPerSqMile
+  dobbsPaths <- postPaths "DOBBS" cmdLine
+  (modelAndDRWith_C, _) <- newCDModeled cmdLine
+  drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
+--  let scenario groupF
+  pure ()
+-}
+
 type ModeledWithDRAndAggDemo = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName
                                , BRE.ModelDesc, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare, BR.PlanName
                                , BR.Population, ET.DemShare, ET.RepShare, BR.OthShare
@@ -1333,11 +1360,6 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
             inState r = F.rgetField @BR.StateAbbreviation r == sa
         in DCC.SBCPartyData (\r -> inState r && f r >= 0.5) (\r -> inState r && f r < 0.5)
       sApMediansE sa = DCC.partyMedians (stateAndPartyFilters sa) quantileFunctionsDblE sortedFilteredModelAndDRA
---      sApRanksE sa = DCC.partyRanks (stateAndPartyFilters sa) quantileFunctionsDblE sortedFilteredModelAndDRA
---      sApLoHisE sa = DCC.partyLoHis <$> (sApRanksE sa)
---      sApLoHisE sa = K.knitEither $ sApLoHisE sa
---      sApMediansE sa = K.knitEither $ sApMediansE sa
-
   let sbcE comp r = case comp of
         DCC.SBCNational -> DCC.sbcComparison quantileFunctionsDblE partyMedians r
         DCC.SBCState -> do
@@ -1354,11 +1376,21 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
         in compare (st x)  (st y) <> ET.districtNameCompare (dn x) (dn y)
 
   BR.brNewPost allCDsPaths postInfo "AllCDs" $ do
-    BR.brAddMarkDown "**NB: AK, DE, MT, ND, SD, VT and WY are missing since each has only one district and so no redistricting data was available."
+    BR.brAddPostMarkDownFromFile allCDsPaths "_intro"
+--    let dave' = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+    (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
+      [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
+      _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
+    let deltaSorted = sortOn (\r -> abs (r Lens.^. twoPartyDShare - MT.ciMid (r Lens.^. BRE.modeledShare))) $ FL.fold FL.list sortedFilteredModelAndDRA
+    BR.brAddRawHtmlTable "Top 10 mis-matches" (BHA.class_ "brTable")
+      (allCDsColonnade nwQuantiles gowQuantiles densQuantiles $ modelVsHistoricalTableCellStyle brShareRange draShareRangeCD)
+      (take 10 $ reverse deltaSorted)
+--    BR.brAddMarkDown "**NB: AK, DE, MT, ND, SD, VT and WY are missing since each has only one district and so no redistricting data was available."
+    BR.brAddPostMarkDownFromFile allCDsPaths "_afterTop10"
     let fTable t ds = do
-          (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
-            [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
-            _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
+--          (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
+--            [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
+--            _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
           when (not $ null ds) $ do
 --            BR.logFrame ds
             BR.brAddRawHtmlTable
@@ -1424,9 +1456,9 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
             case M.lookup dk tsneDistMap of
               Nothing -> K.knitError $ dk <> " is missing from tsne Results"
               Just (t1, t2) -> do
-                (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
-                  [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
-                  _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
+--                (densQuantiles, gowQuantiles, nwQuantiles) <- case quantileFunctionsE of
+--                  [DCC.SBCCategoryData _ q1, DCC.SBCCategoryData _ q2, DCC.SBCCategoryData _ q3] -> return (q1, q2, q3)
+--                  _ -> K.knitError "Wrong number of quantile functions in allCDPost.fTable"
                 let tsneNear = F.filterFrame (tsneResFilter 15 t1 t2) $ tsneWith
                 when (not sp) $ do
                   BR.brAddRawHtmlTable dk
@@ -1516,6 +1548,22 @@ spCD = [(mkCDKey "CA" "9", one $ mkCDKey "AZ" "7" )
        , (mkCDKey "TX" "28", one $ mkCDKey "TX" "34")
        , (mkCDKey "IN" "1", one $ mkCDKey "IL" "13")
        , (mkCDKey "PA" "8", mkCDKey "NY" "19" :| [mkCDKey "NY" "22"])
+       , (mkCDKey "PA" "7", mkCDKey "WA" "2" :| [mkCDKey "AZ" "8"])
+       , (mkCDKey "PA" "17", mkCDKey "CT" "2" :| [mkCDKey "IN" "5"])
+       , (mkCDKey "CA" "27", mkCDKey "AZ" "7" :| [mkCDKey "CA" "8", mkCDKey "FL" "26"])
+       , (mkCDKey "OH" "1", mkCDKey "MN" "4" :| [mkCDKey "CO" "5"])
+       , (mkCDKey "IL" "13", mkCDKey "PA" "12" :| [mkCDKey "MD" "1"])
+       , (mkCDKey "TX" "34", mkCDKey "TX" "28" :| [mkCDKey "FL" "26"])
+       , (mkCDKey "MI" "7", mkCDKey "CT" "2" :| [mkCDKey "NJ" "4"])
+       , (mkCDKey "NE" "2", mkCDKey "IL" "11" :| [mkCDKey "CO" "5"])
+       , (mkCDKey "NM" "2", mkCDKey "NM" "3" :| [mkCDKey "TX" "23"])
+       , (mkCDKey "NY" "19", mkCDKey "CT" "2" :| [mkCDKey "IN" "4"])
+       , (mkCDKey "NY" "22", mkCDKey "IL" "17" :| [mkCDKey "OH" "8"])
+       , (mkCDKey "RI" "2", mkCDKey "OR" "6" :| [mkCDKey "NE" "1"])
+       , (mkCDKey "OR" "5", mkCDKey "OR" "4" :| [mkCDKey "NJ" "4"])
+       , (mkCDKey "AZ" "1", mkCDKey "IL" "6" :| [mkCDKey "NJ" "7"])
+       , (mkCDKey "IL" "17", mkCDKey "MI" "8" :| [mkCDKey "FL" "8"])
+       , (mkCDKey "CO" "8", mkCDKey "OR" "6" :| [mkCDKey "CA" "48"])
        ]
 
 --data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
@@ -1668,17 +1716,6 @@ modelCompColonnade states cas =
   C.headed "Model" (BR.toCell cas "Model" "Model" (BR.textToStyledHtml . fst))
   <> mconcat (fmap (\s -> C.headed (BR.textToCell s) (BR.toCell cas s s (BR.maybeNumberToStyledHtml "%2.2f" . M.lookup s . snd))) states)
 
-type ModelPredictorR = [DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopPerSqMile]
-type PostStratR = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] V.++ ModelPredictorR V.++ '[BRC.Count]
-type ElexDShare = "ElexDShare" F.:-> Double
-type TwoPartyDShare = "2-Party DShare" F.:-> Double
-
-twoPartyDShare r =
-  let ds = F.rgetField @ET.DemShare r
-      rs = F.rgetField @ET.RepShare r
-  in FT.recordSingleton @TwoPartyDShare $ ds/(ds + rs)
-
-addTwoPartyDShare r = r F.<+> twoPartyDShare r
 
 --data ExtantDistricts = PUMSDistricts | DRADistricts
 
@@ -2012,7 +2049,7 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: In District order")
     (BHA.class_ "brTable")
     (dmColonnadeOverlap overlapsMMap tableCAS)
-    (sortBy districtOrder sortedModelAndDRA)
+    (sortBy districtOrder filteredSorted)
   -- for Sawbuck
   let sawBuckFilter r = dra r >= (48 :: Int) && dra r <= (52 :: Int)
       sawBuckDelta r = dra r - modMid r
@@ -2020,8 +2057,8 @@ newStateLegMapAnalysis cmdLine postSpec interestingOnly ccesAndCPSEM_C acs_C cdD
     ("Dem Vote Share, " <> stateAbbr postSpec <> " State-Leg 2022: Sawbuck Sort")
     (BHA.class_ "brTable")
     (dmColonnadeOverlap overlapsMMap tableCAS)
-    (sortOn sawBuckDelta $ filter sawBuckFilter sortedModelAndDRA)
-  categorized <- categorizeDistricts' (contested postSpec . F.rcast) brShareRange draShareRangeSLD dCategories3 sortedModelAndDRA
+    (sortOn sawBuckDelta $ filter sawBuckFilter filteredSorted)
+  categorized <- categorizeDistricts' (contested postSpec . F.rcast) brShareRange draShareRangeSLD dCategories3 filteredSorted
   let fTable t ds = do
         when (not $ null ds)
           $  BR.brAddRawHtmlTable
