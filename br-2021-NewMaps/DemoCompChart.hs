@@ -42,7 +42,7 @@ import GHC.TypeLits (Symbol)
 import qualified Data.List as List
 
 data SBCCategoryData :: Type -> Type where
-  SBCCategoryData :: Text -> a -> SBCCategoryData a deriving (Functor, Foldable, Traversable)
+  SBCCategoryData :: Text -> a -> SBCCategoryData a deriving (Show, Functor, Foldable, Traversable)
 
 type SBCCategoryMap a = M.Map Text a
 
@@ -69,21 +69,25 @@ sbcQuantileFunctions' = fmap (uncurry BRQ.quantileLookup' . first sbcCategoryDat
 sbcQuantileFunctions :: (Functor f, Ord a, Show a) => f (SBCCategoryData (F.Record rs -> a, [(a, Int)])) -> f (SBCCategoryData (F.Record rs -> Either Text Int))
 sbcQuantileFunctions = fmap (fmap $ uncurry BRQ.quantileLookup')
 
-data SBCPartyData a = SBCPartyData { sbcDData :: a, sbcRData :: a } deriving (Functor, Foldable, Traversable)
+data SBCPartyData a = SBCPartyData { sbcDData :: a, sbcRData :: a } deriving (Show, Functor, Foldable, Traversable)
 
 notNullE :: F.FrameRec rs -> Either Text (F.FrameRec rs)
 notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
 
 medians :: (Traversable f, RealFrac a) => f (SBCCategoryData (F.Record rs -> Either Text a)) -> F.FrameRec rs -> Either Text (f (SBCCategoryData a))
-medians funcs rows = notNullE rows >>= \x -> traverse (traverse (`BRQ.medianE` x)) funcs
+medians funcs rows = notNullE rows >>= \x -> traverse (f x) funcs where
+  f :: RealFrac a => F.FrameRec rs -> SBCCategoryData (F.Record rs -> Either Text a) -> Either Text (SBCCategoryData a)
+  f x y = traverse (`BRQ.medianE` x) y
 
 partyMedians :: (Traversable f, Applicative f, FS.RecVec rs, RealFrac a)
              => SBCPartyData (F.Record rs -> Bool)
              -> f (SBCCategoryData (F.Record rs -> Either Text a))
              -> F.FrameRec rs
-             -> Either Text (f (SBCPartyData (SBCCategoryData a)))
-partyMedians pFilters funcs rows = sequenceA <$> traverse g pFilters where
+             -> Either Text [SBCPartyData (SBCCategoryData a)] -- we have to return a list so we can ziplist.
+partyMedians pFilters funcs rows = h <$> traverse g pFilters where
   g f = medians funcs (F.filterFrame f rows)
+  h :: Traversable f => SBCPartyData (f (SBCCategoryData a)) -> [SBCPartyData (SBCCategoryData a)]
+  h = getZipList . traverse (ZipList . FL.fold FL.list) -- otherwise the default [] applicative produces all combos
 
 ranks :: (Traversable f, RealFrac a) => f (SBCCategoryData (F.Record rs -> Either Text a)) -> F.FrameRec rs -> Either Text (f (SBCCategoryData [a]))
 ranks funcs rows = notNullE rows >>= q where

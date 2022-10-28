@@ -158,6 +158,7 @@ main = do
     when (runThis "allCDs") $ allCDsPost cmdLine
     when (runThis "stateAnalysis") $ stateAnalysis cmdLine
     when (runThis "CAPA") $ capa cmdLine
+    when (runThis "DOBBS") $ dobbs cmdLine
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "24"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "11"
 --    when (runThis "deepDive") $ deepDive2022CD cmdLine "TX" "31"
@@ -908,7 +909,9 @@ newStateLegMapPosts cmdLine = do
       contestedNV r = dType r == ET.StateLower
                       || (dType r == ET.StateUpper
                            && dName r `elem` ["2", "8", "9", "10", "12", "13", "14", "16", "17", "20", "21"])
-  regSLDPost postInfoNV "NV" contestedNV False bothHouses "StateBoth" []
+      spDistsNV = ((ET.StateLower,) <$> ["35", "37"])
+                  <> ((ET.StateUpper,) <$> ["8", "9", "12"])
+  regSLDPost postInfoNV "NV" contestedNV False bothHouses "StateBoth" spDistsNV
 
   let postInfoNH = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
       contestedNH = const True
@@ -1006,9 +1009,9 @@ gradOfWhiteByDistrictFld ::  (F.ElemOf rs BR.StateAbbreviation
   -> (F.Record rs -> Bool)
   -> (F.Record rs -> Bool)
   -> FL.Fold (F.Record rs) (F.FrameRec [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite])
-gradOfWhiteByDistrictFld ppl isWhite' isGrad =
+gradOfWhiteByDistrictFld ppl isWhite' isGrad' =
   let wgt = realToFrac . ppl
-      isWhiteGrad' r = isWhite' r && isGrad r
+      isWhiteGrad' r = isWhite' r && isGrad' r
       wFld = (/) <$> (FL.prefilter isWhite' $ FL.premap wgt FL.sum) <*> (FL.premap wgt FL.sum)
       wGradFld = (/) <$> (FL.prefilter isWhiteGrad' $ FL.premap wgt FL.sum) <*> (FL.prefilter isWhite' $ FL.premap wgt FL.sum)
       mkRecord :: Double -> Double -> F.Record [BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]
@@ -1035,8 +1038,14 @@ censusWgtSumFld = FL.premap censusWgt FL.sum
 wFC :: (F.ElemOf ds DT.Race5C, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds BRE.FracWhiteNonHispanic
 wFC = DCC.FoldComponent $ (/) <$> (FL.prefilter isWhite $ censusWgtSumFld) <*> censusWgtSumFld
 
+isGrad :: F.ElemOf rs DT.CollegeGradC => F.Record rs -> Bool
+isGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
+
 isWhiteGrad :: (F.ElemOf rs DT.Race5C, F.ElemOf rs DT.CollegeGradC) => F.Record rs -> Bool
-isWhiteGrad r = isWhite r && F.rgetField @DT.CollegeGradC r == DT.Grad
+isWhiteGrad r = isWhite r && isGrad r
+
+gFC :: (F.ElemOf ds DT.CollegeGradC, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds BRE.FracGrad
+gFC = DCC.FoldComponent $ (/) <$> (FL.prefilter isGrad $ censusWgtSumFld) <*> censusWgtSumFld
 
 wgFC :: (F.ElemOf ds DT.CollegeGradC, F.ElemOf ds DT.Race5C, F.ElemOf ds BRC.Count) => DCC.FoldComponent ds BRE.FracGradOfWhite
 wgFC = DCC.FoldComponent $ (/) <$> (FL.prefilter isWhiteGrad $ censusWgtSumFld) <*> (FL.prefilter isWhite censusWgtSumFld)
@@ -1195,30 +1204,71 @@ capaCDColonnade cas =
       <> C.headed "%Non-White" (BR.toCell cas "%NW" "%NW" (BR.numberToStyledHtml "%d" . round @_ @Int . (100*) . bipoc))
       <> C.headed "Pop/SqMile" (BR.toCell cas "P/SqMi" "P/SqMi" (BR.numberToStyledHtml "%2.0f" . Numeric.exp . density))
 
-{-
 dobbs :: forall r. (K.KnitMany r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 dobbs cmdLine = do
   K.logLE K.Info "Rebuilding Dobbs post (if necessary)."
   let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished  Nothing)
-      state' = F.rgetField @BR.StateAbbreviation
-      distr = F.rgetField @ET.DistrictName
+--      state' = F.rgetField @BR.StateAbbreviation
+--      distr = F.rgetField @ET.DistrictName
       histDS = F.rgetField @TwoPartyDShare
-      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
-      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
-      modelP = MT.ciMid . F.rgetField @BRE.ModeledPref
-      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
-      density = F.rgetField @DT.PopPerSqMile
+--      modelDS = MT.ciMid . F.rgetField @BRE.ModeledShare
+--      modelT = MT.ciMid . F.rgetField @BRE.ModeledTurnout
+--      modelP = MT.ciMid . F.rgetField @BRE.ModeledPref
+--      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+--      density = F.rgetField @DT.PopPerSqMile
   dobbsPaths <- postPaths "DOBBS" cmdLine
-  (modelAndDRWith_C, _) <- newCDModeled cmdLine
-  drAnalysis <- K.ignoreCacheTimeM Redistrict.allPassedCongressional
---  let scenario groupF
+  (modelAndDRWith_C, _) <- newCDModeled cmdLine -- this models and does demographic aggregation of Race and Education
+  modelAndDRWith <- K.ignoreCacheTime modelAndDRWith_C
+  let cutoff = 0.475 -- R + 3
+      wT = 0.65
+      wFrac _ = 0.5
+      reqdPref votersF r = realToFrac (cutoff - histDS r) / (realToFrac $ votersF r)
+--      reqdTurnout pplF r = realToFrac (cutoff - histDS r) / (realToFrac $ pplF r)
+      worseThanCutoff = F.filterFrame (\r -> histDS r < cutoff) modelAndDRWith
+      byWPref = sortOn (reqdPref ((* wT) . wFrac)) $ FL.fold FL.list worseThanCutoff
+  BR.brNewPost dobbsPaths postInfo "DOBBS" $ do
+    BR.brAddPostMarkDownFromFile dobbsPaths "_intro"
+    BR.brAddRawHtmlTable
+      "Dobbs Effect CDs"
+      (BHA.class_ "brTable")
+      (dobbsCDColonnade mempty)
+      (take 20 byWPref)
   pure ()
--}
+
+dobbsCDColonnade cas =
+  let state' = F.rgetField @BR.StateAbbreviation
+      distr = F.rgetField @ET.DistrictName
+      histDS = round @_ @Int . (100*) . F.rgetField @TwoPartyDShare
+--      modelDS = round @_ @Int . (100 *) . MT.ciMid . F.rgetField @BRE.ModeledShare
+--      bipoc r = 1 - F.rgetField @BRE.FracWhiteNonHispanic r
+--      gow r =  F.rgetField @BRE.FracGradOfWhite r
+      tossup = 48 -- R + 3
+      wT = 0.65
+      ewT = 0.76
+--      wwT = 0.71
+--      wwP = 0.48
+--      wewT = 0.8
+--      wewP = 0.54
+      wFrac _ = 0.5
+      ewFrac r = 0.5 *  F.rgetField @BRE.FracGrad r
+--      wwFrac r = 0.5 * F.rgetField @BRE.FracWhiteNonHispanic r
+--      wewFrac r = wwFrac r * F.rgetField @BRE.FracGradOfWhite r
+--      voters = F.rgetField @ET.VAP
+      reqdPref votersF r = realToFrac @_ @Double (tossup - histDS r) / (realToFrac $ votersF r)
+      reqdTurnout pplF r = realToFrac @_ @Double (tossup - histDS r) / (realToFrac $ pplF r)
+  in  C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
+      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . distr))
+      <> C.headed "Historical D Share" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%d" . histDS))
+      <> C.headed "Req % Shift of All Women" (BR.toCell cas "%WP" "%WP" (BR.numberToStyledHtml "%2.1f" . reqdPref ((* wT) . wFrac)))
+      <> C.headed "Req % Shift of College-Grad Women" (BR.toCell cas "%EWP" "%EWP" (BR.numberToStyledHtml "%2.1f" . reqdPref ((* ewT) . ewFrac)))
+      <> C.headed "Req Extra Turnout of All Women" (BR.toCell cas "%WT" "%WT" (BR.numberToStyledHtml "%2.1f" . reqdTurnout wFrac))
+      <> C.headed "Req Extra Turnout of Collge-Grad Women" (BR.toCell cas "%EWT" "%EWT" (BR.numberToStyledHtml "%2.1f" . reqdTurnout ewFrac))
+
 
 type ModeledWithDRAndAggDemo = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName
                                , BRE.ModelDesc, BRE.ModeledTurnout, BRE.ModeledPref, BRE.ModeledShare, BR.PlanName
                                , BR.Population, ET.DemShare, ET.RepShare, BR.OthShare
-                               , ET.VAP, TwoPartyDShare, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGradOfWhite]
+                               , ET.VAP, TwoPartyDShare, DT.PopPerSqMile, BRE.FracWhiteNonHispanic, BRE.FracGrad, BRE.FracGradOfWhite]
 
 type RescaledProposedCD = [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName
                           , BR.Population, DT.PWPopPerSqMile, DT.SexC
@@ -1270,7 +1320,7 @@ newCDModeled cmdLine = do
     let densityAndGowFld = DCC.buildMRFold
                  @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
                  @[BRC.Count,  DT.PopPerSqMile, DT.Race5C, DT.CollegeGradC]
-                 (pwldFC V.:& wFC V.:& wgFC V.:& V.RNil)
+                 (pwldFC V.:& wFC V.:& gFC V.:& wgFC V.:& V.RNil)
         (withDensityAndGow, missingDGW) = FJ.leftJoinWithMissing @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
                                            modelAndDR
                                            (FL.fold densityAndGowFld prop)
@@ -1355,6 +1405,7 @@ allCDsPost cmdLine = K.wrapPrefix "allCDsPost" $ do
       partyLoHisE = DCC.partyLoHis <$> partyRanksE
   partyLoHis <- K.knitEither partyLoHisE
   partyMedians <- K.knitEither partyMediansE
+  K.logLE K.Info $ "Party Medians: " <> show partyMedians
   let stateAndPartyFilters sa =
         let f = F.rgetField @TwoPartyDShare
             inState r = F.rgetField @BR.StateAbbreviation r == sa
@@ -1548,22 +1599,23 @@ spCD = [(mkCDKey "CA" "9", one $ mkCDKey "AZ" "7" )
        , (mkCDKey "TX" "28", one $ mkCDKey "TX" "34")
        , (mkCDKey "IN" "1", one $ mkCDKey "IL" "13")
        , (mkCDKey "PA" "8", mkCDKey "NY" "19" :| [mkCDKey "NY" "22"])
-       , (mkCDKey "PA" "7", mkCDKey "WA" "2" :| [mkCDKey "AZ" "8"])
-       , (mkCDKey "PA" "17", mkCDKey "CT" "2" :| [mkCDKey "IN" "5"])
-       , (mkCDKey "CA" "27", mkCDKey "AZ" "7" :| [mkCDKey "CA" "8", mkCDKey "FL" "26"])
-       , (mkCDKey "OH" "1", mkCDKey "MN" "4" :| [mkCDKey "CO" "5"])
-       , (mkCDKey "IL" "13", mkCDKey "PA" "12" :| [mkCDKey "MD" "1"])
+       , (mkCDKey "PA" "7", mkCDKey "WA" "2" :| [])
+       , (mkCDKey "PA" "17", mkCDKey "CT" "2" :| [])
+       , (mkCDKey "CA" "27", mkCDKey "AZ" "7" :| [mkCDKey "CA" "8"])
+       , (mkCDKey "OH" "1", mkCDKey "MN" "4" :| [])
        , (mkCDKey "TX" "34", mkCDKey "TX" "28" :| [mkCDKey "FL" "26"])
-       , (mkCDKey "MI" "7", mkCDKey "CT" "2" :| [mkCDKey "NJ" "4"])
-       , (mkCDKey "NE" "2", mkCDKey "IL" "11" :| [mkCDKey "CO" "5"])
+       , (mkCDKey "MI" "7", mkCDKey "CT" "2" :| [])
+       , (mkCDKey "NE" "2", mkCDKey "IL" "11" :| [])
+       , (mkCDKey "IL" "13", mkCDKey "OH" "10" :| [])
        , (mkCDKey "NM" "2", mkCDKey "NM" "3" :| [mkCDKey "TX" "23"])
-       , (mkCDKey "NY" "19", mkCDKey "CT" "2" :| [mkCDKey "IN" "4"])
-       , (mkCDKey "NY" "22", mkCDKey "IL" "17" :| [mkCDKey "OH" "8"])
-       , (mkCDKey "RI" "2", mkCDKey "OR" "6" :| [mkCDKey "NE" "1"])
-       , (mkCDKey "OR" "5", mkCDKey "OR" "4" :| [mkCDKey "NJ" "4"])
-       , (mkCDKey "AZ" "1", mkCDKey "IL" "6" :| [mkCDKey "NJ" "7"])
-       , (mkCDKey "IL" "17", mkCDKey "MI" "8" :| [mkCDKey "FL" "8"])
-       , (mkCDKey "CO" "8", mkCDKey "OR" "6" :| [mkCDKey "CA" "48"])
+       , (mkCDKey "NY" "19", mkCDKey "IN" "4" :| [])
+       , (mkCDKey "NY" "22", mkCDKey "IL" "17" :| [])
+       , (mkCDKey "RI" "2", mkCDKey "NE" "1" :| [])
+       , (mkCDKey "OR" "5", mkCDKey "OR" "4" :| [])
+       , (mkCDKey "AZ" "1", mkCDKey "IL" "6" :| [])
+       , (mkCDKey "IL" "17", mkCDKey "MI" "8" :| [])
+       , (mkCDKey "CO" "8", mkCDKey "OR" "6" :| [])
+       , (mkCDKey "MT" "1", one $ mkCDKey "NY" "18")
        ]
 
 --data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
