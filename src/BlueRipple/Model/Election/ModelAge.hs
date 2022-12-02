@@ -20,26 +20,61 @@ import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelConfig as SC
---import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 
 import qualified Frames.MapReduce as FMR
---import qualified Control.MapReduce as FMR
 
 import qualified Control.Foldl as FL
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
+import qualified Numeric
+
+categoricalAgeModel :: S.StanBuilderM (F.FrameRec ACSByState) () ()
+categoricalAgeModel = do
+  let dmr = designMatrixRowACS logDensityDMRP
+  -- data
+  acsData <- S.dataSetTag @(F.Record ACSByState) SC.ModelData "ACS"
+  let numAgeCats = length [(minBound :: DT.Age5F)..]
+      ageCatToInt ac = 1 + fromEnum (F.rgetField @DT.Age5FC ac)
+  ageCatE <- SB.addIntData acsData "ageCat" (Just 1) (Just numAgeCats) ageCatToInt
+  acsMatE <- DM.addDesignMatrix acsData dmr Nothing
+  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
+
+  -- parameters
+  betaP <- DAG.iidMatrixP
+           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE (TE.intE numAgeCats) [])
+           []
+           (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
+           SF.normalS
+  let betaE = DAG.parameterTagExpr betaP
+
+  S.inBlock S.SBModel $ S.addStmtsToCode $ TE.writerL' $ do
+    let sizeE e = TE.functionE SF.size (e :> TNil)
+        at x n = TE.sliceE TEI.s0 n x
+    betaX <- TE.declareRHSNW
+             (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec (sizeE ageCatE) (TE.intE numAgeCats) [])
+             (acsMatE `TE.timesE` betaE)
+    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (sizeE ageCatE)) $ \n ->
+      [TE.sample (ageCatE `at` n) SF.categorical_logit (TE.transposeE (betaX `at` n) :> TNil)]
+
 
 designMatrixRowACS :: forall rs.(F.ElemOf rs DT.CollegeGradC
                                 , F.ElemOf rs DT.SexC
                                 , F.ElemOf rs DT.RaceAlone4C
                                 , F.ElemOf rs DT.HispC
                                 , F.ElemOf rs DT.PopPerSqMile
-                                , F.ElemOf rs BRDF.StateAbbreviation
-                                , F.ElemOf rs BRDF.CongressionalDistrict
+--                                , F.ElemOf rs BRDF.StateAbbreviation
+--                                , F.ElemOf rs BRDF.CongressionalDistrict
                                 )
                    => DM.DesignMatrixRowPart (F.Record rs)
                    -> DM.DesignMatrixRow (F.Record rs)
@@ -133,3 +168,10 @@ inCollege = F.rgetField @DT.InCollege
 
 districtKey :: (F.ElemOf rs BRDF.StateAbbreviation, F.ElemOf rs BRDF.CongressionalDistrict) => F.Record rs -> Text
 districtKey r = F.rgetField @BRDF.StateAbbreviation r <> "-" <> show (F.rgetField @BRDF.CongressionalDistrict r)
+
+logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
+logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
+safeLogV x =  VU.singleton $ if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
+
+logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
+logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
