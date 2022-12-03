@@ -397,6 +397,26 @@ executable br-2021-NewMaps
          , Relude.Extra)
 
 
+executable br-2022-AgeModel
+  import: deps
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: br-2021-AgeModel
+  main-is: Main.hs
+  other-modules:
+  build-depends: base
+               , blueripple-research
+               , blueripple-data-sets
+               , cmdargs
+               , colonnade
+               , blaze-colonnade
+               , haskell-stan
+               , hs-cmdstan
+               , pandoc
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+
+
 executable ga-work
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
