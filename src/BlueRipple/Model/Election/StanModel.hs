@@ -1204,7 +1204,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           let thetaTSpec =  TE.NamedDeclSpec "thetaT" $ TE.matrixSpec colsTE nStatesE []
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
-                          $ SP.TransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
                           (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
@@ -1212,7 +1212,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDMatrixRaw thetaTSpec Nothing (normal 0 0.4)
+              thetaPT <- SP.withIIDRawMatrix thetaTSpec Nothing (normal 0 0.4)
                 (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
                 ncF
               pure $ SP.parameterTagExpr thetaPT
@@ -1230,7 +1230,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           let thetaTSpec =  TE.NamedDeclSpec "thetaP" $ TE.matrixSpec colsPE nStatesE []
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
-                          $ SP.TransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
                           (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
@@ -1238,7 +1238,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDMatrixRaw thetaTSpec Nothing (normal 0 0.4)
+              thetaPT <- SP.withIIDRawMatrix thetaTSpec Nothing (normal 0 0.4)
                 (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
                 ncF
 --                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)

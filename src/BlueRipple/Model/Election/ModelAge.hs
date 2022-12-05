@@ -25,6 +25,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
+import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 
@@ -46,27 +47,65 @@ categoricalAgeModel = do
   acsData <- S.dataSetTag @(F.Record ACSByState) SC.ModelData "ACS"
   let numAgeCats = length [(minBound :: DT.Age5F)..]
       ageCatToInt ac = 1 + fromEnum (F.rgetField @DT.Age5FC ac)
+      numCitizens = F.rgetField @PUMS.Citizens
+  nAgeCatsE <- SB.addFixedInt "K" numAgeCats
   ageCatE <- SB.addIntData acsData "ageCat" (Just 1) (Just numAgeCats) ageCatToInt
+  numPeopleE <- SB.addIntData acsData "nPeople" (Just 0) Nothing numCitizens
   acsMatE <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
-
   -- parameters
-  betaP <- DAG.iidMatrixP
-           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE (TE.intE numAgeCats) [])
+  -- zero vector for identifiability trick
+  zvP <- DAG.addBuildParameter
+         $ DAG.TransformedDataP
+         $ DAG.TData
+         (TE.NamedDeclSpec "zeroes" $ TE.vectorSpec nPredictorsE [])
+         []
+         TNil
+         (const $ DAG.DeclRHS $ TE.functionE SF.rep_vector (TE.realE 0 :> nPredictorsE :> TNil))
+
+  betaRawP <- DAG.addBuildParameter
+              $ DAG.UntransformedP
+              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nAgeCatsE `TE.minusE` TE.intE 1) [])
+              []
+              TNil
+              (\_ _ -> pure ())
+
+  betaP <- DAG.addBuildParameter
+           $ DAG.TransformedP
+           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nAgeCatsE [])
            []
+           (DAG.build betaRawP :> DAG.build zvP :> TNil)
+           (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
            (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
-           SF.normalS
+           (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
+
+{-
+    DAG.iidMatrixP
+              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nAgeCatsE `TE.minusE` TE.intE 1) [])
+              []
+              (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
+              SF.normalS
+-}
   let betaE = DAG.parameterTagExpr betaP
 
   S.inBlock S.SBModel $ S.addStmtsToCode $ TE.writerL' $ do
     let sizeE e = TE.functionE SF.size (e :> TNil)
         at x n = TE.sliceE TEI.s0 n x
-    betaX <- TE.declareRHSNW
-             (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec (sizeE ageCatE) (TE.intE numAgeCats) [])
-             (acsMatE `TE.timesE` betaE)
+        betaXD = TE.declareRHSNW
+                 (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec (sizeE ageCatE) nAgeCatsE [])
+                 (acsMatE `TE.timesE` betaE)
+    betaX <- betaXD
     TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (sizeE ageCatE)) $ \n ->
-      [TE.sample (ageCatE `at` n) SF.categorical_logit (TE.transposeE (betaX `at` n) :> TNil)]
+      [TE.target $ (numPeopleE `at` n) `TE.timesE` TE.densityE SF.categorical_logit_lupmf (ageCatE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
 
+{-
+  gqBetaX <- S.inBlock S.SBGeneratedQuantitiesBlock $ S.addFromCodeWriter betaXD
+  SB.generateLogLikelihood
+    acsData
+    SD.categoricalLogitDist
+    (pure $ \nE -> TE.transposeE (gqBetaX `at` nE))
+    (\nE -> ageCatE)
+-}
 
 designMatrixRowACS :: forall rs.(F.ElemOf rs DT.CollegeGradC
                                 , F.ElemOf rs DT.SexC
@@ -85,11 +124,17 @@ designMatrixRowACS densRP = DM.DesignMatrixRow "ACSDMRow" [densRP, sexRP, eduRP,
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
-groupBuilder :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByCD) () ()
-groupBuilder states cds = do
+groupBuilderState :: [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByState) () ()
+groupBuilderState states = do
+  acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
+
+groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByCD) () ()
+groupBuilderCD states cds = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
   S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
   S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show districtKey cds
+
 
 setupACSRows :: (Typeable md, Typeable gq)
              => DM.DesignMatrixRowPart (F.Record ACSByCD)
