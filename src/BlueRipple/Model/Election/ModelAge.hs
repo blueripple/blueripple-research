@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -29,9 +30,12 @@ import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 
+import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Transform as FT
 
 import qualified Control.Foldl as FL
+import qualified Data.Map as M
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
@@ -39,18 +43,17 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Numeric
+import qualified Graphics.Vega.VegaLite as DAG
 
-categoricalAgeModel :: S.StanBuilderM (F.FrameRec ACSByState) () ()
+categoricalAgeModel :: S.StanBuilderM [ACSByStateMN] () ()
 categoricalAgeModel = do
   let dmr = designMatrixRowACS logDensityDMRP
   -- data
-  acsData <- S.dataSetTag @(F.Record ACSByState) SC.ModelData "ACS"
+  acsData <- S.dataSetTag @ACSByStateMN SC.ModelData "ACS"
   let numAgeCats = length [(minBound :: DT.Age5F)..]
-      ageCatToInt ac = 1 + fromEnum (F.rgetField @DT.Age5FC ac)
-      numCitizens = F.rgetField @PUMS.Citizens
+      nDataE = S.dataSetSizeE acsData
   nAgeCatsE <- SB.addFixedInt "K" numAgeCats
-  ageCatE <- SB.addIntData acsData "ageCat" (Just 1) (Just numAgeCats) ageCatToInt
-  numPeopleE <- SB.addIntData acsData "nPeople" (Just 0) Nothing numCitizens
+  ageCountsE <- SB.addIntArrayData acsData "ageCounts" nAgeCatsE (Just 0) Nothing snd
   acsMatE <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
   -- parameters
@@ -79,55 +82,49 @@ categoricalAgeModel = do
            (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
            (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
 
-{-
-    DAG.iidMatrixP
-              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nAgeCatsE `TE.minusE` TE.intE 1) [])
-              []
-              (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
-              SF.normalS
--}
   let betaE = DAG.parameterTagExpr betaP
+      betaXD = TE.declareRHSNW
+               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nAgeCatsE [])
+               (acsMatE `TE.timesE` betaE)
+      at x n = TE.sliceE TEI.s0 n x
 
   S.inBlock S.SBModel $ S.addStmtsToCode $ TE.writerL' $ do
     let sizeE e = TE.functionE SF.size (e :> TNil)
-        at x n = TE.sliceE TEI.s0 n x
-        betaXD = TE.declareRHSNW
-                 (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec (sizeE ageCatE) nAgeCatsE [])
-                 (acsMatE `TE.timesE` betaE)
     betaX <- betaXD
-    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) (sizeE ageCatE)) $ \n ->
-      [TE.target $ (numPeopleE `at` n) `TE.timesE` TE.densityE SF.categorical_logit_lupmf (ageCatE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
+    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
+      [TE.target $ TE.densityE SF.multinomial_logit_lupmf (ageCountsE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
 
-{-
-  gqBetaX <- S.inBlock S.SBGeneratedQuantitiesBlock $ S.addFromCodeWriter betaXD
+  gqBetaX <- S.inBlock S.SBGeneratedQuantities $ S.addFromCodeWriter betaXD
   SB.generateLogLikelihood
     acsData
-    SD.categoricalLogitDist
-    (pure $ \nE -> TE.transposeE (gqBetaX `at` nE))
-    (\nE -> ageCatE)
--}
+    SD.multinomialLogitDist
+    (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
+    (\nE -> ageCountsE `at` nE)
 
-designMatrixRowACS :: forall rs.(F.ElemOf rs DT.CollegeGradC
-                                , F.ElemOf rs DT.SexC
-                                , F.ElemOf rs DT.RaceAlone4C
-                                , F.ElemOf rs DT.HispC
-                                , F.ElemOf rs DT.PopPerSqMile
---                                , F.ElemOf rs BRDF.StateAbbreviation
---                                , F.ElemOf rs BRDF.CongressionalDistrict
-                                )
-                   => DM.DesignMatrixRowPart (F.Record rs)
-                   -> DM.DesignMatrixRow (F.Record rs)
+
+
+
+designMatrixRowACS :: forall rs a.(F.ElemOf rs DT.CollegeGradC
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  --                                , F.ElemOf rs BRDF.StateAbbreviation
+                                  --                                , F.ElemOf rs BRDF.CongressionalDistrict
+                                  )
+                   => DM.DesignMatrixRowPart (F.Record rs, a)
+                   -> DM.DesignMatrixRow (F.Record rs, a)
 designMatrixRowACS densRP = DM.DesignMatrixRow "ACSDMRow" [densRP, sexRP, eduRP, raceRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    eduRP = DM.boundedEnumRowPart Nothing "Education" collegeGrad
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    eduRP = DM.boundedEnumRowPart Nothing "Education" (collegeGrad . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
-groupBuilderState :: [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByState) () ()
+groupBuilderState :: [Text] -> S.StanGroupBuilderM [ACSByStateMN] () ()
 groupBuilderState states = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
-  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation . fst) states
 
 groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByCD) () ()
 groupBuilderCD states cds = do
@@ -135,7 +132,7 @@ groupBuilderCD states cds = do
   S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
   S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show districtKey cds
 
-
+{-
 setupACSRows :: (Typeable md, Typeable gq)
              => DM.DesignMatrixRowPart (F.Record ACSByCD)
              -> S.StanBuilderM md gq (S.RowTypeTag (F.Record ACSByCD)
@@ -147,6 +144,7 @@ setupACSRows densRP = do
   acsCit <- SB.addCountData acsData "ACS_CVAP" (F.rgetField @PUMS.Citizens)
   dmACS <- DM.addDesignMatrix acsData dmRow (Just "DM")
   return (acsData, acsCit, dmACS)
+-}
 
 cdGroup :: S.GroupTypeTag Text
 cdGroup = S.GroupTypeTag "CD"
@@ -154,7 +152,8 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-type Categoricals = [DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type Predictors = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type Categoricals = DT.Age5FC ': Predictors
 type ACSByCD = PUMS.CDCounts Categoricals
 type ACSByState = PUMS.StateCounts Categoricals
 
@@ -205,6 +204,50 @@ acsReKey r =
   F.&: F.rgetField @DT.HispC r
   F.&: V.RNil
 
+
+forMultinomial :: forall ks as bs rs l. (ks F.⊆ rs, as F.⊆ rs, Ord (F.Record ks), Enum l, Bounded l, Ord l)
+               => (F.Record rs -> l) -- label
+               -> (F.Record rs -> Int) -- count
+               -> FL.Fold (F.Record as) (F.Record bs)
+               -> FL.Fold (F.Record rs) [(F.Record (ks V.++ bs), VU.Vector Int)]
+forMultinomial label count extraF =
+  let vecF :: FL.Fold (l, Int) (VU.Vector Int)
+      vecF = let zeroMap = M.fromList $ zip [(minBound :: l)..] $ repeat 0
+             in VU.fromList . fmap snd . M.toList . M.unionWith (+) zeroMap <$> FL.foldByKeyMap FL.sum
+--      lastMF :: FL.FoldM Maybe a a
+--      lastMF = FL.FoldM (\_ a -> Just a) Nothing Just
+      datF :: FL.Fold (F.Record as, (l, Int)) (F.Record bs, VU.Vector Int)
+      datF = (,) <$> FL.premap fst extraF <*> FL.premap snd vecF
+  in MR.concatFold
+     $ MR.mapReduceFold
+     MR.noUnpack
+     (MR.assign (F.rcast @ks) (\r -> (F.rcast @as r, (label r, count r))))
+     (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
+
+
+type ACSByStateMN = (F.Record ([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS] V.++ Predictors V.++ '[DT.PopPerSqMile]), VU.Vector Int)
+
+densityF :: FL.Fold (F.Record [PUMS.Citizens, PUMS.NonCitizens, DT.PopPerSqMile]) (F.Record '[DT.PopPerSqMile])
+densityF =
+  let nPeople r = F.rgetField @PUMS.Citizens r + F.rgetField @PUMS.NonCitizens r
+      density r = F.rgetField @DT.PopPerSqMile r
+      f r = (realToFrac $ nPeople r, density r)
+  in FT.recordSingleton @DT.PopPerSqMile <$> FL.premap f PUMS.densityF
+
+geomDensityF :: FL.Fold (Double, Double) Double
+geomDensityF =
+  let wgtF = FL.premap fst FL.sum
+      wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * safeLog d) FL.sum
+  in (/) <$> wgtSumF <*> wgtF
+{-# INLINE geomDensityF #-}
+
+acsByStateMN :: F.FrameRec ACSByState -> [ACSByStateMN]
+acsByStateMN = FL.fold (forMultinomial @([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS] V.++ Predictors)
+                        (F.rgetField @DT.Age5FC)
+                        (F.rgetField @PUMS.Citizens)
+                        densityF
+                       )
+
 collegeGrad :: F.ElemOf rs DT.CollegeGradC => F.Record rs -> Bool
 collegeGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
 
@@ -216,7 +259,9 @@ districtKey r = F.rgetField @BRDF.StateAbbreviation r <> "-" <> show (F.rgetFiel
 
 logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
 logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
-safeLogV x =  VU.singleton $ if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
 
-logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
-logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
+safeLog x =  if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
+safeLogV x =  VU.singleton $ safeLog x
+
+logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs, a)
+logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 (logDensityPredictor . fst)

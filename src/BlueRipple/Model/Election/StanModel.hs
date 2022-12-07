@@ -570,7 +570,7 @@ indexedMuE3 dm = do
   return f
 -}
 
-modelCounts :: SD.StanDist (TE.EArray1 TE.EInt) ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
+modelCounts :: SD.SimpleDist (TE.EArray1 TE.EInt) ps -> TE.IntArrayE -> TE.CodeWriter (TE.ExprList ps) -> SB.StanBuilderM md gq ()
 modelCounts dist counts buildParams = do
   ps <- SB.inBlock SB.SBModel $ do
     x <- SB.addFromCodeWriter buildParams
@@ -579,7 +579,7 @@ modelCounts dist counts buildParams = do
   SB.sampleDistV dist ps counts
 
 updateLLSet ::  SB.RowTypeTag r
-            -> SD.StanDist TE.EInt ps
+            -> SD.SimpleDist TE.EInt ps
             -> TE.IntArrayE
             -> TE.CodeWriter (TE.IntE -> TE.ExprList ps)
             -> SB.LLSet
@@ -589,7 +589,7 @@ updateLLSet rtt dist counts paramCode = SB.addToLLSet rtt llDetails where
 
 addPosteriorPredictiveCheck :: Text
                             -> SB.RowTypeTag r
-                            -> SD.StanDist TE.EInt pts
+                            -> SD.SimpleDist TE.EInt pts
                             -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
                             -> SB.StanBuilderM md gq TE.IntArrayE
 addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
@@ -717,9 +717,9 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countSc
       muE = muE' dmQR
       bA si kE = betaWidth `TE.timesE` muE si kE
       bB si kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE si kE)
-      distV :: SD.StanDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+      distV :: SD.SimpleDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
       distV = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
-      distS :: SD.StanDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
+      distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
       distS = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
       stateByDataIndexE = TE.namedE (SB.dataByGroupIndexName rtt stateGroup) TE.sIntArray
   modelCounts distV successes $ do
@@ -959,9 +959,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
                           rttPS rttElex stateGroup wgtsV
                           (addIf (TE.parameterTagExpr <$> dsTAlphaM) alphaT) (addIf (repM . TE.parameterTagExpr <$> dsTBetaM) betaT) dmTQR
                           (addIf (TE.parameterTagExpr <$> dsPAlphaM) alphaP) (addIf (repM . TE.parameterTagExpr <$> dsPBetaM) betaP) dmPQR
-  let distV :: SD.StanDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec]
+  let distV :: SD.SimpleDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec]
       distV = SD.binomialDist' True
-      distS :: SD.StanDist TE.EInt [TE.EInt, TE.EReal]
+      distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal]
       distS = SD.binomialDist' True
   modelCounts distV votes $ pure $ cvap :> pTByElex :> TNil
   modelCounts distV dVotesInRace $ pure $ votesInRace :> pSByElex :> TNil
@@ -1054,9 +1054,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
       bBT pt = f (oneMinusVec pt) scaleT
       bAP pp = f pp scaleP
       bBP pp = f (oneMinusVec pp) scaleP
-  let distV :: SD.StanDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
+  let distV :: SD.SimpleDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
       distV = (if countScaled then SB.countScaledBetaBinomialDist else SD.betaBinomialDist') True
-      distS :: SD.StanDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
+      distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
       distS = (if countScaled then SB.countScaledBetaBinomialDist else SD.betaBinomialDist') True
   modelCounts distV votes $ pure $ cvap :> bAT pTByElex :>  bBT pTByElex :> TNil
   modelCounts distV dVotesInRace $ pure $ votesInRace :> bAP pSByElex :>  bBP pSByElex :> TNil

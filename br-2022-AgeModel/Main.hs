@@ -84,9 +84,9 @@ runAgeModel clearCaches = do
                          Nothing
                          "acs"
       only2020 r = F.rgetField @BRDF.Year r == 2020
-  acs_C <- (fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing) >>= AM.cachedACSByState
-  states <- FL.fold (FL.premap (view BRDF.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
-  (dw, code) <- SMR.dataWranglerAndCode acs_C (pure ()) (AM.groupBuilderState (S.toList states)) AM.categoricalAgeModel
+  acsMN_C <- fmap AM.acsByStateMN <$> ((fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing) >>= AM.cachedACSByState)
+  states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ()) (AM.groupBuilderState (S.toList states)) AM.categoricalAgeModel
   () <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
@@ -96,6 +96,6 @@ runAgeModel clearCaches = do
       code
       SC.DoNothing
       (SMR.Both [])
-      acs_C
+      acsMN_C
       (pure ())
-  K.logLE K.Info "Test tun complete."
+  K.logLE K.Info "Test run complete."
