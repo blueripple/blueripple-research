@@ -116,7 +116,7 @@ runEduModel clearCaches = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.categoricalModel (length [(minBound :: DT.CollegeGrad)..]) (AM.designMatrixRowEdu AM.logDensityDMRP))
+                (AM.binomialModel (AM.designMatrixRowEdu AM.logDensityDMRP))
   () <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData

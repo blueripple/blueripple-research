@@ -50,8 +50,6 @@ categoricalModel :: forall rs.Typeable rs
                  -> DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 categoricalModel numInCat dmr = do
---  let dmr = designMatrixRowAge logDensityDMRP
-  -- data
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nDataE = S.dataSetSizeE acsData
   nInCatE <- SB.addFixedInt "K" numInCat
@@ -102,6 +100,48 @@ categoricalModel numInCat dmr = do
     SD.multinomialLogitDist
     (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
     (\nE -> countsE `at` nE)
+
+
+binomialModel :: forall rs.Typeable rs
+                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+binomialModel dmr = do
+  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
+  let nDataE = S.dataSetSizeE acsData
+  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
+  acsMatE <- DM.addDesignMatrix acsData dmr Nothing
+  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
+      at x n = TE.sliceE TEI.s0 n x
+
+  -- transformed Data to get trials and successes from 2 outcome counts
+  (trialsE, successesE) <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
+    tE <- TE.declareNW (TE.NamedDeclSpec "trials" $ TE.intArraySpec nDataE [TE.VarLower $ TE.intE 0])
+    sE <- TE.declareNW (TE.NamedDeclSpec "successes" $ TE.intArraySpec nDataE [TE.VarLower $ TE.intE 0])
+    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n -> do
+      [TE.assign (tE `at` n) (TE.functionE SF.sumInt (countsE `at` n :> TNil))
+        , TE.assign (sE `at` n) ((countsE `at` n) `at` (TE.intE 1))
+        ]
+    pure (tE, sE)
+  -- parameters
+
+  betaP <- DAG.simpleParameterWA
+           (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictorsE [])
+           (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
+
+  let betaE = DAG.parameterTagExpr betaP
+--      betaXD = TE.declareRHSNW
+--               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
+--               (acsMatE `TE.timesE` betaE)
+
+  S.inBlock S.SBModel $ S.addFromCodeWriter $ do
+    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
+      [TE.sample (successesE `at` n) SF.binomial_logit (trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil)]
+
+  SB.generateLogLikelihood
+    acsData
+    SD.binomialLogitDist
+    (pure $ \n -> (trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil))
+    (\n -> successesE `at` n)
 
 designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
