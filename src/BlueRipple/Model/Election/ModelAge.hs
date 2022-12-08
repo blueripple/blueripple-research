@@ -45,15 +45,17 @@ import qualified Knit.Report as K
 import qualified Numeric
 import qualified Graphics.Vega.VegaLite as DAG
 
-categoricalAgeModel :: S.StanBuilderM [ACSByStateMN] () ()
-categoricalAgeModel = do
-  let dmr = designMatrixRowACS logDensityDMRP
+categoricalModel :: forall rs.Typeable rs
+                 => Int
+                 -> DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+categoricalModel numInCat dmr = do
+--  let dmr = designMatrixRowAge logDensityDMRP
   -- data
-  acsData <- S.dataSetTag @ACSByStateMN SC.ModelData "ACS"
-  let numAgeCats = length [(minBound :: DT.Age5F)..]
-      nDataE = S.dataSetSizeE acsData
-  nAgeCatsE <- SB.addFixedInt "K" numAgeCats
-  ageCountsE <- SB.addIntArrayData acsData "ageCounts" nAgeCatsE (Just 0) Nothing snd
+  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
+  let nDataE = S.dataSetSizeE acsData
+  nInCatE <- SB.addFixedInt "K" numInCat
+  countsE <- SB.addIntArrayData acsData "counts" nInCatE (Just 0) Nothing snd
   acsMatE <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
   -- parameters
@@ -68,14 +70,14 @@ categoricalAgeModel = do
 
   betaRawP <- DAG.addBuildParameter
               $ DAG.UntransformedP
-              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nAgeCatsE `TE.minusE` TE.intE 1) [])
+              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nInCatE `TE.minusE` TE.intE 1) [])
               []
               TNil
               (\_ _ -> pure ())
 
   betaP <- DAG.addBuildParameter
            $ DAG.TransformedP
-           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nAgeCatsE [])
+           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nInCatE [])
            []
            (DAG.build betaRawP :> DAG.build zvP :> TNil)
            (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
@@ -84,7 +86,7 @@ categoricalAgeModel = do
 
   let betaE = DAG.parameterTagExpr betaP
       betaXD = TE.declareRHSNW
-               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nAgeCatsE [])
+               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
                (acsMatE `TE.timesE` betaE)
       at x n = TE.sliceE TEI.s0 n x
 
@@ -92,36 +94,46 @@ categoricalAgeModel = do
     let sizeE e = TE.functionE SF.size (e :> TNil)
     betaX <- betaXD
     TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
-      [TE.target $ TE.densityE SF.multinomial_logit_lupmf (ageCountsE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
+      [TE.target $ TE.densityE SF.multinomial_logit_lupmf (countsE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
 
-  gqBetaX <- S.inBlock S.SBGeneratedQuantities $ S.addFromCodeWriter betaXD
+  gqBetaX <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter betaXD
   SB.generateLogLikelihood
     acsData
     SD.multinomialLogitDist
     (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
-    (\nE -> ageCountsE `at` nE)
+    (\nE -> countsE `at` nE)
 
-
-
-
-designMatrixRowACS :: forall rs a.(F.ElemOf rs DT.CollegeGradC
+designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   , F.ElemOf rs DT.PopPerSqMile
-                                  --                                , F.ElemOf rs BRDF.StateAbbreviation
-                                  --                                , F.ElemOf rs BRDF.CongressionalDistrict
                                   )
                    => DM.DesignMatrixRowPart (F.Record rs, a)
                    -> DM.DesignMatrixRow (F.Record rs, a)
-designMatrixRowACS densRP = DM.DesignMatrixRow "ACSDMRow" [densRP, sexRP, eduRP, raceRP]
+designMatrixRowAge densRP = DM.DesignMatrixRow "DMAge" [densRP, sexRP, eduRP, raceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (collegeGrad . fst)
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
-groupBuilderState :: [Text] -> S.StanGroupBuilderM [ACSByStateMN] () ()
+designMatrixRowEdu :: forall rs a.(F.ElemOf rs DT.Age5FC
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  )
+                   => DM.DesignMatrixRowPart (F.Record rs, a)
+                   -> DM.DesignMatrixRow (F.Record rs, a)
+designMatrixRowEdu densRP = DM.DesignMatrixRow "DMEdu" [densRP, sexRP, ageRP, raceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    ageRP = DM.boundedEnumRowPart Nothing "Age" (F.rgetField @DT.Age5FC . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
+
+groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
 groupBuilderState states = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
   S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation . fst) states
@@ -152,8 +164,7 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-type Predictors = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-type Categoricals = DT.Age5FC ': Predictors
+type Categoricals = [DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type ACSByCD = PUMS.CDCounts Categoricals
 type ACSByState = PUMS.StateCounts Categoricals
 
@@ -225,7 +236,8 @@ forMultinomial label count extraF =
      (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
 
 
-type ACSByStateMN = (F.Record ([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS] V.++ Predictors V.++ '[DT.PopPerSqMile]), VU.Vector Int)
+type ACSByStateAgeMN = (F.Record ([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC] V.++ '[DT.PopPerSqMile]), VU.Vector Int)
+type ACSByStateEduMN = (F.Record ([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Age5FC, DT.RaceAlone4C, DT.HispC] V.++ '[DT.PopPerSqMile]), VU.Vector Int)
 
 densityF :: FL.Fold (F.Record [PUMS.Citizens, PUMS.NonCitizens, DT.PopPerSqMile]) (F.Record '[DT.PopPerSqMile])
 densityF =
@@ -241,9 +253,16 @@ geomDensityF =
   in (/) <$> wgtSumF <*> wgtF
 {-# INLINE geomDensityF #-}
 
-acsByStateMN :: F.FrameRec ACSByState -> [ACSByStateMN]
-acsByStateMN = FL.fold (forMultinomial @([BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS] V.++ Predictors)
+acsByStateAgeMN :: F.FrameRec ACSByState -> [ACSByStateAgeMN]
+acsByStateAgeMN = FL.fold (forMultinomial @[BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
                         (F.rgetField @DT.Age5FC)
+                        (F.rgetField @PUMS.Citizens)
+                        densityF
+                       )
+
+acsByStateEduMN :: F.FrameRec ACSByState -> [ACSByStateEduMN]
+acsByStateEduMN = FL.fold (forMultinomial @[BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS,DT.SexC, DT.Age5FC, DT.RaceAlone4C, DT.HispC]
+                        (F.rgetField @DT.CollegeGradC)
                         (F.rgetField @PUMS.Citizens)
                         densityF
                        )

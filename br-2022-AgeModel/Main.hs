@@ -70,6 +70,7 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     runAgeModel False
+    runEduModel False
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -79,14 +80,43 @@ runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r) => Bool -> K.Sem r ()
 runAgeModel clearCaches = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
       runnerInputNames = SC.RunnerInputNames
-                         "br-2022-AgeModel/stan"
+                         "br-2022-AgeModel/stanAge"
                          "categoricalSER"
                          Nothing
-                         "acs"
+                         "acsAge"
       only2020 r = F.rgetField @BRDF.Year r == 2020
-  acsMN_C <- fmap AM.acsByStateMN <$> ((fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing) >>= AM.cachedACSByState)
+  acsMN_C <- fmap AM.acsByStateAgeMN <$> ((fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing) >>= AM.cachedACSByState)
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
-  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ()) (AM.groupBuilderState (S.toList states)) AM.categoricalAgeModel
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (AM.groupBuilderState (S.toList states))
+                (AM.categoricalModel (length [(minBound :: DT.Age5F)..]) (AM.designMatrixRowAge AM.logDensityDMRP))
+  () <- do
+    K.ignoreCacheTimeM
+      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
+      cacheKeyE
+      (Right runnerInputNames)
+      dw
+      code
+      SC.DoNothing
+      (SMR.Both [])
+      acsMN_C
+      (pure ())
+  K.logLE K.Info "Test run complete."
+
+runEduModel :: (K.KnitEffects r, BRK.CacheEffects r) => Bool -> K.Sem r ()
+runEduModel clearCaches = do
+  let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+      runnerInputNames = SC.RunnerInputNames
+                         "br-2022-AgeModel/stanEdu"
+                         "categoricalSEA"
+                         Nothing
+                         "acsEdu"
+      only2020 r = F.rgetField @BRDF.Year r == 2020
+  acsMN_C <- fmap AM.acsByStateEduMN <$> ((fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing) >>= AM.cachedACSByState)
+  states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (AM.groupBuilderState (S.toList states))
+                (AM.categoricalModel (length [(minBound :: DT.CollegeGrad)..]) (AM.designMatrixRowEdu AM.logDensityDMRP))
   () <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
