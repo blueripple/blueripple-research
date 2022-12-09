@@ -135,8 +135,10 @@ binomialModel dmr = do
 
   S.inBlock S.SBModel $ S.addFromCodeWriter $ do
     TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
-      [TE.sample (successesE `at` n) SF.binomial_logit (trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil)]
-
+      let lhs = successesE `at` n
+          ps = trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil
+--      [TE.sample lhs SF.binomial_logit ps]
+      in [TE.target $ TE.densityE SF.binomial_logit_lpmf lhs ps]
   SB.generateLogLikelihood
     acsData
     SD.binomialLogitDist
