@@ -34,10 +34,15 @@ import qualified System.Console.CmdArgs as CmdArgs
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Vector.Unboxed as VU
 import qualified Control.Foldl as FL
 import qualified Frames as F
 import Control.Lens (view)
 
+import qualified Frames.Visualization.VegaLite.Data as FVD
+import qualified Graphics.Vega.VegaLite as GV
+import qualified Graphics.Vega.VegaLite.Compat as FV
+import qualified Graphics.Vega.VegaLite.Configuration as FV
 
 templateVars ∷ M.Map String String
 templateVars =
@@ -125,8 +130,9 @@ runEduModel clearCaches = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.binomialModel (AM.designMatrixRowEdu AM.logDensityDMRP))
+                (AM.binomialModel (AM.designMatrixRowEdu2 Nothing)) -- (Just AM.logDensityDMRP)
   () <- do
+    K.ignoreCacheTimeM acsMN_C >>= (K.addHvega Nothing Nothing $ chart (FV.ViewConfig 500 500 5))
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
       cacheKeyE
@@ -138,3 +144,22 @@ runEduModel clearCaches = do
       acsMN_C
       (pure ())
   K.logLE K.Info "Test run complete."
+
+chart :: Foldable f => FV.ViewConfig -> f AM.ACSByStateEduMN -> GV.VegaLite
+chart vc rows =
+  let total v = v VU.! 0 + v VU.! 1
+      grads v = v VU.! 1
+      rowToData (r, v) = [("Sex", GV.Str $ show $ F.rgetField @DT.SexC r)
+                         , ("Age", GV.Str $ show $ F.rgetField @DT.Age5FC r)
+                         , ("Race", GV.Str $ show (F.rgetField @DT.RaceAlone4C r) <> "_" <> show (F.rgetField @DT.HispC r))
+                         , ("Total", GV.Number $ realToFrac $ total v)
+                         , ("Grads", GV.Number $ realToFrac $ grads v)
+                         , ("FracGrad", GV.Number $ realToFrac (grads v)/realToFrac (total v))
+                         ]
+      toVLDataRows x = GV.dataRow (rowToData x) []
+      vlData = GV.dataFromRows [] $ concat $ fmap toVLDataRows $ FL.fold FL.list rows
+      encX = GV.position GV.X [GV.PName "Age", GV.PmType GV.Nominal]
+      encY = GV.position GV.Y [GV.PName "FracGrad", GV.PmType GV.Quantitative]
+      mark = GV.mark GV.Circle []
+      enc = (GV.encoding . encX . encY)
+  in FV.configuredVegaLite vc [FV.title "FracGrad v Age", enc [], mark, vlData]

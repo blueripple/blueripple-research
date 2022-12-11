@@ -43,7 +43,6 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Numeric
-import qualified Graphics.Vega.VegaLite as DAG
 
 categoricalModel :: forall rs.Typeable rs
                  => Int
@@ -108,20 +107,14 @@ binomialModel :: forall rs.Typeable rs
 binomialModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nDataE = S.dataSetSizeE acsData
-  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
+--  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
+  let trials v = v VU.! 0 + v VU.! 1
+      successes v = v VU.! 1
+  trialsE <- SB.addCountData acsData "trials" (trials . snd)
+  successesE <- SB.addCountData acsData "successes" (successes . snd)
   acsMatE <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
-
-  -- transformed Data to get trials and successes from 2 outcome counts
-  (trialsE, successesE) <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
-    tE <- TE.declareNW (TE.NamedDeclSpec "trials" $ TE.intArraySpec nDataE [TE.VarLower $ TE.intE 0])
-    sE <- TE.declareNW (TE.NamedDeclSpec "successes" $ TE.intArraySpec nDataE [TE.VarLower $ TE.intE 0])
-    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n -> do
-      [TE.assign (tE `at` n) (TE.functionE SF.sumInt (countsE `at` n :> TNil))
-        , TE.assign (sE `at` n) ((countsE `at` n) `at` (TE.intE 1))
-        ]
-    pure (tE, sE)
   -- parameters
 
   betaP <- DAG.simpleParameterWA
@@ -129,15 +122,10 @@ binomialModel dmr = do
            (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
 
   let betaE = DAG.parameterTagExpr betaP
---      betaXD = TE.declareRHSNW
---               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
---               (acsMatE `TE.timesE` betaE)
-
   S.inBlock S.SBModel $ S.addFromCodeWriter $ do
     TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
       let lhs = successesE `at` n
           ps = trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil
---      [TE.sample lhs SF.binomial_logit ps]
       in [TE.target $ TE.densityE SF.binomial_logit_lpmf lhs ps]
   SB.generateLogLikelihood
     acsData
@@ -174,6 +162,34 @@ designMatrixRowEdu densRP = DM.DesignMatrixRow "DMEdu" [densRP, sexRP, ageRP, ra
     ageRP = DM.boundedEnumRowPart Nothing "Age" (F.rgetField @DT.Age5FC . fst)
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
+
+data RaceAge = RaceAge { raRace :: DT.Race5, raAge :: DT.Age5F } deriving (Show, Eq, Ord, Bounded)
+
+instance Enum RaceAge where
+  toEnum n = RaceAge (toEnum $ n `div` 5) (toEnum $ n `mod` 5)
+  fromEnum (RaceAge r a) = 5 * fromEnum r + fromEnum a
+{-
+instance Bounded RaceAge where
+  minBound = RaceAge minBound minBound
+  maxBound = RaceAge maxBound maxBound
+-}
+
+
+designMatrixRowEdu2 :: forall rs a.(F.ElemOf rs DT.Age5FC
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  )
+                   => Maybe (DM.DesignMatrixRowPart (F.Record rs, a))
+                   -> DM.DesignMatrixRow (F.Record rs, a)
+designMatrixRowEdu2 mDensRP = DM.DesignMatrixRow "DMEdu2" $ let l = [sexRP, raceAgeRP] in maybe l (\x -> x : l) mDensRP
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    raceAgeRP = DM.boundedEnumRowPart (Just $ RaceAge DT.R5_WhiteNonHispanic DT.A5F_25To44) "RaceAge"
+                $ \r -> RaceAge (race5Census r) (F.rgetField @DT.Age5FC $ fst r)
+
 
 groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
 groupBuilderState states = do
