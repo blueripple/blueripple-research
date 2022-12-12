@@ -177,7 +177,7 @@ runEduModel clearCaches cmdLine = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.binomialModel (AM.designMatrixRowEdu2 Nothing)) -- (Just AM.logDensityDMRP)
+                (AM.normalModel (AM.designMatrixRowEdu4 Nothing)) -- (Just AM.logDensityDMRP)
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN
