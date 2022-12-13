@@ -165,7 +165,7 @@ runEduModel clearCaches cmdLine = do
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-AgeModel/stanEdu"
                          "categoricalSEA"
-                         Nothing
+                         (Just $ SC.GQNames "pp" "acsEdu")
                          "acsEdu"
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
@@ -190,7 +190,7 @@ runEduModel clearCaches cmdLine = do
       dw
       code
       SC.DoNothing
-      (SMR.Both [])
+      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
       acsMN_C
       (pure ())
   K.logLE K.Info "Test run complete."

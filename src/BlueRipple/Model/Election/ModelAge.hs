@@ -98,7 +98,7 @@ categoricalModel numInCat dmr = do
     acsData
     SD.multinomialLogitDist
     (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
-    (\nE -> countsE `at` nE)
+    (pure $ \nE -> countsE `at` nE)
 
 
 binomialModel :: forall rs.Typeable rs
@@ -131,7 +131,7 @@ binomialModel dmr = do
     acsData
     SD.binomialLogitDist
     (pure $ \n -> (trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil))
-    (\n -> successesE `at` n)
+    (pure $ \n -> successesE `at` n)
 
 
 normalModel :: forall rs.Typeable rs
@@ -166,21 +166,31 @@ normalModel dmr = do
       expected = TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` TE.functionE SF.inv_logit (acsMatE `TE.timesE` muE :> TNil)
       sigma = TE.functionE SF.sqrt (TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` (acsMatE `TE.timesE` sigmaE) :> TNil)
       ps = expected :> sigma :> TNil
+
   S.inBlock S.SBModel $ S.addFromCodeWriter $ TE.addStmt $ TE.sample observed SF.normal ps
 
-  (observedE, expectedE, sigmaE) <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter $ do
-    let vSpec = TE.vectorSpec nDataE []
-    o <- TE.declareRHSNW (TE.NamedDeclSpec "observedV" vSpec) observed
-    e <- TE.declareRHSNW (TE.NamedDeclSpec "expectedV" vSpec) expected
-    s <- TE.declareRHSNW (TE.NamedDeclSpec "sigmaV" vSpec) sigma
-    return (e, o, s)
+  let vSpec = TE.vectorSpec nDataE []
+      tempPs = do
+        e <- TE.declareRHSNW (TE.NamedDeclSpec "expectedV" vSpec) expected
+        s <- TE.declareRHSNW (TE.NamedDeclSpec "sigmaV" vSpec) sigma
+        return (e, s)
+      tempObs = TE.declareRHSNW (TE.NamedDeclSpec "observedV" vSpec) observed
+
+
+--  (observedLL, expectedLL, sigmaLL) <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter tempVars
 
   SB.generateLogLikelihood
     acsData
     SD.normalDist
-    (pure $ \n -> expectedE `at` n :> sigmaE `at` n :> TNil)
-    (\n -> observedE `at` n)
+    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
+    ((\o n ->  o `at` n) <$> tempObs)
 
+  _ <- SB.generatePosteriorPrediction
+    acsData
+    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec nDataE $ TE.realSpec [])
+    SD.normalDist
+    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
+  pure ()
 
 designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC

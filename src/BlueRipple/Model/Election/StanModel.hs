@@ -585,7 +585,7 @@ updateLLSet ::  SB.RowTypeTag r
             -> SB.LLSet
             -> SB.LLSet
 updateLLSet rtt dist counts paramCode = SB.addToLLSet rtt llDetails where
-  llDetails = SB.LLDetails dist paramCode (\nE -> TE.sliceE TE.s0 nE counts)
+  llDetails = SB.LLDetails dist paramCode (pure (\nE -> TE.sliceE TE.s0 nE counts))
 
 addPosteriorPredictiveCheck :: Text
                             -> SB.RowTypeTag r
