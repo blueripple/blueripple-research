@@ -140,6 +140,7 @@ normalModel :: forall rs.Typeable rs
 normalModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nDataE = S.dataSetSizeE acsData
+      nStatesE = S.groupSizeE stateGroup
 --  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
   let trials v = v VU.! 0 + v VU.! 1
       successes v = v VU.! 1
@@ -149,22 +150,32 @@ normalModel dmr = do
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
   -- parameters
+  alphaP <- DAG.simpleParameterWA
+         (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStatesE [])
+         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
 
-  muP <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "mu" $ TE.vectorSpec nPredictorsE [])
+  betaP <- DAG.simpleParameterWA
+         (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictorsE [])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 5 :> TNil))
+
+  sigma0P <- DAG.simpleParameterWA
+         (TE.NamedDeclSpec "sigma0" $ TE.realSpec [TE.lowerM $ TE.realE 0])
+         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 50 :> TNil))
 
   sigmaP <- DAG.simpleParameterWA
          (TE.NamedDeclSpec "sigma" $ TE.vectorSpec nPredictorsE [TE.lowerM $ TE.realE 0])
-         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 5 :> TNil))
+         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 50 :> TNil))
 
 
-  let muE = DAG.parameterTagExpr muP
+  let alphaE = DAG.parameterTagExpr alphaP
+      betaE = DAG.parameterTagExpr betaP
+      sigma0E = DAG.parameterTagExpr sigma0P
       sigmaE = DAG.parameterTagExpr sigmaP
       eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
       observed = TE.functionE SF.to_vector (successesE :> TNil)
-      expected = TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` TE.functionE SF.inv_logit (acsMatE `TE.timesE` muE :> TNil)
-      sigma = TE.functionE SF.sqrt (TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` (acsMatE `TE.timesE` sigmaE) :> TNil)
+      mu = TE.indexE TEI.s0 (S.byGroupIndexE acsData stateGroup) alphaE `TE.plusE` (acsMatE `TE.timesE` betaE)
+      expected = TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` TE.functionE SF.inv_logit (mu :> TNil)
+      sigma = TE.functionE SF.sqrt (TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` (sigma0E `TE.plusE` (acsMatE `TE.timesE` sigmaE)) :> TNil)
       ps = expected :> sigma :> TNil
 
   S.inBlock S.SBModel $ S.addFromCodeWriter $ TE.addStmt $ TE.sample observed SF.normal ps
@@ -279,7 +290,7 @@ designMatrixRowEdu4 mDensRP = DM.DesignMatrixRow "DMEdu2" $ let l = [sexRaceAgeR
   where
 --    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
-    sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
+    sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A5F_25To44)) "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age5FC $ fst r)
 
 

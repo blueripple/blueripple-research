@@ -81,7 +81,7 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     runAgeModel False
-    runEduModel False cmdLine
+    runEduModel True cmdLine
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -157,7 +157,7 @@ runAgeModel clearCaches = do
       (SMR.Both [])
       acsMN_C
       (pure ())
-  K.logLE K.Info "Test run complete."
+  K.logLE K.Info "ageModel run complete."
 
 runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r) => Bool -> BR.CommandLine → K.Sem r ()
 runEduModel clearCaches cmdLine = do
@@ -193,7 +193,7 @@ runEduModel clearCaches cmdLine = do
       (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
       acsMN_C
       (pure ())
-  K.logLE K.Info "Test run complete."
+  K.logLE K.Info "eduModel run complete."
 
 chart :: Foldable f => FV.ViewConfig -> f AM.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =
