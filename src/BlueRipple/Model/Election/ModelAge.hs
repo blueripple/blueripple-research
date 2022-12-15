@@ -28,7 +28,9 @@ import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+import qualified Stan.ModelBuilder.TypedExpressions.DAGTypes as DAG
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
+import qualified Stan.ModelBuilder.TypedExpressions.TypedList as STL
 
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
@@ -43,6 +45,7 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Numeric
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAg
 
 categoricalModel :: forall rs.Typeable rs
                  => Int
@@ -149,11 +152,26 @@ normalModel dmr = do
   acsMatE <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
+
   -- parameters
-  alphaP <- DAG.simpleParameterWA
+  muAlpha <- DAG.simpleParameterWA
+             (TE.NamedDeclSpec "muAlpha" $ TE.realSpec [])
+             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  sigmaAlpha <- DAG.simpleParameterWA
+             (TE.NamedDeclSpec "sigmaAlpha" $ TE.realSpec [TE.lowerM $ TE.realE 0])
+             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  alphaP <- DAG.addCenteredHierarchical
+            (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStatesE [])
+            (DAG.tagsAsParams (muAlpha :> sigmaAlpha :> TNil))
+            SF.normalS
+
+{-
+    DAG.simpleParameterWA
          (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStatesE [])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
-
+-}
   betaP <- DAG.simpleParameterWA
          (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictorsE [])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 5 :> TNil))
