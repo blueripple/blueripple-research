@@ -80,7 +80,7 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    runAgeModel False
+--    runAgeModel False
     runEduModel True cmdLine
   case resE of
     Right namedDocs →
@@ -200,7 +200,7 @@ chart vc rows =
       grads v = v VU.! 1
       rowToData (r, v) = [("Sex", GV.Str $ show $ F.rgetField @DT.SexC r)
                          , ("State", GV.Str $ F.rgetField @BRDF.StateAbbreviation r)
-                         , ("Age", GV.Str $ show $ F.rgetField @DT.Age5FC r)
+                         , ("Age", GV.Str $ show $ F.rgetField @DT.Age4C r)
                          , ("Race", GV.Str $ show (F.rgetField @DT.RaceAlone4C r) <> "_" <> show (F.rgetField @DT.HispC r))
                          , ("Total", GV.Number $ realToFrac $ total v)
                          , ("Grads", GV.Number $ realToFrac $ grads v)
