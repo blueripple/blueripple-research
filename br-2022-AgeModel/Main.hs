@@ -21,6 +21,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BRK
 
 --import qualified Stan.ModelBuilder as S
 --import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
+import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.RScriptBuilder as SR
@@ -81,7 +82,8 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
-    runEduModel True cmdLine
+    runEduModel False cmdLine $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR Nothing
+--    runEduModel False cmdLine $ AM.designMatrixRowEdu5 @AM.ACSByStateEduMNR Nothing
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -158,14 +160,16 @@ runAgeModel clearCaches = do
       (pure ())
   K.logLE K.Info "ageModel run complete."
 
-runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r) => Bool -> BR.CommandLine → K.Sem r ()
-runEduModel clearCaches cmdLine = do
+runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
+            => Bool -> BR.CommandLine → DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
+runEduModel clearCaches cmdLine dmr = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+      dataName = "acsEdu_" <> DM.dmName dmr
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-AgeModel/stanEdu"
-                         "categoricalSEA"
-                         (Just $ SC.GQNames "pp" "acsEdu")
-                         "acsEdu"
+                         ("betaBinomialSEA_" <> DM.dmName dmr)
+                         (Just $ SC.GQNames "pp" dataName)
+                         dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   eduModelPaths <- postPaths "EduModel" cmdLine
@@ -176,7 +180,7 @@ runEduModel clearCaches cmdLine = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.betaBinomialModel (AM.designMatrixRowEdu4 Nothing)) -- (Just AM.logDensityDMRP)
+                (AM.betaBinomialModel dmr) -- (Just AM.logDensityDMRP)
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN
