@@ -50,7 +50,59 @@ import qualified Numeric
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAg
 
 
+binomialModel :: forall rs.Typeable rs
+                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+binomialModel dmr = do
+  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
+  let nData = S.dataSetSizeE acsData
+      nStates = S.groupSizeE stateGroup
+      trialsF v = v VU.! 0 + v VU.! 1
+      successesF v = v VU.! 1
+  trials <- SB.addCountData acsData "trials" (trialsF . snd)
+  successes <- SB.addCountData acsData "successes" (successesF . snd)
+  acsMat <- DM.addDesignMatrix acsData dmr Nothing
+  let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
+      at x n = TE.sliceE TEI.s0 n x
+      by v i = TE.indexE TEI.s0 i v
 
+  -- parameters
+
+  betaP <- DAG.simpleParameterWA
+           (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictors [])
+           (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
+
+  sigmaAlphaP <- DAG.simpleParameterWA
+             (TE.NamedDeclSpec "sigmaAlpha" $ TE.realSpec [TE.lowerM $ TE.realE 0])
+             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  alphaP <- DAG.addCenteredHierarchical
+            (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStates [])
+            (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
+            SF.normalS
+
+  let beta = DAG.parameterTagExpr betaP
+      alpha = DAG.parameterTagExpr alphaP
+      logitMu = (alpha `by` (S.byGroupIndexE acsData stateGroup)) `TE.plusE` (acsMat `TE.timesE` beta)
+      vSpec = TE.vectorSpec nData []
+      tempLM = TE.declareRHSNW (TE.NamedDeclSpec "lmV" vSpec) logitMu
+
+  S.inBlock S.SBModel $ S.addFromCodeWriter $ do
+    TE.addStmt $ TE.target $ TE.densityE SF.binomial_logit_lpmf successes (trials :> logitMu :> TNil)
+
+  SB.generateLogLikelihood
+    acsData
+    SD.binomialLogitDist
+    ((\lm n -> (trials `at` n :> lm `at` n :> TNil)) <$> tempLM)
+    (pure $ \n -> successes `at` n)
+
+  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr beta (Just "beta")
+  _ <- SB.generatePosteriorPrediction
+    acsData
+    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec nData $ TE.intSpec [])
+    (SD.binomialLogitDist' True)
+    ((\lm n -> trials `at` n :> lm `at` n :> TNil) <$> tempLM)
+  pure ()
 
 betaBinomialModel :: forall rs.Typeable rs
             => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
@@ -60,14 +112,16 @@ betaBinomialModel dmr = do
   let nData = S.dataSetSizeE acsData
       nStates = S.groupSizeE stateGroup
 --  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
-  let trials v = v VU.! 0 + v VU.! 1
-      successes v = v VU.! 1
-  trials <- SB.addCountData acsData "trials" (trials . snd)
-  successes <- SB.addCountData acsData "successes" (successes . snd)
+  let trialsF v = v VU.! 0 + v VU.! 1
+      successesF v = v VU.! 1
+  trials <- SB.addCountData acsData "trials" (trialsF . snd)
+  successes <- SB.addCountData acsData "successes" (successesF . snd)
   acsMat <- DM.addDesignMatrix acsData dmr Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
       by v i = TE.indexE TEI.s0 i v
+      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+      eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
 
   -- transformed data
   absACSMat <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter
@@ -88,7 +142,6 @@ betaBinomialModel dmr = do
             (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStates [])
             (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
             SF.normalS
-
 {-
   alphaP <- DAG.simpleNonCentered
             (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStates [])
@@ -102,27 +155,28 @@ betaBinomialModel dmr = do
          (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictors [])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
 {-
-  m0P <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "m0" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 50 :> TNil))
--}
-  mP <- DAG.simpleParameterWA
-        (TE.NamedDeclSpec "m" $ TE.vectorSpec nPredictors [TE.lowerM $ TE.realE 0])
+  phiP <- DAG.simpleParameterWA
+        (TE.NamedDeclSpec "phi" $ TE.vectorSpec nPredictors [TE.lowerM $ TE.realE 0])
         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 30 :> TNil))
+-}
+  phiP <- DAG.addTransformedHP
+          (TE.NamedDeclSpec "phi" $ TE.vectorSpec nPredictors [])
+          (Just $ [TE.lowerM $ TE.realE 0, TE.upperM $ TE.realE 1]) -- constraints on phi_raw
+          (TE.DensityWithArgs SF.betaS (TE.realE 99 :> TE.realE 1 :> TNil)) -- phi_raw is beta distributed
+          (\t -> t `eltDivide` (TE.realE 1 `TE.minusE` t)) -- phi = phi_raw / (1 - phi_raw), component-wise
 
 
   let alpha = DAG.parameterTagExpr alphaP
       beta = DAG.parameterTagExpr betaP
 --      m0 = DAG.parameterTagExpr m0P
-      m = DAG.parameterTagExpr mP
-      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+      phi = DAG.parameterTagExpr phiP
       logitMu = (alpha `by` (S.byGroupIndexE acsData stateGroup)) `TE.plusE` (acsMat `TE.timesE` beta)
       vSpec = TE.vectorSpec nData []
       tempPs = do
         mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) $ TE.functionE SF.inv_logit (logitMu :> TNil)
-        m <- TE.declareRHSNW (TE.NamedDeclSpec "mV" vSpec) $  absACSMat `TE.timesE` m
-        betaA <- TE.declareRHSNW (TE.NamedDeclSpec "aV" vSpec) $ m `eltTimes` mu
-        betaB <-TE.declareRHSNW (TE.NamedDeclSpec "bV" vSpec) $ m `eltTimes` (TE.realE 1 `TE.minusE` mu)
+        phiV <- TE.declareRHSNW (TE.NamedDeclSpec "mV" vSpec) $  absACSMat `TE.timesE` phi
+        betaA <- TE.declareRHSNW (TE.NamedDeclSpec "aV" vSpec) $ phiV `eltTimes` mu
+        betaB <-TE.declareRHSNW (TE.NamedDeclSpec "bV" vSpec) $ phiV `eltTimes` (TE.realE 1 `TE.minusE` mu)
         pure (betaA, betaB)
 
   S.inBlock S.SBModel $ S.addFromCodeWriter $ do
@@ -137,7 +191,7 @@ betaBinomialModel dmr = do
     (pure $ (successes `at`))
 
   S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr beta (Just "beta")
-  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr m (Just "m")
+  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr phi (Just "phi")
   _ <- SB.generatePosteriorPrediction
     acsData
     (TE.NamedDeclSpec "pObserved" $ TE.array1Spec nData $ TE.intSpec [])
@@ -472,39 +526,6 @@ categoricalModel numInCat dmr = do
     (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
     (pure $ \nE -> countsE `at` nE)
 
-binomialModel :: forall rs.Typeable rs
-                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
-                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
-binomialModel dmr = do
-  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
-  let nDataE = S.dataSetSizeE acsData
---  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
-  let trials v = v VU.! 0 + v VU.! 1
-      successes v = v VU.! 1
-  trialsE <- SB.addCountData acsData "trials" (trials . snd)
-  successesE <- SB.addCountData acsData "successes" (successes . snd)
-  acsMatE <- DM.addDesignMatrix acsData dmr Nothing
-  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
-      at x n = TE.sliceE TEI.s0 n x
-  -- parameters
-
-  betaP <- DAG.simpleParameterWA
-           (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictorsE [])
-           (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
-
-  let betaE = DAG.parameterTagExpr betaP
-  S.inBlock S.SBModel $ S.addFromCodeWriter $ do
-    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
-      let lhs = successesE `at` n
-          ps = trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil
-      in [TE.target $ TE.densityE SF.binomial_logit_lpmf lhs ps]
-  SB.generateLogLikelihood
-    acsData
-    SD.binomialLogitDist
-    (pure $ \n -> (trialsE `at` n :> (acsMatE `at` n) `TE.timesE` betaE :> TNil))
-    (pure $ \n -> successesE `at` n)
-
-
 
 normalModel :: forall rs.Typeable rs
             => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
@@ -615,9 +636,18 @@ binomialNormalModel dmr = do
            (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictors [])
            (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
 
-  errP <- DAG.simpleParameterWA
+  muErrP <- DAG.simpleParameterWA
+            (TE.NamedDeclSpec "muErr" $ TE.realSpec [])
+            (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  sigmaErrP <- DAG.simpleParameterWA
+               (TE.NamedDeclSpec "sigmaErr" $ TE.realSpec [TE.lowerM $ TE.realE 0])
+               (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  errP <- DAG.addCenteredHierarchical
           (TE.NamedDeclSpec "err" $ TE.vectorSpec nData [])
-          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+          (DAG.build muErrP :> DAG.build sigmaErrP :> TNil)
+          SF.normalS
 
   let alpha = DAG.parameterTagExpr alphaP
       beta  = DAG.parameterTagExpr betaP
@@ -645,6 +675,8 @@ binomialNormalModel dmr = do
     SD.binomialLogitDist
     ((\p n -> trials `at` n :> p `at` n :> TNil) <$> tmpP)
   pure ()
+
+
 
 {-
 negBinomialModel :: forall rs.Typeable rs
