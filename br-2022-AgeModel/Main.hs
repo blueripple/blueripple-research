@@ -82,8 +82,10 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
-    runEduModel False cmdLine $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR Nothing
-    runEduModel False cmdLine $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR Nothing
+    runEduModel False cmdLine False $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR Nothing
+    runEduModel False cmdLine False $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR Nothing
+    runEduModel False cmdLine False $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR Nothing
+    runEduModel False cmdLine True $ AM.designMatrixRowEdu8 @AM.ACSByStateEduMNR Nothing
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -131,8 +133,8 @@ logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> 
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> "has " <> show (FL.fold FL.length x) <> " rows."
 
 runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
-            => Bool -> BR.CommandLine → DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
-runEduModel clearCaches cmdLine dmr = do
+            => Bool -> BR.CommandLine → Bool -> DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
+runEduModel clearCaches cmdLine incAlpha dmr = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
       dataName = "acsEdu_" <> DM.dmName dmr
       runnerInputNames = SC.RunnerInputNames
@@ -150,7 +152,7 @@ runEduModel clearCaches cmdLine dmr = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.betaBinomialModel dmr) -- (Just AM.logDensityDMRP)
+                (AM.betaBinomialModel dmr incAlpha) -- (Just AM.logDensityDMRP)
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN

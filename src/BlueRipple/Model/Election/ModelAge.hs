@@ -106,8 +106,9 @@ binomialModel dmr = do
 
 betaBinomialModel :: forall rs.Typeable rs
             => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+            -> Bool -- include alpha
             -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
-betaBinomialModel dmr = do
+betaBinomialModel dmr incAlpha = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nData = S.dataSetSizeE acsData
       nStates = S.groupSizeE stateGroup
@@ -129,11 +130,14 @@ betaBinomialModel dmr = do
                $ TE.functionE SF.abs (acsMat :> TNil)
 
   -- parameters
-{-
-  muAlphaP <- DAG.simpleParameterWA
-             (TE.NamedDeclSpec "muAlpha" $ TE.realSpec [])
-             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
--}
+
+  mAlpha0P <- case incAlpha of
+    True -> Just
+            <$> DAG.simpleParameterWA
+            (TE.NamedDeclSpec "muAlpha" $ TE.realSpec [])
+            (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+    False -> pure Nothing
+
   sigmaAlphaP <- DAG.simpleParameterWA
              (TE.NamedDeclSpec "sigmaAlpha" $ TE.realSpec [TE.lowerM $ TE.realE 0])
              (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
@@ -166,11 +170,13 @@ betaBinomialModel dmr = do
           (\t -> t `eltDivide` (TE.realE 1 `TE.minusE` t)) -- phi = phi_raw / (1 - phi_raw), component-wise
 
 
-  let alpha = DAG.parameterTagExpr alphaP
+  let mAlpha0 = DAG.parameterTagExpr <$> mAlpha0P
+      alpha = DAG.parameterTagExpr alphaP
       beta = DAG.parameterTagExpr betaP
 --      m0 = DAG.parameterTagExpr m0P
       phi = DAG.parameterTagExpr phiP
-      logitMu = (alpha `by` (S.byGroupIndexE acsData stateGroup)) `TE.plusE` (acsMat `TE.timesE` beta)
+      logitMu = let x = (alpha `by` (S.byGroupIndexE acsData stateGroup)) `TE.plusE` (acsMat `TE.timesE` beta)
+                in maybe x (\a -> a `TE.plusE` x) mAlpha0
       vSpec = TE.vectorSpec nData []
       tempPs = do
         mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) $ TE.functionE SF.inv_logit (logitMu :> TNil)
@@ -272,12 +278,41 @@ designMatrixRowEdu4 :: forall rs a.(F.ElemOf rs DT.Age4C
                    -> DM.DesignMatrixRow (F.Record rs, a)
 designMatrixRowEdu4 mDensRP = DM.DesignMatrixRow "DMEdu4" $ let l = [sexRaceAgeRP] in maybe l (: l) mDensRP
   where
---    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
---    sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A5F_25To44)) "SexRaceAge"
---                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age5FC $ fst r)
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+
+
+designMatrixRowEdu7 :: forall rs a.(F.ElemOf rs DT.Age4C
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  )
+                   => Maybe (DM.DesignMatrixRowPart (F.Record rs, a))
+                   -> DM.DesignMatrixRow (F.Record rs, a)
+designMatrixRowEdu7 mDensRP = DM.DesignMatrixRow "DMEdu7" $ let l = [sexRP, raceAgeRP] in maybe l (: l) mDensRP
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    raceAgeRP = DM.boundedEnumRowPart Nothing "RaceAge"
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C $ fst r)
+
+
+designMatrixRowEdu8 :: forall rs a.(F.ElemOf rs DT.Age4C
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  )
+                   => Maybe (DM.DesignMatrixRowPart (F.Record rs, a))
+                   -> DM.DesignMatrixRow (F.Record rs, a)
+designMatrixRowEdu8 mDensRP = DM.DesignMatrixRow "DMEdu8" $ let l = [sexRP, raceAgeRP] in maybe l (: l) mDensRP
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C $ fst r)
 
 
 designMatrixRowEdu5 :: forall rs a.(F.ElemOf rs DT.Age4C
@@ -295,6 +330,23 @@ designMatrixRowEdu5 mDensRP = DM.DesignMatrixRow "DMEdu5" $ let l = [sexRP, ageR
     ageRP = DM.boundedEnumRowPart (Just  DT.A4_25To44) "Age" (F.rgetField @DT.Age4C . fst)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
     sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A4_25To44)) "SexRaceAge"
+                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+
+designMatrixRowEdu6 :: forall rs a.(F.ElemOf rs DT.Age4C
+                                  , F.ElemOf rs DT.SexC
+                                  , F.ElemOf rs DT.RaceAlone4C
+                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.PopPerSqMile
+                                  )
+                   => Maybe (DM.DesignMatrixRowPart (F.Record rs, a))
+                   -> DM.DesignMatrixRow (F.Record rs, a)
+designMatrixRowEdu6 mDensRP = DM.DesignMatrixRow "DMEdu6" $ let l = [sexRP, ageRP, raceRP, sexRaceAgeRP] in maybe l (: l) mDensRP
+  where
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
+    ageRP = DM.boundedEnumRowPart Nothing "Age" (F.rgetField @DT.Age4C . fst)
+    raceRP = DM.boundedEnumRowPart Nothing "Race" race5Census
+    sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
 
 
