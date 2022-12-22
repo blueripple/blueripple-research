@@ -82,10 +82,12 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
-    runEduModel False cmdLine False $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR Nothing
-    runEduModel False cmdLine False $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR Nothing
-    runEduModel False cmdLine False $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR Nothing
-    runEduModel False cmdLine True $ AM.designMatrixRowEdu8 @AM.ACSByStateEduMNR Nothing
+    runEduModel False cmdLine (AM.ModelConfig False False) $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR
+    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR
+--    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR
+    runEduModel False cmdLine (AM.ModelConfig False False) $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR
+    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR
+--    runEduModel False cmdLine (AM.ModelConfig True True) $ AM.designMatrixRowEdu2 @AM.ACSByStateEduMNR
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -133,13 +135,13 @@ logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> 
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> "has " <> show (FL.fold FL.length x) <> " rows."
 
 runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
-            => Bool -> BR.CommandLine → Bool -> DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
-runEduModel clearCaches cmdLine incAlpha dmr = do
+            => Bool -> BR.CommandLine → AM.ModelConfig -> DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
+runEduModel clearCaches cmdLine mc dmr = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
-      dataName = "acsEdu_" <> DM.dmName dmr
+      dataName = "acsEdu_" <> DM.dmName dmr <> AM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-AgeModel/stanEdu"
-                         ("betaBinomialSEA_" <> DM.dmName dmr)
+                         ("betaBinomialSEA_" <> DM.dmName dmr <> AM.modelConfigSuffix mc)
                          (Just $ SC.GQNames "pp" dataName)
                          dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
@@ -152,7 +154,7 @@ runEduModel clearCaches cmdLine incAlpha dmr = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.betaBinomialModel dmr incAlpha) -- (Just AM.logDensityDMRP)
+                (AM.betaBinomialModel dmr mc) -- (Just AM.logDensityDMRP)
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN
