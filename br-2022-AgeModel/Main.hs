@@ -36,6 +36,7 @@ import qualified System.Console.CmdArgs as CmdArgs
 
 import qualified Data.Map as M
 import qualified Data.Set as S
+--import Data.Vinyl as V
 --import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as VU
 import qualified Control.Foldl as FL
@@ -82,12 +83,13 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
-    runEduModel False cmdLine (AM.ModelConfig False False) $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR
-    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu @AM.ACSByStateEduMNR
+--    _ <- runEduModel False cmdLine (AM.ModelConfig () False False) $ AM.designMatrixRowEdu
+    res_C <- runEduModel False cmdLine (AM.ModelConfig () False True) $ AM.designMatrixRowEdu
 --    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR
-    runEduModel False cmdLine (AM.ModelConfig False False) $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR
-    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu7 @AM.ACSByStateEduMNR
+--    _ <- runEduModel False cmdLine (AM.ModelConfig () False False) $ AM.designMatrixRowEdu7
+--    _ <- runEduModel False cmdLine (AM.ModelConfig () False True) $ AM.designMatrixRowEdu7
 --    runEduModel False cmdLine (AM.ModelConfig True True) $ AM.designMatrixRowEdu2 @AM.ACSByStateEduMNR
+    pure ()
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -135,9 +137,13 @@ logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> 
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> "has " <> show (FL.fold FL.length x) <> " rows."
 
 runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
-            => Bool -> BR.CommandLine → AM.ModelConfig -> DM.DesignMatrixRow (F.Record AM.ACSByStateEduMNR, VU.Vector Int) -> K.Sem r ()
+            => Bool
+            -> BR.CommandLine
+            → AM.ModelConfig ()
+            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
+            -> K.Sem r (AM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
 runEduModel clearCaches cmdLine mc dmr = do
-  let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+  let cacheDirE = let k = "model/edu/" in if clearCaches then Left k else Right k
       dataName = "acsEdu_" <> DM.dmName dmr <> AM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-AgeModel/stanEdu"
@@ -154,23 +160,26 @@ runEduModel clearCaches cmdLine mc dmr = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (AM.groupBuilderState (S.toList states))
-                (AM.betaBinomialModel dmr mc) -- (Just AM.logDensityDMRP)
+                (AM.betaBinomialModel (contramap F.rcast dmr) mc) -- (Just AM.logDensityDMRP)
+  let mcWithId = "betaBinomial" <$ mc
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN
     pure ()
-  () <- do
+  res <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
-      cacheKeyE
+      cacheDirE
       (Right runnerInputNames)
       dw
       code
-      SC.DoNothing
+      (AM.stateModelResultAction mcWithId dmr)
       (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
       acsMN_C
       (pure ())
   K.logLE K.Info "eduModel run complete."
+  K.logLE K.Info $ "result: " <> show res
+  pure res
 
 chart :: Foldable f => FV.ViewConfig -> f AM.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =

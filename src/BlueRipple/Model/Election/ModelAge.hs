@@ -1,9 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -44,25 +46,33 @@ import qualified Flat
 
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
+import qualified Data.Set as S
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vector as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Numeric
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAg
+import qualified CmdStan as CS
+import qualified Stan.Parameters as SP
+import qualified Data.IntMap.Strict as IM
 
 
 
-data ModelConfig = ModelConfig { includeAlpha :: Bool, includeDensity :: Bool}
-modelConfigSuffix :: ModelConfig -> Text
-modelConfigSuffix (ModelConfig ia id) = case (ia, id) of
+data ModelConfig a = ModelConfig { modelID :: a, includeAlpha :: Bool, includeDensity :: Bool} deriving (Functor, Show)
+
+modelConfigSuffix :: ModelConfig a -> Text
+modelConfigSuffix (ModelConfig _ ia id) = case (ia, id) of
   (False, False) -> ""
   (True, False) ->  "_a"
   (False, True) -> "_d"
   (True, True) -> "_ad"
 
+modelName :: ModelConfig Text -> Text
+modelName mc = modelID mc <> modelConfigSuffix mc
 
 addTermMaybe :: Maybe a -> (a -> TE.UExpr t -> TE.UExpr t) -> TE.UExpr t -> TE.UExpr t
 addTermMaybe mA combine e = case mA of
@@ -70,8 +80,8 @@ addTermMaybe mA combine e = case mA of
   Just a -> combine a e
 
 betaBinomialModel :: forall rs. (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
-            => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
-            -> ModelConfig
+            => DM.DesignMatrixRow (F.Record rs)
+            -> ModelConfig ()
             -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 betaBinomialModel dmr mc = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
@@ -85,7 +95,7 @@ betaBinomialModel dmr mc = do
   mRawDensity <- case includeDensity mc of
     True -> Just <$> SB.addRealData acsData "rawLogDensity" Nothing Nothing (safeLog . F.rgetField @DT.PopPerSqMile . fst)
     False -> pure Nothing
-  acsMat <- DM.addDesignMatrix acsData dmr Nothing
+  acsMat <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
       by v i = TE.indexE TEI.s0 i v
@@ -194,18 +204,36 @@ betaBinomialModel dmr mc = do
     ((\(a, b) n -> trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
   pure ()
 
+groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
+groupBuilderState states = do
+  acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation . fst) states
+  S.addGroupIntMapForDataSet stateGroup acsData $ S.dataToIntMapFromFoldable (F.rgetField @DT.StateAbbreviation . fst) states
+
+groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByCD) () ()
+groupBuilderCD states cds = do
+  acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
+  S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show districtKey cds
+
+cdGroup :: S.GroupTypeTag Text
+cdGroup = S.GroupTypeTag "CD"
+
+stateGroup :: S.GroupTypeTag Text
+stateGroup = S.GroupTypeTag "State"
+
 designMatrixRowEdu7 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [sexRP, raceAgeRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceAgeRP = DM.boundedEnumRowPart Nothing "RaceAge"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
 
 
 designMatrixRowEdu2 :: forall rs a.(F.ElemOf rs DT.Age4C
@@ -213,33 +241,82 @@ designMatrixRowEdu2 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [sexRP, raceAgeRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
 
 
 --
-data ModelResult g ks = ModelResult { geoAlpha :: Map g Double, ldBeta :: Double, catAlpha :: Map (F.Record ks) Double }
+data ModelResult g ks = ModelResult { alpha :: Double, geoAlpha :: Map g Double, ldSI :: (Double, Double), catAlpha :: Map (F.Record ks) Double }
 
-modelResultToFTuple :: (Ord (V.Rec FS.SElField ks), V.RMap ks) => ModelResult g ks -> (Map g Double, Double, Map (V.Rec FS.SElField ks) Double)
-modelResultToFTuple (ModelResult a b c) = (a, b, M.mapKeys FS.toS c)
+deriving instance (Show (F.Record ks), Show g) => Show (ModelResult g ks)
 
-modelResultFromFTuple :: (Ord (F.Record ks), V.RMap ks) => (Map g Double, Double, Map (V.Rec FS.SElField ks) Double) -> ModelResult g ks
-modelResultFromFTuple (a, b, c) = ModelResult a b (M.mapKeys FS.fromS c)
+modelResultToFTuple :: (Ord (V.Rec FS.SElField ks), V.RMap ks) => ModelResult g ks -> (Double, Map g Double, (Double, Double), Map (V.Rec FS.SElField ks) Double)
+modelResultToFTuple (ModelResult a b c d) = (a, b, c, M.mapKeys FS.toS d)
+
+modelResultFromFTuple :: (Ord (F.Record ks), V.RMap ks) => (Double, Map g Double, (Double, Double), Map (V.Rec FS.SElField ks) Double) -> ModelResult g ks
+modelResultFromFTuple (a, b, c, d) = ModelResult a b c (M.mapKeys FS.fromS d)
 
 instance (V.RMap ks, FS.RecVec ks, FS.RecFlat ks, Flat.Flat g, Ord g, Ord (F.Rec FS.SElField ks), Ord (F.Record ks)) => Flat.Flat (ModelResult g ks) where
   size = Flat.size . modelResultToFTuple
   encode = Flat.encode . modelResultToFTuple
   decode = fmap modelResultFromFTuple Flat.decode
 
+applyModelResult :: (F.ElemOf rs DT.PopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
+                 => ModelResult g ks -> g -> F.Record rs -> Either Text Double
+applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
+  invLogit y = 1 / (1 + Numeric.exp y)
+  geoXE = maybe (Left $ "applyModelResult: " <> show g <> " missing from geography alpha map") Right $ M.lookup g ga
+  densX = ldI + ldS * (safeLog $ F.rgetField @DT.PopPerSqMile r)
+  catXE = maybe (Left $ "applyModelResult: " <> show r <> " missing from category alpha map") Right $ M.lookup (F.rcast r) ca
+  xE = (\a d g c -> a + d + g + c) <$> pure a <*> pure densX <*> geoXE <*> catXE
+
+
+stateModelResultAction :: forall rs ks a r gq.
+                          (K.KnitEffects r
+                          , Typeable rs
+                          , Typeable a
+                          , F.ElemOf rs DT.PopPerSqMile
+                          , ks F.⊆ rs
+                          , Ord (F.Record ks)
+                          , BRK.FiniteSet (F.Record ks)
+                          )
+                       => ModelConfig Text
+                       -> DM.DesignMatrixRow (F.Record ks)
+                       -> SC.ResultAction r [(F.Record rs, a)] gq S.DataSetGroupIntMaps () (ModelResult Text ks)
+stateModelResultAction mc dmr = SC.UseSummary f where
+  f summary _ modelDataAndIndexes_C _ = do
+    let resultCacheKey = modelID mc <> "_" <> DM.dmName dmr <> modelConfigSuffix mc
+    (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
+    -- we need to rescale the density component to work
+    let premap = safeLog . F.rgetField @DT.PopPerSqMile . fst
+        msFld = (,) <$> FL.mean <*> FL.std
+        (ldMean, ldSigma) = FL.fold (FL.premap premap msFld) modelData
+    stateIM <- K.knitEither
+      $ resultIndexesE >>= S.getGroupIndex (S.RowTypeTag @(F.Record rs, a) SC.ModelData "ACS") stateGroup
+    let getScalar n = K.knitEither $ SP.getScalar . fmap CS.mean <$> SP.parseScalar n (CS.paramStats summary)
+        getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
+    alpha <- case includeAlpha mc of
+      False -> pure 0
+      True -> getScalar "alpha0"
+    geoMap <- (\stIM alphaV -> M.fromList $ zip (IM.elems stIM) (Vec.toList alphaV)) <$> pure stateIM <*> getVector "alpha"
+    (ldSlope, ldIntercept) <- case includeDensity mc of
+      False -> pure (0, 0)
+      True -> (\x -> (x / ldSigma, negate $ x * ldMean / ldSigma)) <$> getScalar "beta_Density"
+    catBeta <- VU.convert <$> getVector "beta"
+    let (S.MatrixRowFromData _ _ rowLength rowVecF) = DM.matrixFromRowData dmr Nothing
+        allCatRows = S.toList $ BRK.elements @(F.Record ks)
+        g v1 v2 = VU.foldl' (\a (b, c) -> a + b * c) 0 $ VU.zip v1 v2
+        catMap = M.fromList $ zip allCatRows (g catBeta . rowVecF <$> allCatRows)
+    pure $ ModelResult alpha geoMap (ldSlope, ldIntercept) catMap
+
+--    modelResult <- ModelResult <$> getVector "alpha"
 
 type EduStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Age4C]
-
-
 
 --
 
@@ -248,12 +325,12 @@ designMatrixRowEdu :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [sexRP, ageRP, raceRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    ageRP = DM.boundedEnumRowPart (Just DT.A4_25To44) "Age" (F.rgetField @DT.Age4C . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC )
+    ageRP = DM.boundedEnumRowPart (Just DT.A4_25To44) "Age" (F.rgetField @DT.Age4C)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
 
@@ -262,68 +339,68 @@ designMatrixRowEdu3 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu3 = DM.DesignMatrixRow "DMEdu3" [sexRaceAgeRP]
   where
 --    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A4_25To44)) "SexRaceAge"
-                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
 designMatrixRowEdu4 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu4 = DM.DesignMatrixRow "DMEdu4" [sexRaceAgeRP]
   where
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
-                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
 designMatrixRowEdu8 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu8 = DM.DesignMatrixRow "DMEdu8" [sexRP, raceAgeRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
 
 designMatrixRowEdu5 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu5 = DM.DesignMatrixRow "DMEdu5" [sexRP, ageRP, raceRP, sexRaceAgeRP]
   where
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    ageRP = DM.boundedEnumRowPart (Just  DT.A4_25To44) "Age" (F.rgetField @DT.Age4C . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    ageRP = DM.boundedEnumRowPart (Just  DT.A4_25To44) "Age" (F.rgetField @DT.Age4C)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
     sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A4_25To44)) "SexRaceAge"
-                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
 designMatrixRowEdu6 :: forall rs a.(F.ElemOf rs DT.Age4C
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
                                   )
-                   => DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu6 = DM.DesignMatrixRow "DMEdu6" [sexRP, ageRP, raceRP, sexRaceAgeRP]
   where
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    ageRP = DM.boundedEnumRowPart Nothing "Age" (F.rgetField @DT.Age4C . fst)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    ageRP = DM.boundedEnumRowPart Nothing "Age" (F.rgetField @DT.Age4C)
     raceRP = DM.boundedEnumRowPart Nothing "Race" race5Census
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
-                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC $ fst r, race5Census r, F.rgetField @DT.Age4C $ fst r)
+                $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
 designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
@@ -331,26 +408,16 @@ designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.HispC
                                   , F.ElemOf rs DT.PopPerSqMile
                                   )
-                   => DM.DesignMatrixRowPart (F.Record rs, a)
-                   -> DM.DesignMatrixRow (F.Record rs, a)
+                   => DM.DesignMatrixRowPart (F.Record rs)
+                   -> DM.DesignMatrixRow (F.Record rs)
 designMatrixRowAge densRP = DM.DesignMatrixRow "DMAge" [densRP, sexRP, eduRP, raceRP]
   where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC . fst)
-    eduRP = DM.boundedEnumRowPart Nothing "Education" (collegeGrad . fst)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C $ fst r) (F.rgetField @DT.HispC $ fst r)
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart Nothing "Education" (collegeGrad)
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
 
-groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
-groupBuilderState states = do
-  acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
-  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation . fst) states
-
-groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec ACSByCD) () ()
-groupBuilderCD states cds = do
-  acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
-  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
-  S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show districtKey cds
 
 {-
 setupACSRows :: (Typeable md, Typeable gq)
@@ -365,12 +432,6 @@ setupACSRows densRP = do
   dmACS <- DM.addDesignMatrix acsData dmRow (Just "DM")
   return (acsData, acsCit, dmACS)
 -}
-
-cdGroup :: S.GroupTypeTag Text
-cdGroup = S.GroupTypeTag "CD"
-
-stateGroup :: S.GroupTypeTag Text
-stateGroup = S.GroupTypeTag "State"
 
 type Categoricals = [DT.Age4C, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type ACSByCD = PUMS.CDCounts Categoricals
@@ -507,22 +568,22 @@ logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
 safeLog x =  if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
 safeLogV x =  VU.singleton $ safeLog x
 
-logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs, a)
-logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 (logDensityPredictor . fst)
+logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
+logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
 
 
 ----
 
 categoricalModel :: forall rs.Typeable rs
                  => Int
-                 -> DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 -> DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 categoricalModel numInCat dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nDataE = S.dataSetSizeE acsData
   nInCatE <- SB.addFixedInt "K" numInCat
   countsE <- SB.addIntArrayData acsData "counts" nInCatE (Just 0) Nothing snd
-  acsMatE <- DM.addDesignMatrix acsData dmr Nothing
+  acsMatE <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
   -- parameters
   -- zero vector for identifiability trick
@@ -571,7 +632,7 @@ categoricalModel numInCat dmr = do
 
 
 normalModel :: forall rs.Typeable rs
-            => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+            => DM.DesignMatrixRow (F.Record rs)
             -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 normalModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
@@ -582,7 +643,7 @@ normalModel dmr = do
       successes v = v VU.! 1
   trialsE <- SB.addCountData acsData "trials" (trials . snd)
   successesE <- SB.addCountData acsData "successes" (successes . snd)
-  acsMatE <- DM.addDesignMatrix acsData dmr Nothing
+  acsMatE <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
 
@@ -651,7 +712,7 @@ normalModel dmr = do
 
 
 binomialNormalModel :: forall rs.Typeable rs
-                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 => DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 binomialNormalModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
@@ -662,7 +723,7 @@ binomialNormalModel dmr = do
       successes v = v VU.! 1
   trials <- SB.addCountData acsData "trials" (trials . snd)
   successes <- SB.addCountData acsData "successes" (successes . snd)
-  acsMat <- DM.addDesignMatrix acsData dmr Nothing
+  acsMat <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
   -- parameters
@@ -720,7 +781,7 @@ binomialNormalModel dmr = do
   pure ()
 
 binomialModel :: forall rs.Typeable rs
-                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 => DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 binomialModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
@@ -730,7 +791,7 @@ binomialModel dmr = do
       successesF v = v VU.! 1
   trials <- SB.addCountData acsData "trials" (trialsF . snd)
   successes <- SB.addCountData acsData "successes" (successesF . snd)
-  acsMat <- DM.addDesignMatrix acsData dmr Nothing
+  acsMat <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
       by v i = TE.indexE TEI.s0 i v
@@ -777,7 +838,7 @@ binomialModel dmr = do
 
 {-
 negBinomialModel :: forall rs.Typeable rs
-                 => DM.DesignMatrixRow (F.Record rs, VU.Vector Int)
+                 => DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 negBinomialModel dmr = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
@@ -787,7 +848,7 @@ negBinomialModel dmr = do
       successes v = v VU.! 1
   trials <- SB.addCountData acsData "trials" (trials . snd)
   successes <- SB.addCountData acsData "successes" (successes . snd)
-  acsMat <- DM.addDesignMatrix acsData dmr Nothing
+  acsMat <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
       at x n = TE.sliceE TEI.s0 n x
       by v d g = TE,indexE TEI.s0 (S.byGroupIndexE d g) v
