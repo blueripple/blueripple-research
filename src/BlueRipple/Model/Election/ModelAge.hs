@@ -266,10 +266,11 @@ instance (V.RMap ks, FS.RecVec ks, FS.RecFlat ks, Flat.Flat g, Ord g, Ord (F.Rec
   encode = Flat.encode . modelResultToFTuple
   decode = fmap modelResultFromFTuple Flat.decode
 
+
 applyModelResult :: (F.ElemOf rs DT.PopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
                  => ModelResult g ks -> g -> F.Record rs -> Either Text Double
 applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
-  invLogit y = 1 / (1 + Numeric.exp y)
+  invLogit y = 1 / (1 + Numeric.exp (negate y))
   geoXE = maybe (Left $ "applyModelResult: " <> show g <> " missing from geography alpha map") Right $ M.lookup g ga
   densX = ldI + ldS * (safeLog $ F.rgetField @DT.PopPerSqMile r)
   catXE = maybe (Left $ "applyModelResult: " <> show r <> " missing from category alpha map") Right $ M.lookup (F.rcast r) ca

@@ -36,7 +36,7 @@ import qualified System.Console.CmdArgs as CmdArgs
 
 import qualified Data.Map as M
 import qualified Data.Set as S
---import Data.Vinyl as V
+import Data.Vinyl as V
 --import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as VU
 import qualified Control.Foldl as FL
@@ -84,11 +84,17 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
 --    _ <- runEduModel False cmdLine (AM.ModelConfig () False False) $ AM.designMatrixRowEdu
-    res_C <- runEduModel False cmdLine (AM.ModelConfig () False True) $ AM.designMatrixRowEdu
+    modelResult <- runEduModel False cmdLine (AM.ModelConfig () False True) $ AM.designMatrixRowEdu
 --    runEduModel False cmdLine (AM.ModelConfig False True) $ AM.designMatrixRowEdu4 @AM.ACSByStateEduMNR
 --    _ <- runEduModel False cmdLine (AM.ModelConfig () False False) $ AM.designMatrixRowEdu7
 --    _ <- runEduModel False cmdLine (AM.ModelConfig () False True) $ AM.designMatrixRowEdu7
 --    runEduModel False cmdLine (AM.ModelConfig True True) $ AM.designMatrixRowEdu2 @AM.ACSByStateEduMNR
+    K.logLE K.Info "Some Examples"
+--    modelResult <- K.ignoreCacheTime res_C
+    let exRec :: DT.Sex -> DT.Age4 -> DT.RaceAlone4 -> DT.Hisp -> Double -> F.Record [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC, DT.PopPerSqMile]
+        exRec s a r h d = s F.&: a F.&: r F.&: h F.&: d F.&: V.RNil
+        exR1 = exRec DT.Female DT.A4_18To24 DT.RA4_Asian DT.NonHispanic 12000
+    K.logLE K.Info $ "TX: " <> show exR1 <> "=" <> show (AM.applyModelResult modelResult "TX" exR1)
     pure ()
   case resE of
     Right namedDocs →
