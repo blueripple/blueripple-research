@@ -67,7 +67,7 @@ import qualified Math.Geometry.GridMap as GridMap
 import qualified Math.Geometry.GridMap.Lazy as GridMap
 import qualified Data.Random.Distribution.Uniform as RandomFu
 import qualified Data.Random as RandomFu
-import qualified Data.Sparse.SpMatrix as SLA
+--import qualified Data.Sparse.SpMatrix as SLA
 import GHC.TypeLits (Symbol)
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import Numeric.LinearAlgebra (rows)
@@ -201,13 +201,14 @@ buildSOM metric (gridRows, gridCols) sampleFrom = do
       dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
   return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
 
+type SparseMatrix a = [(Int, Int, a)]
 
 -- NB: Weight is chosen so that for exactly the same and equidistributed,
 -- tr (M'M) = (numPats * numPats)/numClusters
-sameClusterMatrixSOM :: forall c v k p dk. (SOM.Classifier c v k p, Ord dk, Eq k, Ord v) => (p -> dk) -> c v k p -> [p] -> SLA.SpMatrix Int
+sameClusterMatrixSOM :: forall c v k p dk. (SOM.Classifier c v k p, Ord dk, Eq k, Ord v) => (p -> dk) -> c v k p -> [p] -> SparseMatrix Int
 sameClusterMatrixSOM getKey som ps = sameClusterMatrix getKey (SOM.classify som) ps
 
-sameClusterMatrix :: forall k p dk. (Ord dk, Eq k) => (p -> dk) -> (p -> k) -> [p] -> SLA.SpMatrix Int
+sameClusterMatrix :: forall k p dk. (Ord dk, Eq k) => (p -> dk) -> (p -> k) -> [p] -> SparseMatrix Int
 sameClusterMatrix getKey cluster ps =
   let numPats = length ps
       getCluster :: p -> State.State (M.Map dk k) k
@@ -232,10 +233,10 @@ sameClusterMatrix getKey cluster ps =
                 lower = fmap swapIndices upper
             return $ (n,n,1) : (upper ++ lower)
       scM = List.concat <$> (traverse go (zip [0..] $ List.tails ps))
-  in SLA.fromListSM (numPats, numPats) $ State.evalState scM M.empty
+  in {- SLA.fromListSM (numPats, numPats) $-} State.evalState scM M.empty
 
 
-randomSCM :: K.Member PRF.RandomFu r => Int -> Int -> K.Sem r (SLA.SpMatrix Int)
+randomSCM :: K.Member PRF.RandomFu r => Int -> Int -> K.Sem r (SparseMatrix Int)
 randomSCM nPats nClusters = do
   clustered <- traverse (const $ PRF.sampleRVar (RandomFu.uniform 1 nClusters)) [1..nPats]
   let go :: (Int, [Int]) -> [(Int, Int, Int)]
@@ -249,7 +250,7 @@ randomSCM nPats nClusters = do
                 lower = fmap swapIndices upper
             in (n,n,1) : (upper ++ lower)
       scM = List.concat $ fmap go $ zip [0..] $ List.tails clustered
-  return $ SLA.fromListSM (nPats, nPats) scM
+  return $ {-SLA.fromListSM (nPats, nPats)-} scM
 
 type Method = "Method" F.:-> T.Text
 type Mean = "mean" F.:-> Double

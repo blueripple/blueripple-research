@@ -1,14 +1,18 @@
 packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan
 jobs: 4
 with-compiler: ghc
--- ghc-9.4.4
-allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
+--ghc 8.10.7 ??
+--allow-newer: base, ghc-prim, bytestring, polysemy-zoo:constraints, template-haskell, random-fu, profunctors, time, hashable, integer-gmp, polysemy, lens, semirings, vinyl, aeson, hvega
+-- ghc-9.2.3
+allow-newer: template-haskell, readable:bytestring, foldl-statistics:hashable, foldl-statistics:profunctors, streamly-bytestring:bytestring, cereal-time:time
+           , colonnade:bytestring, generic-trie:base, monadic-recursion-schemes:base, heidi:base, polysemy-zoo:constraints, polysemy-zoo:ghc-prim, polysemy-zoo:base
+           , compact:base, compact:bytestring
 
--- ghc 9.X
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/sparse-linear-algebra
---  tag: ba606d5c7515e1d9960749a412a67d93dc9fc360
+-- ghc-9.2.3
+source-repository-package
+  type: git
+  location: https://github.com/tfausak/hs-memory
+  tag: 3cf661a8a9a8ac028df77daa88e8d65c55a3347a
 
 source-repository-package
   type: git
@@ -21,7 +25,13 @@ source-repository-package
   location: https://github.com/adamConnerSax/polysemy-Extra
   tag: 2c78425f825b227b514e5d6f4851da2716a38372
   subdir: polysemy-RandomFu
--- end ghc 9.X
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/L-as/flat
+--  tag: 41a040c413351e021982bb78bd00f750628f8060
+
+-- end ghc 9.2
 
 source-repository-package
   type: git
@@ -59,6 +69,7 @@ source-repository-package
   location: https://github.com/adamConnerSax/heidi
   tag: 83e0f7e6ba80baaa18ab7daafe7083828fc74d60
 
+
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
@@ -69,10 +80,17 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-streamly
   tag: a5a155dcc1c5dc9597fc598427b0b36d947534ec
 
+--source-repository-package
+--  type: git
+--  location:  https://github.com/Quid2/flat
+--  tag: 8a8baa4a0b762bd052218114830497ff8fbe008c
+
+
+
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: 0f5978f7373eb6a14fdc2a8155badd1a90da8f3d
+  tag: ed9bf2f4706941754b3cf6aa53863f66fbd425df
 
 source-repository-package
   type: git

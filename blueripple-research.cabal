@@ -65,7 +65,7 @@ common deps
                , semirings >= 0.5 && < 0.7
                , say >= 0.1.0.1 && < 0.2
                , som > 10.0 && < 10.2
-               , sparse-linear-algebra >= 0.3 && < 0.4
+--               , sparse-linear-algebra >= 0.3 && < 0.4
                , statistics
                , streamly >= 0.8 && < 0.9
                , streamly-bytestring
@@ -168,9 +168,9 @@ library
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.TSNE
+                 , BlueRipple.Model.Education
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
-                 , BlueRipple.Model.Election.ModelAge
                  , BlueRipple.Utilities.Heidi
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
@@ -235,19 +235,6 @@ library
 --               , OpenFEC-beam
 --               , sqlite-simple
 -- default-language: Haskell2010
-
-
-executable mission
-  import: deps
-  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0
-  hs-source-dirs: mission
-  main-is:        mission.hs
-  build-depends: base >= 4.11
-               , blueripple-research
-               , lens
-               , map-reduce-folds
-               , time
-  default-language: Haskell2010
 
 executable preference-model
   import: deps
@@ -339,6 +326,19 @@ executable stan-models
          , relude (Relude as Prelude
          , Relude.Extra)
 
+executable mission
+  import: deps
+  ghc-options: -fplugin=Polysemy.Plugin -Wall -O0
+  hs-source-dirs: mission
+  main-is:        mission.hs
+  build-depends: base >= 4.11
+               , blueripple-research
+               , lens
+               , map-reduce-folds
+               , time
+  default-language: Haskell2010
+
+
 executable br-2021-A
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
@@ -397,10 +397,10 @@ executable br-2021-NewMaps
          , Relude.Extra)
 
 
-executable br-2022-AgeModel
+executable br-2022-EduModel
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
-  hs-source-dirs: br-2022-AgeModel
+  hs-source-dirs: br-2022-EduModel
   main-is: Main.hs
   other-modules:
   build-depends: base

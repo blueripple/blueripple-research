@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -11,7 +12,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module BlueRipple.Model.Election.ModelAge where
+module BlueRipple.Model.Education where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -79,47 +80,53 @@ addTermMaybe mA combine e = case mA of
   Nothing -> e
   Just a -> combine a e
 
-betaBinomialModel :: forall rs. (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
-            => DM.DesignMatrixRow (F.Record rs)
-            -> ModelConfig ()
-            -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
-betaBinomialModel dmr mc = do
+data ModelData rs = ModelData { acsDataTag :: S.RowTypeTag (F.Record rs, VU.Vector Int)
+                              , nData :: TE.IntE
+                              , nStates :: TE.IntE
+                              , nPredictors :: TE.IntE
+                              , trials :: TE.IntArrayE
+                              , successes :: TE.IntArrayE
+                              , predictors :: TE.MatrixE
+                              , mDensity :: Maybe TE.VectorE
+                                                }
+
+data BasicParameters = BasicParameters { mAlpha0 :: Maybe TE.RealE
+                                       , alpha :: TE.VectorE
+                                       , beta :: TE.VectorE
+                                       , logitMu :: TE.VectorE
+--                                       , mBetaDensity :: Maybe TE.RealE
+                                       }
+
+educationModelData :: forall rs . (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+                   => DM.DesignMatrixRow (F.Record rs)
+                   -> ModelConfig ()
+                   -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () (ModelData rs)
+educationModelData dmr mc = do
   acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
   let nData = S.dataSetSizeE acsData
       nStates = S.groupSizeE stateGroup
---  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
   let trialsF v = v VU.! 0 + v VU.! 1
       successesF v = v VU.! 1
   trials <- SB.addCountData acsData "trials" (trialsF . snd)
   successes <- SB.addCountData acsData "successes" (successesF . snd)
-  mRawDensity <- case includeDensity mc of
-    True -> Just <$> SB.addRealData acsData "rawLogDensity" Nothing Nothing (safeLog . F.rgetField @DT.PopPerSqMile . fst)
-    False -> pure Nothing
+
   acsMat <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
   let (_, nPredictors) = DM.designMatrixColDimBinding dmr Nothing
-      at x n = TE.sliceE TEI.s0 n x
-      by v i = TE.indexE TEI.s0 i v
-      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
-      eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
-  -- transformed data
-  absACSMat <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter
-               $ TE.declareRHSNW (TE.NamedDeclSpec "absACSMat" $ TE.matrixSpec nData nPredictors [])
-               $ TE.functionE SF.abs (acsMat :> TNil)
-
-  -- standardize density. Subtract mean and divide by standard deviation
-  mDensity <- case mRawDensity of
-    Nothing -> pure Nothing
-    Just d -> Just <$> do
-      uwmvf <- SB.unWeightedMeanVarianceFunction
-      S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
-        let m = TE.functionE SF.mean (d :> TNil)
-            sd = TE.functionE SF.sqrt (TE.functionE SF.variance (d :> TNil) :> TNil)
---        mv <- TE.declareRHSNW (TE.NamedDeclSpec "meanVarLD" $ TE.vectorSpec (TE.intE 2) []) $ TE.functionE uwmvf (d :> d :> TNil)
+  mDensity <- case includeDensity mc of
+    False -> pure Nothing
+    True -> do
+      rawDensity <- SB.addRealData acsData "rawLogDensity" Nothing Nothing (safeLog . F.rgetField @DT.PopPerSqMile . fst)
+      stdDensity <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
+        let m = TE.functionE SF.mean (rawDensity :> TNil)
+            sd = TE.functionE SF.sqrt (TE.functionE SF.variance (rawDensity :> TNil) :> TNil)
         TE.declareRHSNW (TE.NamedDeclSpec "stdLogDensity" $ TE.vectorSpec nData [])
-          $ (d `TE.minusE` m) `TE.divideE` sd
+          $ (rawDensity `TE.minusE` m) `TE.divideE` sd
+      pure $ Just stdDensity
 
-  -- parameters
+  pure $ ModelData acsData nData nStates nPredictors trials successes acsMat mDensity
 
+basicParameters :: ModelConfig () -> ModelData rs -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () BasicParameters
+basicParameters mc md = do
   mAlpha0P <- case includeAlpha mc of
     True -> Just
             <$> DAG.simpleParameterWA
@@ -132,16 +139,9 @@ betaBinomialModel dmr mc = do
              (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
 
   alphaP <- DAG.addCenteredHierarchical
-            (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStates [])
+            (TE.NamedDeclSpec "alpha" $ TE.vectorSpec md.nStates [])
             (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
             SF.normalS
-
-  mBetaDensityP <- case includeDensity mc of
-    True -> Just <$> DAG.simpleParameterWA
-                   (TE.NamedDeclSpec "beta_Density" $ TE.realSpec [])
-                   (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
-    False -> pure Nothing
-
 {-
   alphaP <- DAG.simpleNonCentered
             (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStates [])
@@ -152,56 +152,133 @@ betaBinomialModel dmr mc = do
 -}
 
   betaP <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictors [])
+         (TE.NamedDeclSpec "beta" $ TE.vectorSpec md.nPredictors [])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 2 :> TNil))
-{-
-  phiP <- DAG.simpleParameterWA
-        (TE.NamedDeclSpec "phi" $ TE.vectorSpec nPredictors [TE.lowerM $ TE.realE 0])
-        (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 30 :> TNil))
--}
+
+  mBetaDensityP <- case includeDensity mc of
+    True -> Just <$> DAG.simpleParameterWA
+                   (TE.NamedDeclSpec "beta_Density" $ TE.realSpec [])
+                   (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+    False -> pure Nothing
+
+  let f = DAG.parameterTagExpr
+      by v i = TE.indexE TEI.s0 i v
+      mBetaDensityTerm = TE.timesE <$> (f <$> mBetaDensityP) <*> md.mDensity
+      logitMu = let x = (f alphaP `by` (S.byGroupIndexE md.acsDataTag stateGroup))
+                      `TE.plusE` (md.predictors `TE.timesE` f betaP)
+                in addTermMaybe (f <$> mAlpha0P) (\a e -> a `TE.plusE` e)
+                   $ addTermMaybe mBetaDensityTerm (\bd e -> bd `TE.plusE` e) x
+  pure $ BasicParameters (f <$> mAlpha0P) (f alphaP) (f betaP) logitMu
+
+
+normalModel :: forall rs . (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+            => DM.DesignMatrixRow (F.Record rs)
+            -> ModelConfig ()
+            -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+normalModel dmr mc = do
+  modelData <- educationModelData dmr mc
+  let toVec a = TE.functionE SF.to_vector (a :> TNil)
+      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+      eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
+  (obsP, binomialSigma2) <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
+    oP <- TE.declareRHSNW (TE.NamedDeclSpec "obsP" $ TE.vectorSpec modelData.nData [])
+          $ toVec modelData.successes `eltDivide` toVec modelData.trials
+    bS <- TE.declareRHSNW (TE.NamedDeclSpec "binomialSigma" $ TE.vectorSpec modelData.nData [])
+          $ oP `eltTimes` (TE.realE 1 `TE.minusE` oP) `eltDivide` toVec modelData.trials
+    pure (oP, bS)
+
+  bParams <- basicParameters mc modelData
+
+  sigmaP <- DAG.simpleParameterWA
+         (TE.NamedDeclSpec "sigma" $ TE.realSpec [TE.lowerM $ TE.realE 0])
+         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
+
+  let sigma0 = DAG.parameterTagExpr sigmaP
+      mu = TE.functionE SF.inv_logit (bParams.logitMu :> TNil)
+      sigma = TE.functionE SF.sqrt (binomialSigma2 `TE.plusE` (sigma0 `TE.timesE` sigma0) :> TNil)
+      ps = mu :> sigma :> TNil
+
+  S.inBlock S.SBModel $ S.addFromCodeWriter $ TE.addStmt $ TE.sample obsP SF.normal ps
+
+  let vSpec = TE.vectorSpec modelData.nData []
+      tempPs = do
+        mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) mu
+        s <- TE.declareRHSNW (TE.NamedDeclSpec "sigmaV" vSpec) sigma
+        return (mu, s)
+      tempP = TE.declareRHSNW (TE.NamedDeclSpec "pV" vSpec) obsP
+
+
+--  (observedLL, expectedLL, sigmaLL) <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter tempVars
+  let at x n = TE.sliceE TEI.s0 n x
+  SB.generateLogLikelihood
+    modelData.acsDataTag
+    SD.normalDist
+    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
+    ((\o n ->  o `at` n) <$> tempP)
+
+  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr bParams.beta (Just "beta")
+  _ <- SB.generatePosteriorPrediction'
+    modelData.acsDataTag
+    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec modelData.nData $ TE.realSpec [])
+    SD.normalDist
+    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
+    (\n p -> modelData.trials `at` n `TE.timesE` p)
+  pure ()
+
+
+betaBinomialModel :: forall rs. (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+            => DM.DesignMatrixRow (F.Record rs)
+            -> ModelConfig ()
+            -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+betaBinomialModel dmr mc = do
+  modelData <- educationModelData dmr mc
+  absPredictors <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter
+                   $ TE.declareRHSNW (TE.NamedDeclSpec "absACSMat" $ TE.matrixSpec modelData.nData modelData.nPredictors [])
+                   $ TE.functionE SF.abs (modelData.predictors :> TNil)
+  -- parameters
+  bParams <- basicParameters mc modelData
+  let at x n = TE.sliceE TEI.s0 n x
+      by v i = TE.indexE TEI.s0 i v
+      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+      eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
   phiP <- DAG.addTransformedHP
-          (TE.NamedDeclSpec "phi" $ TE.vectorSpec nPredictors [])
+          (TE.NamedDeclSpec "phi" $ TE.vectorSpec modelData.nPredictors [])
           (Just $ [TE.lowerM $ TE.realE 0, TE.upperM $ TE.realE 1]) -- constraints on phi_raw
           (TE.DensityWithArgs SF.betaS (TE.realE 99 :> TE.realE 1 :> TNil)) -- phi_raw is beta distributed
           (\t -> t `eltDivide` (TE.realE 1 `TE.minusE` t)) -- phi = phi_raw / (1 - phi_raw), component-wise
 
-
-  let mAlpha0 = DAG.parameterTagExpr <$> mAlpha0P
-      alpha = DAG.parameterTagExpr alphaP
-      mBetaDensity = DAG.parameterTagExpr <$> mBetaDensityP
-      beta = DAG.parameterTagExpr betaP
-      phi = DAG.parameterTagExpr phiP
-      mBetaDensityTerm = TE.timesE <$> mBetaDensity <*> mDensity
-      logitMu = let x = (alpha `by` (S.byGroupIndexE acsData stateGroup))
-                      `TE.plusE` (acsMat `TE.timesE` beta)
-                in addTermMaybe mAlpha0 (\a e -> a `TE.plusE` e)
-                   $ addTermMaybe mBetaDensityTerm (\bd e -> bd `TE.plusE` e) x
-      vSpec = TE.vectorSpec nData []
+  let phi = DAG.parameterTagExpr phiP
+--      mBetaDensityTerm = TE.timesE <$> bParams.mBetaDensity <*> modelData.mDensity
+--      logitMu = let x = (bParams.alpha `by` (S.byGroupIndexE modelData.acsDataTag stateGroup))
+--                      `TE.plusE` (modelData.predictors `TE.timesE` bParams.beta)
+--                in addTermMaybe bParams.mAlpha0 (\a e -> a `TE.plusE` e)
+--                   $ addTermMaybe mBetaDensityTerm (\bd e -> bd `TE.plusE` e) x
+      vSpec = TE.vectorSpec modelData.nData []
       tempPs = do
-        mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) $ TE.functionE SF.inv_logit (logitMu :> TNil)
-        phiV <- TE.declareRHSNW (TE.NamedDeclSpec "mV" vSpec) $  absACSMat `TE.timesE` phi
+        mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) $ TE.functionE SF.inv_logit (bParams.logitMu :> TNil)
+        phiV <- TE.declareRHSNW (TE.NamedDeclSpec "mV" vSpec) $  absPredictors `TE.timesE` phi
         betaA <- TE.declareRHSNW (TE.NamedDeclSpec "aV" vSpec) $ phiV `eltTimes` mu
         betaB <-TE.declareRHSNW (TE.NamedDeclSpec "bV" vSpec) $ phiV `eltTimes` (TE.realE 1 `TE.minusE` mu)
         pure (betaA, betaB)
 
   S.inBlock S.SBModel $ S.addFromCodeWriter $ do
     (betaA, betaB) <- tempPs
-    let ps = trials :> betaA :> betaB :> TNil
-    TE.addStmt $ TE.target $ TE.densityE SF.beta_binomial_lpmf successes ps
+    let ps = modelData.trials :> betaA :> betaB :> TNil
+    TE.addStmt $ TE.target $ TE.densityE SF.beta_binomial_lpmf modelData.successes ps
 
   SB.generateLogLikelihood
-    acsData
+    modelData.acsDataTag
     (S.betaBinomialDist' True)
-    ((\(a, b) n -> trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
-    (pure $ (successes `at`))
+    ((\(a, b) n -> modelData.trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
+    (pure $ (modelData.successes `at`))
 
-  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr beta (Just "beta")
+  S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr bParams.beta (Just "beta")
   S.inBlock S.SBGeneratedQuantities $ DM.splitToGroupVars dmr phi (Just "phi")
   _ <- SB.generatePosteriorPrediction
-    acsData
-    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec nData $ TE.intSpec [])
+    modelData.acsDataTag
+    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec modelData.nData $ TE.intSpec [])
     (SD.betaBinomialDist' True)
-    ((\(a, b) n -> trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
+    ((\(a, b) n -> modelData.trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
   pure ()
 
 groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
@@ -222,11 +299,11 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-designMatrixRowEdu7 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu7 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [sexRP, raceAgeRP]
   where
@@ -236,11 +313,11 @@ designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [sexRP, raceAgeRP]
                 $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
 
 
-designMatrixRowEdu2 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu2 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [sexRP, raceAgeRP]
   where
@@ -251,7 +328,26 @@ designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [sexRP, raceAgeRP]
 
 
 --
-data ModelResult g ks = ModelResult { alpha :: Double, geoAlpha :: Map g Double, ldSI :: (Double, Double), catAlpha :: Map (F.Record ks) Double }
+data ModelResult2 ks = ModelResult2 { unModelResult :: Map (F.Record ks) Double }
+
+deriving instance (Show (F.Record ks)) => Show (ModelResult2 ks)
+
+instance (V.RMap ks, FS.RecVec ks, FS.RecFlat ks, Ord (F.Rec FS.SElField ks), Ord (F.Record ks)) => Flat.Flat (ModelResult2 ks) where
+  size = Flat.size . M.mapKeys FS.toS . unModelResult
+  encode = Flat.encode . M.mapKeys FS.toS . unModelResult
+  decode = fmap (ModelResult2 . M.mapKeys FS.fromS) Flat.decode
+
+
+applyModelResult2 :: (F.ElemOf ks DT.PopPerSqMile, ks F.⊆ rs, Ord (F.Record ks), Show (F.Record rs))
+                 => ModelResult2 ks -> F.Record rs -> Either Text Double
+applyModelResult2 (ModelResult2 m) r = case M.lookup (F.rcast r) m of
+                                         Nothing -> Left $ "applyModelResult2: key=" <> show r <> " not found in model result map."
+                                         Just p -> Right p
+
+
+
+--
+data ModelResult g ks = ModelResult { alpha0 :: Double, geoAlpha :: Map g Double, ldSI :: (Double, Double), catAlpha :: Map (F.Record ks) Double }
 
 deriving instance (Show (F.Record ks), Show g) => Show (ModelResult g ks)
 
@@ -266,7 +362,6 @@ instance (V.RMap ks, FS.RecVec ks, FS.RecFlat ks, Flat.Flat g, Ord g, Ord (F.Rec
   encode = Flat.encode . modelResultToFTuple
   decode = fmap modelResultFromFTuple Flat.decode
 
-
 applyModelResult :: (F.ElemOf rs DT.PopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
                  => ModelResult g ks -> g -> F.Record rs -> Either Text Double
 applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
@@ -275,7 +370,6 @@ applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
   densX = ldI + ldS * (safeLog $ F.rgetField @DT.PopPerSqMile r)
   catXE = maybe (Left $ "applyModelResult: " <> show r <> " missing from category alpha map") Right $ M.lookup (F.rcast r) ca
   xE = (\a d g c -> a + d + g + c) <$> pure a <*> pure densX <*> geoXE <*> catXE
-
 
 stateModelResultAction :: forall rs ks a r gq.
                           (K.KnitEffects r
@@ -319,13 +413,15 @@ stateModelResultAction mc dmr = SC.UseSummary f where
 
 type EduStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Age4C]
 
+--addAgeSplits :: F.Record rs ->
+
 --
 
-designMatrixRowEdu :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu :: forall rs a . (F.ElemOf rs DT.Age4C
+                                    ,  F.ElemOf rs DT.SexC
+                                    ,  F.ElemOf rs DT.RaceAlone4C
+                                    ,  F.ElemOf rs DT.HispC
+                                    )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [sexRP, ageRP, raceRP]
   where
@@ -335,11 +431,11 @@ designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [sexRP, ageRP, raceRP]
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
 
-designMatrixRowEdu3 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu3 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu3 = DM.DesignMatrixRow "DMEdu3" [sexRaceAgeRP]
   where
@@ -348,11 +444,11 @@ designMatrixRowEdu3 = DM.DesignMatrixRow "DMEdu3" [sexRaceAgeRP]
     sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A4_25To44)) "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
-designMatrixRowEdu4 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu4 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu4 = DM.DesignMatrixRow "DMEdu4" [sexRaceAgeRP]
   where
@@ -360,11 +456,11 @@ designMatrixRowEdu4 = DM.DesignMatrixRow "DMEdu4" [sexRaceAgeRP]
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
-designMatrixRowEdu8 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu8 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu8 = DM.DesignMatrixRow "DMEdu8" [sexRP, raceAgeRP]
   where
@@ -373,11 +469,11 @@ designMatrixRowEdu8 = DM.DesignMatrixRow "DMEdu8" [sexRP, raceAgeRP]
     raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
                 $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
 
-designMatrixRowEdu5 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu5 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu5 = DM.DesignMatrixRow "DMEdu5" [sexRP, ageRP, raceRP, sexRaceAgeRP]
   where
@@ -388,11 +484,11 @@ designMatrixRowEdu5 = DM.DesignMatrixRow "DMEdu5" [sexRP, ageRP, raceRP, sexRace
     sexRaceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Female, DT.R5_WhiteNonHispanic, DT.A4_25To44)) "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
-designMatrixRowEdu6 :: forall rs a.(F.ElemOf rs DT.Age4C
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowEdu6 :: forall rs a . (F.ElemOf rs DT.Age4C
+                                     , F.ElemOf rs DT.SexC
+                                     , F.ElemOf rs DT.RaceAlone4C
+                                     , F.ElemOf rs DT.HispC
+                                     )
                    => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowEdu6 = DM.DesignMatrixRow "DMEdu6" [sexRP, ageRP, raceRP, sexRaceAgeRP]
   where
@@ -403,12 +499,12 @@ designMatrixRowEdu6 = DM.DesignMatrixRow "DMEdu6" [sexRP, ageRP, raceRP, sexRace
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
-designMatrixRowAge :: forall rs a.(F.ElemOf rs DT.CollegeGradC
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  , F.ElemOf rs DT.PopPerSqMile
-                                  )
+designMatrixRowAge :: forall rs a . (F.ElemOf rs DT.CollegeGradC
+                                    , F.ElemOf rs DT.SexC
+                                    , F.ElemOf rs DT.RaceAlone4C
+                                    , F.ElemOf rs DT.HispC
+                                    , F.ElemOf rs DT.PopPerSqMile
+                                    )
                    => DM.DesignMatrixRowPart (F.Record rs)
                    -> DM.DesignMatrixRow (F.Record rs)
 designMatrixRowAge densRP = DM.DesignMatrixRow "DMAge" [densRP, sexRP, eduRP, raceRP]
@@ -575,7 +671,7 @@ logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
 
 ----
 
-categoricalModel :: forall rs.Typeable rs
+categoricalModel :: forall rs . Typeable rs
                  => Int
                  -> DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
@@ -632,87 +728,9 @@ categoricalModel numInCat dmr = do
     (pure $ \nE -> countsE `at` nE)
 
 
-normalModel :: forall rs.Typeable rs
-            => DM.DesignMatrixRow (F.Record rs)
-            -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
-normalModel dmr = do
-  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
-  let nDataE = S.dataSetSizeE acsData
-      nStatesE = S.groupSizeE stateGroup
---  countsE <- SB.addIntArrayData acsData "counts" (TE.intE 2) (Just 0) Nothing snd
-  let trials v = v VU.! 0 + v VU.! 1
-      successes v = v VU.! 1
-  trialsE <- SB.addCountData acsData "trials" (trials . snd)
-  successesE <- SB.addCountData acsData "successes" (successes . snd)
-  acsMatE <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
-  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
-      at x n = TE.sliceE TEI.s0 n x
-
-  -- parameters
-  muAlpha <- DAG.simpleParameterWA
-             (TE.NamedDeclSpec "muAlpha" $ TE.realSpec [])
-             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
-
-  sigmaAlpha <- DAG.simpleParameterWA
-             (TE.NamedDeclSpec "sigmaAlpha" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-             (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
-
-  alphaP <- DAG.addCenteredHierarchical
-            (TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStatesE [])
-            (DAG.tagsAsParams (muAlpha :> sigmaAlpha :> TNil))
-            SF.normalS
-
-  betaP <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "beta" $ TE.vectorSpec nPredictorsE [])
-         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 5 :> TNil))
-
-  sigma0P <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "sigma0" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 50 :> TNil))
-
-  sigmaP <- DAG.simpleParameterWA
-         (TE.NamedDeclSpec "sigma" $ TE.vectorSpec nPredictorsE [TE.lowerM $ TE.realE 0])
-         (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 50 :> TNil))
 
 
-  let alphaE = DAG.parameterTagExpr alphaP
-      betaE = DAG.parameterTagExpr betaP
-      sigma0E = DAG.parameterTagExpr sigma0P
-      sigmaE = DAG.parameterTagExpr sigmaP
-      eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
-      observed = TE.functionE SF.to_vector (successesE :> TNil)
-      mu = TE.indexE TEI.s0 (S.byGroupIndexE acsData stateGroup) alphaE `TE.plusE` (acsMatE `TE.timesE` betaE)
-      expected = TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` TE.functionE SF.inv_logit (mu :> TNil)
-      sigma = TE.functionE SF.sqrt (TE.functionE SF.to_vector (trialsE :> TNil) `eltTimes` (sigma0E `TE.plusE` (acsMatE `TE.timesE` sigmaE)) :> TNil)
-      ps = expected :> sigma :> TNil
-
-  S.inBlock S.SBModel $ S.addFromCodeWriter $ TE.addStmt $ TE.sample observed SF.normal ps
-
-  let vSpec = TE.vectorSpec nDataE []
-      tempPs = do
-        e <- TE.declareRHSNW (TE.NamedDeclSpec "expectedV" vSpec) expected
-        s <- TE.declareRHSNW (TE.NamedDeclSpec "sigmaV" vSpec) sigma
-        return (e, s)
-      tempObs = TE.declareRHSNW (TE.NamedDeclSpec "observedV" vSpec) observed
-
-
---  (observedLL, expectedLL, sigmaLL) <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter tempVars
-
-  SB.generateLogLikelihood
-    acsData
-    SD.normalDist
-    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
-    ((\o n ->  o `at` n) <$> tempObs)
-
-  _ <- SB.generatePosteriorPrediction
-    acsData
-    (TE.NamedDeclSpec "pObserved" $ TE.array1Spec nDataE $ TE.realSpec [])
-    SD.normalDist
-    ((\(exp, sig) n -> exp `at` n :> sig `at` n :> TNil) <$> tempPs)
-  pure ()
-
-
-binomialNormalModel :: forall rs.Typeable rs
+binomialNormalModel :: forall rs . Typeable rs
                  => DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 binomialNormalModel dmr = do
@@ -781,7 +799,7 @@ binomialNormalModel dmr = do
     ((\p n -> trials `at` n :> p `at` n :> TNil) <$> tmpP)
   pure ()
 
-binomialModel :: forall rs.Typeable rs
+binomialModel :: forall rs . Typeable rs
                  => DM.DesignMatrixRow (F.Record rs)
                  -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
 binomialModel dmr = do

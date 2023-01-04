@@ -46,7 +46,7 @@ dlccDistricts =
   ]
 
 type VotePct = "VotePct" F.:-> Text
-type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, BR.Candidate, ET.Party, ET.Votes, VotePct]
+type SLDResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, BR.Candidate, ET.Party, ET.Votes, VotePct]
 
 type Parser = MP.Parsec Void Text
 
@@ -75,11 +75,11 @@ parseNVDistrictType = mpToCsv parse
 
 parseNVResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
 parseNVResult v =
-  let mkRec yr sa dt dn cn cp vts vp = yr F.&: sa F.&: dt F.&: dn F.&: cn F.&: cp F.&: vts F.&: vp F.&: V.RNil
+  let mkRec yr sa dt dn cn cp vts vp = yr F.&: sa F.&: dt F.&: show dn F.&: cn F.&: cp F.&: vts F.&: vp F.&: V.RNil
       yr = v .! 0
       sa = v .! 1
       dt = (v .! 2) >>= parseNVDistrictType
-      dn = v .! 3
+      dn = (v .! 3) :: CSV.Parser Int
       cn = v .! 4
       cp = parseParty <$> (v .! 5)
       vts = v .! 6
@@ -131,13 +131,13 @@ parseOHResult v =
       sa = v .! 1
       dist = (v .! 2) >>= parseOHRace
       dt = fst <$> dist
-      dn = snd <$> dist
+      dn = (snd <$> dist) :: CSV.Parser Int
       candp = (v .! 3) >>= parseOHCandAndParty
       cn = fst <$> candp
       cp = snd <$> candp
       vts = v .! 4
       vpct = v .! 5
-  in mkRec <$> yr <*> sa <*> dt <*> dn <*> cn <*> cp <*> vts <*> vpct
+  in mkRec <$> yr <*> sa <*> dt <*> (show <$> dn) <*> cn <*> cp <*> vts <*> vpct
 
 getOHResults :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
 getOHResults = do
@@ -174,7 +174,7 @@ parseTXRace t = mpToCsv parseRace t
 
 parseTXResult :: CSV.Record -> CSV.Parser (F.Record SLDResultR)
 parseTXResult v =
-  let mkRec yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
+  let mkRec yr sa dt dn c p vts vpct = yr F.&: sa F.&: dt F.&: show dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
       yr = v .! 0
       sa = v .! 1
       dist = (v .! 2) >>= parseTXRace
@@ -237,7 +237,7 @@ parseGACandAndParty t = mpToCsv parseCP t
 
 parseGAResult :: Int -> CSV.Record -> CSV.Parser (F.Record SLDResultR)
 parseGAResult yr v =
-  let mkRec dt dn c p vts vpct = yr F.&: "GA" F.&: dt F.&: dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
+  let mkRec dt dn c p vts vpct = yr F.&: "GA" F.&: dt F.&: show dn F.&: c F.&: p F.&: vts F.&: vpct F.&: V.RNil
       dist = (v .! 1) >>= parseGARace
       dt = fst <$> dist
       dn = snd <$> dist
@@ -261,13 +261,13 @@ getGAResults = do
     return $ FL.fold candidatesToRaces $ fmap (\(GAResult x) -> x) $ records
 
 
-parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
+parseVARace :: Text -> Maybe (F.Record [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
 parseVARace raceDesc = do
   let isLower = T.isInfixOf "Delegates" raceDesc
       dType = if isLower then ET.StateLower else ET.StateUpper
   let numText = T.dropWhileEnd (\x -> x /= ')') $  T.dropWhile (\x -> x /= '(') raceDesc
   dNum :: Int <- T.readMaybe $ toString numText
-  return $ 2019 F.&: "VA" F.&: dType F.&: dNum F.&: V.RNil
+  return $ 2019 F.&: "VA" F.&: dType F.&: show dNum F.&: V.RNil
 
 
 getVAResults :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec SLDRaceResultR))
@@ -303,13 +303,13 @@ type RVotes = "RVotes" F.:-> Int
 type DShare = "DShare" F.:-> Double
 type Contested = "Contested" F.:-> Bool
 
-type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber, Contested, DVotes, RVotes, DShare]
+type SLDRaceResultR = [BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, Contested, DVotes, RVotes, DShare]
 
 candidatesToRaces :: FL.Fold (F.Record SLDResultR) (F.FrameRec SLDRaceResultR)
 candidatesToRaces = FMR.concatFold
                     $ FMR.mapReduceFold
                     FMR.noUnpack
-                    (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictNumber])
+                    (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName])
                     (FMR.foldAndAddKey f) where
   f :: FL.Fold (F.Record [BR.Candidate, ET.Party, ET.Votes, VotePct]) (F.Record [Contested, DVotes, RVotes, DShare])
   f =
