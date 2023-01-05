@@ -11,6 +11,7 @@ module Main where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Demographic.StanModels as SM
+import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 --import qualified BlueRipple.Data.Loaders as BRL
@@ -83,13 +84,13 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
---    _ <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu7
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu7
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu5
-    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu5
---    runEduModel False cmdLine (SM.ModelConfig True True) $ SM.designMatrixRowEdu2 @SM.ACSByStateEduMNR
+--    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu7
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu7
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu5
+    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu5
+--    runEduModel False cmdLine (SM.ModelConfig True SM.HCentered True) $ SM.designMatrixRowEdu2 @SM.ACSByStateEduMNR
     K.logLE K.Info "Some Examples!"
 --    modelResult <- K.ignoreCacheTime res_C
     let exRec :: DT.Sex -> DT.Age4 -> DT.RaceAlone4 -> DT.Hisp -> Double
@@ -168,9 +169,9 @@ runEduModel clearCaches cmdLine mc dmr = do
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   eduModelPaths <- postPaths "EduModel" cmdLine
-  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= SM.cachedACSByState
+  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
   logLengthC acs_C "acsByState"
-  let acsMN_C = fmap SM.acsByStateEduMN acs_C
+  let acsMN_C = fmap DDP.acsByStateEduMN acs_C
   logLengthC acsMN_C "acsByStateMNEdu"
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
@@ -198,11 +199,11 @@ runEduModel clearCaches cmdLine mc dmr = do
 
 runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             => Bool
-            -> BR.COmmandLine
+            -> BR.CommandLine
             -> SM.ModelConfig ()
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.RaceAlone4C, DT.HispC])
-            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
-runAgeModel clearCaches = do
+            -> K.Sem r () -- (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
+runAgeModel clearCaches commandLine mc dmr = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-AgeModel/stanAge"
@@ -210,9 +211,9 @@ runAgeModel clearCaches = do
                          Nothing
                          "acsAge"
       only2020 r = F.rgetField @BRDF.Year r == 2020
-  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= SM.cachedACSByState
+  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
   logLengthC acs_C "acsByState"
-  let acsMN_C = fmap SM.acsByStateAgeMN acs_C
+  let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
   logLengthC acsMN_C "acsByStateMNAge"
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
@@ -231,7 +232,7 @@ runAgeModel clearCaches = do
       (pure ())
   K.logLE K.Info "ageModel run complete."
 
-chart :: Foldable f => FV.ViewConfig -> f SM.ACSByStateEduMN -> GV.VegaLite
+chart :: Foldable f => FV.ViewConfig -> f DDP.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =
   let total v = v VU.! 0 + v VU.! 1
       grads v = v VU.! 1
