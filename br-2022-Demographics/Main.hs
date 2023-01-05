@@ -75,7 +75,7 @@ main = do
   let cacheDir = ".flat-kh-cache"
       knitConfig ∷ K.KnitConfig BRK.SerializerC BRK.CacheData Text =
         (K.defaultKnitConfig $ Just cacheDir)
-          { K.outerLogPrefix = Just "2022-AgeModel"
+          { K.outerLogPrefix = Just "2022-Demographics"
           , K.logIf = BR.knitLogSeverity $ BR.logLevel cmdLine -- K.logDiagnostic
           , K.pandocWriterConfig = pandocWriterConfig
           , K.serializeDict = BRK.flatSerializeDict
@@ -113,7 +113,7 @@ main = do
 
 -- emptyRel = [Path.reldir||]
 postDir ∷ Path.Path Rel Dir
-postDir = [Path.reldir|br-2022-AgeModel/posts|]
+postDir = [Path.reldir|br-2022-Demographics/posts|]
 
 postLocalDraft
   ∷ Path.Path Rel Dir
@@ -130,7 +130,7 @@ sharedInputs ∷ Path.Path Rel Dir
 sharedInputs = postDir BR.</> [Path.reldir|Shared|] BR.</> [Path.reldir|inputs|]
 
 postOnline ∷ Path.Path Rel t → Path.Path Rel t
-postOnline p = [Path.reldir|research/NewMaps|] BR.</> p
+postOnline p = [Path.reldir|research/Demographics|] BR.</> p
 
 postPaths
   ∷ (K.KnitEffects r, MonadIO (K.Sem r))
@@ -162,8 +162,8 @@ runEduModel clearCaches cmdLine mc dmr = do
   let cacheDirE = let k = "model/edu/" in if clearCaches then Left k else Right k
       dataName = "acsEdu_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
-                         "br-2022-EduModel/stanEdu"
-                         ("normalSEA_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
+                         "br-2022-Demographics/stanEdu"
+                         ("normalSAR_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
                          (Just $ SC.GQNames "pp" dataName)
                          dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
@@ -203,14 +203,17 @@ runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             -> SM.ModelConfig ()
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.RaceAlone4C, DT.HispC])
             -> K.Sem r () -- (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
-runAgeModel clearCaches commandLine mc dmr = do
+runAgeModel clearCaches cmdLine mc dmr = do
   let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+      dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
-                         "br-2022-AgeModel/stanAge"
-                         "categoricalSER"
+                         "br-2022-Demographics/stanAge"
+                         ("normalSER_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
                          Nothing
-                         "acsAge"
+                        dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
+      postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  ageModelPaths <- postPaths "AgeModel" cmdLine
   acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
@@ -218,7 +221,7 @@ runAgeModel clearCaches commandLine mc dmr = do
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (SM.groupBuilderState (S.toList states))
-                (SM.categoricalModel (length [(minBound :: DT.Age5F)..]) (SM.designMatrixRowAge SM.logDensityDMRP))
+                (SM.normalModel (contramap F.rcast dmr) mc) --(SM.designMatrixRowAge SM.logDensityDMRP))
   () <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData

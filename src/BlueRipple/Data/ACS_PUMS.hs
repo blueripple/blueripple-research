@@ -4,9 +4,10 @@
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
 {-# LANGUAGE PolyKinds            #-}
-{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -740,6 +741,17 @@ intToCitizen n = if n >= 3 then False else True
 -- PUMSEDUCD (rather than EDUC)
 intToCollegeGrad :: Int -> BR.CollegeGrad
 intToCollegeGrad n = if n < 101 then BR.NonGrad else BR.Grad
+
+pumsEDUCDToEducation :: Int -> BR.Education
+pumsEDUCDToEducation n
+  | n <= 26 = BR.L9 -- 26 is grade 8
+  | n <= 61 = BR.L12 -- 61 "12th grade, no diploma"
+  | n <= 65 = BR.HS -- 70 "One year of college"
+  | n <= 80 = BR.SC -- 80 2 years of college
+  | n <= 83 = BR.AS -- 83 Assoc Degree, academic program
+  | n <= 101 = BR.BA -- 101 Bachelor's degree
+  | n <= 116 = BR.AD -- 116 Doctoral Degree
+  | otherwise = BR.L9
 
 -- GRADEATT
 intToInCollege :: Int -> Bool

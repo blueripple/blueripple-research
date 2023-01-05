@@ -398,10 +398,10 @@ executable br-2021-NewMaps
          , Relude.Extra)
 
 
-executable br-2022-EduModel
+executable br-2022-Demographics
   import: deps
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
-  hs-source-dirs: br-2022-EduModel
+  hs-source-dirs: br-2022-Demographics
   main-is: Main.hs
   other-modules:
   build-depends: base
