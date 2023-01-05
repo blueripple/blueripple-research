@@ -301,6 +301,12 @@ censusDemographicsRecode rows =
   in fmap (F.rcast . FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 ---
 
+{-type CensusSARR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Age4C, BRC.RaceEthnicityC]
+type CensusSARR  = BRC.LDLocationR
+                   V.++ BRC.ExtensiveDataR
+                   V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
+-}
+
 sexByAgeKeyRec :: (DT.Sex, BRC.Age14) -> F.Record [BRC.Age14C, DT.SexC]
 sexByAgeKeyRec (s, a) = a F.&: s F.&: V.RNil
 {-# INLINE sexByAgeKeyRec #-}

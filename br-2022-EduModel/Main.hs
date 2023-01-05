@@ -10,7 +10,7 @@
 module Main where
 
 import qualified BlueRipple.Configuration as BR
-import qualified BlueRipple.Model.Education as EM
+import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 --import qualified BlueRipple.Data.Loaders as BRL
@@ -83,12 +83,13 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
---    _ <- runEduModel False cmdLine (EM.ModelConfig () False False) $ EM.designMatrixRowEdu
-    modelResult <- runEduModel False cmdLine (EM.ModelConfig () False True) $ EM.designMatrixRowEdu
---    runEduModel False cmdLine (EM.ModelConfig False True) $ EM.designMatrixRowEdu4 @EM.ACSByStateEduMNR
---    _ <- runEduModel False cmdLine (AM.ModelConfig () False False) $ EM.designMatrixRowEdu7
---    _ <- runEduModel False cmdLine (EM.ModelConfig () False True) $ EM.designMatrixRowEdu7
---    runEduModel False cmdLine (EM.ModelConfig True True) $ EM.designMatrixRowEdu2 @EM.ACSByStateEduMNR
+--    _ <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu7
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu7
+    _ <- runEduModel False cmdLine (SM.ModelConfig () False True) $ SM.designMatrixRowEdu5
+    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False False) $ SM.designMatrixRowEdu5
+--    runEduModel False cmdLine (SM.ModelConfig True True) $ SM.designMatrixRowEdu2 @SM.ACSByStateEduMNR
     K.logLE K.Info "Some Examples!"
 --    modelResult <- K.ignoreCacheTime res_C
     let exRec :: DT.Sex -> DT.Age4 -> DT.RaceAlone4 -> DT.Hisp -> Double
@@ -100,7 +101,7 @@ main = do
         exR4 = exRec DT.Female DT.A4_25To44 DT.RA4_Black DT.NonHispanic 8000
         exR5 = exRec DT.Male DT.A4_45To64 DT.RA4_White DT.Hispanic 10000
         exRs = [exR1, exR2, exR3, exR4, exR5]
-        showExs sa y = K.logLE K.Info $ sa <> ": " <> show y <> "=" <> show (EM.applyModelResult modelResult sa y)
+        showExs sa y = K.logLE K.Info $ sa <> ": " <> show y <> "=" <> show (SM.applyModelResult modelResult sa y)
     traverse (showExs "TX") exRs
     traverse (showExs "CT") exRs
     pure ()
@@ -153,28 +154,28 @@ logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> "has " <>
 runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
-            → EM.ModelConfig ()
+            → SM.ModelConfig ()
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
-            -> K.Sem r (EM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
+            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
 runEduModel clearCaches cmdLine mc dmr = do
   let cacheDirE = let k = "model/edu/" in if clearCaches then Left k else Right k
-      dataName = "acsEdu_" <> DM.dmName dmr <> EM.modelConfigSuffix mc
+      dataName = "acsEdu_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-EduModel/stanEdu"
-                         ("normalSEA_" <> DM.dmName dmr <> EM.modelConfigSuffix mc)
+                         ("normalSEA_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
                          (Just $ SC.GQNames "pp" dataName)
                          dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   eduModelPaths <- postPaths "EduModel" cmdLine
-  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= EM.cachedACSByState
+  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= SM.cachedACSByState
   logLengthC acs_C "acsByState"
-  let acsMN_C = fmap EM.acsByStateEduMN acs_C
+  let acsMN_C = fmap SM.acsByStateEduMN acs_C
   logLengthC acsMN_C "acsByStateMNEdu"
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
-                (EM.groupBuilderState (S.toList states))
-                (EM.normalModel (contramap F.rcast dmr) mc) -- (Just EM.logDensityDMRP)
+                (SM.groupBuilderState (S.toList states))
+                (SM.normalModel (contramap F.rcast dmr) mc) -- (Just SM.logDensityDMRP)
   let mcWithId = "normal" <$ mc
   acsMN <- K.ignoreCacheTime acsMN_C
   BRK.brNewPost eduModelPaths postInfo "EduModel" $ do
@@ -187,7 +188,7 @@ runEduModel clearCaches cmdLine mc dmr = do
       (Right runnerInputNames)
       dw
       code
-      (EM.stateModelResultAction mcWithId dmr)
+      (SM.stateModelResultAction mcWithId dmr)
       (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
       acsMN_C
       (pure ())
@@ -195,7 +196,42 @@ runEduModel clearCaches cmdLine mc dmr = do
 --  K.logLE K.Info $ "result: " <> show res
   pure res
 
-chart :: Foldable f => FV.ViewConfig -> f EM.ACSByStateEduMN -> GV.VegaLite
+runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
+            => Bool
+            -> BR.COmmandLine
+            -> SM.ModelConfig ()
+            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.RaceAlone4C, DT.HispC])
+            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
+runAgeModel clearCaches = do
+  let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+      runnerInputNames = SC.RunnerInputNames
+                         "br-2022-AgeModel/stanAge"
+                         "categoricalSER"
+                         Nothing
+                         "acsAge"
+      only2020 r = F.rgetField @BRDF.Year r == 2020
+  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= SM.cachedACSByState
+  logLengthC acs_C "acsByState"
+  let acsMN_C = fmap SM.acsByStateAgeMN acs_C
+  logLengthC acsMN_C "acsByStateMNAge"
+  states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (SM.groupBuilderState (S.toList states))
+                (SM.categoricalModel (length [(minBound :: DT.Age5F)..]) (SM.designMatrixRowAge SM.logDensityDMRP))
+  () <- do
+    K.ignoreCacheTimeM
+      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
+      cacheKeyE
+      (Right runnerInputNames)
+      dw
+      code
+      SC.DoNothing
+      (SMR.Both [])
+      acsMN_C
+      (pure ())
+  K.logLE K.Info "ageModel run complete."
+
+chart :: Foldable f => FV.ViewConfig -> f SM.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =
   let total v = v VU.! 0 + v VU.! 1
       grads v = v VU.! 1
@@ -218,34 +254,3 @@ chart vc rows =
       mark = GV.mark GV.Circle []
       enc = (GV.encoding . encAge . encSex . encFracGrad . encRace . encTotal)
   in FV.configuredVegaLite vc [FV.title "FracGrad v Age", enc [], mark, vlData]
-
-
-runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r) => Bool -> K.Sem r ()
-runAgeModel clearCaches = do
-  let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
-      runnerInputNames = SC.RunnerInputNames
-                         "br-2022-AgeModel/stanAge"
-                         "categoricalSER"
-                         Nothing
-                         "acsAge"
-      only2020 r = F.rgetField @BRDF.Year r == 2020
-  acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= EM.cachedACSByState
-  logLengthC acs_C "acsByState"
-  let acsMN_C = fmap EM.acsByStateAgeMN acs_C
-  logLengthC acsMN_C "acsByStateMNAge"
-  states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
-  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
-                (EM.groupBuilderState (S.toList states))
-                (EM.categoricalModel (length [(minBound :: DT.Age5F)..]) (EM.designMatrixRowAge EM.logDensityDMRP))
-  () <- do
-    K.ignoreCacheTimeM
-      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
-      cacheKeyE
-      (Right runnerInputNames)
-      dw
-      code
-      SC.DoNothing
-      (SMR.Both [])
-      acsMN_C
-      (pure ())
-  K.logLE K.Info "ageModel run complete."

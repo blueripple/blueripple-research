@@ -168,7 +168,8 @@ library
                  , BlueRipple.Model.TurnoutAdjustment
                  , BlueRipple.Model.PostStratify
                  , BlueRipple.Model.TSNE
-                 , BlueRipple.Model.Education
+                 , BlueRipple.Model.Demographic.DataPrep
+                 , BlueRipple.Model.Demographic.StanModels
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
                  , BlueRipple.Utilities.Heidi
