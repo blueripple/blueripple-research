@@ -159,7 +159,7 @@ runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
             -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
 runEduModel clearCaches cmdLine mc dmr = do
-  let cacheDirE = let k = "model/edu/" in if clearCaches then Left k else Right k
+  let cacheDirE = let k = "model/demographic/edu/" in if clearCaches then Left k else Right k
       dataName = "acsEdu_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-Demographics/stanEdu"
@@ -204,7 +204,7 @@ runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.RaceAlone4C, DT.HispC])
             -> K.Sem r () -- (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
 runAgeModel clearCaches cmdLine mc dmr = do
-  let cacheKeyE = let k = "model/AgeModel/test" in if clearCaches then Left k else Right k
+  let cacheKeyE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
       dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-Demographics/stanAge"

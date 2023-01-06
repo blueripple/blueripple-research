@@ -675,10 +675,10 @@ cpsCountedTurnoutByState = do
   BR.retrieveOrMakeFrame "model/house/cpsVByState.bin" cpsRaw_C $ return . FL.fold fld
 
 pumsReKey
-  ∷ F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+  ∷ F.Record '[DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
   → F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 pumsReKey r =
-  let cg = F.rgetField @DT.CollegeGradC r
+  let cg = DT.collegeGrad $ F.rgetField @DT.EducationC r
       ic = F.rgetField @DT.InCollege r
    in DT.age5FToSimple (F.rgetField @DT.Age5FC r)
         F.&: F.rgetField @DT.SexC r

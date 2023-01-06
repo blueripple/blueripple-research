@@ -260,6 +260,16 @@ acsLevels :: CollegeGrad -> [Education]
 acsLevels NonGrad = [L9, L12, HS, SC, AS]
 acsLevels Grad    = [BA, AD]
 
+collegeGrad :: Education -> CollegeGrad
+collegeGrad ed
+  | ed == L9 = NonGrad
+  | ed == L12 = NonGrad
+  | ed == HS = NonGrad
+  | ed == SC = NonGrad
+  | ed == AS = NonGrad
+  | otherwise = Grad
+
+
 turnoutLevels :: CollegeGrad -> [Education]
 turnoutLevels NonGrad = [L9, L12, HS, SC] -- NB: Turnout data did not contain an Associates Degree row
 turnoutLevels Grad    = [BA, AD]
