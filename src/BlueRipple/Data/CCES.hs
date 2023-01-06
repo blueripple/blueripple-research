@@ -7,7 +7,6 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
@@ -30,28 +29,21 @@ import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.CountFolds as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
-import qualified BlueRipple.Data.Keyed as Keyed
-import qualified BlueRipple.Data.CountFolds as BR
 import           BlueRipple.Data.CCESFrame
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
-import qualified Control.Foldl                 as FL
 import           Control.Lens                   ((%~))
 import qualified Data.Serialize                as S
-import qualified Data.IntMap                   as IM
-import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromJust)
-import qualified Data.Set as Set
 import qualified Data.Text                     as T
-import qualified Data.Text.Read as Text.Read
 
+import Data.Type.Equality (type (~))
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Flat
 
 import qualified Frames                        as F
-import           Frames                         ( (:.)(..) )
+import Frames ((:.))
 import qualified Frames.InCore                 as FI
 import qualified Frames.Melt                   as F
 import qualified Frames.MapReduce              as FMR
@@ -59,18 +51,13 @@ import qualified Frames.Transform              as FT
 import qualified Frames.MaybeUtils             as FM
 import qualified Frames.SimpleJoins             as FJ
 
-import qualified Frames.Serialize              as FS
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 
 import qualified Data.Vector                   as V
 
-import           GHC.Generics                   ( Generic, Rep )
-
 import qualified Knit.Report as K
-import qualified Polysemy.Error                as P (mapError)
-import qualified Polysemy                as P (raise)
 import qualified Relude.Extra as Relude
 
 type MHouseVoteParty = "HouseVote" F.:-> MT.MaybeData ET.PartyT
@@ -168,7 +155,7 @@ ces16Loader = K.wrapPrefix "ces16Loader" $ do
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
   ces16FileDep <- K.fileDependency (toString ces2016CSV)
   let deps = (,) <$> stateXWalk_C <*> ces16FileDep
-  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, fp) -> do
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
     K.logLE K.Diagnostic "Re-building CES 2016 data"
     allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES16)
                           (BR.LocalData $ toText ces2016CSV)
@@ -414,7 +401,7 @@ intToEducation 6 = DT.AD
 intToCollegeGrad :: Int -> DT.CollegeGrad
 intToCollegeGrad n = if n >= 4 then DT.Grad else DT.NonGrad
 
-data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data RaceT = White | Black | Hispanic | Asian | NativeAmerican | Mixed | Other | MiddleEastern deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RaceT = V.Vector
 instance S.Serialize RaceT
 instance Flat.Flat RaceT
@@ -465,7 +452,7 @@ data RegistrationT = R_Active
                    | R_Dropped
                    | R_Inactive
                    | R_Multiple
-                   | R_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                   | R_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegistrationT = V.Vector
 instance S.Serialize RegistrationT
 instance Flat.Flat RegistrationT
@@ -491,7 +478,7 @@ data RegPartyT = RP_NoRecord
                | RP_Green
                | RP_Independent
                | RP_Libertarian
-               | RP_Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+               | RP_Other deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor RegPartyT = V.Vector
 instance S.Serialize RegPartyT
 instance Flat.Flat RegPartyT
@@ -509,7 +496,7 @@ parseRegParty _ = RP_Other
 data TurnoutT = T_Voted
               | T_NoRecord
               | T_NoFile
-              | T_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+              | T_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor TurnoutT = V.Vector
 instance S.Serialize TurnoutT
 instance Flat.Flat TurnoutT
@@ -530,7 +517,7 @@ data PartisanIdentity3 = PI3_Democrat
                        | PI3_Independent
                        | PI3_Other
                        | PI3_NotSure
-                       | PI3_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                       | PI3_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity3 = V.Vector
 instance S.Serialize PartisanIdentity3
 instance Flat.Flat PartisanIdentity3
@@ -551,7 +538,7 @@ data PartisanIdentity7 = PI7_StrongDem
                        | PI7_WeakRep
                        | PI7_StrongRep
                        | PI7_NotSure
-                       | PI7_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                       | PI7_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentity7 = V.Vector
 instance S.Serialize PartisanIdentity7
 instance Flat.Flat PartisanIdentity7
@@ -568,7 +555,7 @@ data PartisanIdentityLeaner = PIL_Democrat
                             | PIL_Republican
                             | PIL_Independent
                             | PIL_NotSure
-                            | PIL_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                            | PIL_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor PartisanIdentityLeaner = V.Vector
 instance S.Serialize PartisanIdentityLeaner
 instance Flat.Flat PartisanIdentityLeaner
@@ -624,16 +611,16 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
                $ (F.rsubset %~ missingPIDLeaner)
                $ (F.rsubset %~ missingEducation)
                r where
-  missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
-  missingHispanicToNo = FM.fromMaybeMono 2
-  missingPID3 :: F.Rec (Maybe :. F.ElField) '[CCESPid3] -> F.Rec (Maybe :. F.ElField) '[CCESPid3]
-  missingPID3 = FM.fromMaybeMono 6
-  missingPID7 :: F.Rec (Maybe :. F.ElField) '[CCESPid7] -> F.Rec (Maybe :. F.ElField) '[CCESPid7]
-  missingPID7 = FM.fromMaybeMono 9
+--  missingHispanicToNo :: F.Rec (Maybe :. F.ElField) '[CCESHispanic] -> F.Rec (Maybe :. F.ElField) '[CCESHispanic]
+--  missingHispanicToNo = FM.fromMaybeMono 2
+--  missingPID3 :: F.Rec (Maybe :. F.ElField) '[CCESPid3] -> F.Rec (Maybe :. F.ElField) '[CCESPid3]
+--  missingPID3 = FM.fromMaybeMono 6
+--  missingPID7 :: F.Rec (Maybe :. F.ElField) '[CCESPid7] -> F.Rec (Maybe :. F.ElField) '[CCESPid7]
+--  missingPID7 = FM.fromMaybeMono 9
   missingPIDLeaner :: F.Rec (Maybe :. F.ElField) '[CCESPid3Leaner] -> F.Rec (Maybe :. F.ElField) '[CCESPid3Leaner]
   missingPIDLeaner = FM.fromMaybeMono 5
-  missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
-  missingEducation = FM.fromMaybeMono 5
+--  missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
+--  missingEducation = FM.fromMaybeMono 5
 
 --textToInt :: T.Text -> Int
 --textToInt = either (const 0) fst . Text.Read.decimal

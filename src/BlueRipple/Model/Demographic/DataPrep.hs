@@ -113,6 +113,7 @@ idReKey :: F.Record '[DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAl
         -> F.Record '[DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
 idReKey = id
 
+{-
 acsReKey
   ∷ F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
   → F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
@@ -123,7 +124,7 @@ acsReKey r =
   F.&: F.rgetField @DT.RaceAlone4C r
   F.&: F.rgetField @DT.HispC r
   F.&: V.RNil
-
+-}
 forMultinomial :: forall ks as bs rs l. (ks F.⊆ rs, as F.⊆ rs, Ord (F.Record ks), Enum l, Bounded l, Ord l)
                => (F.Record rs -> l) -- label
                -> (F.Record rs -> Int) -- count
@@ -182,8 +183,8 @@ acsByStateEduMN = filterZeroes
                               densityF
                              )
 
-collegeGrad :: F.ElemOf rs DT.CollegeGradC => F.Record rs -> Bool
-collegeGrad r = F.rgetField @DT.CollegeGradC r == DT.Grad
+collegeGrad :: (F.ElemOf rs DT.EducationC, F.ElemOf rs DT.InCollege) => F.Record rs -> Bool
+collegeGrad r = F.rgetField @DT.InCollege r || F.rgetField @DT.EducationC r `elem` [DT.BA, DT.AD]
 
 inCollege :: F.ElemOf rs DT.InCollege => F.Record rs -> Bool
 inCollege = F.rgetField @DT.InCollege

@@ -43,30 +43,28 @@ FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 type DRAnalysis = F.Record ([DT.StateAbbreviation, PlanName, ET.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
 
 fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
-fixRow pi r = Just $ pi F.<+> r
+fixRow pi' r = Just $ pi' F.<+> r
 
 lookupAndLoadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               => Map RedistrictingPlanId RedistrictingPlanFiles
                               -> RedistrictingPlanId
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
-lookupAndLoadRedistrictingPlanAnalysis plans pi = do
-  let noPlanErr = "No plan found for info:" <> show pi
-  pf <- K.knitMaybe noPlanErr $ M.lookup pi plans
-  loadRedistrictingPlanAnalysis pi pf
+lookupAndLoadRedistrictingPlanAnalysis plans pi' = do
+  let noPlanErr = "No plan found for info:" <> show (pi :: Double)
+  pf <- K.knitMaybe noPlanErr $ M.lookup pi' plans
+  loadRedistrictingPlanAnalysis pi' pf
 
 loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               => RedistrictingPlanId
                               -> RedistrictingPlanFiles
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
-loadRedistrictingPlanAnalysis pi pf = do
+loadRedistrictingPlanAnalysis pi' pf = do
   let RedistrictingPlanFiles _ aFP = pf
-  let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi
-                 <> "_" <> show (F.rgetField @ET.DistrictTypeC pi)
-                 <> "_" <> F.rgetField @PlanName pi <> ".bin"
+  let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi'
+                 <> "_" <> show (F.rgetField @ET.DistrictTypeC pi')
+                 <> "_" <> F.rgetField @PlanName pi' <> ".bin"
   fileDep <- K.fileDependency $ toString aFP
-  BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi)
-
-
+  BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi')
 
 allPassedCongressional :: (K.KnitEffects r, BR.CacheEffects r)
                        => K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))

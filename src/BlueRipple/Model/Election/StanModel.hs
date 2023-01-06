@@ -18,72 +18,48 @@
 {-# LANGUAGE UndecidableInstances #-}
 --{-# OPTIONS_GHC -O0 #-}
 
-module BlueRipple.Model.Election.StanModel where
+module BlueRipple.Model.Election.StanModel
+  (
+    module BlueRipple.Model.Election.StanModel
+  )
+where
 
 import Prelude hiding (pred)
-import Relude.Extra (secondF)
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.CPSVoterPUMS as CPS
-import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Data.CensusTables as Census
 import qualified BlueRipple.Data.CensusLoaders as Census
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
-import qualified BlueRipple.Data.Keyed as BRK
-import qualified BlueRipple.Data.Loaders as BR
-import qualified BlueRipple.Model.TurnoutAdjustment as BRTA
-import qualified BlueRipple.Model.PostStratify as BRPS
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Model.StanMRP as MRP
 import qualified Numeric
 import qualified CmdStan as CS
 import qualified Control.Foldl as FL
-import qualified Data.Aeson as A
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.IntMap as IM
 import qualified Data.Set as Set
 import Data.String.Here (here)
-import qualified Data.Serialize                as S
-import Data.String.Here (here)
 import qualified Data.Text as T
-import qualified Data.Vector as Vec
+import Data.Type.Equality (type (~))
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vector
 import qualified Data.Vector.Unboxed as VU
 import qualified Flat
 import qualified Frames as F
-import qualified Frames.Conversion as FC
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.TH as FS
 import qualified Frames.Serialize as FS
-import qualified Frames.SimpleJoins as FJ
-import qualified Frames.Transform as FT
-import qualified Frames.Folds as FF
-import qualified Frames.MapReduce as FMR
-import qualified Control.MapReduce as FMR
 
-import GHC.Generics (Generic)
-import qualified Data.MapRow as MapRow
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
-import qualified Knit.Utilities.Streamly as K
-import qualified Numeric.Foldl as NFL
-import qualified Optics
---import qualified Stan.ModelBuilder.ModelParameters as SMP
---import qualified Stan.ModelBuilder.GroupModel as SB
---import qualified Stan.ModelBuilder.FixedEffects as SFE
-import qualified Stan.JSON as SJ
 import qualified Stan.ModelConfig as SC
-import qualified Stan.ModelRunner as SM
 import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 
@@ -93,26 +69,17 @@ import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelBuilder.Distributions as SD
 
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
-import qualified Stan.ModelBuilder.TypedExpressions.TypedList as TE
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as TE
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as SP
-import Stan.ModelBuilder.TypedExpressions.Recursion (HFunctor(hfmap), HTraversable(htraverse))
-
---import qualified Stan.ModelBuilder.StanFunctionBuilder as SFB
---import BlueRipple.Data.CCESFrame (cces2018C_CSV)
---import BlueRipple.Data.ElectionTypes (CVAP)
+import Stan.ModelBuilder.TypedExpressions.Recursion (HFunctor(hfmap))
 
 import BlueRipple.Model.Election.DataPrep
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as TE
-import Stan.ModelBuilder.TypedExpressions.DAG (addCenteredHierarchical)
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TE
-import Data.Sequence.Internal.Sorting (TQList(TQNil))
-import Streamly.Data.Array.Foreign (getIndex)
-import Foreign (wordPtrToPtr)
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as SB
 
 FS.declareColumn "ModeledShare" ''MT.ConfidenceInterval
@@ -125,7 +92,6 @@ groupBuilderDM :: forall rs ks k.
                   (F.ElemOf rs BR.StateAbbreviation
                   , F.ElemOf rs Census.Count
                   , Typeable rs
-                  , Typeable ks
                   , V.RMap ks
                   , V.ReifyConstraint Show F.ElField ks
                   , V.RecordToList ks
@@ -141,7 +107,7 @@ groupBuilderDM :: forall rs ks k.
                -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) ()
 groupBuilderDM model psGroup states cds psKeys = do
   let loadCPSTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
-        cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @BRCF.Count) . cpsVEMRows)
+        cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @BRCF.Count) . cpsVEMRows)
         SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
       officeFilterF x r = F.rgetField @ET.Office r == x
       -- filter out anything with no votes at all or where someone was running unopposed
@@ -180,15 +146,15 @@ groupBuilderDM model psGroup states cds psKeys = do
   when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
-  psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/=0) . F.rgetField @Census.Count))
+  psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @Census.Count))
   SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
 
 -- If only presidential eleciton is included, incumbency is not useful since it's a constant
-data DMType = DMTurnout | DMPref ET.OfficeT  deriving (Show, Eq)
+data DMType = DMTurnout | DMPref ET.OfficeT  deriving stock (Show, Eq)
 
 
-data DMComponents = DMDensity | DMInc | DMSex | DMEduc | DMRace | DMWNG deriving (Show, Eq, Ord)
+data DMComponents = DMDensity | DMInc | DMSex | DMEduc | DMRace | DMWNG deriving stock (Show, Eq, Ord)
 
 printComponents :: Set DMComponents -> Text
 printComponents = mconcat . fmap eachToText . Set.toAscList
@@ -209,40 +175,39 @@ dmName :: DMType -> Text
 dmName DMTurnout = "DMTurnout"
 dmName (DMPref o) = "DMPref_" <> officeText o
 
-
 dmSubset :: Set DMComponents -> Map DMComponents (DM.DesignMatrixRowPart a) -> [DM.DesignMatrixRowPart a]
 dmSubset include = M.elems . M.filterWithKey (\k _ -> Set.member k include)
 
 dmSubset' :: DMType -> Model k -> Map DMComponents (DM.DesignMatrixRowPart a) -> [DM.DesignMatrixRowPart a]
-dmSubset' dmType m all = case dmType of
-                           DMTurnout -> dmSubset (Set.delete DMInc $ modelComponents m) all
+dmSubset' dmType m allCompMap = case dmType of
+                           DMTurnout -> dmSubset (Set.delete DMInc $ modelComponents m) allCompMap
                            DMPref _ -> if presOnly m
-                                       then dmSubset (Set.delete DMInc $ modelComponents m) all
-                                       else dmSubset (modelComponents m) all
+                                       then dmSubset (Set.delete DMInc $ modelComponents m) allCompMap
+                                       else dmSubset (modelComponents m) allCompMap
 
 designMatrixRowPS' :: forall rs k.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.Race5C
-                                  , F.ElemOf rs DT.PopPerSqMile
+--                                  , F.ElemOf rs DT.PopPerSqMile
                                   )
                    => Model k
                    -> DM.DesignMatrixRowPart (F.Record rs)
                    -> DMType
                    -> (F.Record rs -> Double)
                    -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRowPS' m densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType m all)
+designMatrixRowPS' m densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType m allCompMap)
   where
     incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCCES
-    all = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
+    allCompMap = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
 
 designMatrixRowPS :: forall rs k .(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.Race5C
-                                  , F.ElemOf rs DT.PopPerSqMile
+--                                  , F.ElemOf rs DT.PopPerSqMile
                                   )
                    => Model k
                    -> DM.DesignMatrixRowPart (F.Record rs)
@@ -256,31 +221,35 @@ designMatrixRowCCES :: Model k
                     -> DMType
                     -> (F.Record  CCESWithDensityEM -> Double)
                     -> DM.DesignMatrixRow (F.Record CCESWithDensityEM)
-designMatrixRowCCES m densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType m all)
+designMatrixRowCCES m densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dmSubset' dmType m allCompMap)
   where
     incRP = DM.rowPartFromFunctions "Incumbency" [incF]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCCES
-    all = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
+    allCompMap = M.fromList[(DMDensity, densRP), (DMInc, incRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
 
 
 designMatrixRowCPS :: Model k -> DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM) -> DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
-designMatrixRowCPS m densRP = DM.DesignMatrixRow (dmName DMTurnout) $ dmSubset (modelComponents m) all
+designMatrixRowCPS m densRP = DM.DesignMatrixRow (dmName DMTurnout) $ dmSubset (modelComponents m) allCompMap
  where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart Nothing "Education" (F.rgetField @DT.CollegeGradC)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
     wngRP = DM.boundedEnumRowPart Nothing "WhiteNonGrad" wnhNonGradCensus
-    all = M.fromList[(DMDensity, densRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
+    allCompMap = M.fromList[(DMDensity, densRP), (DMSex, sexRP), (DMEduc, eduRP), (DMRace, raceRP), (DMWNG, wngRP)]
 
+race5Census :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> DT.Race5
 race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+
+wnhCensus :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC) => F.Record rs -> Bool
 wnhCensus r = F.rgetField @DT.RaceAlone4C r == DT.RA4_White && F.rgetField @DT.HispC r == DT.NonHispanic
+
+wnhNonGradCensus :: (F.ElemOf rs DT.RaceAlone4C, F.ElemOf rs DT.HispC, F.ElemOf rs DT.CollegeGradC) => F.Record rs -> Bool
 wnhNonGradCensus r = wnhCensus r && F.rgetField @DT.CollegeGradC r == DT.NonGrad
 
-setupCCESTData :: (Typeable md, Typeable gq)
-               => Model k
+setupCCESTData :: Model k
                -> DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CCESWithDensityEM)
                                         , DM.DesignMatrixRow (F.Record CCESWithDensityEM)
@@ -292,8 +261,7 @@ setupCCESTData m densRP = do
   votedCCES <- SB.addCountData ccesTData "Voted_CCES" (F.rgetField @Voted) --(round . F.rgetField @AHVoted)
   return (ccesTData, designMatrixRowCCES m densRP DMTurnout (const 0), cvapCCES, votedCCES, dmCCES)
 
-setupCPSData ::  (Typeable md, Typeable gq)
-             => Model k
+setupCPSData :: Model k
              -> DM.DesignMatrixRowPart (F.Record CPSVWithDensityEM)
              -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record CPSVWithDensityEM)
                                       , DM.DesignMatrixRow (F.Record CPSVWithDensityEM)
@@ -306,7 +274,7 @@ setupCPSData m densRP = do
   return (cpsData, designMatrixRowCPS m densRP, cvapCPS, votedCPS, dmCPS)
 
 setupElexData :: forall rs md gq.
-                 (Typeable md, Typeable gq, Typeable rs
+                 (Typeable rs
                  , F.ElemOf rs PUMS.Citizens
                  , F.ElemOf rs TVotes
                  , F.ElemOf rs DVotes
@@ -325,16 +293,14 @@ setupElexData vst eScale office = do
   elexData <- SB.dataSetTag @(F.Record rs) SC.ModelData ("Elections_" <> show office)
   cvapElex <- SB.addCountData elexData ("CVAP_Elex_" <> officeText office) (rescale . F.rgetField @PUMS.Citizens)
   votedElex <- SB.addCountData elexData ("Voted_Elex" <> officeText office) (rescale . F.rgetField @TVotes)
-  votesInRace <- SB.addCountData elexData ("VotesInRace_Elex_" <> officeText office)
+  vir <- SB.addCountData elexData ("VotesInRace_Elex_" <> officeText office)
                  $ case vst of
                      ET.TwoPartyShare -> (\r -> rescale $ F.rgetField @DVotes r + F.rgetField @RVotes r)
                      ET.FullShare -> rescale . F.rgetField @TVotes
   dVotesInRace <- SB.addCountData elexData ("DVotesInRace_Elex_" <> officeText office) (rescale . F.rgetField @DVotes)
-  return (elexData, cvapElex, votedElex, votesInRace, dVotesInRace)
+  return (elexData, cvapElex, votedElex, vir, dVotesInRace)
 
-getElexData :: forall rs md gq. (Typeable md
-                                , Typeable gq
-                                , Typeable rs
+getElexData :: forall rs md gq. (Typeable rs
                                 , F.ElemOf rs PUMS.Citizens
                                 , F.ElemOf rs TVotes
                                 , F.ElemOf rs DVotes
@@ -346,8 +312,7 @@ getElexData :: forall rs md gq. (Typeable md
 
 getElexData x vst eScale = setupElexData @rs vst eScale $ officeFromElectionRow x
 
-setupACSPSRows :: (Typeable md, Typeable gq)
-               => Model k
+setupACSPSRows :: Model k
                -> DM.DesignMatrixRowPart (F.Record ACSWithDensityEM)
                -> (ET.OfficeT -> F.Record ACSWithDensityEM -> Double)
                -> SB.StanBuilderM md gq (SB.RowTypeTag (F.Record ACSWithDensityEM)
@@ -355,7 +320,7 @@ setupACSPSRows :: (Typeable md, Typeable gq)
                                          , TE.MatrixE
                                          , Map ET.OfficeT TE.MatrixE)
 setupACSPSRows m densRP incF = do
-  let include = modelComponents m
+  let --include = modelComponents m
       offices = votesFrom m
       dmRowT = designMatrixRowPS m densRP DMTurnout
       dmRowP o = designMatrixRowPS' m densRP (DMPref o) (incF o)
@@ -366,8 +331,7 @@ setupACSPSRows m densRP incF = do
   dmACSPs <- traverse (\o -> DM.addDesignMatrix acsPSData (dmRowP o) (Just "DMPref")) officeMap
   return (acsPSData, acsWgts, dmACST, dmACSPs)
 
-setupCCESPData :: (Typeable md, Typeable gq)
-               => Model k
+setupCCESPData :: Model k
                -> DM.DesignMatrixRowPart (F.Record CCESWithDensityEM)
                -> DMType
                -> (ET.OfficeT -> F.Record CCESWithDensityEM -> Double)
@@ -383,7 +347,7 @@ setupCCESPData m densRP dmPrefType incF office = do
   dVotesInRaceCCES <- SB.addCountData ccesPData ("DVotesInRace_CCES_" <> show office) dVotesF
   return (ccesPData, designMatrixRowCCES m densRP (DMPref office) (incF office), raceVotesCCES, dVotesInRaceCCES, dmCCESP)
 
-data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving (Show, Eq)
+data DataSetAlpha = DataSetAlpha | NoDataSetAlpha deriving stock (Show, Eq)
 
 --colIndex :: SB.StanVar -> SB.StanBuilderM md gq SB.IndexKey
 --colIndex = SB.namedMatrixColIndex
@@ -490,8 +454,8 @@ data CenterDM md gq where
   UnweightedCenter :: CenterDM md gq
   WeightedCenter :: TE.VectorE -> CenterDM md gq
 
-centerIf :: forall md gq.(Typeable md, Typeable gq)
-         => TE.MatrixE
+centerIf :: forall md gq .
+            TE.MatrixE
          -> TE.StanName
          -> CenterDM md gq
          -> SB.StanBuilderM md gq (TE.MatrixE
@@ -596,6 +560,7 @@ addPosteriorPredictiveCheck ppVarName rtt dist indexedParams = do
   let ppNDS = TE.NamedDeclSpec ppVarName  $ TE.array1Spec (SB.dataSetSizeE rtt) $ TE.intSpec []
   SB.generatePosteriorPrediction rtt ppNDS dist indexedParams
 
+invLogit :: (TE.ScalarType rt ~ 'TE.EReal, TE.GenSType rt) => SB.UExpr rt -> SB.UExpr rt
 invLogit x = TE.functionE TE.inv_logit (x :> TNil)
 
 data QR = NoQR | DoQR (TE.NamedDeclSpec TE.EMat) | WithQR TE.MatrixE TE.MatrixE
@@ -649,8 +614,7 @@ at x k = TE.sliceE TE.s0 k x
 by :: TE.UExpr t -> TE.IntArrayE -> TE.UExpr (TE.Indexed TE.N0 t)
 by x i = TE.indexE TE.s0 i x
 
-addBLModelForDataSet :: (Typeable md, Typeable gq)
-                     => Text
+addBLModelForDataSet :: Text
                      -> Bool
                      -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
                      -> DSSpecificWithPriors
@@ -666,31 +630,30 @@ addBLModelForDataSet :: (Typeable md, Typeable gq)
                                               )
 addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha beta llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
-  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
+  (rtt, _, counts, successes, dm) <- dataSetupM
   (dsAlphaM, dsBetaM) <- dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
-  let dmName = dataSetLabel <> "_DM"
-  (dmC, centerF) <- centerIf dm  dmName centerDM --Nothing centerM
-  (dmQR, retQR) <- handleQR dmName qr dmC beta
-  let muE' dm = indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha dm beta
-      muE = muE' dmQR
+  let dmName' = dataSetLabel <> "_DM"
+  (dmC, centerF) <- centerIf dm  dmName' centerDM --Nothing centerM
+  (dmQR, retQR) <- handleQR dmName' qr dmC beta
+  let muE' dm' = indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha dm' beta
+      muE'' = muE' dmQR
       dist = SD.binomialLogitDist
       stateByDataIndexE = TE.namedE (SB.dataByGroupIndexName rtt stateGroup) TE.sIntArray
   modelCounts dist successes $ do
     -- should we vectorize the re-indexed (states to data) or reindex after vectorizing?
     -- first is (potentially) contiguous in memory; second is smaller and faster to vectorize
-    muVec <- SB.vectorizeExpr (SB.dataSetSizeE rtt) (addLabel "mu") $ muE stateByDataIndexE
+    muVec <- SB.vectorizeExpr (SB.dataSetSizeE rtt) (addLabel "mu") $ muE'' stateByDataIndexE
     -- muVec <- TE.indexE TE.s0 stateByDataIndexE <$> SB.vectorizeExpr (TE.groupSizE stateGroup) (addLabel "mu")
     pure $ counts :> muVec :> TNil
   let indexedParams :: TE.IntE -> TE.ExprList [TE.EInt, TE.EReal]
-      indexedParams k = (counts `at` k) :> muE stateByDataIndexE k :> TNil
+      indexedParams k = (counts `at` k) :> muE'' stateByDataIndexE k :> TNil
 --      indexedY k = successes `at` k
       llSet' = updateLLSet rtt dist successes (pure indexedParams) llSet
   when includePP $ (addPosteriorPredictiveCheck (addLabel "PP") rtt dist (pure indexedParams) >> pure ())
   let probE m si k = invLogit $ muE' m si k
-  return (CenterWith centerF, retQR, llSet', applyQR dmName retQR probE)
+  return (CenterWith centerF, retQR, llSet', applyQR dmName' retQR probE)
 
-addBBLModelForDataSet :: (Typeable md, Typeable gq)
-                      => Text
+addBBLModelForDataSet :: Text
                       -> Bool
                       -> SB.StanBuilderM md gq (SB.RowTypeTag r, DM.DesignMatrixRow r, TE.IntArrayE, TE.IntArrayE, TE.MatrixE)
                       -> DSSpecificWithPriors
@@ -708,15 +671,15 @@ addBBLModelForDataSet :: (Typeable md, Typeable gq)
                                                )
 addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countScaled alpha beta betaWidth llSet = do
   let addLabel x = x <> "_" <> dataSetLabel
-  (rtt, designMatrixRow, counts, successes, dm) <- dataSetupM
+  (rtt, _, counts, successes, dm) <- dataSetupM
   (dsAlphaM, dsBetaM) <-  dsSpecific dataSetLabel (SB.mColsE dm) dsSp Nothing
-  let dmName = dataSetLabel <> "_DM"
-  (dmC, centerF) <- centerIf dm dmName centerDM --Nothing centerM
-  (dmQR, retQR) <- handleQR dmName qr dmC beta
+  let dmName' = dataSetLabel <> "_DM"
+  (dmC, centerF) <- centerIf dm dmName' centerDM --Nothing centerM
+  (dmQR, retQR) <- handleQR dmName' qr dmC beta
   let muE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha mE beta si k
-      muE = muE' dmQR
-      bA si kE = betaWidth `TE.timesE` muE si kE
-      bB si kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE si kE)
+      muE'' = muE' dmQR
+      bA si kE = betaWidth `TE.timesE` muE'' si kE
+      bB si kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE'' si kE)
       distV :: SD.SimpleDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec, TE.ECVec]
       distV = (if countScaled then SD.countScaledBetaBinomialDist else SB.betaBinomialDist') True
       distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
@@ -751,11 +714,11 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countSc
       (TE.scoped [])
 -}
   let indexedParams kE = (counts `at` kE) :> bA stateByDataIndexE kE :> bB stateByDataIndexE kE :> TNil
-      indexedY kE = successes `at` kE
+--      indexedY kE = successes `at` kE
       llSet' = updateLLSet rtt distS successes (pure indexedParams) llSet
   when includePP $ (addPosteriorPredictiveCheck (addLabel "PP") rtt distS (pure indexedParams) >> pure ())
 --  let prob = applyQR retQR $ fmap (\mu' -> invLogit $ mu' dsAlphaM dsBetaM alpha beta) . indexedMuE3
-  return (CenterWith centerF, retQR, llSet', applyQR dmName retQR muE')
+  return (CenterWith centerF, retQR, llSet', applyQR dmName' retQR muE')
 
 officeText :: ET.OfficeT -> Text
 officeText office = case office of
@@ -822,7 +785,7 @@ elexPSF = do
       row x k = TE.sliceE TE.s0 k x
       col x k = TE.sliceE TE.s1 k x
 --      byRow x i = TE.indexE TE.s0 i x
-      byCol x i = TE.indexE TE.s1 i x
+--      byCol x i = TE.indexE TE.s1 i x
       dotProduct v1 v2 = TE.functionE TE.dot_product (v1 :> v2 :> TNil)
       plusEq = TE.opAssign TE.SAdd
       eDivEq = TE.opAssign (TE.SElementWise TE.SDivide)
@@ -907,7 +870,7 @@ elexPSFunction varNameSuffix rttPS rttElex gtt psWgts alphaT betaT dmT alphaP be
     return (pT, pP)
 -}
 
-addBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
+addBLModelsForElex' :: forall rs r md gq . (Typeable rs, ElectionC rs)
                     => Bool
                     -> ET.VoteShareType
                     -> Int
@@ -940,9 +903,9 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
   dmPSP <- case M.lookup office dmPSPs of
     Nothing -> SB.stanBuildError $ "addBLModelsForElex': given office (" <> show office <> ") not present in ps pref matrices."
     Just x -> return x
-  (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
+  (rttElex, cvap, votes, vir, dVotesInRace) <- getElexData officeRow vst eScale
   let dsLabel = "Elex_" <> officeText office
-      addLabel x = x <> "_" <> dsLabel
+--      addLabel x = x <> "_" <> dsLabel
 
 --  colTIndexKey <- colIndex dmPST
 --  colPIndexKey <- colIndex dmPSP
@@ -964,22 +927,44 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
       distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal]
       distS = SD.binomialDist' True
   modelCounts distV votes $ pure $ cvap :> pTByElex :> TNil
-  modelCounts distV dVotesInRace $ pure $ votesInRace :> pSByElex :> TNil
+  modelCounts distV dVotesInRace $ pure $ vir :> pSByElex :> TNil
   let indexedParamsT kE = cvap `at` kE :> pTByElex `at` kE :> TNil
-      indexedParamsS kE = votesInRace `at` kE :> pSByElex `at` kE :> TNil
+      indexedParamsS kE = vir `at` kE :> pSByElex `at` kE :> TNil
   let llSet' = updateLLSet rttElex distS votes (pure indexedParamsT)
                $ updateLLSet rttElex distS dVotesInRace (pure indexedParamsS)
                $ llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure $ indexedParamsT
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure $ indexedParamsS
+    _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure $ indexedParamsT
+    _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure $ indexedParamsS
     pure ()
   let pTE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsTAlphaM) (TE.parameterTagExpr <$> dsTBetaM) alphaT mE betaT si k
       pPE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsPAlphaM) (TE.parameterTagExpr <$> dsPBetaM) alphaP mE betaP si k
   return (CenterWith centerTF, CenterWith centerPF
          , retQRT, retQRP, llSet', applyQR dmNameT retQRT pTE', applyQR dmNameP retQRP pPE')
 
-addBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
+-- why is offices unused??
+addBLModelsForElex :: Set ET.OfficeT
+                   -> Bool
+                   -> ET.VoteShareType
+                   -> Int
+                   -> ET.OfficeT
+                   -> CenterDM md gq
+                   -> CenterDM md gq
+                   -> QR
+                   -> QR
+                   -> DSSpecificWithPriors
+                   -> DSSpecificWithPriors
+                   -> (SB.RowTypeTag r, SB.VectorE, SB.MatrixE,
+                        Map ET.OfficeT SB.MatrixE)
+                   -> SB.VectorE
+                   -> SB.MatrixE
+                   -> SB.VectorE
+                   -> SB.MatrixE
+                   -> SB.LLSet
+                   -> SB.StanBuilderM md gq (CenterDM md gq, CenterDM md gq, QR, QR, SB.LLSet,
+                                             SB.MatrixE -> SB.StanBuilderM md gq (SB.IntArrayE -> SB.IntE -> SB.RealE),
+                                             SB.MatrixE-> SB.StanBuilderM md gq (SB.IntArrayE -> SB.IntE -> SB.RealE))
+addBLModelsForElex _ includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) alphaT betaT alphaP betaP llSet =
   case office of
     ET.President -> addBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
                     centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
@@ -992,7 +977,7 @@ addBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT q
                 alphaT betaT alphaP betaP llSet
 
 
-addBBLModelsForElex' :: forall rs r k md gq. (Typeable md, Typeable gq, Typeable rs, ElectionC rs)
+addBBLModelsForElex' :: forall rs r md gq . (Typeable rs, ElectionC rs)
                      => Bool
                      -> ET.VoteShareType
                      -> Int
@@ -1028,9 +1013,9 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
   dmPSP <- case M.lookup office dmPSPs of
     Nothing -> SB.stanBuildError $ "addBBLModelsForElex': given office (" <> show office <> ") not present in ps pref matrices."
     Just x -> return x
-  (rttElex, cvap, votes, votesInRace, dVotesInRace) <- getElexData officeRow vst eScale
+  (rttElex, cvap, votes, vir, dVotesInRace) <- getElexData officeRow vst eScale
   let dsLabel = "Elex_" <> officeText office
-      addLabel x = x <> "_" <> dsLabel
+--      addLabel x = x <> "_" <> dsLabel
 
 --  colIndexT <- colIndex dmPST
 --  colIndexP <- colIndex dmPSP
@@ -1059,17 +1044,17 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
       distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal, TE.EReal]
       distS = (if countScaled then SB.countScaledBetaBinomialDist else SD.betaBinomialDist') True
   modelCounts distV votes $ pure $ cvap :> bAT pTByElex :>  bBT pTByElex :> TNil
-  modelCounts distV dVotesInRace $ pure $ votesInRace :> bAP pSByElex :>  bBP pSByElex :> TNil
+  modelCounts distV dVotesInRace $ pure $ vir :> bAP pSByElex :>  bBP pSByElex :> TNil
 --  modelVar rttElex distS dVotesInRace (pure (bAP pSByElex, bBP pSByElex))
   let indexedParamsT kE = cvap `at` kE :> bAT pTByElex `at` kE :>  bBT pTByElex `at` kE :> TNil
-      indexedParamsS kE = votesInRace `at` kE :> bAP pSByElex `at` kE :>  bBP pSByElex `at` kE :> TNil
+      indexedParamsS kE = vir `at` kE :> bAP pSByElex `at` kE :>  bBP pSByElex `at` kE :> TNil
 
   let llSet' = updateLLSet rttElex distS votes (pure indexedParamsT)
                $ updateLLSet rttElex distS dVotesInRace (pure indexedParamsS)
                $ llSet
   when includePP $ do
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure indexedParamsT
-    addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure indexedParamsS
+    _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure indexedParamsT
+    _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure indexedParamsS
     pure ()
   let pTE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsTAlphaM) (TE.parameterTagExpr <$> dsTBetaM) alphaT mE betaT si k
       pPE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsPAlphaM) (TE.parameterTagExpr <$> dsPBetaM) alphaP mE betaP si k
@@ -1078,7 +1063,31 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
   return (CenterWith  centerTF, CenterWith centerPF
          , retQRT, retQRP, llSet', applyQR dmNameT retQRT pTE', applyQR dmNameP retQRP pPE')
 
-addBBLModelsForElex offices includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
+addBBLModelsForElex :: Set ET.OfficeT
+                    -> Bool
+                    -> ET.VoteShareType
+                    -> Int
+                    -> ET.OfficeT
+                    -> CenterDM md gq
+                    -> CenterDM md gq
+                    -> QR
+                    -> QR
+                    -> DSSpecificWithPriors
+                    -> DSSpecificWithPriors
+                    -> (SB.RowTypeTag r, SB.VectorE, SB.MatrixE,
+                         Map ET.OfficeT SB.MatrixE)
+                    -> Bool
+                    -> SB.VectorE
+                    -> SB.MatrixE
+                    -> SB.RealE
+                    -> SB.VectorE
+                    -> SB.MatrixE
+                    -> SB.RealE
+                    -> SB.LLSet
+                    -> SB.StanBuilderM md gq (CenterDM md gq, CenterDM md gq, QR, QR, SB.LLSet,
+                                              SB.MatrixE -> SB.StanBuilderM md gq (SB.IntArrayE -> SB.IntE -> SB.RealE),
+                                              SB.MatrixE -> SB.StanBuilderM md gq (SB.IntArrayE -> SB.IntE -> SB.RealE))
+addBBLModelsForElex _ includePP vst eScale office centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP) countScaled alphaT betaT scaleT alphaP betaP scaleP llSet = case office of
        ET.President -> addBBLModelsForElex' includePP vst eScale (PresidentRow stateGroup)
                        centerTDM centerPDM qrT qrP dsSpT dsSpP (rttPS, wgtsV, dmPST, dmPSP)
                        countScaled alphaT betaT scaleT alphaP betaP scaleP llSet
@@ -1146,7 +1155,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             numZeroPresRows = countCCESZeroVoteRows ET.President (voteShareType model) ccesDataRows
         K.logLE K.Diagnostic $ "CCES data has " <> show numZeroHouseRows <> " rows with no house votes and "
           <> show numZeroPresRows <> " rows with no votes for president."
-      compInclude = modelComponents model
+--      compInclude = modelComponents model
   reportZeroRows
   stElexRows <- K.ignoreCacheTime $ fmap stateElectionRows dat_C
   cdElexRows <- K.ignoreCacheTime $ fmap cdElectionRows dat_C
@@ -1176,12 +1185,12 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             -- fixed densities
 --            normal :: (TE.TypeOneOf t [TE.EReal, TE.ECVec], TE.GenSType t) => Double -> Double -> TE.DensityWithArgs t
             normal m sd = TE.DensityWithArgs TE.normalS (TE.realE m :> TE.realE sd :> TNil)
-            cauchy m s =  TE.DensityWithArgs TE.cauchy (TE.realE m :> TE.realE s :> TNil) --(Just $ SB.scalar $ show m) (SB.scalar $ show sd)
+--            cauchy m s =  TE.DensityWithArgs TE.cauchy (TE.realE m :> TE.realE s :> TNil) --(Just $ SB.scalar $ show m) (SB.scalar $ show sd)
             nStatesE = SB.groupSizeE stateGroup
             colsTE = SB.mColsE acsDMT
             repVec nE x =  TE.functionE TE.rep_vector (x :> nE :> TNil)
-            repVecLike :: TE.VectorE -> TE.RealE -> TE.VectorE
-            repVecLike v = repVec (SB.vecLengthE v)
+--            repVecLike :: TE.VectorE -> TE.RealE -> TE.VectorE
+--            repVecLike v = repVec (SB.vecLengthE v)
             muThetaMat :: TE.VectorE -> TE.MatrixE
             muThetaMat x  = TE.functionE TE.repV_matrix (x :> nStatesE :> TNil)
         colsPE <- SB.stanBuildMaybe "No Preference matrices in ACS data prep?" $ do
@@ -1205,7 +1214,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
                           $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
-                          (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
+                          (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
               corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrT" $ TE.choleskyFactorCorrSpec colsTE [])
@@ -1231,7 +1240,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
                           $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
-                          (\(muE :> TNil) -> TE.DeclRHS $ muThetaMat muE)
+                          (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
               corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrP" $ TE.choleskyFactorCorrSpec colsPE [])
@@ -1319,6 +1328,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 forT = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaTDS :> TNil) ncFS 1 (SP.build sigmaBetaTDS :> TNil) ncFV
                 forP = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaPDS :> TNil) ncFS 1 (SP.build sigmaBetaPDS :> TNil) ncFV
             return (forT, forP)
+          DSAlphaGroup _ -> undefined
 --        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         let acsPSWgtsV = TE.functionE TE.to_vector (acsPSWgts :> TNil)
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of
@@ -1337,7 +1347,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                          dssWPP centerPFM qrP alphaP thetaP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               BetaBinomial n -> do
-                let lnPriorMu = 2 * realToFrac (round @_ @Int $ Numeric.log $ realToFrac n)
+                let lnPriorMu = 2 * realToFrac (round @_ @Int $ Numeric.log $ realToFrac @Int @Double n)
                     betaWidthPrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
 --                      SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
                 betaWidthT <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthT" $ TE.realSpec [TE.lowerM $ TE.realE 1]) betaWidthPrior
@@ -1364,7 +1374,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                          dssWPP centerPFM qrP False alphaP thetaP betaWidthP llS
                 return (eF, cpsTF', ccesTF', ccesPF')
               CountScaledBB n -> do
-                let lnPriorMu = realToFrac $ (round @_ @Int $ Numeric.log $ realToFrac n) `div` 2
+                let lnPriorMu = realToFrac $ (round @_ @Int $ Numeric.log $ realToFrac @Int @Double n) `div` 2
                     scalePrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
                 scaleT <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaScaleT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
 --                  SMP.addParameter "betaScaleT" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
@@ -1406,11 +1416,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         (_, _, llSet2, _) <- ccesTF centerTF qrT llSet1
         (_, _, llSet3, _) <- cpsTF centerTF qrT llSet2
 
-        let (dmColIndexP, dmColExprP) = DM.designMatrixColDimBinding
-                                        (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref")
-        let ccesP (centerFM, qrP, llS) office = do
-              (centerF, qrP', llS, _) <- ccesPF (centerFM, qrP, llS) office
-              return (centerF, qrP', llS)
+{-        let (_, _) = DM.designMatrixColDimBinding
+                                        (designMatrixRowCCES model densityMatrixRowPart (DMPref ET.House) (const 0)) (Just "DMPref") -}
+        let ccesP (centerFM, qrP'', llS) office = do
+              (centerF, qrP', llS', _) <- ccesPF (centerFM, qrP'', llS) office
+              return (centerF, qrP', llS')
             llFoldM = FL.FoldM ccesP (return (centerPF, qrP, llSet3)) return
         (_, _, llSet4) <- FL.foldM llFoldM (Set.delete ET.Senate $ votesFrom model)
 
@@ -1430,8 +1440,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         probP <- probPF dmPS_P
 
         let psStateIndexE = TE.namedE (SB.dataByGroupIndexName psData stateGroup) TE.sIndexArray
-            psTCW dat  = SB.vectorizeExpr (SB.mRowsE dmPS_T) "pT" $ probT psStateIndexE
-            psPCW dat = SB.vectorizeExpr (SB.mRowsE dmPS_P) "pD" $ probP psStateIndexE
+            psTCW _ = SB.vectorizeExpr (SB.mRowsE dmPS_T) "pT" $ probT psStateIndexE
+            psPCW _ = SB.vectorizeExpr (SB.mRowsE dmPS_P) "pD" $ probP psStateIndexE
             psExpr v k = pure @TE.CodeWriter $ TE.sliceE TE.s0 k v
 --            psPExpr :: SB.StanVar -> SB.StanBuilderM md gq SB.StanExpr
 --            psPExpr p =  pure $ SB.var p
@@ -1441,8 +1451,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             turnoutPS = ((psTCW psData, psExpr), Nothing)
             prefPS = ((psPCW psData, psExpr), Nothing)
             dVotePS = ((psDVoteCW psData, psDVoteExpr), Just (\a k -> TE.sliceE TE.s0 k (fst a)))
-            postStratify :: (Typeable md, Typeable gq, Ord k)
-                         => Text
+            postStratify :: Text
                          -> ((TE.CodeWriter x, x -> TE.IntE -> TE.CodeWriter TE.RealE), Maybe (x -> TE.IntE -> TE.RealE))
                          -> SB.GroupTypeTag k -> SB.StanBuilderM md gq TE.VectorE
             postStratify name psCalcs grp =
@@ -1454,18 +1463,17 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               (realToFrac . F.rgetField @Census.Count)
               (MRP.PSShare $ snd psCalcs)
               (Just grp)
-        postStratify "Turnout" turnoutPS psGroup
-        postStratify "Pref" prefPS psGroup
-        postStratify "DVote" dVotePS psGroup
+        _ <- postStratify "Turnout" turnoutPS psGroup
+        _ <- postStratify "Pref" prefPS psGroup
+        _ <- postStratify "DVote" dVotePS psGroup
         pure ()
 
-      extractResults :: K.KnitEffects r
-                     => SC.ResultAction r md gq SB.DataSetGroupIntMaps () (FS.SFrameRec (ModelResultsR ks))
+      extractResults :: SC.ResultAction r md gq SB.DataSetGroupIntMaps () (FS.SFrameRec (ModelResultsR ks))
       extractResults = SC.UseSummary f where
-        f summary _ modelDataAndIndex_C mGQDataAndIndex_C = do
+        f summary _ _ mGQDataAndIndex_C = do
           gqIndexes_C <- K.knitMaybe "StanMRP.extractResults: gqDataAndIndex is Nothing" $ mGQDataAndIndex_C
           gqIndexesE <- K.ignoreCacheTime $ fmap snd gqIndexes_C
-          let resultsMap :: (Typeable k, Show k, Ord k) => SB.RowTypeTag x -> SB.GroupTypeTag k -> Text -> K.Sem r (Map k [Double])
+          let resultsMap :: (Show k, Ord k) => SB.RowTypeTag x -> SB.GroupTypeTag k -> Text -> K.Sem r (Map k [Double])
               resultsMap rtt gtt psPrefix = K.knitEither $ do
                 gqIndexes <- gqIndexesE
                 psIndexIM <- SB.getGroupIndex rtt gtt gqIndexes
@@ -1474,8 +1482,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                       indexStanResults idx $ Vector.map g v
                 parseAndIndexPctsWith psIndexIM id $ psPrefix <> SB.taggedGroupName gtt
           let psRowTag = SB.RowTypeTag @(F.Record rs) SC.GQData "PSData"
-              rmByGroup :: FI.RecVec (ks V.++ '[ModelDesc, ModeledTurnout, ModeledPref, ModeledShare])
-                        => K.Sem r (ModelResults ks)
+              rmByGroup :: K.Sem r (ModelResults ks)
               rmByGroup = do
                 turnoutRM <- resultsMap psRowTag psGroup "Turnout_PSData_"
                 prefRM <- resultsMap psRowTag  psGroup "Pref_PSData_"
@@ -1510,7 +1517,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             cds = FL.fold (FL.premap districtKey FL.list) (ccesEMRows modelData)
             psKeys = FL.fold (FL.premap F.rcast FL.list) gqData
             groups = groupBuilderDM model psGroup states cds psKeys
-        K.logLE K.Diagnostic $ show $ zip [1..] $ Set.toList $ FL.fold FL.set states
+        K.logLE K.Diagnostic $ show $ zip [1 :: Int ..] $ Set.toList $ FL.fold FL.set states
         MRP.buildDataWranglerAndCode @BR.SerializerC @BR.CacheData groups dataAndCodeBuilder modelData_C gqData_C
   let addUnwrapIf o varName unwrapName = if (Set.member o $ votesFrom model) then [SR.UnwrapNamed varName unwrapName] else []
   let unwrapVoted = [SR.UnwrapNamed "Voted_CPS" "yCPSVotes", SR.UnwrapNamed "Voted_CCES" "yCCESVotes"]
@@ -1541,9 +1548,9 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
 
 data DensityTransform = RawDensity
                       | LogDensity
-                      | BinDensity { numBins :: Int,  modeledRange :: Int }
-                      | SigmoidDensity { sigmoidCenter :: Int, sigmoidSlope :: Int, modeledRange :: Int}
-                      deriving (Eq, Ord, Generic)
+                      | BinDensity Int Int -- numBins modeledRange
+                      | SigmoidDensity Int Int Int -- { _sigmoidCenter :: Int, _sigmoidSlope :: Int, _modeledRange :: Int}
+                      deriving stock (Eq, Ord, Generic)
 instance Flat.Flat DensityTransform
 type instance FI.VectorFor DensityTransform = Vector.Vector
 
@@ -1571,8 +1578,8 @@ getCCESVotes _ _ = (const 0, const 0) -- we shouldn't call this
 
 zeroCCESVotes :: GetCCESVotesC rs
               => ET.OfficeT -> ET.VoteShareType -> F.Record rs -> Bool
-zeroCCESVotes office vst r = votesInRace r == 0 where
-  (votesInRace, _) = getCCESVotes office vst
+zeroCCESVotes office vst r = vir r == 0 where
+  (vir, _) = getCCESVotes office vst
 
 countCCESZeroVoteRows :: (GetCCESVotesC rs
                          , Foldable f
@@ -1580,13 +1587,13 @@ countCCESZeroVoteRows :: (GetCCESVotesC rs
                       => ET.OfficeT -> ET.VoteShareType -> f (F.Record rs) -> Int
 countCCESZeroVoteRows office vst = FL.fold (FL.prefilter (zeroCCESVotes office vst) FL.length)
 
-data BetaType = HierarchicalBeta | SingleBeta deriving (Show,Eq)
+data BetaType = HierarchicalBeta | SingleBeta deriving stock (Show,Eq)
 
 printBetaType :: BetaType -> Text
 printBetaType HierarchicalBeta = "Hab"
 printBetaType SingleBeta = "Ha"
 
-data Distribution = Binomial | BetaBinomial Int | CountScaledBB Int deriving (Show)
+data Distribution = Binomial | BetaBinomial Int | CountScaledBB Int deriving stock (Show)
 printDistribution :: Distribution -> Text
 printDistribution Binomial = "Binomial"
 printDistribution (BetaBinomial n) = "BetaBinomial" <> show n
@@ -1637,7 +1644,7 @@ data Model k = Model { voteShareType :: ET.VoteShareType
                      , dataSetSpecific :: DataSetSpecific k
                      , betaType :: BetaType
                      , electionScale :: Int
-                     }  deriving (Generic)
+                     }  deriving stock Generic
 
 
 -- NB each of these records what's relevant to the named thing
@@ -1729,6 +1736,9 @@ race5FromCensus r =
 
 -- many many people who identify as hispanic also identify as white. So we need to choose.
 -- Better to model using both
+mergeRace5AndHispanic :: (F.ElemOf rs DT.Race5C
+                         , F.ElemOf rs DT.HispC)
+                         => F.Record rs -> DT.Race5
 mergeRace5AndHispanic r =
   let r5 = F.rgetField @DT.Race5C r
       h = F.rgetField @DT.HispC r
@@ -1736,19 +1746,35 @@ mergeRace5AndHispanic r =
 
 --sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
 sldKey :: (F.ElemOf rs BR.StateAbbreviation
-          ,F.ElemOf rs ET.DistrictTypeC
-          ,F.ElemOf rs ET.DistrictName)
+          , F.ElemOf rs ET.DistrictTypeC
+          , F.ElemOf rs ET.DistrictName)
        => F.Record rs -> SLDLocation
 sldKey r = (F.rgetField @BR.StateAbbreviation r
            , F.rgetField @ET.DistrictTypeC r
            , F.rgetField @ET.DistrictName r
            )
+districtKey :: (F.ElemOf rs BR.StateAbbreviation
+               , F.ElemOf rs BR.CongressionalDistrict)
+            => F.Record rs -> Text
 districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
-wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
-wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
-wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic)
-wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
+wnh :: (F.ElemOf rs DT.RaceAlone4C
+       , F.ElemOf rs DT.HispC)
+  => F.Record rs -> Bool
+wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
+
+wnhNonGrad :: (F.ElemOf rs DT.RaceAlone4C
+              , F.ElemOf rs DT.HispC
+              , F.ElemOf rs DT.CollegeGradC)
+           => F.Record rs -> Bool
+wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
+
+wnhCCES :: (F.ElemOf rs DT.Race5C)
+        => F.Record rs -> Bool
+wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic)
+
+wnhNonGradCCES :: (F.ElemOf rs DT.Race5C, F.ElemOf rs DT.CollegeGradC) => F.Record rs -> Bool
+wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
 densityMatrixRowPartFromData :: forall rs rs'.(F.ElemOf rs DT.PopPerSqMile, F.ElemOf rs' DT.PopPerSqMile)
                          => DensityTransform
@@ -1765,8 +1791,8 @@ densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPar
   quantilesExtra = List.length sortedData `rem` bins
   quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
   quantileBreaks = fmap (\k -> sortedData List.!! quantileMaxIndex k) $ [1..bins]
-  indexedBreaks = zip quantileBreaks $ fmap (\k -> (realToFrac $ k * range)/(realToFrac bins)) [1..bins] -- should this be 0 centered??
-  go x [] = realToFrac range
+  indexedBreaks = zip quantileBreaks $ fmap (\k -> (realToFrac $ k * range) / (realToFrac bins)) [1..bins] -- should this be 0 centered??
+  go _ [] = realToFrac range
   go x ((y, k): xs) = if x < y then k else go x xs
   quantileF x = go x indexedBreaks
   g x = VU.fromList [quantileF x]
@@ -1781,6 +1807,8 @@ densityMatrixRowPartFromData (SigmoidDensity c s range) _ = DM.DesignMatrixRowPa
 --densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
 logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
 logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
+
+safeLogV :: (FS.Unbox a, Ord a, Floating a) => a -> K.Vector a
 safeLogV x =  VU.singleton $ if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
 
 raceAlone4FromRace5 :: DT.Race5 -> DT.RaceAlone4

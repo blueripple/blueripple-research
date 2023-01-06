@@ -7,71 +7,50 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 --{-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
-module BlueRipple.Utilities.KnitUtils where
+module BlueRipple.Utilities.KnitUtils
+  (
+    module BlueRipple.Utilities.KnitUtils
+  )
+where
 
 import qualified BlueRipple.Configuration as BRC
 
-import qualified Control.Arrow as Arrow
-import qualified Control.Exception as EX
 import qualified Control.Foldl as FL
 import qualified Control.Monad.Except as X
 import qualified Control.Monad.Primitive as Prim
 import qualified Data.ByteString as BS
-import qualified Data.IntSet as IntSet
 import qualified Data.Map as M
 import qualified Data.Sequence as Seq
-import qualified Data.Serialize as S
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
-import qualified Data.Text.Lazy as TL
 import qualified Data.Time.Calendar as Time
-import qualified Data.Time.Clock as Time
 import qualified Data.Time.Format as Time
 import qualified Data.Time.LocalTime as Time
 import qualified Data.Vector as Vector
 import qualified Data.Vinyl as V
 import qualified Flat
-import qualified Flat.Encoder as Flat
-import qualified Flat.Encoder.Types as Flat
-import qualified Flat.Filler as Flat
 import qualified Frames as F
 import qualified Frames.InCore as FI
 import qualified Frames.Serialize as FS
-import qualified Frames.Streamly.InCore as FStreamly
-import qualified Knit.Effect.AtomicCache as KC
 import qualified Knit.Effect.Serialize as KS
 import qualified Knit.Report as K
-import qualified Knit.Report.Cache as KC
 import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
-import qualified Knit.Utilities.Streamly as KStreamly
 import qualified Path
-import qualified Path.IO as Path
-import qualified Polysemy as P
 import Polysemy.Error (Error)
-import Relude.Extra as Relude
 #if MIN_VERSION_streamly(0,8,0)
 import qualified Streamly.Data.Array.Foreign         as Streamly.Array
 #else
 import qualified Streamly
 import qualified Streamly.Memory.Array         as Streamly.Array
 #endif
-import qualified Streamly.External.ByteString  as Streamly.ByteString
-import qualified Streamly.Prelude as Streamly
 import qualified System.Directory as SD
---import qualified System.Directory as System
-import qualified System.IO.Error as SE
 import qualified System.Random.MWC as MWC
-import qualified Text.Blaze.Colonnade as BC
-import qualified Text.Blaze.Html.Renderer.Text as B
-import qualified Text.Blaze.Html5 as BH
-import qualified Text.Blaze.Html5.Attributes as BHA
 import qualified Text.Pandoc.Options as PA
 --import qualified Streamly.Internal.Memory.ArrayStream as Streamly.ByteString
 
@@ -240,9 +219,9 @@ brNewPost :: K.KnitMany r
           -> Text
           -> K.Sem (K.ToPandoc ': r) ()
           -> K.Sem r ()
-brNewPost pp pi pageTitle content = do
-  dates <- brDatesFromPostInfo pi
-  let postPath = BRC.postPath pp pi
+brNewPost pp pi' pageTitle content = do
+  dates <- brDatesFromPostInfo pi'
+  let postPath = BRC.postPath pp pi'
       pageConfig = dates <> one ("pagetitle", toString pageTitle)
   K.newPandoc (K.PandocInfo (toText $ Path.toFilePath postPath) pageConfig) $ do
     content
@@ -255,14 +234,14 @@ brNewNote :: K.KnitMany r
           -> Text
           -> K.Sem (K.ToPandoc ': r) ()
           -> K.Sem r (Maybe Text)
-brNewNote pp pi nn pageTitle content = do
-  dates <- brDatesFromPostInfo pi
-  notePath <- K.knitEither $ BRC.notePath pp pi nn
+brNewNote pp pi' nn pageTitle content = do
+  dates <- brDatesFromPostInfo pi'
+  notePath <- K.knitEither $ BRC.notePath pp pi' nn
   let pageConfig = dates <> one ("pagetitle", toString pageTitle)
   K.newPandoc (K.PandocInfo (toText $ Path.toFilePath notePath) pageConfig) content
   case nn of
     BRC.Unused _ -> return Nothing
-    BRC.Used _ -> Just <$> (K.knitEither $ BRC.noteUrl pp pi nn)
+    BRC.Used _ -> Just <$> (K.knitEither $ BRC.noteUrl pp pi' nn)
 
 --  let noteParent = Path.parent notePath
 --  K.logLE K.Info $ "If necessary, creating note path \"" <> toText (Path.toFilePath noteParent)
@@ -285,7 +264,7 @@ logFrame' ll fr =
 {-# INLINEABLE logFrame' #-}
 
 logCachedFrame ::
-  (K.KnitEffects r, CacheEffects r, Foldable f, Show (F.Record rs)) =>
+  (K.KnitEffects r, Foldable f, Show (F.Record rs)) =>
   K.ActionWithCacheTime r (f (F.Record rs)) ->
   K.Sem r ()
 logCachedFrame fr_C = do
@@ -381,11 +360,10 @@ retrieveOrMake3Frames key cachedDeps action =
         K.retrieveOrMakeTransformed  @SerializerC @CacheData to from key cachedDeps action
 
 retrieveOrMakeRecList ::
-  ( K.KnitEffects r,
-    CacheEffects r,
-    RecSerializerC rs,
-    V.RMap rs,
-    FI.RecVec rs
+  ( K.KnitEffects r
+  , CacheEffects r
+  , RecSerializerC rs
+  , V.RMap rs
   ) =>
   T.Text ->
   K.ActionWithCacheTime r b ->
@@ -406,8 +384,13 @@ type RecSerializerC rs = FS.RecFlat rs
 type CacheData = BS.ByteString
 type CacheEffects r = K.CacheEffects SerializerC CacheData T.Text r
 
+fromFrame :: F.Frame a -> FS.SFrame a
 fromFrame = FS.SFrame
+{-# INLINABLE fromFrame #-}
+
+toFrame :: FS.SFrame a -> F.Frame a
 toFrame = FS.unSFrame
+{-# INLINABLE toFrame #-}
 
 flatSerializeDict :: KS.SerializeDict Flat.Flat BS.ByteString
 flatSerializeDict =

@@ -11,47 +11,29 @@
 {-# LANGUAGE TypeApplications          #-}
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
-
 {-# OPTIONS_GHC  -O0 #-}
 
 module BlueRipple.Data.UsefulDataJoins where
 
 import qualified Control.Foldl                 as FL
-import           Control.Monad                  ( join )
-import qualified Data.Array                    as A
-import           Data.Function                  ( on )
-import qualified Data.List                     as L
-import qualified Data.Set                      as S
-import qualified Data.Map                      as M
-import           Data.Maybe                     ( isJust )
-
 import qualified Data.Text                     as T
-import qualified Data.Serialize                as SE
 import           Data.Serialize.Text            ( )
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
+import Data.Type.Equality            (type (~))
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Discrimination.Grouping  as G
 
-
-import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.Enumerations           as FE
 import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Serialize              as FS
 
-import qualified Graphics.Vega.VegaLite        as GV
 import qualified Knit.Report                   as K
 
-import           BlueRipple.Utilities.KnitUtils
-
-import qualified Statistics.Types              as ST
-import           GHC.Generics                   ( Generic )
-
+import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes
                                                as BR
@@ -59,15 +41,8 @@ import qualified BlueRipple.Data.DemographicTypes
 import qualified BlueRipple.Data.ElectionTypes
                                                as BR
 
---import qualified BlueRipple.Data.PrefModel     as BR
 import qualified BlueRipple.Model.TurnoutAdjustment
                                                as BR
-
-import qualified BlueRipple.Utilities.KnitUtils
-                                               as BR
-import qualified BlueRipple.Data.Keyed as Keyed
-
-
 
 rollupF :: forall as bs ds. (Ord (F.Record bs)
                            , bs F.⊆ (as V.++ bs V.++ ds)
@@ -108,20 +83,20 @@ joinDemoAndWeights
   :: forall js ks p
   . ( FJ.CanLeftJoinM  js (ks V.++ PCols p) (js V.++ BR.EWCols)
     , ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols)) ~ ((ks V.++ PCols p) V.++ BR.EWCols)
-    , js F.⊆ ks
-    , FI.RecVec (ks V.++ PCols p V.++ BR.EWCols)
-    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
-    , js F.⊆  (ks V.++ PCols p)
-    , js F.⊆  (js V.++ BR.EWCols)
-    , (ks V.++ PCols p) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
-    , F.RDeleteAll js (js V.++ BR.EWCols) F.⊆  (js V.++ BR.EWCols)
-    , V.RMap (ks V.++ PCols p)
-    , V.RMap  ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
-    , V.RecApplicative  (F.RDeleteAll js (js V.++ BR.EWCols))
-    , G.Grouping (F.Record js)
-    , FI.RecVec  (ks V.++ PCols p)
-    , FI.RecVec (F.RDeleteAll js (js V.++ BR.EWCols))
-    , FI.RecVec ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+--    , js F.⊆ ks
+--    , FI.RecVec (ks V.++ PCols p V.++ BR.EWCols)
+--    , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+--    , js F.⊆  (ks V.++ PCols p)
+--    , js F.⊆  (js V.++ BR.EWCols)
+--    , (ks V.++ PCols p) F.⊆ ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+--    , F.RDeleteAll js (js V.++ BR.EWCols) F.⊆  (js V.++ BR.EWCols)
+--    , V.RMap (ks V.++ PCols p)
+--    , V.RMap  ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
+--    , V.RecApplicative  (F.RDeleteAll js (js V.++ BR.EWCols))
+--    , G.Grouping (F.Record js)
+--    , FI.RecVec  (ks V.++ PCols p)
+--    , FI.RecVec (F.RDeleteAll js (js V.++ BR.EWCols))
+--    , FI.RecVec ((ks V.++ PCols p) V.++ F.RDeleteAll js (js V.++ BR.EWCols))
     )
   => F.FrameRec (ks V.++ (PCols p))
   -> F.FrameRec (js V.++ BR.EWCols)
@@ -190,7 +165,7 @@ adjustWeightsForStateTotals
   . (K.KnitEffects r
     , V.KnownField p
     , V.Snd p ~ Int
-    , F.ElemOf (BR.WithYS ks) BR.Year
+--    , F.ElemOf (BR.WithYS ks) BR.Year
     , F.ElemOf (BR.WithYS ks) BR.StateAbbreviation
     , (ks V.++ PCols p V.++ BR.EWCols) F.⊆ BR.WithYS (ks V.++ PCols p V.++ BR.EWCols)
     , F.ElemOf (ks V.++ PCols p V.++ BR.EWCols) p
@@ -221,21 +196,21 @@ demographicsWithAdjTurnoutByState
     , V.Snd p ~ Int
     , F.ElemOf (ks V.++ catCols V.++ PEWCols p) p
     , F.ElemOf (ks V.++ catCols V.++ PEWCols p) BR.ElectoralWeight
-    , (ks V.++ catCols V.++ PEWCols p) F.⊆ BR.WithYS (ks V.++ catCols V.++ PEWCols p)
+--    , (ks V.++ catCols V.++ PEWCols p) F.⊆ BR.WithYS (ks V.++ catCols V.++ PEWCols p)
     , FI.RecVec (ks V.++ catCols V.++ PEWCols p)
     , (ks V.++ catCols V.++ PEWCols p) F.⊆ (BR.WithYS (ks V.++ catCols V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) (js V.++ catCols V.++ BR.EWCols))
-    , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ BR.EWCols))
-    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
-    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
-    , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-    , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) F.⊆ ((js V.++ catCols) V.++ BR.EWCols)
-    , V.RMap ((ks V.++ catCols) V.++ PCols p)
-    , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)))
-    , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-    , G.Grouping (F.Record (js V.++ catCols))
-    , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
-    , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-    , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+--    , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ BR.EWCols))
+--    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
+--    , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
+--    , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+--    , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) F.⊆ ((js V.++ catCols) V.++ BR.EWCols)
+--    , V.RMap ((ks V.++ catCols) V.++ PCols p)
+--    , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)))
+--    , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+--    , G.Grouping (F.Record (js V.++ catCols))
+--    , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
+--    , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
+--    , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
     , (ks V.++ catCols V.++ PCols p V.++ BR.EWCols) ~ (ks V.++ catCols V.++ (PCols p V.++ BR.EWCols))
     , Show (F.Record ((ks V.++ catCols)
                            V.++ '[ '("PopCountOf", BR.PopCountOfT), p,
@@ -305,21 +280,8 @@ rollupAdjustAndJoin
    , V.Snd p ~ Int
    , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) p
    , F.ElemOf (ks V.++ catCols V.++ (PEWCols p)) BR.ElectoralWeight
-   , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PEWCols p))
    , FI.RecVec (ks V.++ catCols V.++ (PEWCols p))
    , (ks V.++ catCols V.++ (PEWCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols V.++ BR.EWCols)))
-   , (js V.++ catCols) F.⊆ ((js V.++ catCols V.++ BR.EWCols))
-   , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols)
-   , (js V.++ catCols) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p))
-   , (ks V.++ catCols V.++ (PCols p)) F.⊆ BR.WithYS (ks V.++ catCols V.++ (PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-   , (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)) F.⊆ ((js V.++ catCols) V.++ BR.EWCols)
-   , V.RMap ((ks V.++ catCols) V.++ PCols p)
-   , V.RMap ((((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols)))
-   , V.RecApplicative (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-   , G.Grouping (F.Record (js V.++ catCols))
-   , FI.RecVec ((ks V.++ catCols) V.++ PCols p)
-   , FI.RecVec (F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
-   , FI.RecVec (((ks V.++ catCols) V.++ PCols p) V.++ F.RDeleteAll (js V.++ catCols) ((js V.++ catCols) V.++ BR.EWCols))
    , (as V.++ BR.WithYS ks V.++ catCols V.++ PCols p) ~ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[BR.PopCountOf]) V.++ '[p])
    , (((ks V.++ catCols) V.++ '[BR.PopCountOf]) V.++ '[p]) ~ ((ks V.++ catCols) V.++ PCols p)
    , Ord (F.Record ((ks V.++ catCols) V.++ '[BR.PopCountOf]))
@@ -404,7 +366,6 @@ acsDemographicsWithAdjCensusTurnoutByCD
     , (catCols V.++ BR.EWCols) F.⊆ (ACSCols V.++ catCols V.++ PEWCols BR.ACSCount)
     , catCols F.⊆ (ACSColsCD V.++ catCols V.++ PCols BR.ACSCount)
     , catCols F.⊆ (BR.Year ': (catCols V.++ BR.EWCols))
-    , catCols F.⊆ (ACSCols V.++ catCols)
     , catCols F.⊆ (ACSCols V.++ catCols V.++ PCols BR.ACSCount)
     , catCols F.⊆ (ACSCols V.++ catCols V.++ BR.EWCols)
     , (F.RDeleteAll catCols (catCols V.++ BR.EWCols))  F.⊆ (BR.Year ': (catCols V.++ BR.EWCols))

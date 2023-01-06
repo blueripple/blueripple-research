@@ -201,39 +201,41 @@ runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
             -> SM.ModelConfig ()
-            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.RaceAlone4C, DT.HispC])
-            -> K.Sem r () -- (SM.ModelResult Text [DT.SexC, DT.Age4C, DT.RaceAlone4C, DT.HispC])
+            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
+            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
 runAgeModel clearCaches cmdLine mc dmr = do
   let cacheKeyE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
       dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-Demographics/stanAge"
                          ("normalSER_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
-                         Nothing
-                        dataName
+                         (Just $ SC.GQNames "pp" dataName)
+                         dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   ageModelPaths <- postPaths "AgeModel" cmdLine
   acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
+      mcWithId = "normal" <$ mc
   logLengthC acsMN_C "acsByStateMNAge"
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (SM.groupBuilderState (S.toList states))
                 (SM.normalModel (contramap F.rcast dmr) mc) --(SM.designMatrixRowAge SM.logDensityDMRP))
-  () <- do
+  res <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
       cacheKeyE
       (Right runnerInputNames)
       dw
       code
-      SC.DoNothing
-      (SMR.Both [])
+      (SM.stateModelResultAction mcWithId dmr)
+      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
       acsMN_C
       (pure ())
   K.logLE K.Info "ageModel run complete."
+  pure res
 
 chart :: Foldable f => FV.ViewConfig -> f DDP.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =

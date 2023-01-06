@@ -1,6 +1,5 @@
 cabal-version:       3.0
 name:                blueripple-research
-
 version:             0.3.0.0
 synopsis:            BlueRipple current research
 description:         Current research projects live here and will trickle into their own repos when appropriate.
@@ -15,7 +14,11 @@ extra-source-files:
 data-dir: data
 --data-files: images/WWCV_Tweet.png
 
-common deps
+source-repository head
+  type: git
+  location: https://github.com/blueripple/blueripple-research.git
+
+common common-options
   build-depends: base >= 4.11.1.0
                , array
                , blaze-html
@@ -26,7 +29,7 @@ common deps
                , clock >= 0.8 && < 0.9
                , containers >= 0.5 && < 0.7
                , data-science-utils
-               , discrimination
+               , discrimination >= 0.3 && < 0.6
                , exceptions >= 0.10.4 && < 0.11
                , flat >= 0.4.4 && < 0.7
                , Frames >= 0.6.1 && < 0.8
@@ -75,6 +78,42 @@ common deps
                , vector >= 0.11 && < 0.13
                , vector-builder >= 0.3.7 && < 0.4
                , vinyl >= 0.14 && < 0.15
+
+  ghc-options:         -Wall
+                       -Wcompat
+                       -Widentities
+                       -Wincomplete-uni-patterns
+                       -Wincomplete-record-updates
+                       -Wredundant-constraints
+                       -Wnoncanonical-monad-instances
+                       -fhide-source-paths
+                       -Wmissing-export-lists
+                       -Wpartial-fields
+                       -Wmissing-deriving-strategies
+                       -fwrite-ide-info
+                       -hiedir=.hie
+                       -Wunused-packages
+  if impl(ghc >= 9.0)
+    ghc-options:       -Winvalid-haddock
+  if impl(ghc >= 9.2)
+    ghc-options:       -Wredundant-bang-patterns
+                       -Woperator-whitespace
+  if impl(ghc >= 9.4)
+    ghc-options:       -Wredundant-strictness-flags
+
+  default-language:    Haskell2010
+  default-extensions:  ConstraintKinds
+                       DeriveGeneric
+                       DerivingStrategies
+                       GeneralizedNewtypeDeriving
+                       InstanceSigs
+                       KindSignatures
+                       LambdaCase
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       StrictData
+                       TupleSections
+                       TypeApplications
 
 library blueripple-glm
 --  import: deps
@@ -132,7 +171,7 @@ library blueripple-glm
 
 
 library
-  import: deps
+  import: common-options
   ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16 -fprint-potential-instances
 
   exposed-modules: BlueRipple.Configuration
@@ -177,50 +216,46 @@ library
                  , BlueRipple.Utilities.TableUtils
                  , BlueRipple.Utilities.FramesUtils
                  , Paths_blueripple_research
-  build-depends:       base >=4.11
-                     , ad >= 3.4 && < 4.6
-                     , aeson >= 1.4 && < 2.1
-                     , blaze-colonnade
-                     , bytestring >= 0.10 && < 0.12
-                     , cassava >= 0.5 && < 0.6
-                     , cmdargs >= 0.10 && <0.11
-                     , colonnade
-                     , cereal-vector >= 0.2 && < 0.3
-                     , data-default
-                     , dependent-hashmap >= 0.1.0.1 && < 0.2
-                     , dependent-sum >= 0.7.0 && < 0.8
-                     , declarative
-                     , direct-sqlite >= 2.3.23
-                     , directory >= 1.3.3 && < 1.4
-                     , discrimination >= 0.3 && < 0.6
-                     , extra >= 1.6 && < 1.8
-                     , gamma
-                     , hs-cmdstan
-                     , hashable
-                     , hashtables >= 1.2.3.4 && < 1.4
-                     , haskell-stan >= 0.1.0.0
-                     , hmatrix
-                     , lens
-                     , math-functions
-                     , mtl
-                     , hmatrix-nlopt
-                     , mwc-random >= 0.15.0.1 && < 0.16
-                     , nonlinear-optimization >= 0.3.11 && < 0.4
-                     , nonlinear-optimization-ad >= 0.2 && < 0.3
-                     , path-io >= 1.6
-                     , pandoc
-                     , parallel
-                     , random >= 1.1 && < 1.3
-                     , template-haskell
-                     , time
-                     , tuple
-                     , unordered-containers >= 0.2.15 && < 0.3
-                     , vector-th-unbox >= 0.2.1.7
+  build-depends: ad >= 3.4 && < 4.6
+               , aeson >= 1.4 && < 2.1
+               , blaze-colonnade
+               , bytestring >= 0.10 && < 0.12
+               , cassava >= 0.5 && < 0.6
+               , cmdargs >= 0.10 && <0.11
+               , colonnade
+               , cereal-vector >= 0.2 && < 0.3
+               , data-default
+               , dependent-hashmap >= 0.1.0.1 && < 0.2
+               , dependent-sum >= 0.7.0 && < 0.8
+               , declarative
+               , direct-sqlite >= 2.3.23
+               , directory >= 1.3.3 && < 1.4
+               , extra >= 1.6 && < 1.8
+               , gamma
+               , hs-cmdstan
+               , hashable
+               , hashtables >= 1.2.3.4 && < 1.4
+               , haskell-stan >= 0.1.0.0
+               , hmatrix
+               , math-functions
+               , mtl
+               , hmatrix-nlopt
+               , mwc-random >= 0.15.0.1 && < 0.16
+               , nonlinear-optimization >= 0.3.11 && < 0.4
+               , nonlinear-optimization-ad >= 0.2 && < 0.3
+               , path-io >= 1.6
+               , pandoc
+               , parallel
+               , random >= 1.1 && < 1.3
+               , template-haskell
+               , time
+               , tuple
+               , unordered-containers >= 0.2.15 && < 0.3
+               , vector-th-unbox >= 0.2.1.7
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
          , Relude.Extra)
   hs-source-dirs:      src
-  default-language:    Haskell2010
 
 
 
@@ -238,7 +273,7 @@ library
 -- default-language: Haskell2010
 
 executable preference-model
-  import: deps
+  import: common-options
   ghc-options: -Wall -O0 -threaded -rtsopts
   hs-source-dirs: reports
   main-is:       PreferenceModel/preference_model.hs
@@ -262,10 +297,9 @@ executable preference-model
                , pandoc
                , random
                , time
-  default-language: Haskell2010
 
 executable mrp-model
-  import: deps
+  import: common-options
 --  ghc-options: -Wall -O0
   ghc-options: -Wall  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: reports
@@ -308,10 +342,9 @@ executable mrp-model
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
          , Relude.Extra)
-  default-language: Haskell2010
 
 executable stan-models
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: stan
   main-is: Main.hs
@@ -328,7 +361,7 @@ executable stan-models
          , Relude.Extra)
 
 executable mission
-  import: deps
+  import: common-options
   ghc-options: -fplugin=Polysemy.Plugin -Wall -O0
   hs-source-dirs: mission
   main-is:        mission.hs
@@ -337,11 +370,10 @@ executable mission
                , lens
                , map-reduce-folds
                , time
-  default-language: Haskell2010
 
 
 executable br-2021-A
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2021-A
   main-is: Main.hs
@@ -357,7 +389,7 @@ executable br-2021-A
          , Relude.Extra)
 
 executable br-2021-StateLegModel
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2021-StateLegModel
   main-is: Main.hs
@@ -379,7 +411,7 @@ executable br-2021-StateLegModel
          , Relude.Extra)
 
 executable br-2021-NewMaps
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2021-NewMaps
   main-is: Main.hs
@@ -399,7 +431,7 @@ executable br-2021-NewMaps
 
 
 executable br-2022-Demographics
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: br-2022-Demographics
   main-is: Main.hs
@@ -419,7 +451,7 @@ executable br-2022-Demographics
 
 
 executable ga-work
-  import: deps
+  import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
   hs-source-dirs: georgia
   main-is: Main.hs
@@ -437,7 +469,7 @@ executable ga-work
                , say
 
 executable FEC-data
-  import: deps
+  import: common-options
   ghc-options: -Wall
   hs-source-dirs: FEC-data
   main-is: Main.hs
@@ -454,7 +486,7 @@ executable FEC-data
                , tuple
 
 executable house-data
-  import: deps
+  import: common-options
   ghc-options: -Wall -threaded
   hs-source-dirs: house-data, reports
   main-is: Main.hs
@@ -464,7 +496,7 @@ executable house-data
                , polysemy-RandomFu
 
 executable testbed
-  import: deps
+  import: common-options
   ghc-options: -Wall -O0
 --  ghc-options: -Wall -prof -fprof-auto -eventlog -rtsopts -fexternal-interpreter -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
 --  ghc-options: -Wall -eventlog -rtsopts
@@ -484,4 +516,3 @@ executable testbed
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
          , Relude.Extra)
-  default-language: Haskell2010

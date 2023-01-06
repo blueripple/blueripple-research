@@ -6,60 +6,34 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE TemplateHaskell     #-}
 {-# LANGUAGE TypeFamilies        #-}
 {-# LANGUAGE TypeOperators       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 --{-# OPTIONS_GHC  -O0             #-}
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 
-module BlueRipple.Data.LoadersCore where
+module BlueRipple.Data.LoadersCore
+  (
+    module BlueRipple.Data.LoadersCore
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames    as BR
-import qualified BlueRipple.Data.DemographicTypes
-                                               as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Utilities.KnitUtils as BR
 
 import qualified Knit.Report                   as K
-import qualified Knit.Report.Cache             as K
 import qualified Knit.Utilities.Streamly       as K
 
-import qualified Polysemy                      as P
-import qualified Polysemy.Error                      as P
-import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Control.Lens                  as Lens
-import           Control.Lens                   ((%~))
 import qualified Control.Monad.Catch.Pure      as Exceptions
-import           Control.Monad (join)
 import qualified Control.Monad.State           as ST
 import qualified Control.Foldl                 as FL
-import qualified Data.List                     as L
-import qualified Data.Map as M
-import           Data.Maybe                     ( catMaybes )
-import qualified Data.Set                      as Set
-import qualified Data.Serialize                as S
 import           Data.Serialize.Text            ( )
-import           GHC.Generics                   ( Generic
-                                                , Rep
-                                                )
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                  as T
-import qualified Data.Text.Read                as T
 
 import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Curry              as V
-import qualified Data.Vinyl.Recursive          as V
 import qualified Frames                        as F
---import qualified Frames.Streamly.CSV           as FS
---import qualified Frames.Streamly.InCore        as FSI
-import qualified Frames.Streamly.TH            as FS
 
 #if MIN_VERSION_streamly(0,8,0)
 import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Streamly
@@ -72,12 +46,6 @@ import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Data.Fold as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
-
-import qualified Frames.ParseableTypes         as FP
-import qualified Frames.MaybeUtils             as FM
-import qualified Frames.Transform              as FT
-import qualified Frames.Serialize              as FS
-import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.CSV        as FStreamly
 import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
@@ -85,7 +53,6 @@ import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
 import qualified System.Directory as System
 import qualified System.Clock
 import GHC.TypeLits (Symbol)
-import Data.Kind (Type)
 
 data DataPath = DataSets T.Text | LocalData T.Text
 
@@ -105,8 +72,8 @@ dataPathWithCacheTime dp@(DataSets _) = return $ K.withCacheTime Nothing (pure d
 
 recStreamLoader
   :: forall qs rs t m
-   . ( V.RMap rs
-     , V.RMap qs
+   . ( --V.RMap rs
+     V.RMap qs
      , FStreamly.StrictReadRec qs
      , Streamly.MonadAsync m
      , FL.PrimMonad m
@@ -123,7 +90,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
   let csvParserOptions =
         FStreamly.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
-      filter !r = fromMaybe (const True) mFilter r
+      filterF !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
 #if MIN_VERSION_streamly(0,8,0)
   path <- Streamly.fromEffect $ liftIO $ getPath dataPath
@@ -144,7 +111,7 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       )
       ("loading \"" <> toText path <> "\" from disk finished.")
     )
-    $! BR.loadToRecStream @qs parserOptions path filter
+    $! BR.loadToRecStream @qs parserOptions path filterF
 
 type StreamlyS = StreamlyStream SerialT
 
@@ -156,7 +123,7 @@ cachedFrameLoader
    . ( V.RMap rs
      , V.RMap qs
      , FStreamly.StrictReadRec qs
-     , FStreamly.RecVec qs
+--     , FStreamly.RecVec qs
      , FStreamly.RecVec rs
      , BR.RecSerializerC rs
      , K.KnitEffects r
@@ -185,7 +152,7 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
 frameLoader
   :: forall qs rs r
   . (K.KnitEffects r
-    , BR.CacheEffects r
+--    , BR.CacheEffects r
     , FStreamly.StrictReadRec qs
     , FStreamly.RecVec qs
     , V.RMap qs
@@ -200,11 +167,11 @@ frameLoader filePath mParserOptions mFilter fixRow = do
         FStreamly.defaultParser --
 --        { FStreamly.quotingMode = F.RFC4180Quoting ' ' }
       parserOptions = fromMaybe csvParserOptions mParserOptions
-      filter !r = fromMaybe (const True) mFilter r
+      filterF !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
   path <- liftIO $ getPath filePath
   K.logLE (K.Debug 3) ("Attempting to load data from " <> toText path <> " into a frame.")
-  fmap strictFix <$> BR.loadToFrame parserOptions path filter
+  fmap strictFix <$> BR.loadToFrame parserOptions path filterF
 
 -- file has fs
 -- load fs
@@ -214,10 +181,10 @@ frameLoader filePath mParserOptions mFilter fixRow = do
 -- transform to rs
 maybeFrameLoader
   :: forall (fs :: [(Symbol, Type)]) qs qs' rs r
-   . ( V.RMap rs
-     , V.RMap fs
+   . ( --V.RMap rs
+     V.RMap fs
      , FStreamly.StrictReadRec fs
-     , FStreamly.RecVec qs
+--     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
@@ -226,13 +193,13 @@ maybeFrameLoader
      , V.RPureConstrained V.KnownField qs'
      , V.RecApplicative qs'
      , V.RApply qs'
-     , V.RMap qs'
+--     , V.RMap qs'
      , qs F.⊆ fs
      , FStreamly.RecVec rs
-     , V.RFoldMap rs
-     , BR.RecSerializerC rs
+--     , V.RFoldMap rs
+--     , BR.RecSerializerC rs
      , K.KnitEffects r
-     , BR.CacheEffects r
+--     , BR.CacheEffects r
      , Show (F.Record qs)
      , V.RMap qs
      , V.RecordToList qs
@@ -257,14 +224,14 @@ maybeRecStreamLoader
   :: forall fs qs qs' rs
    . ( V.RMap fs
      , FStreamly.StrictReadRec fs
-     , FStreamly.RecVec qs
+--     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
      , V.RApply qs
      , V.RFoldMap qs'
-     , V.RMap qs'
+--     , V.RMap qs'
      , V.RPureConstrained V.KnownField qs'
      , V.RecApplicative qs'
      , V.RApply qs'
@@ -301,10 +268,10 @@ cachedMaybeFrameLoader
    . ( K.KnitEffects r
      , BR.CacheEffects r
      , V.RMap rs
-     , V.RFoldMap rs
+--     , V.RFoldMap rs
      , V.RMap fs
      , FStreamly.StrictReadRec fs
-     , FStreamly.RecVec qs
+--     , FStreamly.RecVec qs
      , V.RFoldMap qs
      , V.RPureConstrained V.KnownField qs
      , V.RecApplicative qs
@@ -313,7 +280,7 @@ cachedMaybeFrameLoader
      , V.RPureConstrained V.KnownField qs'
      , V.RecApplicative qs'
      , V.RApply qs'
-     , V.RMap qs'
+--     , V.RMap qs'
      , qs F.⊆ fs
      , FStreamly.RecVec rs
      , BR.RecSerializerC rs
@@ -350,7 +317,7 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     t <- System.Clock.getTime System.Clock.ProcessCPUTime
     putStr $ show t ++ ": "
     putTextLn $ countMsg n
-    return $ Streamly.Fold.Partial (n+1)
+    pure $ Streamly.Fold.Partial (n + 1)
   done _ = ST.liftIO $ putTextLn endMsg
 #else
   start = ST.liftIO (putText startMsg) >> return 0
@@ -358,7 +325,7 @@ runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done wher
     t <- System.Clock.getTime System.Clock.ProcessCPUTime
     putStr $ show t ++ ": "
     putTextLn $ countMsg n
-    return (n+1)
+    return (n + 1)
   done _ = ST.liftIO $ putTextLn endMsg
 #endif
 

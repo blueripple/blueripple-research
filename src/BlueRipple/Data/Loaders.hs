@@ -1,15 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -17,7 +13,11 @@
 {-# OPTIONS_GHC -fplugin=Polysemy.Plugin #-}
 {-# OPTIONS_GHC -freduction-depth=0 #-}
 
-module BlueRipple.Data.Loaders where
+module BlueRipple.Data.Loaders
+  (
+    module BlueRipple.Data.Loaders
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -41,8 +41,10 @@ import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
 import qualified Knit.Report as K
 
+localDataDir :: Text
 localDataDir :: Text = "../data-sets/data/"
 
+useLocal :: Text -> DataPath
 useLocal x = LocalData $ localDataDir <> x
 
 electoralCollegeFrame ::
@@ -373,6 +375,7 @@ type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS,
 
 type HouseElectionColsI = HouseElectionCols V.++ '[ET.Incumbent]
 
+isRunoff :: F.ElemOf rs BR.Stage => F.Record rs -> Bool
 isRunoff r = F.rgetField @BR.Stage r == "runoff"
 
 processHouseElectionRow :: BR.HouseElections -> F.Record HouseElectionCols
@@ -430,8 +433,8 @@ fixRunoffYear rKey runoff rows = flip evalState M.empty $ FL.foldM g rows where
     step s r = if not $ runoff r
                then modify (M.insert (rKey r) (year r)) >> return (s <> Sequence.singleton r)
                else (do
-                        year <- fromMaybe (year r) <$> gets (M.lookup $ rKey r)
-                        let r' = FT.fieldEndo @BR.Year (const year) r
+                        year' <- fromMaybe (year r) <$> gets (M.lookup $ rKey r)
+                        let r' = FT.fieldEndo @BR.Year (const year') r
                         return (s <> Sequence.singleton r')
                     )
 
@@ -453,16 +456,16 @@ winnerMap votes key = FL.fold (FL.Fold g mempty id)
       in M.insert kl mi m
 
 lastWinners :: (Ord kl, Ord ky) => Int -> (F.Record rs -> (kl, ky)) -> M.Map kl (Map ky (F.Record rs)) -> F.Record rs -> Maybe [F.Record rs]
-lastWinners n key winnerMap r = do
+lastWinners n key winnerMap' r = do
   let (kl, ky) = key r
-  ml <- M.lookup kl winnerMap
+  ml <- M.lookup kl winnerMap'
   let ascendingWinners = M.toAscList ml
       lastLess :: forall a b.Ord a => Int -> a -> [(a, b)] -> Maybe (a, b)
-      lastLess n a abs =
-        let paired = zip abs $ drop n abs
+      lastLess n' a abs' =
+        let paired = zip abs' $ drop n' abs'
             go :: [((a, b), (a, b))] -> Maybe (a, b)
             go [] = Nothing
-            go (((al, bl), (ar, br)) : pabs) = if a > al && a <= ar then Just (al, bl) else go pabs
+            go (((al, bl), (ar, _)) : pabs) = if a > al && a <= ar then Just (al, bl) else go pabs
         in go paired
   fmap snd <$> traverse (\m -> lastLess m ky ascendingWinners) [1..n]
 
@@ -483,7 +486,7 @@ addIncumbency :: (Ord kl, Ord ky)
   -> F.Record rs
   -> F.Record (rs V.++ '[ET.Incumbent])
 addIncumbency n key sameCand runoff wm r =
-  let lws = lastWinners (n+1) key wm r
+  let lws = lastWinners (n + 1) key wm r
       lwsFixed = if runoff r
                  then fmap (take n) lws -- we got n + 1 and drop the last since that's the general leading to this runoff, not the previous
                  else fmap (drop 1) lws -- not a runoff so get rid of the extra one

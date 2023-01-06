@@ -3,27 +3,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module BlueRipple.Data.Visualizations.DemoComparison where
-
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Utilities.KnitUtils as BR
+module BlueRipple.Data.Visualizations.DemoComparison
+  (
+    module BlueRipple.Data.Visualizations.DemoComparison
+  )
+where
 
 import qualified Control.Foldl as FL
 import qualified Data.List as List
 import qualified Data.Map as M
-import qualified Data.Vinyl as V
 import qualified Frames as F
-import qualified Frames.Melt as F
-import qualified Frames.MapReduce as FMR
-import qualified Frames.Aggregation as FA
-import qualified Frames.Folds as FF
-import qualified Frames.SimpleJoins as FJ
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
-import qualified Frames.Visualization.VegaLite.Data as FVD
 import qualified Graphics.Vega.VegaLite.Configuration as FV
-import qualified Relude.Extra as Extra
-import qualified Knit.Report as K
 
 demoCompare :: forall rs f.(Foldable f)
              => (Text, F.Record rs -> Text, Maybe [Text])
@@ -55,7 +47,7 @@ demoCompare (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (label
       toVLDataRows r = case mOverlay of
         Nothing -> GV.dataRow (colData r) []
         Just (oLabel, f) ->
-          let colData' r = (oLabel, GV.Number $ f r) : colData r
+          let colData' rs = (oLabel, GV.Number $ f rs) : colData rs
           in GV.dataRow (colData' r) []
       vlData = GV.dataFromRows [] $ List.concat $ fmap toVLDataRows $ FL.fold FL.list rows
       encCat1 = GV.color ([GV.MName cat1Name, GV.MmType GV.Nominal] ++ maybe [] (\x -> [GV.MSort [GV.CustomSort $ GV.Strings $ reverse x]]) mCat1Sort)
@@ -88,7 +80,7 @@ demoCompare (cat1Name, cat1, mCat1Sort) (cat2Name, cat2, mCat2Sort) count (label
            in FV.configuredVegaLite vc [FV.title title, stack [], GV.layer [bSpec, oSpec], resolve [], vlData, config []]
 
 
-demoCompareXYC :: forall rs f.(Foldable f)
+demoCompareXYC :: forall f . (Foldable f)
                => Text
                -> Text
                -> Text
@@ -119,7 +111,7 @@ demoCompareXYC labelName xName yName colorName title vc rows =
   in FV.configuredVegaLite vc [FV.title title, GV.layer [labelSpec, circleSpec], vlData, config []]
 
 
-demoCompareXYCS :: forall rs f.(Foldable f)
+demoCompareXYCS :: forall f . (Foldable f)
                => Text
                -> Text
                -> Text

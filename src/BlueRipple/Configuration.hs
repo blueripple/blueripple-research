@@ -74,7 +74,7 @@ brLocalRoot :: T.Text
 brLocalRoot = "posts/"
 
 -- command line
-data LogLevel = LogInfo | LogDiagnostic | LogDebugMinimal | LogDebugVerbose | LogDebugAll  deriving (Show, CmdArgs.Data, Typeable, Eq)
+data LogLevel = LogInfo | LogDiagnostic | LogDebugMinimal | LogDebugVerbose | LogDebugAll  deriving stock (Show, CmdArgs.Data, Typeable, Eq)
 
 knitLogSeverity :: LogLevel -> K.LogSeverity -> Bool
 knitLogSeverity LogInfo = K.nonDiagnostic
@@ -84,25 +84,28 @@ knitLogSeverity LogDebugVerbose = K.logDebug 3
 knitLogSeverity LogDebugAll = K.logDebug 10
 
 data CommandLine =
-  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, subDir :: Maybe Text, postNames :: [Text] }
+  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, _subDir :: Maybe Text, postNames :: [Text] }
   | CLOnlineDraft { logLevel :: LogLevel, stanChains :: Int, postNames :: [Text]}
   | CLPublished {logLevel :: LogLevel, stanChains :: Int, postNames :: [Text] }
-  deriving (Show, CmdArgs.Data, Typeable, Eq)
+  deriving stock (Show, CmdArgs.Data, Typeable, Eq)
 
+localDraft :: CommandLine
 localDraft = CLLocalDraft
              {
                logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
              , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-             , subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
+             , _subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
              , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
              } CmdArgs.&= CmdArgs.help "Build local drafts" CmdArgs.&= CmdArgs.auto
 
+onlineDraft :: CommandLine
 onlineDraft = CLOnlineDraft
               { logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
               , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
               , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
               } CmdArgs.&= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
 
+published :: CommandLine
 published = CLPublished {
   logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
   , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
@@ -110,6 +113,7 @@ published = CLPublished {
   } CmdArgs.&= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
 
 
+commandLine :: CmdArgs.Mode (CmdArgs.CmdArgs CommandLine)
 commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, published]
   CmdArgs.&= CmdArgs.help "Build Posts"
 
@@ -124,9 +128,9 @@ clStanChains = stanChains
 clStanParallel :: CommandLine -> StanParallel
 clStanParallel cl = StanParallel (clStanChains cl) MaxCores
 
-data StanParallel = StanParallel { parallelChains :: Int, cores :: StanCores } deriving (Show, Eq)
+data StanParallel = StanParallel { parallelChains :: Int, cores :: StanCores } deriving stock (Show, Eq)
 
-data StanCores = MaxCores | FixedCores Int deriving (Show, Eq)
+data StanCores = MaxCores | FixedCores Int deriving stock (Show, Eq)
 
 
 -- I want functions to support
@@ -135,17 +139,17 @@ data StanCores = MaxCores | FixedCores Int deriving (Show, Eq)
 -- 3. Help forming the correct URLs for links in either case
 --data Output = Draft | Post deriving (Show)
 
-data NoteName = Used Text | Unused Text deriving (Show)
+data NoteName = Used Text | Unused Text deriving stock Show
 
-data PubTime = Unpublished | Published Time.Day deriving (Show)
+data PubTime = Unpublished | Published Time.Day deriving stock Show
 
 data PostStage = LocalDraft
                | OnlineDraft
-               | OnlinePublished deriving (Show, Read, CmdArgs.Data, Typeable, Eq)
+               | OnlinePublished deriving stock (Show, Read, CmdArgs.Data, Typeable, Eq)
 
 data PubTimes =  PubTimes { initialPT :: PubTime
                           , updatePT  :: Maybe PubTime
-                          } deriving (Show)
+                          } deriving stock Show
 
 data PostInfo = PostInfo PostStage PubTimes
 
@@ -156,10 +160,10 @@ data PostPaths a = PostPaths { sharedInputsDir :: Path a Dir -- inputs shared am
                              , onlinePubDir :: Path a Dir -- local html location, to be pushed to github pages
                              , draftUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
                              , pubUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
-                             } deriving (Show)
+                             } deriving stock Show
 
 absPostPaths :: Path Abs Dir -> PostPaths Rel -> PostPaths Abs
-absPostPaths s (PostPaths si i ld pd pp dr pr) = PostPaths (s </> si) (s </> i) (s </> ld) (s </> pd) (s </> pp) dr pr
+absPostPaths s (PostPaths si i' ld pd pp dr pr) = PostPaths (s </> si) (s </> i') (s </> ld) (s </> pd) (s </> pp) dr pr
 
 defaultLocalRoot :: Path Abs Dir
 defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
@@ -239,8 +243,8 @@ noteUrl pp (PostInfo ps _) noteName = do
     Used t -> first show $ Path.parseRelFile (toString $ t <> ".html")
     Unused t -> Left $ "Cannot link to unused note (" <> t <> ")"
   let noteRelFile :: Path Rel File = noteRelDir </> noteNameRelFile
-      noteUrl = case ps of
+      noteUrl' = case ps of
         LocalDraft -> Path.toFilePath noteRelFile
         OnlineDraft -> "https:/" <> Path.toFilePath (draftUrlRoot pp </> noteRelFile)
         OnlinePublished -> "https:/" <> Path.toFilePath (pubUrlRoot pp </> noteRelFile)
-  return $ toText noteUrl
+  return $ toText noteUrl'

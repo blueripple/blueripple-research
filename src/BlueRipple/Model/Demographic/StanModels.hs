@@ -437,6 +437,23 @@ designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [sexRP, ageRP, raceRP]
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
+designMatrixRowAge :: forall rs a . (F.ElemOf rs DT.EducationC
+                                    , F.ElemOf rs DT.InCollege
+                                    , F.ElemOf rs DT.SexC
+                                    , F.ElemOf rs DT.RaceAlone4C
+                                    , F.ElemOf rs DT.HispC
+                                    , F.ElemOf rs DT.PopPerSqMile
+                                    )
+                   => DM.DesignMatrixRowPart (F.Record rs)
+                   -> DM.DesignMatrixRow (F.Record rs)
+designMatrixRowAge densRP = DM.DesignMatrixRow "DMAge" [densRP, sexRP, eduRP, raceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart Nothing "Education" DDP.collegeGrad -- HERE
+    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
+
+
 
 designMatrixRowEdu3 :: forall rs a . (F.ElemOf rs DT.Age4C
                                      , F.ElemOf rs DT.SexC
@@ -505,23 +522,6 @@ designMatrixRowEdu6 = DM.DesignMatrixRow "DMEdu6" [sexRP, ageRP, raceRP, sexRace
     raceRP = DM.boundedEnumRowPart Nothing "Race" race5Census
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
-
-designMatrixRowAge :: forall rs a . (F.ElemOf rs DT.CollegeGradC
-                                    , F.ElemOf rs DT.SexC
-                                    , F.ElemOf rs DT.RaceAlone4C
-                                    , F.ElemOf rs DT.HispC
-                                    , F.ElemOf rs DT.PopPerSqMile
-                                    )
-                   => DM.DesignMatrixRowPart (F.Record rs)
-                   -> DM.DesignMatrixRow (F.Record rs)
-designMatrixRowAge densRP = DM.DesignMatrixRow "DMAge" [densRP, sexRP, eduRP, raceRP]
-  where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    eduRP = DM.boundedEnumRowPart Nothing "Education" (DDP.collegeGrad)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
-
-
 
 logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
 logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 DDP.logDensityPredictor

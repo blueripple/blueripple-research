@@ -50,65 +50,20 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.CountFolds as BRCF
 
 import qualified Control.Foldl                 as FL
-import           Control.Lens                   ((%~))
-import qualified Control.Monad.Except          as X
-import qualified Control.Monad.State           as ST
-import qualified Data.Array                    as A
-import qualified Data.Serialize                as S
-import qualified Data.Serialize.Text           as S
-import qualified Data.List                     as L
-import qualified Data.Map                      as M
-import           Data.Maybe                     ( fromMaybe, catMaybes)
 import qualified Data.Text                     as T
-import           Data.Text                      ( Text )
-import           Text.Read                      (readMaybe)
+import Data.Type.Equality (type (~))
 import qualified Data.Vinyl                    as V
 import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Functor            as V
 import qualified Frames                        as F
-import           Data.Vinyl.Lens               (type (⊆))
-import           Frames                         ( (:.)(..) )
-import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
-import qualified Text.Read                     as TR
 
-import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
-import qualified Frames.MaybeUtils             as FM
-import qualified Frames.Utils                  as FU
-import qualified Frames.MapReduce              as MR
-import qualified Frames.Enumerations           as FE
-import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Visualization.VegaLite.Data
-                                               as FV
---import qualified Graphics.Vega.VegaLite        as GV
-
-{-
-import qualified Data.IndexedSet               as IS
-import qualified Numeric.GLM.ProblemTypes      as GLM
-import qualified Numeric.GLM.ModelTypes      as GLM
-import qualified Numeric.GLM.Predict            as GLM
-import qualified Numeric.LinearAlgebra         as LA
--}
-
-import           Data.Hashable                  ( Hashable )
-import qualified Data.Vector                   as V
---import qualified Data.Vector.Boxed             as VB
-import           GHC.Generics                   ( Generic, Rep )
 
 import qualified Knit.Report as K
-import qualified Polysemy.Error                as P (mapError, Error)
-import qualified Polysemy                as P (raise)
-
-
-import GHC.TypeLits (Symbol)
-import Data.Kind (Type)
 
 cpsVoterPUMSLoader :: (K.KnitEffects r, BR.CacheEffects r)
                    => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
@@ -118,12 +73,12 @@ cpsVoterPUMSLoader = do
   cachedCPSDataPath <- K.liftKnit $ BR.dataPathWithCacheTime cpsPUMSDataPath
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedCPSDataPath
   BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" cachedDeps $ \(stateAbbrCrosswalk, dataPath) -> do
-    let filter r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
+    let filterF r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
     withoutAbbr <- K.ignoreCacheTimeM
                    $ BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                    dataPath
                    Nothing
-                   (Just filter)
+                   (Just filterF)
                    transformCPSVoterPUMSRow
                    Nothing
                    "cpsVoterPUMS.bin"
@@ -249,7 +204,7 @@ cpsVoterPUMSRollupWeightedCounts getLoc getKey filterData countIf wgt countToRec
       countF =
         let wgtdAllF = FL.premap wgt FL.sum
             wgtdCountF = FL.prefilter countIf $ FL.premap wgt FL.sum
-            safeDiv n d = if d > 0 then n/d else 0
+            safeDiv n d = if d > 0 then n / d else 0
             wF = safeDiv <$> wgtdCountF <*> wgtdAllF -- this is acceptable here since (d == 0) iff (n == 0)
         in fmap countToRec wF
       ewFold :: FL.Fold (F.Record cs) (F.Record ds)
@@ -373,7 +328,7 @@ cpsCountVotersByStateF
   -> FMR.Fold
   (F.Record CPSVoterPUMS)
   (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ BRCF.CountCols))
-cpsCountVotersByStateF getCatKey year =
+cpsCountVotersByStateF _ year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
       citizen r = F.rgetField @BR.IsCitizen r
@@ -386,6 +341,7 @@ cpsCountVotersByStateF getCatKey year =
      voted
      (F.rgetField @CPSVoterPUMSWeight)
 
+{-
 cpsCountVotersByCDF
   :: forall ks.
   (Ord (F.Record ks)
@@ -397,7 +353,7 @@ cpsCountVotersByCDF
   -> FMR.Fold
   (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
   (F.FrameRec ('[BR.StateAbbreviation, BR.CongressionalDistrict] V.++ ks V.++ BRCF.CountCols))
-cpsCountVotersByCDF getCatKey year =
+cpsCountVotersByCDF _ year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
       citizen r = F.rgetField @BR.IsCitizen r
@@ -410,7 +366,7 @@ cpsCountVotersByCDF getCatKey year =
      includeRow
      voted
      wgt
-
+-}
 
 
 -- We give the option of counting "In College" as "College Grad". This is different from what the census summary tables do.
@@ -530,6 +486,7 @@ intToHisp hN
   | (hN >= 100) && (hN <= 901) = BR.Hispanic
   | otherwise = BR.NonHispanic
 
+{-
 intsToRace5 :: Int -> Int -> BR.Race5
 intsToRace5 hN rN
   | (hN >= 100) && (hN <= 901) = BR.R5_Hispanic
@@ -537,6 +494,7 @@ intsToRace5 hN rN
   | rN == 200 = BR.R5_Black
   | rN == 651 = BR.R5_Asian
   | otherwise = BR.R5_Other
+-}
 
 intToIsCitizen :: Int -> Bool
 intToIsCitizen n = n /= 5

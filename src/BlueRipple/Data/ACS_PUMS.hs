@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE ConstraintKinds      #-}
 {-# LANGUAGE DataKinds            #-}
@@ -7,7 +6,6 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE GADTs                #-}
-{-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -21,7 +19,7 @@ module BlueRipple.Data.ACS_PUMS where
 
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
-import qualified BlueRipple.Data.DataFrames as BR hiding (fixMonadCatch)
+import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.Keyed as BR
@@ -29,62 +27,26 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.Foldl                 as FL
-import qualified Numeric.Foldl                 as NFL
-import           Control.Lens                   ((%~))
-import qualified Control.Monad                 as M
-import qualified Control.Monad.Except          as X
-import qualified Control.Monad.Primitive       as Prim
-import qualified Control.Monad.State           as ST
-import qualified Data.Array                    as A
-import qualified Data.Serialize                as S
-import qualified Data.Serialize.Text           as S
-import qualified Data.List                     as L
 import qualified Data.Map                      as M
-import qualified Data.Map.Strict                      as MS
-import           Data.Maybe                     ( catMaybes)
-import qualified Data.Sequence                 as Seq
 import qualified Data.Text                     as T
-import qualified Data.Text.IO                     as T
-import           Data.Text                      ( Text )
-import           Text.Read                      (readMaybe)
 import qualified Data.Vinyl                    as V
 import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.Functor            as V
 import qualified Frames                        as F
 import           Data.Vinyl.Lens               (type (⊆))
-import           Frames                         ( (:.)(..) )
-import qualified Frames.CSV                    as F
 import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
 import qualified Frames.Melt                   as F
-import qualified Text.Read                     as TR
 import qualified Numeric
-
-import qualified Control.MapReduce as MapReduce
-import qualified Control.MapReduce.Engines.Streamly as MapReduce.Streamly
 
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.ParseableTypes         as FP
 import qualified Frames.Transform              as FT
-import qualified Frames.MaybeUtils             as FM
-import qualified Frames.Misc
-import qualified Frames.MapReduce              as MR
-import qualified Frames.Enumerations           as FE
-import qualified Frames.Serialize              as FS
 import qualified Frames.SimpleJoins            as FJ
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.Transform     as FStreamly
 
-import           Data.Hashable                  ( Hashable )
-import qualified Data.Vector                   as V
-import           GHC.Generics                   ( Generic, Rep )
-
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
-import qualified Polysemy.Error                as P (mapError, Error)
-import qualified Polysemy                as P (raise, embed)
 
 #if MIN_VERSION_streamly(0,8,0)
 
@@ -92,12 +54,6 @@ import qualified Polysemy                as P (raise, embed)
 import qualified Streamly as Streamly
 import qualified Streamly.Internal.Prelude as Streamly
 #endif
-import qualified Streamly.Prelude as Streamly
-import qualified Streamly.Internal.Data.Fold as Streamly.Fold
-
-import qualified System.Clock
-import GHC.TypeLits (Symbol)
-import Data.Kind (Type)
 
 typedPUMSRowsLoader' :: (K.KnitEffects r, BR.CacheEffects r)
                      => BR.DataPath
@@ -208,7 +164,7 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
                 abbrM = M.lookup fips abbrFromFIPS
-                addAbbr r abbr = abbr F.&: r
+                addAbbr r' abbr = abbr F.&: r'
             in fmap (addAbbr r) abbrM
       let numRows = FL.fold FL.length pums
           numYoung = FL.fold (FL.prefilter ((== BR.A5F_Under18). F.rgetField @BR.Age5FC) FL.length) pums
@@ -254,8 +210,8 @@ sumPUMSCountedF wgtM flds =
         Just f -> \r -> f r * realToFrac (ppl r)
       wgtdSumF f = FL.premap (\r -> wgt r * f (flds r)) FL.sum
       pplWgtdSumF f = FL.premap (\r -> pplWgt r * f (flds r)) FL.sum
-      divUnlessZero x y = if y < 1e-12 then 0 else x/y
-      wgtdF f = divUnlessZero <$> wgtdSumF f <*> FL.premap wgt FL.sum
+      divUnlessZero x y = if y < 1e-12 then 0 else x / y
+--      wgtdF f = divUnlessZero <$> wgtdSumF f <*> FL.premap wgt FL.sum
       pplWgtdF f = divUnlessZero <$> pplWgtdSumF f <*> FL.premap pplWgt FL.sum
       logUnlessZero x = if x == 0 then 0 else Numeric.log x  -- if density is 0, people weight is 0
       pplWgtdLogF f = (\x y -> Numeric.exp $ divUnlessZero x y) <$> pplWgtdSumF (logUnlessZero . f) <*> FL.premap pplWgt FL.sum
@@ -263,7 +219,7 @@ sumPUMSCountedF wgtM flds =
         Nothing -> (FL.premap (F.rgetField @Citizens . flds) FL.sum
                    ,  FL.premap (F.rgetField @NonCitizens . flds) FL.sum
                    )
-        Just wgt -> (round <$> wgtdSumF (realToFrac . F.rgetField @Citizens)
+        Just _ -> (round <$> wgtdSumF (realToFrac . F.rgetField @Citizens)
                     , round <$> wgtdSumF (realToFrac . F.rgetField @NonCitizens))
   in  FF.sequenceRecFold
       $ FF.toFoldRecord (pplWgtdF (F.rgetField @BR.PctInMetro))
@@ -305,7 +261,7 @@ type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
-   , BR.CacheEffects r
+--   , BR.CacheEffects r
    , FJ.CanLeftJoinM [BR.Year, BR.StateFIPS, BR.PUMA] (PUMACounts ks) BR.DatedCDFromPUMA2012
    , FI.RecVec (ks ++ PUMSCountToFields)
    , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
@@ -340,9 +296,9 @@ pumsCDRollup
    , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
    , Ord (F.Record ks)
    , BR.FiniteSet (F.Record ks)
-   , V.RMap ks
-   , V.ReifyConstraint Show F.ElField ks
-   , V.RecordToList ks
+--   , V.RMap ks
+--   , V.ReifyConstraint Show F.ElField ks
+--   , V.RecordToList ks
    )
  => (F.Record PUMS -> Bool)
  -> (F.Record PUMABucket -> F.Record ks)
@@ -384,11 +340,11 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
                     (Just pumaWeighting)
                     F.rcast
                   )
-  demoByCD <- K.streamlyToKnit $ demoByCD byPUMAWithCDAndWeight
-  let rows = FL.fold FL.length demoByCD
+  demoByCD' <- K.streamlyToKnit $ demoByCD byPUMAWithCDAndWeight
+--  let rows = FL.fold FL.length demoByCD
 --  K.logLE K.Diagnostic $ "Final rollup has " <> (T.pack $ show rows) <> " rows. Should be (we include DC) 40 x 436 = 17440"
-  K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> show (totalPeople demoByCD)
-  return demoByCD
+  K.logLE K.Diagnostic $ "Total cit+non-cit post PUMA fold=" <> show (totalPeople demoByCD')
+  return demoByCD'
 
 
 type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields

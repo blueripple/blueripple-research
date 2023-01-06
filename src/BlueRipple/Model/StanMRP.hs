@@ -2,61 +2,40 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC  -O0 #-}
 
 module BlueRipple.Model.StanMRP
   (
     module BlueRipple.Model.StanMRP
   , RScripts(..)
-  , UnwrapJSON(..)
+  , UnwrapJSON()
   )
 where
 
 import qualified Control.Foldl as FL
 import qualified Data.Aeson as A
-import qualified Data.Array as Array
 import qualified Data.Dependent.HashMap as DHash
 import qualified Data.Dependent.Sum as DSum
-import qualified Data.IntMap.Strict as IM
-import qualified Data.List as List
-import Data.List.Extra (nubOrd)
-import qualified Data.Map as Map
-import qualified Data.Maybe as Maybe
 import qualified Data.Set as Set
 
 import qualified Data.Text as T
-import qualified Data.Vector as Vec
-import qualified Data.Vinyl as V
-import qualified Data.Vinyl.TypeLevel as V
 import qualified Flat
 import Flat.Instances.Vector()
 import Flat.Instances.Containers()
 
-import Frames.MapReduce (postMapM)
-import qualified Control.MapReduce as MR
-
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Data.Keyed as BK
 import qualified BlueRipple.Configuration as BR
 
 import qualified CmdStan as CS
-import qualified CmdStan.Types as CS
 import qualified Stan.JSON as SJ
-import qualified Stan.Frames as SF
-import qualified Stan.Parameters as SP
 import qualified Stan.ModelRunner as SM
 import Stan.ModelRunner (RScripts)
 import qualified Stan.ModelBuilder as SB
---import qualified Stan.ModelBuilder.Expressions as SME
 import qualified Stan.ModelBuilder.TypedExpressions.Types as  TE
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Stan.ModelBuilder.TypedExpressions.Expressions as  TE
@@ -66,22 +45,17 @@ import qualified Stan.ModelBuilder.TypedExpressions.Operations as  TE
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as  TE
 import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
 import Stan.ModelBuilder.TypedExpressions.DAG (runStanBuilderDAG)
-import qualified Stan.ModelBuilder.BuildingBlocks as SB
-import qualified Stan.ModelBuilder.Distributions as SB
 
 import qualified Stan.ModelConfig as SC
-import qualified Stan.RScriptBuilder as SR
 import Stan.RScriptBuilder (UnwrapJSON)
-import qualified System.Environment as Env
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
-import Data.String.Here (here)
 import qualified Stan.ModelConfig as SM
 
 type BuilderM md gq = SB.StanBuilderM md gq
 
-buildDataWranglerAndCode :: forall st cd md gq r.(SC.KnitStan st cd r, Typeable md, Typeable gq)
+buildDataWranglerAndCode :: forall st cd md gq r . (SC.KnitStan st cd r)
                          => SB.StanGroupBuilderM md gq ()
                          -> SB.StanBuilderM md gq ()
                          -> K.ActionWithCacheTime r md
@@ -123,7 +97,7 @@ runMRPModel :: (K.KnitEffects r
             -> K.ActionWithCacheTime r md
             -> K.ActionWithCacheTime r gq
             -> K.Sem r (K.ActionWithCacheTime r c)
-runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler stanProgram rScripts resultAction modelData_C gqData_C =
+runMRPModel clearCache runnerInputNames smcParameters _ dataWrangler stanProgram rScripts resultAction modelData_C gqData_C =
   K.wrapPrefix "StanMRP.runModel" $ do
   K.logLE K.Info $ "Running: model=" <> SC.rinModel runnerInputNames
     <> " using data=" <> SC.rinData runnerInputNames
@@ -133,9 +107,9 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
       stancConfig =
         (SM.makeDefaultStancConfig (toString $ SC.rinModelDir runnerInputNames
                                      <> "/" <> SC.rinModel runnerInputNames)) {CS.useOpenCL = False}
-      threadsM = Just $ case BR.cores stanParallel of
+{-      threadsM = Just $ case BR.cores stanParallel of
         BR.MaxCores -> -1
-        BR.FixedCores n -> n
+        BR.FixedCores n -> n -}
   stanConfig <-
     SC.setSigFigs 4
     . SC.noLogOfSummary
@@ -163,7 +137,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
         <*> modelJSONDep
         <*> gqData_C
         <*> gqJSONDep
-      getResults s () inputAndIndex_C = return ()
+--      getResults s () inputAndIndex_C = return ()
 --      unwraps = [SR.UnwrapNamed ppName ppName]
   BR.retrieveOrMakeD resultCacheKey dataModelDep $ \_ -> do
     K.logLE K.Diagnostic "Data or model newer then last cached result. (Re)-running..."
@@ -181,8 +155,7 @@ runMRPModel clearCache runnerInputNames smcParameters stanParallel dataWrangler 
 data PostStratificationType a = PSRaw | PSShare (Maybe (a -> TE.IntE -> TE.RealE))
 
 -- TODO: order groups differently than the order coming from the built in group sets??
-addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typeable k)
-                      => (TE.CodeWriter a, a -> TE.IntE -> TE.CodeWriter TE.RealE) -- (outside of loop, inside of loop)
+addPostStratification :: (TE.CodeWriter a, a -> TE.IntE -> TE.CodeWriter TE.RealE) -- (outside of loop, inside of loop)
                       -> Maybe Text
                       -> SB.RowTypeTag rModel
                       -> SB.RowTypeTag rPS
@@ -190,10 +163,10 @@ addPostStratification :: (Typeable md, Typeable gq, Ord k) -- ,Typeable r, Typea
                       -> PostStratificationType a -- raw or share
                       -> Maybe (SB.GroupTypeTag k) -- group to produce one PS per
                       -> BuilderM md gq TE.VectorE
-addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF psType mPSGroup = do
+addPostStratification (preComputeF, psExprF) mNameHead _ rttPS weightF psType mPSGroup = do
   -- check that all model groups in environment are accounted for in PS groups
   let psDataSetName = SB.dataSetName rttPS
-      modelDataSetName = SB.dataSetName rttModel
+--      modelDataSetName = SB.dataSetName rttModel
       psGroupName = maybe "" SB.taggedGroupName mPSGroup
       uPSGroupName = maybe "" (\x -> "_" <> SB.taggedGroupName x) mPSGroup
       psSuffix = psDataSetName <> uPSGroupName
@@ -204,22 +177,22 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
       psResultSizeE = TE.namedE sizeName TE.SInt
       wgtsName = namedPS <> "_wgts"
 --  SB.addDeclBinding namedPS $ SB.StanVar sizeName SME.StanInt
-  modelRowInfos <- SB.modelRowBuilders <$> get
+--  modelRowInfos <- SB.modelRowBuilders <$> get
   gqRowInfos <- SB.gqRowBuilders <$> get
-  modelGroupsDHM <- do
+{-  modelGroupsDHM <- do
     case DHash.lookup rttModel modelRowInfos of
       Nothing -> SB.stanBuildError $ "Modeled data-set (\"" <> modelDataSetName <> "\") is not present in model rowBuilders."
-      Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
+      Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim -}
   psGroupsDHM <- do
      case DHash.lookup rttPS gqRowInfos of
        Nothing -> SB.stanBuildError $ "Post-stratification data-set (\"" <> psDataSetName <> "\") is not present in GQ rowBuilders."
        Just (SB.RowInfo _ _ (SB.GroupIndexes gim) _ _) -> return gim
-  toFoldable <- case DHash.lookup rttPS gqRowInfos of
+{-  toFoldable <- case DHash.lookup rttPS gqRowInfos of
     Nothing -> SB.stanBuildError $ "addPostStratification: RowTypeTag (" <> psDataSetName <> ") not found in GQ rowBuilders."
-    Just (SB.RowInfo tf _ _ _ _) -> return tf
+    Just (SB.RowInfo tf _ _ _ _) -> return tf -}
   psGroupIndexE <- case mPSGroup of
     Nothing -> do
-      SB.inBlock SB.SBDataGQ $ SB.stanDeclareRHSN (TE.NamedDeclSpec sizeName $ TE.intSpec []) $ TE.intE 1 --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
+      _ <- SB.inBlock SB.SBDataGQ $ SB.stanDeclareRHSN (TE.NamedDeclSpec sizeName $ TE.intSpec []) $ TE.intE 1 --SB.addJson rttPS sizeName SB.StanInt "<lower=0>"
       pure $ TE.namedE "ErrorToUsePSIndex" $ TE.sIndexArray
     Just gtt -> do
       rims <- SB.gqRowBuilders <$> get
@@ -240,7 +213,7 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
       SB.addIntMapBuilder rttPS gtt $ SB.buildIntMapBuilderF kToIntE rowToK -- for extracting results
       -- This is hacky.  We need a more principled way to know if re-adding same data is an issue.
 
-      SB.addJson rttPS (TE.NamedDeclSpec sizeName $ TE.intSpec [TE.lowerM $ TE.intE 0])
+      _ <- SB.addJson rttPS (TE.NamedDeclSpec sizeName $ TE.intSpec [TE.lowerM $ TE.intE 0])
         $ SJ.valueToPairF sizeName
         $ fmap (A.toJSON . Set.size)
         $ FL.premapM (kToIntE . rowToK)
@@ -251,12 +224,12 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
       let indexNDSF sizeE = TE.NamedDeclSpec indexName $ TE.array1Spec sizeE $ TE.intSpec [TE.lowerM $ TE.intE 0]
       SB.addColumnMJsonOnce rttPS indexNDSF (kToIntE . rowToK)
 
-  let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
+--  let weightArrayType = SB.StanVector $ SB.NamedDim psDataSetName  --SB.StanArray [SB.NamedDim namedPS] $ SB.StanArray groupDims SB.StanReal
   wgtsV <-  SB.addJson rttPS (TE.NamedDeclSpec wgtsName $ TE.vectorSpec psDataSizeE [])
             $ SJ.valueToPairF wgtsName
             $ SJ.jsonArrayF weightF
   SB.inBlock SB.SBGeneratedQuantities $ do
-    let errCtxt = "addPostStratification"
+    let -- errCtxt = "addPostStratification"
         divEq = TE.opAssign TE.SDivide
         plusEq = TE.opAssign TE.SAdd
 --      let eFromDistAndArgs (sDist, args) = SB.familyExp sDist psDataSetName args
@@ -276,13 +249,13 @@ addPostStratification (preComputeF, psExprF) mNameHead rttModel rttPS weightF ps
             TE.addStmt $ psV `plusEq` (e `TE.timesE` atn wgtsV)
             case psType of
               PSShare Nothing -> TE.addStmt $ wgtSumE `plusEq` atn wgtsV
-              PSShare (Just f) -> TE.addStmt$ wgtSumE `plusEq` (f preComputed nE `TE.timesE` atn wgtsV)
+              PSShare (Just f) -> TE.addStmt $ wgtSumE `plusEq` (f preComputed nE `TE.timesE` atn wgtsV)
               _ -> pure ()
           case psType of
             PSShare _ -> TE.addStmt $ psV `divEq` wgtSumE
             _ -> pure ()
         pure $ TE.functionE TE.rep_vector (psV :> TE.intE 1 :> TNil)
-      Just (SB.GroupTypeTag gn) -> do
+      Just (SB.GroupTypeTag _) -> do
         let zeroVec = TE.functionE TE.rep_vector (TE.realE 0 :> psResultSizeE :> TNil)
         psV <- SB.stanDeclareRHSN (TE.NamedDeclSpec namedPS $ TE.vectorSpec psResultSizeE []) zeroVec
         SB.scoped $ SB.addStmtToCode $ TE.scoped $ TE.writerL' $ do
@@ -322,10 +295,6 @@ checkGroupSubset n1 n2 gs1 gs2 = do
     <> n2 <> "(" <> showNames gs2 <> ")."
     <> "In " <> n1 <> " but not in " <> n2 <> ": " <> showNames gDiff <> "."
     <> " If this error appears entirely mysterious, try checking the *types* of your group key functions."
-
-
-
-
 
 -- Basic group declarations, indexes and Json are produced automatically
 {-
