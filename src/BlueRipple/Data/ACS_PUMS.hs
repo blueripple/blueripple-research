@@ -39,7 +39,7 @@ import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
 import           Data.Vinyl.Lens               (type (⊆))
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FI
 import qualified Frames.Melt                   as F
 import qualified Numeric
 

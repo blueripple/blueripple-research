@@ -41,7 +41,7 @@ import qualified Data.Text.Read as TR
 import qualified Flat
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FI
 import qualified Frames.Transform as FT
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Aggregation as FA

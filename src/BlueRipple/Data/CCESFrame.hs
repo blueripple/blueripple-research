@@ -29,7 +29,7 @@ import qualified Data.Text                     as T
 import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import qualified Frames                        as F
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore                 as FI
 import qualified Frames.Streamly.TH                     as FS
 import qualified Flat
 

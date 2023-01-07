@@ -30,9 +30,9 @@ import qualified Data.Csv as CSV
 import           Data.Csv ((.:))
 import qualified Data.Map as Map
 import qualified Frames                        as F
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FI
 import           Data.Discrimination            ( Grouping )
-import qualified Data.Vinyl as V
+import qualified Data.Vinyl                    as V
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 

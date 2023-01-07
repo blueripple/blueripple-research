@@ -15,7 +15,6 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 --import BlueRipple.Data.Loaders (presidentialElectionsWithIncumbency, presidentialByStateFrame)
 
-
 dataDir :: FilePath
 dataDir = "../bigData/CCES/"
 

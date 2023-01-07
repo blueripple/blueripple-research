@@ -38,7 +38,6 @@ module BlueRipple.Data.CPSVoterPUMS
 
   ) where
 
-
 import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
 import qualified BlueRipple.Data.ElectionTypes as BR
@@ -56,7 +55,7 @@ import qualified Data.Vinyl                    as V
 import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FI
 import qualified Frames.Melt                   as F
 
 import qualified Frames.MapReduce              as FMR
