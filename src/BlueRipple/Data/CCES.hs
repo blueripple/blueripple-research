@@ -397,6 +397,7 @@ intToEducation 3 = DT.HS
 intToEducation 4 = DT.AS
 intToEducation 5 = DT.BA
 intToEducation 6 = DT.AD
+intToEducation _ = DT.AD -- higher numbers would mean all of these are wrong but more likely to mean higher degree
 
 intToCollegeGrad :: Int -> DT.CollegeGrad
 intToCollegeGrad n = if n >= 4 then DT.Grad else DT.NonGrad

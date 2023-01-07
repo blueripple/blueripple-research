@@ -5,18 +5,19 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
-module BlueRipple.Data.CountFolds where
+
+module BlueRipple.Data.CountFolds
+  (
+    module BlueRipple.Data.CountFolds
+  )
+where
 
 import qualified Control.Foldl as FL
 
 import qualified Control.MapReduce             as MR
-import qualified Frames.Transform              as FT
-import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.Enumerations           as FE
 
 import qualified Frames                        as F
-import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
@@ -115,7 +116,7 @@ countsFld :: FL.Fold (F.Record CountCols) (F.Record CountCols)
 countsFld =
   let wgt = F.rgetField @MeanWeight
       sumF f = FL.premap f FL.sum
-      wgtdSumF f = (/) <$> fmap realToFrac (FL.premap (\r -> wgt r * f r) FL.sum) <*> sumF wgt
+      wgtdSumF f = (/) <$> (FL.premap (\r -> wgt r * f r) FL.sum) <*> sumF wgt
   in (\c s wc ws mw vw -> c F.&: s F.&: wc F.&: ws F.&: mw F.&: vw F.&: V.RNil)
      <$> sumF (F.rgetField @Count)
      <*> sumF (F.rgetField @Successes)

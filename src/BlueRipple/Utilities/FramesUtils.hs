@@ -6,7 +6,12 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies     #-}
 {-# LANGUAGE TypeOperators    #-}
-module BlueRipple.Utilities.FramesUtils where
+
+module BlueRipple.Utilities.FramesUtils
+  (
+    module BlueRipple.Utilities.FramesUtils
+  )
+where
 
 import qualified Control.MapReduce.Core as MapReduce
 import qualified Control.MapReduce.Engines as MapReduce
@@ -37,7 +42,6 @@ import qualified Streamly.Internal.Data.Fold.Types as Streamly.Fold
 import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
-import qualified Data.Map.Strict as Map
 import qualified Data.HashTable.Class          as HashTable
 import qualified Data.HashTable.ST.Cuckoo      as HashTable.Cuckoo
 
@@ -64,7 +68,7 @@ frameCompactMRM unpack (MapReduce.Assign a) fld =
 
 toStreamlyFold :: Monad m => Foldl.Fold a b -> Streamly.Fold.Fold m a b
 #if MIN_VERSION_streamly(0,8,0)
-toStreamlyFold (Foldl.Fold step init done) = Streamly.Fold.mkFold step' (Streamly.Fold.Partial init) done where
+toStreamlyFold (Foldl.Fold step init' done) = Streamly.Fold.mkFold step' (Streamly.Fold.Partial init') done where
   step' x y = Streamly.Fold.Partial $ step x y
 #else
 toStreamlyFold (Foldl.Fold step init done) = Streamly.Fold.mkPure step init done
@@ -150,18 +154,18 @@ type HT m ks cs =  HashTable.Cuckoo.HashTable (Prim.PrimState m) (Frames.Record 
 -- so we can use consM or mapM in "done"
 classifyHT :: forall m ks cs . (Prim.PrimMonad m
                                , Hashable.Hashable (Frames.Record ks)
-                               , Eq (Frames.Record ks)
+--                               , Eq (Frames.Record ks)
                                , Frames.InCore.RecVec cs)
            => Streamly.Fold.Fold m (Frames.Record ks, Frames.Record cs) (Streamly.SerialT m (Frames.Record ks, Frames.FrameRec cs))
-classifyHT = Streamly.Fold.Fold step init done where
+classifyHT = Streamly.Fold.Fold step initF done where
 #if MIN_VERSION_streamly(0,8,0)
-  init = Streamly.Fold.Partial <$> Prim.stToPrim HashTable.new
+  initF = Streamly.Fold.Partial <$> Prim.stToPrim HashTable.new
 
   step ht (!k, !c) = Prim.stToPrim $ do
     HashTable.mutateST ht k (addOneST c)
     return $ Streamly.Fold.Partial ht
 #else
-  init :: m (HT m ks cs) = Prim.stToPrim HashTable.new
+  initF :: m (HT m ks cs) = Prim.stToPrim HashTable.new
 
   step :: HT m ks cs -> (Frames.Record ks, Frames.Record cs) -> m (HT m ks cs)
   step ht (!k, !c) = Prim.stToPrim $ do
@@ -172,7 +176,7 @@ classifyHT = Streamly.Fold.Fold step init done where
     | i == sz = Frames.InCore.growRec (Proxy::Proxy cs) mvs'
                 >>= flip feed row . (i, sz*2,)
     | otherwise = do Frames.InCore.writeRec (Proxy::Proxy cs) i mvs' row
-                     return (i+1, sz, mvs')
+                     return (i + 1, sz, mvs')
   initial = do
     mvs <- Frames.InCore.allocRec (Proxy :: Proxy cs) Frames.InCore.initialCapacity
     return (0, Frames.InCore.initialCapacity, mvs)
@@ -201,9 +205,9 @@ classifyHT = Streamly.Fold.Fold step init done where
 {-# INLINEABLE streamGrouperHT #-}
 
 streamGrouperHT :: (Prim.PrimMonad m
-                   , Monad m
+--                   , Monad m
                    , Hashable.Hashable (Frames.Record ks)
-                   , Eq (Frames.Record ks)
+--                   , Eq (Frames.Record ks)
                    , Frames.InCore.RecVec cs
                    )
                 => Streamly.SerialT m (Frames.Record ks, Frames.Record cs)
@@ -215,7 +219,7 @@ framesStreamlyMRM_HT ::
   (Prim.PrimMonad m
   , Streamly.MonadAsync m
   , Hashable.Hashable (Frames.Record ks)
-  , Eq (Frames.Record ks)
+--  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
   )
@@ -241,7 +245,7 @@ framesStreamlyMR_HT ::
   (Prim.PrimMonad m
   , Streamly.MonadAsync m
   , Hashable.Hashable (Frames.Record ks)
-  , Eq (Frames.Record ks)
+--  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
   )
@@ -311,7 +315,7 @@ fStreamlyMRM_HT ::
   (Prim.PrimMonad m
   , Streamly.MonadAsync m
   , Hashable.Hashable (Frames.Record ks)
-  , Eq (Frames.Record ks)
+--  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
   )
@@ -335,7 +339,7 @@ fStreamlyMR_HT ::
   (Prim.PrimMonad m
   , Streamly.MonadAsync m
   , Hashable.Hashable (Frames.Record ks)
-  , Eq (Frames.Record ks)
+--  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
   )

@@ -4,35 +4,26 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
-module BlueRipple.Data.Quantiles where
+
+module BlueRipple.Data.Quantiles
+  (
+    module BlueRipple.Data.Quantiles
+  )
+where
 
 import qualified Control.Foldl as FL
 
 import qualified Data.List as List
 
-import qualified Control.MapReduce             as MR
-import qualified Frames.Transform              as FT
-import qualified Frames.Folds                  as FF
-import qualified Frames.MapReduce              as FMR
-import qualified Frames.Enumerations           as FE
-
-import qualified Frames                        as F
-import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
-
-quantileBreaks :: (Foldable f, Ord a, Show a) => (x -> a) -> Int -> f x -> [(a, Int)]
+quantileBreaks :: (Foldable f, Ord a) => (x -> a) -> Int -> f x -> [(a, Int)]
 quantileBreaks getA bins rows =
   let sortedData  = sort $ FL.fold (FL.premap getA FL.list) rows
       nData = List.length sortedData
       quantileSize = nData `div` bins
       quantilesExtra = nData `rem` bins
       quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
-      quantileBreaks =  fmap (\k -> sortedData List.!! quantileMaxIndex k) [1..bins]
- in  zip quantileBreaks [1..bins]
+      quantileBreaks' =  fmap (\k -> sortedData List.!! quantileMaxIndex k) [1..bins]
+ in  zip quantileBreaks' [1..bins]
 
 quantileLookup :: (Foldable f, Ord a, Show a) => (x -> a) -> Int -> f x -> x -> Either Text Int
 quantileLookup getA bins rows = quantileLookup' getA (quantileBreaks getA bins rows)
@@ -43,21 +34,21 @@ quantileLookup' getA indexedBreaks x =
       go a ((y, k): xs) = if a <= y then Right k else go a xs
   in go (getA x) indexedBreaks
 
-median :: (Foldable f, Ord a, RealFrac a) => (x -> a) -> f x -> a
+median :: (Foldable f, RealFrac a) => (x -> a) -> f x -> a
 median getA rows =
   let sortedData = sort $ FL.fold (FL.premap getA FL.list) rows
       l = length sortedData
       ld2 = l `div` 2
   in if even (length sortedData)
-     then (sortedData List.!! (ld2 - 1) + sortedData List.!! ld2)/2
+     then (sortedData List.!! (ld2 - 1) + sortedData List.!! ld2) / 2
      else sortedData List.!! ld2
 
 
-medianE :: (Foldable f, Ord a, RealFrac a) => (x -> Either Text a) -> f x -> Either Text a
+medianE :: (Foldable f, RealFrac a) => (x -> Either Text a) -> f x -> Either Text a
 medianE getA rows = do
   sortedData <- sort <$> FL.foldM (FL.premapM getA $ FL.generalize FL.list) rows
   let l = length sortedData
       ld2 = l `div` 2
   return $ if even (length sortedData)
-           then (sortedData List.!! (ld2 - 1) + sortedData List.!! ld2)/2
+           then (sortedData List.!! (ld2 - 1) + sortedData List.!! ld2) / 2
            else sortedData List.!! ld2

@@ -9,6 +9,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module BlueRipple.Data.ElectionTypes
   (
@@ -17,9 +18,7 @@ module BlueRipple.Data.ElectionTypes
   )
   where
 
-import qualified BlueRipple.Data.DataFrames as BR
 import BlueRipple.Data.DataFrames (CongressionalDistrict)
-import qualified Data.Array as A
 import qualified Data.Binary as B
 import qualified Data.Default as Def
 import Data.Discrimination (Grouping)
@@ -29,16 +28,13 @@ import qualified Data.Text.Read as TR
 import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import qualified Data.Vinyl as V
-import Data.Word (Word8)
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.TH as FS
 import qualified Frames.ShowCSV as FCSV
 import qualified Frames.Visualization.VegaLite.Data as FV
-import GHC.Generics (Generic)
 import qualified Graphics.Vega.VegaLite as GV
-import GHC.Base (compareInt)
 
 -- Serialize for caching
 -- FI.VectorFor for frames
@@ -49,7 +45,7 @@ data MajorPartyParticipation
   | JustR
   | JustD
   | Both
-  deriving (Show, Enum, Eq, Ord, Bounded, Generic)
+  deriving stock (Show, Enum, Eq, Ord, Bounded, Generic)
 
 instance S.Serialize MajorPartyParticipation
 instance B.Binary MajorPartyParticipation
@@ -75,7 +71,7 @@ updateMajorPartyParticipation x _ = x
 
 FS.declareColumn "MajorPartyParticipationC" ''MajorPartyParticipation
 
-data PartyT = Democratic | Republican | Other deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data PartyT = Democratic | Republican | Other deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize PartyT
 instance B.Binary PartyT
@@ -99,7 +95,7 @@ FS.declareColumn "Party" ''PartyT
 instance FV.ToVLDataValue (F.ElField Party) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-data OfficeT = House | Senate | President deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data OfficeT = House | Senate | President deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize OfficeT
 instance B.Binary OfficeT
@@ -121,7 +117,7 @@ FS.declareColumn "Office" ''OfficeT
 instance FV.ToVLDataValue (F.ElField Office) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-data DistrictType = Congressional | StateUpper | StateLower deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+data DistrictType = Congressional | StateUpper | StateLower deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
 instance S.Serialize DistrictType
 instance B.Binary DistrictType
@@ -149,7 +145,7 @@ districtNameCompare t1 t2 = --if compInt == EQ then compare tr1 tr2 else compInt
   let parsed1 = TR.decimal t1
       parsed2 = TR.decimal t2
   in case (parsed1, parsed2) of
-    (Right (n1, tr1), Right (n2, tr2)) -> if n1 == n2 then compare tr1 tr2 else compare n1 n2
+    (Right (n1 :: Int, tr1), Right (n2, tr2)) -> if n1 == n2 then compare tr1 tr2 else compare n1 n2
     _ -> compare t1 t2
 {-# INLINEABLE districtNameCompare #-}
 --instance FV.ToVLDataValue (F.ElField DistrictNumber) where
@@ -165,7 +161,7 @@ FS.declareColumn "TotalVotes" ''Int
 instance FV.ToVLDataValue (F.ElField TotalVotes) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ realToFrac $ V.getField x)
 
-data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data PrefTypeT = VoteShare | Inferred | PSByVoted | PSByVAP deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "PrefType" ''PrefTypeT
 
@@ -188,7 +184,7 @@ type instance FI.VectorFor PrefTypeT = UVec.Vector
 instance FV.ToVLDataValue (F.ElField PrefType) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-data VoteShareType = TwoPartyShare | FullShare deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data VoteShareType = TwoPartyShare | FullShare deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 FS.declareColumn "VoteShareTypeC" ''VoteShareType
 
 instance Grouping VoteShareType
@@ -207,7 +203,7 @@ FS.declareColumn "ElectoralWeight" ''Double
 instance FV.ToVLDataValue (F.ElField ElectoralWeight) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Number $ V.getField x)
 
-data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data ElectoralWeightSourceT = EW_Census | EW_CCES | EW_Other deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "ElectoralWeightSource" ''ElectoralWeightSourceT
 
@@ -237,7 +233,7 @@ data ElectoralWeightOfT
     EW_Citizen
   | -- | Voting Age Population (all)
     EW_All
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "ElectoralWeightOf" ''ElectoralWeightOfT
 
@@ -281,7 +277,7 @@ data VoteWhyNot
   | VWN_Weather
   | VWN_BadPollingPlace
   | VWN_Other
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "VoteWhyNotC" ''VoteWhyNot
 
@@ -310,7 +306,7 @@ data RegWhyNot
   | RWN_NotInterested
   | RWN_MyVoteIrrelevant
   | RWN_Other
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 
 FS.declareColumn "RegWhyNotC" ''RegWhyNot
@@ -333,7 +329,7 @@ data VoteHow
   = VH_InPerson
   | VH_ByMail
   | VH_Other
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "VoteHowC" ''VoteHow
 
@@ -357,7 +353,7 @@ data VoteWhen
   = VW_ElectionDay
   | VW_BeforeElectionDay
   | VW_Other
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 
 FS.declareColumn "VoteWhenC" ''VoteWhen
@@ -383,7 +379,7 @@ data VotedYN
   | VYN_DontKnow
   | VYN_NoResponse
   | VYN_NotInUniverse
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "VotedYNC" ''VotedYN
 
@@ -407,7 +403,7 @@ data RegisteredYN
   = RYN_NotRegistered
   | RYN_Registered
   | RYN_Other
-  deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+  deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 
 FS.declareColumn "RegisteredYNC" ''RegisteredYN
 

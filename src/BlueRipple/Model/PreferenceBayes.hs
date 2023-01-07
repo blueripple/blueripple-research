@@ -24,22 +24,13 @@ module BlueRipple.Model.PreferenceBayes
   )
 where
 
-import qualified Statistics.Types              as S
 import qualified Control.Foldl                 as FL
-import           Control.Lens.At                ( IxValue
-                                                , Index
-                                                , Ixed
-                                                )
-import           Control.Lens.Indexed           ( FunctorWithIndex )
-import           Control.Monad                  ( sequence )
 
 import qualified Numeric.AD                    as AD
 import qualified Numeric.LinearAlgebra         as LA
 import           Numeric.LinearAlgebra          ( dispf
                                                 , disps
                                                 )
-import           Numeric.MathFunctions.Constants
-                                                ( m_ln_sqrt_2_pi )
 import qualified Numeric.MCMC                  as MC
 import Numeric (log)
 
@@ -48,8 +39,6 @@ import           Math.Gamma                     ( gamma
                                                 )
 import           System.Random                  ( randomRIO )
 import qualified Control.Concurrent            as CC
-import qualified Control.Concurrent.MVar       as CC
-import qualified Data.Vector.Unboxed           as VU
 import qualified Data.Vector.Storable          as VS
 import qualified Data.Vector.Generic           as VG
 import qualified Data.Vector                   as VB
@@ -60,7 +49,7 @@ import qualified Numeric.Optimization.Algorithms.HagerZhang05
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CGAD
 
-newtype ObservedVote = ObservedVote { dem :: Int}
+--newtype ObservedVote = ObservedVote { dem :: Int}
 
 data Pair a b = Pair !a !b
 
@@ -68,8 +57,8 @@ binomialNormalParams :: RealFrac a => VB.Vector Int -> VB.Vector a -> (a, a)
 binomialNormalParams turnoutCounts demProbs =
   let np = VB.zip turnoutCounts demProbs
       meanVarUpdate :: RealFrac a => Pair a a -> (Int, a) -> Pair a a
-      meanVarUpdate (Pair m v) (n, p) =
-        let m' = realToFrac n * p in Pair (m + m') (v + m' * (1 - p))
+      meanVarUpdate (Pair x y) (n, p) =
+        let m' = realToFrac n * p in Pair (x + m') (y + m' * (1 - p))
       foldMeanVar = FL.Fold meanVarUpdate (Pair 0 0) id
       Pair m v    = FL.fold foldMeanVar np
   in  (m, v)
@@ -78,7 +67,7 @@ logBinomialObservedVote
   :: (RealFrac a, Floating a) => VB.Vector a -> (Int, VB.Vector Int) -> a
 logBinomialObservedVote demProbs (demVote, turnoutCounts) =
   let (m, v) = binomialNormalParams turnoutCounts demProbs
-  in  negate $ log v + ((realToFrac demVote - m) ^ 2 / (2 * v))
+  in  negate $ log v + ((realToFrac demVote - m) ^ (2 :: Int) / (2 * v))
 
 gradLogBinomialObservedVote
   :: (Floating a, RealFrac a)
@@ -95,7 +84,7 @@ gradLogBinomialObservedVote demProbs (demVote, turnoutCounts) =
       a2     = (realToFrac demVote - m)
       a3     = (a2 * a2) / (2 * v * v)
       a4     = (a2 / v)
-  in  fmap (\(dm, dv) -> (a1 + a3) * dv + a4 * realToFrac dm) dmv
+  in  fmap (\(dm', dv') -> (a1 + a3) * dv' + a4 * realToFrac dm') dmv
 
 logBinomialObservedVotes
   :: (Functor f, Foldable f, Floating a, RealFrac a)
@@ -115,7 +104,7 @@ gradLogBinomialObservedVotes votesAndTurnout demProbs =
     n           = VG.length demProbs
     indexVector = VG.generate n id
     sumEach =
-      sequenceA $ (\n -> FL.premap (VG.! n) (FL.sum @Double)) <$> indexVector
+      sequenceA $ (\n' -> FL.premap (VG.! n') (FL.sum @Double)) <$> indexVector
   in
     FL.fold sumEach
       $ fmap (gradLogBinomialObservedVote demProbs) votesAndTurnout
@@ -194,6 +183,7 @@ correlFromCov cov =
       mISD = LA.diag $ LA.cmap (\x -> 1 / sqrt x) vars
   in  mISD LA.<> cov LA.<> mISD
 
+{-
 correl
   :: (Functor f, Foldable f)
   => f (Int, VB.Vector Int)
@@ -208,7 +198,7 @@ correl votesAndVoters x =
         (rows, cols)
         0
         [ ((n, m), rho n m) | n <- [0 .. (rows - 1)], m <- [0 .. (cols - 1)] ]
-
+-}
 
 mleCovEigens
   :: (Functor f, Foldable f)
@@ -219,19 +209,20 @@ mleCovEigens votesAndVoters x =
   LA.eigSH $ LA.trustSym $ invFisher votesAndVoters x
 
 
-betaDist :: (Floating a, RealFrac a, Gamma a) => a -> a -> a -> a
+betaDist :: (RealFrac a, Gamma a) => a -> a -> a -> a
 betaDist alpha beta x =
   let b = gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  if (x >= 0) && (x <= 1)
         then b * (x ** (alpha - 1)) * ((1 - x) ** (beta - 1))
         else 0
-
-logBetaDist :: (Floating a, RealFrac a, Gamma a) => a -> a -> a -> a
+{-
+logBetaDist :: Gamma a => a -> a -> a -> a
 logBetaDist alpha beta x =
   let lb = log $ gamma (alpha + beta) / (gamma alpha + gamma beta)
   in  lb + (alpha - 1) * log x + (beta - 1) * log (1 - x)
+-}
 
-betaPrior :: (Floating a, RealFrac a, Gamma a) => a -> a -> VB.Vector a -> a
+betaPrior :: (RealFrac a, Gamma a) => a -> a -> VB.Vector a -> a
 betaPrior a b xs = FL.fold FL.product $ fmap (betaDist a b) xs
 
 {-
@@ -245,7 +236,7 @@ f votesAndTurnout demProbs =
 -}
 
 logBinomialWithPrior
-  :: (Functor f, Foldable f, Floating a, RealFrac a, Gamma a)
+  :: (Functor f, Foldable f, RealFrac a, Gamma a)
   => f (Int, VB.Vector Int)
   -> VB.Vector a
   -> a

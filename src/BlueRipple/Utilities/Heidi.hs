@@ -1,17 +1,13 @@
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies     #-}
-{-# LANGUAGE TypeOperators    #-}
-module BlueRipple.Utilities.Heidi where
 
-import qualified Control.MapReduce.Core as MapReduce
-import qualified Control.MapReduce.Engines as MapReduce
-
-import qualified Control.Foldl as Foldl
+module BlueRipple.Utilities.Heidi
+  (
+    module BlueRipple.Utilities.Heidi
+  )
+where
 
 import qualified Data.Set as Set
 import qualified Data.Text as Text

@@ -2,39 +2,21 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PolyKinds           #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE DeriveGeneric       #-}
 {-# LANGUAGE Rank2Types          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# OPTIONS_GHC  -O0             #-}
-module BlueRipple.Data.HouseElectionTotals where
+module BlueRipple.Data.HouseElectionTotals
+  (
+    module BlueRipple.Data.HouseElectionTotals
+  )
+where
 
 import Prelude hiding (State)
 import           BlueRipple.Data.DataFrames
-import qualified Knit.Report                   as K
 
 import qualified Control.Foldl                 as FL
-import qualified Data.List                     as L
-import           Data.Maybe                     ( catMaybes
-                                                , fromMaybe
-                                                )
-import qualified Data.Text                     as T
-import           Data.Text                      ( Text )
-import qualified Data.Vinyl                    as V
 import qualified Frames                        as F
-import qualified Frames.CSV                    as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.TH                     as F
-
-import qualified Frames.ParseableTypes         as FP
-import qualified Frames.MaybeUtils             as FM
 import qualified Frames.Transform              as FT
 
 import qualified Frames.MapReduce              as FMR

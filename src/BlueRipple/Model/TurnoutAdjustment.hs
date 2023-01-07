@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns      #-}
 {-# LANGUAGE ConstraintKinds   #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -16,43 +15,36 @@ which minimizes the the difference between the given number of votes (via electi
 and the population (from the census, e.g.,) multiplied by the nationally estimated turnout by
 subgroup.
 -}
-module BlueRipple.Model.TurnoutAdjustment where
+module BlueRipple.Model.TurnoutAdjustment
+  (
+    module BlueRipple.Model.TurnoutAdjustment
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames    as BR
-import qualified BlueRipple.Data.DemographicTypes
-                                               as BR
-import qualified BlueRipple.Data.ElectionTypes
-                                               as BR
-
 
 import qualified Knit.Report                   as K
 
 import qualified Data.Array                    as A
 import qualified Data.Map                      as M
-import qualified Data.Text                     as T
-import qualified Data.Vector                   as V
-import qualified Data.Vector.Storable                   as VS
+import qualified Data.Vector.Storable          as VS
+import Data.Type.Equality (type (~))
 import qualified Control.Foldl                 as FL
 
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.Transform              as FT
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 
 import qualified Numeric.Optimization.Algorithms.HagerZhang05.AD
                                                as CG
 
-import qualified Numeric.Optimization.Algorithms.HagerZhang05
-                                               as HZ
-
 import qualified Numeric.NLOPT as NL
 
 import Numeric (Floating(log, log1p))
 
-import qualified Say
 
 logit :: Floating a => a -> a
 logit x = log x - log1p (negate x) -- log (x / (1 - x))
@@ -64,7 +56,7 @@ dInvLogit :: Floating a => a -> a
 dInvLogit x = z / ((1 + z) * (1 + z)) where
   z = exp $ negate x
 
-adjSumA :: (Floating a, A.Ix b) => a -> A.Array b Int -> A.Array b a -> a
+adjSumA :: Floating a => a -> A.Array b Int -> A.Array b a -> a
 adjSumA x population unadjTurnoutP =
   let popAndUT =
         zip (realToFrac <$> A.elems population) (A.elems unadjTurnoutP)
@@ -72,12 +64,12 @@ adjSumA x population unadjTurnoutP =
   in  FL.fold (FL.premap f FL.sum) popAndUT
 
 votesErrorA
-  :: (A.Ix b, Floating a) => Int -> A.Array b Int -> A.Array b a -> a -> a
+  :: Floating a => Int -> A.Array b Int -> A.Array b a -> a -> a
 votesErrorA totalVotes population unadjTurnoutP delta =
   abs (realToFrac totalVotes - adjSumA delta population unadjTurnoutP)
 
 findDeltaA
-  :: (A.Ix b, Floating a, Real a)
+  :: Real a
   => Int
   -> A.Array b Int
   -> A.Array b a
@@ -86,6 +78,7 @@ findDeltaA totalVotes population unadjTurnoutP = do
   let cost :: Floating a => [a] -> a
       cost [x] =
         votesErrorA totalVotes population (fmap realToFrac unadjTurnoutP) x
+      cost _ = 0 -- this should not happen, but...
       params = CG.defaultParameters { CG.printFinal  = False
                                     , CG.printParams = False
                                     , CG.verbose     = CG.Verbose
@@ -101,11 +94,12 @@ adjTurnoutP delta unadjTurnoutP =
 
 -- here we redo with a different data structure
 --adjP :: (Ord a, Floating a) => a -> a -> a
+adjP :: (Ord a, Floating a) => a -> a -> a
 adjP p x = if p < 1e-6 then p * exp x else p' / (p' + (1 - p') * exp (negate x))
   where p' = if (1 - p) < 1e-6 then 0.99999 else p
 
 
-data Pair a b = Pair !a !b deriving (Show)
+data Pair a b = Pair !a !b deriving stock Show
 adjSumF :: (Ord a, Floating a) => a -> FL.Fold (Pair Int a) a
 adjSumF delta =
   let f (Pair n sigma) = realToFrac n * adjP sigma delta --invLogit (logit sigma + delta)
@@ -121,43 +115,27 @@ votesErrorF totalVotes delta = abs (votes - adjSumF delta) where
   votes = realToFrac totalVotes
 
 dVotesErrorF :: (Floating a, Ord a) => Int -> a -> FL.Fold (Pair Int a) a
-dVotesErrorF totalVotes delta =
+dVotesErrorF _totalVotes delta =
   let f c dc = if c >= 0 then dc else -dc
   in f <$> adjSumF delta <*> adjSumdF delta
 
 findDelta
-  :: (Floating a, Real a, Foldable f, Functor f)
+  :: (Real a, Foldable f, Functor f)
   => Int
   -> f (Pair Int a)
   -> IO Double
 findDelta totalVotes dat = do
   let toAnyRealFrac (Pair n x) = Pair n $ realToFrac x
       mappedDat = fmap toAnyRealFrac dat
---      cost :: Floating b => b -> b
       cost x = FL.fold (votesErrorF totalVotes x) mappedDat
---      costHZ = HZ.VFunction $ \v -> cost (v V.! 0)
       costNL v = cost (v VS.! 0)
---      gCost x = FL.fold (dVotesErrorF totalVotes x) mappedDat
---      gCostHZ = HZ.VGradient $ \v -> V.fromList [gCost $ v V.! 0]
-{-      paramsHZ = HZ.defaultParameters { HZ.printFinal  = False
-                                      , HZ.printParams = False
-                                      , HZ.verbose     = CG.Verbose
-                                      }
-
-      grad_tol = 0.0000001
-      getResHZ (v, _, _) = v VS.! 0
---   getResHZ <$> HZ.optimize paramsHZ grad_tol (V.fromList [0]) costHZ gCostHZ Nothing
--}
-  let stopNL = NL.MinimumValue 0.5 :| [NL.ObjectiveRelativeTolerance 1e-6]
+      stopNL = NL.MinimumValue 0.5 :| [NL.ObjectiveRelativeTolerance 1e-6]
       algoNL = NL.NELDERMEAD costNL [NL.LowerBounds (VS.fromList [-10])] Nothing
       problemNL = NL.LocalProblem 1 stopNL algoNL
   case NL.minimizeLocal problemNL (VS.fromList [0]) of
     Left res -> error $ show res
-    Right (NL.Solution c dv res) -> do
---      Say.say $ show res
+    Right (NL.Solution _c dv _res) -> do
       pure $ dv VS.! 0
-
-
 
 adjTurnoutLong
   :: forall p t rs f
@@ -169,7 +147,7 @@ adjTurnoutLong
      , F.ElemOf rs t --F.ElemOf (cs V.++ '[p, t]) t
      , Foldable f
      , Functor f
-     , Show (F.Record rs)
+--     , Show (F.Record rs)
      )
   => Int
   -> f (F.Record rs) --(cs V.++ '[p, t])
@@ -181,7 +159,7 @@ adjTurnoutLong total unAdj = do
   when (isNaN initial) $ error "adjTurnoutLong: NaN result in initial votesError function!"
   delta <- findDelta total $ fmap toPair unAdj
   let res =  fmap (\r -> flip (F.rputField @t) r $ adj delta $ F.rgetField @t r) unAdj
-      showFld = FL.premap toPair FL.list
+--      showFld = FL.premap toPair FL.list
 {-
   Say.say $ "AdjTurnoutLong-before: " <> show (FL.fold showFld unAdj)
   Say.say $ "Total votes: " <> show total
@@ -193,14 +171,11 @@ adjTurnoutLong total unAdj = do
 -}
   pure res
 
-
 -- Want a generic fold such that given:
 -- 1. a Map (F.Record [State, Year]) Double -- TurnoutPct
 -- 2. A data frame with [State, Year] + [partitions of State] + TurnoutPct
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
-
-
 adjTurnoutFoldG
   :: forall p t ks qs rs f effs
    . ( Foldable f
@@ -216,7 +191,7 @@ adjTurnoutFoldG
      , V.Snd p ~ Int
      , V.Snd t ~ Double
      , FI.RecVec (ks V.++ rs)
-     , Show (F.Record rs)
+--     , Show (F.Record rs)
      , Show (F.Record ks)
      , Ord (F.Record ks)
      )
@@ -257,10 +232,7 @@ adjTurnoutFoldG getTotal totalsFrame =
     in
       FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
 
-
-
 type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
-
 
 adjTurnoutFold
   :: forall p t rs f effs
@@ -276,7 +248,7 @@ adjTurnoutFold
      , V.Snd p ~ Int
      , V.Snd t ~ Double
      , FI.RecVec (WithYS rs)
-     , Show (F.Record rs)
+--     , Show (F.Record rs)
      )
   => f BR.StateTurnout
   -> FL.FoldM

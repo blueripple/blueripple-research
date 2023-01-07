@@ -44,7 +44,7 @@ import qualified Knit.Report.Input.MarkDown.PandocMarkDown as K
 import qualified Path
 import Polysemy.Error (Error)
 #if MIN_VERSION_streamly(0,8,0)
-import qualified Streamly.Data.Array.Foreign         as Streamly.Array
+--import qualified Streamly.Data.Array.Foreign         as Streamly.Array
 #else
 import qualified Streamly
 import qualified Streamly.Memory.Array         as Streamly.Array

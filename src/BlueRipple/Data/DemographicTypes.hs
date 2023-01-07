@@ -12,6 +12,7 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE StandaloneDeriving #-}
 module BlueRipple.Data.DemographicTypes
   (
     module BlueRipple.Data.DemographicTypes
@@ -23,21 +24,18 @@ import qualified BlueRipple.Data.DataFrames    as BR
 import BlueRipple.Data.DataFrames (StateAbbreviation, StateFIPS, CountyFIPS)
 import qualified BlueRipple.Data.Keyed         as K
 
-import           Control.Arrow                  ( (>>>) )
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
 import qualified Data.Binary as B
-import Data.Hashable (Hashable)
 import qualified Data.Ix as Ix
 import qualified Data.Map                      as M
-import qualified Data.Monoid                   as Mon
 import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
 import qualified Data.Set                      as Set
+import Data.Type.Equality (type (~))
 import qualified Flat
 import qualified Frames                        as F
-import qualified Frames.TH
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Folds                  as FF
@@ -46,12 +44,8 @@ import qualified Frames.Transform              as FT
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 import           Data.Vinyl.TypeLevel           (type (++))
-import           Data.Vinyl.Lens                (type (⊆))
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
-import qualified Data.Vinyl.XRec               as V
-import           Data.Word                      (Word8)
-import           GHC.Generics                   ( Generic )
 import           Data.Discrimination            ( Grouping )
 import qualified Frames.Visualization.VegaLite.Data
                                                as FV
@@ -64,7 +58,7 @@ import qualified Relude.Extra as Relude
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
 
-data DemographicGrouping = ASE | ASR | ASER | ASER4 | ASER5 deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+data DemographicGrouping = ASE | ASR | ASER | ASER4 | ASER5 deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize DemographicGrouping
 instance B.Binary DemographicGrouping
 instance Flat.Flat DemographicGrouping
@@ -82,7 +76,7 @@ type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
 instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+data PopCountOfT = PC_All | PC_Citizen | PC_VAP deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 instance S.Serialize PopCountOfT
 instance B.Binary PopCountOfT
 instance Flat.Flat PopCountOfT
@@ -101,7 +95,8 @@ instance FV.ToVLDataValue (F.ElField PopCountOf) where
 
 type PopCount = "PopCount" F.:-> Int
 
-data Sex = Female | Male deriving (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic, Hashable)
+data Sex = Female | Male deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
+deriving anyclass instance Hashable Sex
 instance S.Serialize Sex
 instance B.Binary Sex
 instance Flat.Flat Sex
@@ -119,7 +114,7 @@ instance FV.ToVLDataValue (F.ElField SexC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 --
-data SimpleRace = NonWhite | White deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
+data SimpleRace = NonWhite | White deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 instance S.Serialize SimpleRace
 instance B.Binary SimpleRace
 instance Flat.Flat SimpleRace
@@ -138,7 +133,8 @@ instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
 
 type IsCitizen = "IsCitizen" F.:-> Bool
 
-data CollegeGrad = NonGrad | Grad deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic, Hashable)
+data CollegeGrad = NonGrad | Grad deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
+deriving anyclass instance Hashable CollegeGrad
 instance S.Serialize CollegeGrad
 instance B.Binary CollegeGrad
 instance Flat.Flat CollegeGrad
@@ -157,7 +153,7 @@ instance FV.ToVLDataValue (F.ElField CollegeGradC) where
 
 type InCollege = "InCollege" F.:-> Bool
 
-data SimpleAge = Under | EqualOrOver deriving (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
+data SimpleAge = Under | EqualOrOver deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 instance S.Serialize SimpleAge
 instance B.Binary SimpleAge
 instance Flat.Flat SimpleAge
@@ -173,7 +169,7 @@ type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Age4 = A4_18To24 | A4_25To44 | A4_45To64 | A4_65AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age4
 instance B.Binary Age4
 instance Flat.Flat Age4
@@ -196,7 +192,8 @@ age4ToSimple A4_18To24 = Under
 age4ToSimple A4_25To44 = Under
 age4ToSimple _ = EqualOrOver
 
-data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable, Ix.Ix)
+data Age5F = A5F_Under18 | A5F_18To24 | A5F_25To44 | A5F_45To64 | A5F_65AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic, Ix.Ix)
+deriving anyclass instance Hashable Age5F
 instance S.Serialize Age5F
 instance B.Binary Age5F
 instance Flat.Flat Age5F
@@ -224,7 +221,7 @@ age5FToSimple A5F_25To44 = Under
 age5FToSimple _ = EqualOrOver
 
 
-data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Age5
 instance B.Binary Age5
 instance Flat.Flat Age5
@@ -242,7 +239,7 @@ simpleAgeFrom5 :: SimpleAge -> [Age5]
 simpleAgeFrom5 Under       = [A5_18To24, A5_25To44]
 simpleAgeFrom5 EqualOrOver = [A5_45To64, A5_65To74, A5_75AndOver]
 
-data Education = L9 | L12 | HS | SC | AS | BA | AD deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Education = L9 | L12 | HS | SC | AS | BA | AD deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Education
 instance B.Binary Education
 instance Flat.Flat Education
@@ -322,7 +319,7 @@ turnoutEducationLabel BA = "BA"
 turnoutEducationLabel AD = "AD"
 
 
-data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data ACSRace = ACS_All | ACS_WhiteNonHispanic | ACS_NonWhite deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize ACSRace
 instance B.Binary ACSRace
 instance Flat.Flat ACSRace
@@ -358,7 +355,7 @@ asACSLabel :: (Age5, Sex) -> T.Text
 asACSLabel (a, s) = sexLabel s <> age5Label a
 
 
-data TurnoutRace = Turnout_All | Turnout_WhiteNonHispanic | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data TurnoutRace = Turnout_All | Turnout_WhiteNonHispanic | Turnout_Black | Turnout_Asian | Turnout_Hispanic deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize TurnoutRace
 instance B.Binary TurnoutRace
 instance Flat.Flat TurnoutRace
@@ -372,7 +369,8 @@ type instance FI.VectorFor TurnoutRace = UVec.Vector
 
 type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
 
-data Race5 = R5_Other | R5_Black | R5_Hispanic | R5_Asian | R5_WhiteNonHispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+data Race5 = R5_Other | R5_Black | R5_Hispanic | R5_Asian | R5_WhiteNonHispanic deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
+deriving anyclass instance Hashable Race5
 instance S.Serialize Race5
 instance B.Binary Race5
 instance Flat.Flat Race5
@@ -396,7 +394,7 @@ simpleRaceFromRace5 R5_Asian = NonWhite
 simpleRaceFromRace5 R5_WhiteNonHispanic = White
 
 
-data Race4 = R4_Other | R4_Black | R4_Hispanic | R4_WhiteNonHispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic)
+data Race4 = R4_Other | R4_Black | R4_Hispanic | R4_WhiteNonHispanic deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance S.Serialize Race4
 instance B.Binary Race4
 instance Flat.Flat Race4
@@ -413,7 +411,8 @@ instance FV.ToVLDataValue (F.ElField Race4C) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
-data Hisp = NonHispanic | Hispanic deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+data Hisp = NonHispanic | Hispanic deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
+deriving anyclass instance Hashable Hisp
 instance S.Serialize Hisp
 instance B.Binary Hisp
 instance Flat.Flat Hisp
@@ -429,7 +428,9 @@ instance FV.ToVLDataValue (F.ElField HispC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
-data RaceAlone4 = RA4_White | RA4_Black | RA4_Asian | RA4_Other deriving (Enum, Bounded, Eq, Ord, Show, Generic, Hashable)
+data RaceAlone4 = RA4_White | RA4_Black | RA4_Asian | RA4_Other deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
+deriving anyclass instance Hashable RaceAlone4
+
 instance S.Serialize RaceAlone4
 instance B.Binary RaceAlone4
 instance Flat.Flat RaceAlone4
@@ -506,7 +507,8 @@ data Language = English
               | Korean
               | Russian
               | FrenchCreole
-              | LangOther deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+              | LangOther deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable Language
 
 instance S.Serialize Language
 instance B.Binary Language
@@ -524,7 +526,9 @@ instance FV.ToVLDataValue (F.ElField LanguageC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
 
-data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable SpeaksEnglish
+
 instance S.Serialize SpeaksEnglish
 instance B.Binary SpeaksEnglish
 instance Flat.Flat SpeaksEnglish
@@ -554,7 +558,8 @@ type PctOfPovertyLine = "PctOfPovertyLine" F.:-> Double
 type PctUnderPovertyLine = "PctUnderPovertyLine" F.:-> Double
 type PctUnder2xPovertyLine = "PctUnder2xPovertyLine" F.:-> Double
 
-data CensusRegion = Northeast | Midwest | South | West | OtherRegion deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+data CensusRegion = Northeast | Midwest | South | West | OtherRegion deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable CensusRegion
 
 instance S.Serialize CensusRegion
 instance B.Binary CensusRegion
@@ -579,7 +584,8 @@ data CensusDivision = NewEngland
                     | Mountain
                     | Pacific
                     | OtherDivision
-                  deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+                  deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable CensusDivision
 
 instance S.Serialize CensusDivision
 instance B.Binary CensusDivision
@@ -613,8 +619,8 @@ data CensusMetro = MetroUnknown
                  | NonMetro
                  | MetroPrincipal
                  | MetroOther
-                 | MetroMixed deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
-
+                 | MetroMixed deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable CensusMetro
 
 instance S.Serialize CensusMetro
 instance B.Binary CensusMetro
@@ -633,7 +639,8 @@ type PctInMetro = "PctIntMetro" F.:-> Double
 data EmploymentStatus = Employed
                       | Unemployed
                       | NotInLaborForce
-                      | EmploymentUnknown deriving (Show, Enum, Bounded, Eq, Ord, Generic, Hashable)
+                      | EmploymentUnknown deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+deriving anyclass instance Hashable EmploymentStatus
 
 instance S.Serialize EmploymentStatus
 instance B.Binary EmploymentStatus
@@ -653,30 +660,35 @@ type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
 catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
 catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
+allCatKeysASER :: [F.Record CatColsASER]
 allCatKeysASER = [catKeyASER a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [NonWhite, White]]
 
 type CatColsASE = '[SimpleAgeC, SexC, CollegeGradC]
 catKeyASE :: SimpleAge -> Sex -> CollegeGrad -> F.Record CatColsASE
 catKeyASE a s e = a F.&: s F.&: e F.&: V.RNil
 
+allCatKeysASE :: [F.Record CatColsASE]
 allCatKeysASE = [catKeyASE a s e | a <- [EqualOrOver, Under], s <- [Female, Male], e <- [NonGrad, Grad]]
 
 type CatColsASR = '[SimpleAgeC, SexC, SimpleRaceC]
 catKeyASR :: SimpleAge -> Sex -> SimpleRace -> F.Record CatColsASR
 catKeyASR a s r = a F.&: s F.&: r F.&: V.RNil
 
+allCatKeysASR :: [F.Record CatColsASR]
 allCatKeysASR = [catKeyASR a s r | a <- [EqualOrOver, Under], s <- [Female, Male], r <- [NonWhite, White]]
 
 type CatColsASER5 = '[SimpleAgeC, SexC, CollegeGradC, Race5C]
 catKeyASER5 :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> F.Record CatColsASER5
 catKeyASER5 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
+allCatKeysASER5 :: [F.Record CatColsASER5]
 allCatKeysASER5 = [catKeyASER5 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
 
 type CatColsASER5H = '[SimpleAgeC, SexC, CollegeGradC, Race5C, HispC]
 catKeyASER5H :: SimpleAge -> Sex -> CollegeGrad -> Race5 -> Hisp -> F.Record CatColsASER5H
 catKeyASER5H a s e r h = a F.&: s F.&: e F.&: r F.&: h F.&: V.RNil
 
+allCatKeysASER5H :: [F.Record CatColsASER5H]
 allCatKeysASER5H =
   [catKeyASER5H a s e r h | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..], h <- [Hispanic, NonHispanic]]
 
@@ -684,18 +696,16 @@ type CatColsASER4 = '[SimpleAgeC, SexC, CollegeGradC, Race4C]
 catKeyASER4 :: SimpleAge -> Sex -> CollegeGrad -> Race4 -> F.Record CatColsASER4
 catKeyASER4 a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
 
+allCatKeysASER4 :: [F.Record CatColsASER4]
 allCatKeysASER4 = [catKeyASER4 a s e r | a <- [EqualOrOver, Under], e <- [NonGrad, Grad], s <- [Female, Male], r <- [minBound..]]
 
 type CatColsLanguage = '[LanguageC, SpeaksEnglishC]
 
-
 asrTurnoutLabel' :: (Age5, Sex, TurnoutRace) -> T.Text
 asrTurnoutLabel' (a, s, r) = turnoutRaceLabel r <> sexLabel s <> age5Label a
 
-
 asrTurnoutLabel :: (Age5, Sex, ACSRace) -> T.Text
 asrTurnoutLabel (a, s, r) = acsRaceLabel r <> sexLabel s <> age5Label a
-
 
 acsASELabelMap :: M.Map T.Text (Age4, Sex, Education)
 acsASELabelMap =
@@ -714,6 +724,7 @@ allTextKeys
   -> Set.Set (F.Record '[t])
 allTextKeys = Set.fromList . fmap (F.&: V.RNil)
 
+allASE_ACSKeys :: Set (F.Record '[BR.ACSKey])
 allASE_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   aseACSLabel
   [ (a, s, e)
@@ -722,6 +733,7 @@ allASE_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   , e <- [(minBound :: Education) ..]
   ]
 
+allASR_ACSKeys :: Set (F.Record '[BR.ACSKey])
 allASR_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   asrACSLabel'
   [ (a, s, r)
@@ -730,6 +742,7 @@ allASR_ACSKeys = allTextKeys @BR.ACSKey $ fmap
   , r <- [ACS_All, ACS_WhiteNonHispanic]
   ] -- this is how we have the data.  We infer ACS_White from .this
 
+allASR_TurnoutKeys :: Set (F.Record '[BR.Group])
 allASR_TurnoutKeys = allTextKeys @BR.Group $ fmap
   asrTurnoutLabel'
   [ (a, s, r)
@@ -738,6 +751,7 @@ allASR_TurnoutKeys = allTextKeys @BR.Group $ fmap
   , r <- [(minBound :: TurnoutRace) ..]
   ]
 
+allASE_TurnoutKeys :: Set (F.Record '[BR.Group])
 allASE_TurnoutKeys = allTextKeys @BR.Group $ fmap
   aseTurnoutLabel
   [ (a, s, e)

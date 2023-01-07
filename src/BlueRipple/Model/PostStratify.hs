@@ -10,41 +10,25 @@
 {-# LANGUAGE TypeFamilies              #-}
 {-# LANGUAGE TypeOperators             #-}
 
-module BlueRipple.Model.PostStratify where
+module BlueRipple.Model.PostStratify
+  (
+    module BlueRipple.Model.PostStratify
+  )
+where
 
 import qualified Control.Foldl                 as FL
-import           Control.Monad                  ( join )
-import qualified Data.Array                    as A
-import           Data.Function                  ( on )
-import qualified Data.List                     as L
-import qualified Data.Set                      as S
-import qualified Data.Map                      as M
-import           Data.Maybe                     ( isJust
-                                                , catMaybes
-                                                )
-import           Data.Proxy                     ( Proxy(..) )
-
-import qualified Data.Text                     as T
-import qualified Data.Serialize                as SE
-import qualified Data.Vector                   as V
 
 import qualified Frames                        as F
 import qualified Frames.Streamly.InCore        as FI
 import qualified Frames.Melt                   as F
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
+import           Data.Type.Equality (type (~))
 
 import qualified Control.MapReduce             as MR
 import qualified Frames.Transform              as FT
 import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
-import qualified Frames.Enumerations           as FE
---import qualified Frames.Visualization.VegaLite.Data
---                                               as FV
---import qualified Graphics.Vega.VegaLite        as GV
---import           GHC.Generics                   ( Generic )
---import           Data.Discrimination            ( Grouping )
 
 postStratifyCell
   :: forall t q
@@ -102,7 +86,7 @@ joinAndPostStratify
   -> (F.FrameRec (ks V.++ es), [F.Record (ks V.++ pks)], Int)
 joinAndPostStratify compute psFld wgts cnts = (FL.fold fld computed, missing, length joined - length wgts)
   where
-    length = FL.fold FL.length
+--    lengthF = FL.fold FL.length
     (joined, missing) = FJ.leftJoinWithMissing @(ks V.++ pks) wgts cnts
     computeRow r = F.rcast @(ks V.++ pks) r F.<+> compute (F.rcast @ws r) (F.rcast @cs r)
     computed = fmap computeRow joined

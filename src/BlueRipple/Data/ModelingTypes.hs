@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE DerivingStrategies     #-}
 {-# LANGUAGE DerivingVia     #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -16,14 +15,14 @@
 {-# LANGUAGE TypeApplications  #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
-module BlueRipple.Data.ModelingTypes where
 
---import qualified BlueRipple.Keyed as K
-import qualified Control.Foldl                 as FL
-import Data.Hashable (Hashable)
+module BlueRipple.Data.ModelingTypes
+  (
+    module BlueRipple.Data.ModelingTypes
+  )
+where
+
 import qualified Data.Binary as B
-import qualified Data.Ix as Ix
-import qualified Data.Text                     as T
 import qualified Data.Serialize                as S
 import qualified Flat
 import qualified Frames as F
@@ -31,13 +30,10 @@ import qualified Frames.InCore                 as FI
 import qualified Frames.Transform              as FT
 import qualified Data.Vinyl.Derived                    as V
 import qualified Data.Vinyl.TypeLevel                    as V
-import qualified Data.Vector           as Vec
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
+import           Data.Type.Equality (type (~))
 import qualified Data.Default as Def
-import           Data.Word                      (Word8)
-import           GHC.Generics                   ( Generic )
-import           Data.Discrimination            ( Grouping )
 
 -- Serialize for caching
 -- Binary for caching
@@ -45,13 +41,11 @@ import           Data.Discrimination            ( Grouping )
 -- FI.VectorFor for frames
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
-
-
 data ConfidenceInterval = ConfidenceInterval
                           { ciLower :: !Double
                           , ciMid :: !Double
                           , ciUpper :: !Double
-                          } deriving (Eq, Ord, Show, Generic)
+                          } deriving stock (Eq, Ord, Show, Generic)
 instance S.Serialize ConfidenceInterval
 instance B.Binary ConfidenceInterval
 instance Flat.Flat ConfidenceInterval

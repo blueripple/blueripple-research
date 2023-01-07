@@ -26,11 +26,11 @@ module BlueRipple.Data.Keyed
     FiniteSet(..)
   , IndexedList (..)
   , AggF (..)
-  , AggList (..)
+  , AggList ()
   , pattern AggList
   , MonoidOps (..)
   , GroupOps (..)
-  , Collapse (..)
+  , Collapse ()
   , pattern Collapse
     -- * FiniteSet utilities
   , finiteSetMinMax
@@ -99,29 +99,16 @@ module BlueRipple.Data.Keyed
 import qualified Control.Foldl                 as FL
 import qualified Control.MapReduce             as MR
 
-import           Control.Monad (join)
-import qualified Control.Category as Cat
 import qualified Data.Bifunctor                as BF
-import           Data.Functor.Identity          (Identity (runIdentity))
 import qualified Data.Group                    as G
-import qualified Data.List                     as L
-import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
-import qualified Data.Monoid                   as Mon
 import qualified Data.Profunctor               as P
 import qualified Data.Text                     as T
 import qualified Data.Semiring                 as SR
-import qualified Data.Serialize                as S
 import qualified Data.Set                      as Set
-import qualified Data.Vector                   as Vec
 import qualified Data.Vinyl                    as V
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
-import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
-import qualified Frames.Folds                  as FF
-import qualified Frames.MapReduce              as FMR
-import qualified Numeric.Natural                  as Nat
 import qualified Relude.Extra as Relude
 
 
@@ -265,17 +252,16 @@ mapIndex = first
 
 -- The natural transformation List(A x -) => Hom(A, -), where both are viewed as functors Mon -> Set
 functionalize :: (Ord a, SR.Semiring x) => AggList x b a -> AggF x b a
-functionalize aggList = AggF $ \b a -> fromMaybe SR.zero $ M.lookup a $ M.fromListWith SR.plus (swap <$> runAggList aggList b) where
-  swap (a, b) = (b, a)
+functionalize aggList' = AggF $ \b a -> fromMaybe SR.zero $ M.lookup a $ M.fromListWith SR.plus (swap <$> runAggList aggList' b)
 {-# INLINEABLE functionalize #-}
 
-aggregateF :: AggF q b a -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
-aggregateF agg fld b = FL.premap (first (runAggF agg b)) fld
-{-# INLINEABLE aggregateF #-}
+_aggregateF :: AggF q b a -> FL.Fold (q, d) c -> b -> FL.Fold (a, d) c
+_aggregateF agg fld b = FL.premap (first (runAggF agg b)) fld
+{-# INLINEABLE _aggregateF #-}
 
-aggregateList :: (Ord a, SR.Semiring q) => AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
-aggregateList aggList = aggregateF (functionalize aggList)
-{-# INLINEABLE aggregateList #-}
+_aggregateList :: (Ord a, SR.Semiring q) => AggList q b a -> FL.Fold (q ,d) c -> b -> FL.Fold (a, d) c
+_aggregateList aggList' = _aggregateF (functionalize aggList')
+{-# INLINEABLE _aggregateList #-}
 
 {-
 For A a finite set, we might want to know if [(a, d)] is "complete"
@@ -286,14 +272,14 @@ For A a finite set, we might want to know if [(a, d)] is "complete"
 type AggE = Either T.Text
 
 hasAll :: (Show a, Ord a) => Set.Set a -> FL.FoldM AggE (a, d) ()
-hasAll elements = MR.postMapM check $ FL.generalize FL.map where
+hasAll elts = MR.postMapM check $ FL.generalize FL.map where
   check m =
-    let expected =  Set.toList elements
+    let expected =  Set.toList elts
         got = sort (M.keys m)
     in if got == expected
        then Right ()
        else Left $ "Aggregation hasAll failed! Expected="
-            <> show (Set.toList elements)
+            <> show (Set.toList elts)
             <> "; Got="
             <> show (sort (M.keys m))
 {-# INLINEABLE hasAll #-}
@@ -303,9 +289,9 @@ complete = hasAll elements
 {-# INLINE complete #-}
 
 hasOneOfEach :: (Show a, Ord a) => Set.Set a -> FL.FoldM AggE (a, d) ()
-hasOneOfEach elements = MR.postMapM check $ FL.generalize FL.list where
+hasOneOfEach elts = MR.postMapM check $ FL.generalize FL.list where
   check ads =
-    let expected = Set.toList elements
+    let expected = Set.toList elts
         got = sort (fmap fst ads)
     in if got == expected
        then Right ()
@@ -362,9 +348,9 @@ aggFReduce = AggF $ \x (y, _) -> if x == y then SR.one else SR.zero
 
 -- productAggF SR.times identityAggF x = product SR.times x identityAggF
 
-aggListId :: SR.Semiring q => AggList q b b
-aggListId = AggList pure
-{-# INLINE aggListId #-}
+_aggListId :: SR.Semiring q => AggList q b b
+_aggListId = AggList pure
+{-# INLINE _aggListId #-}
 -- we should verify that functionalize identityAggList = identityAggF
 
 aggListProduct' :: (q -> r -> s) -> AggList q b a -> AggList r y x -> AggList s (b, y) (a, x)
@@ -391,7 +377,7 @@ aggListCompose :: SR.Semiring q =>  AggList q b a -> AggList q c b -> AggList q 
 aggListCompose =  (<<<) -- aggListCompose' SR.times -- This is also Kleisli composition
 {-# INLINEABLE aggListCompose #-}
 
-aggListReduce :: forall q a a'.(Eq a, SR.Semiring q, FiniteSet a') => AggList q a (a, a')
+aggListReduce :: forall q a a'.(SR.Semiring q, FiniteSet a') => AggList q a (a, a')
 aggListReduce = AggList $ \x -> IndexedList $ (\y -> (SR.one, (x,y))) <$> Set.toList elements
 {-# INLINEABLE aggListReduce #-}
 
@@ -425,7 +411,7 @@ dataFoldCollapse action fld = Collapse $ FL.fold (FL.premap (uncurry action) fld
 
 dataFoldCollapseBool :: FL.Fold d c -> Collapse Bool d c
 dataFoldCollapseBool fld =
-  let g (b, x) = b
+  let g (b, _x) = b
       fld' = FL.prefilter g $ P.lmap snd fld -- Fold (Bool, d) c
   in foldCollapse fld'
 {-# INLINEABLE dataFoldCollapseBool #-}
@@ -451,9 +437,9 @@ monoidFold (MonoidOps zero plus) = FL.Fold plus zero id
 data GroupOps a where
   GroupOps :: MonoidOps a -> (a -> a) -> GroupOps a
 
-groupOps :: G.Group a => GroupOps a
-groupOps = GroupOps monoidOps G.invert
-{-# INLINE groupOps #-}
+_groupOps :: G.Group a => GroupOps a
+_groupOps = GroupOps monoidOps G.invert
+{-# INLINE _groupOps #-}
 
 -- copied from Data.Group in groups
 pow :: Integral x => GroupOps m -> m -> x -> m
@@ -508,7 +494,7 @@ aggFoldAll aggF collapse = aggFold aggF collapse (Set.toList elements)
 addDefault :: forall b d. FiniteSet b
             => d
             -> FL.Fold (b,d) [(b,d)]
-addDefault d = aggFoldAll aggFId (foldCollapse (FL.Fold (\d (b,d') -> if b then d' else d) d id))
+addDefault d = aggFoldAll aggFId (foldCollapse (FL.Fold (\y (b, d') -> if b then d' else y) d id))
 {-# INLINEABLE addDefault #-}
 
 -- checked Folds
@@ -632,11 +618,7 @@ aggListProductRec :: ( SR.Semiring q
 aggListProductRec = aggListProductRec' SR.times
 {-# INLINEABLE aggListProductRec #-}
 
-aggListReduceRec ::  forall q a a'.(SR.Semiring q
-                     ,Eq (F.Record a)
-                     , a F.⊆ (a V.++ a')
-                     , a' F.⊆ (a V.++ a')
-                     , FiniteSet (F.Record a'))
+aggListReduceRec ::  forall q a a'.(SR.Semiring q, FiniteSet (F.Record a'))
                  => AggListRec q a (a V.++ a')
 aggListReduceRec = AggList $ \r -> IndexedList $ (\(x, (r1, r2)) -> (x, r1 `V.rappend` r2)) <$> runAggList (aggListReduce @q @(F.Record a) @(F.Record a')) r
 {-# INLINEABLE aggListReduceRec #-}
@@ -685,10 +667,10 @@ hasAllRec :: forall a rs.(Ord (F.Record a)
                          , Show (F.Record a)
                          , a F.⊆ rs
                          ) => Set.Set (F.Record a) -> FL.FoldM AggE (F.Record rs) ()
-hasAllRec elements  = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rcast @a r, ())) FL.map
+hasAllRec elts  = MR.postMapM check $ FL.generalize $ FL.premap (\r -> (F.rcast @a r, ())) FL.map
   where
     check m =
-      let expected = Set.toList elements
+      let expected = Set.toList elts
           got = sort (M.keys m)
       in if expected == got
          then Right ()
@@ -712,9 +694,9 @@ hasOneOfEachRec :: forall a rs.( Ord (F.Record a)
                                , Show (F.Record a)
                                , a F.⊆ rs
                                ) => Set.Set (F.Record a) -> FL.FoldM AggE (F.Record rs) ()
-hasOneOfEachRec elements = MR.postMapM check $ FL.generalize $ FL.premap (F.rcast @a) FL.list where
+hasOneOfEachRec elts = MR.postMapM check $ FL.generalize $ FL.premap (F.rcast @a) FL.list where
   check as =
-    let expected = Set.toList elements
+    let expected = Set.toList elts
         got = sort as
     in if got == expected
        then Right ()

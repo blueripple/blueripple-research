@@ -1,6 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveFunctor #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -8,16 +7,19 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE UndecidableInstances #-}
-module BlueRipple.Data.KeyedTables where
+
+module BlueRipple.Data.KeyedTables
+  (
+    module BlueRipple.Data.KeyedTables
+  )
+where
 
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified Control.Foldl as FL
 import qualified Data.Array as Array
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Csv as CSV
-import           Data.Csv ((.:))
 import qualified Data.Vector as Vec
 
 {-
@@ -52,7 +54,7 @@ rekeyMap f t =
   in Map.fromList $ FL.fold rekeyF $ Map.toList t
 -}
 
-reKeyMap :: forall k1 k2 x.(Ord k1, Ord k2, BRK.FiniteSet k2, Num x)
+reKeyMap :: forall k1 k2 x . (Ord k2, BRK.FiniteSet k2, Num x)
       => (k2 -> k1 -> Bool) -> Map k1 x -> Map k2 x
 reKeyMap f t =
   let af :: BRK.AggF Bool k2 k1
@@ -86,7 +88,7 @@ allTableDescriptions :: (Ord b, BRK.FiniteSet d) => (b -> Map c Text) -> (d -> [
 allTableDescriptions describe fromType = Map.unions $ (tableDescriptions describe . fromType) <$> Set.toList BRK.elements
 
 data TableRow a c = TableRow { prefix :: a, counts :: c}
-deriving instance (Show a, Show c) => Show (TableRow a c)
+deriving stock instance (Show a, Show c) => Show (TableRow a c)
 deriving stock instance Functor (TableRow a)
 
 type RawTablesRow a b = TableRow a (Map b (Map Text Int))
@@ -94,9 +96,9 @@ type RawTablesRow a b = TableRow a (Map b (Map Text Int))
 parseTablesRow :: CSV.FromNamedRecord a  => Map b [Text] -> CSV.NamedRecord -> CSV.Parser (RawTablesRow a b)
 parseTablesRow tableHeadersByName r = TableRow <$> CSV.parseNamedRecord r <*> traverse (parseTable r) tableHeadersByName where
   lookupOne :: CSV.NamedRecord -> Text -> CSV.Parser (Text, Int)
-  lookupOne r t = fmap (t,) $ CSV.lookup r $ encodeUtf8 t
+  lookupOne r' t = fmap (t,) $ CSV.lookup r' $ encodeUtf8 t
   parseTable :: CSV.NamedRecord -> [Text] -> CSV.Parser (Map Text Int)
-  parseTable r headers = Map.fromList <$> traverse (lookupOne r) headers
+  parseTable r' headers = Map.fromList <$> traverse (lookupOne r') headers
 
 decodeCSVTables :: forall a b.(CSV.FromNamedRecord a)
                 => Map b [Text]
@@ -111,7 +113,7 @@ decodeCSVTablesFromFile :: forall a b.(CSV.FromNamedRecord a)
                         -> IO (Either Text (CSV.Header, Vec.Vector (RawTablesRow a b)))
 decodeCSVTablesFromFile tableHeaders fp = decodeCSVTables tableHeaders <$> readFileLBS fp
 
-typeOneTable' :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (Map c Int)
+typeOneTable' :: (Ord b, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (Map c Int)
 typeOneTable' tableDescription rtr@(TableRow _ cm) tableKey = do
   countMap <- maybeToRight ("Failed to find \"" <> show tableKey <> " in TableRow: " <> show rtr) $ Map.lookup tableKey cm
   let description = tableDescription tableKey
@@ -120,10 +122,10 @@ typeOneTable' tableDescription rtr@(TableRow _ cm) tableKey = do
     then Left $ "Mismatch when composing maps for tableKey=" <> show tableKey <> "; counts=" <> show countMap <> "; description=" <> show description
     else Right typedMap
 
-typeOneTable :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (TableRow a (Map c Int))
-typeOneTable tableDescription rtr@(TableRow p cm) tableKey = fmap (TableRow p) $ typeOneTable' tableDescription rtr tableKey
+typeOneTable :: (Ord b, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (TableRow a (Map c Int))
+typeOneTable tableDescription rtr@(TableRow p _cm) tableKey = fmap (TableRow p) $ typeOneTable' tableDescription rtr tableKey
 
-typeAndMergeTables :: (Ord b, Array.Ix c, Bounded c, Show b, Show a, Show c)
+typeAndMergeTables :: (Ord b, Array.Ix c, Show b, Show a, Show c)
                    => (b -> Map c Text) -> [b] -> RawTablesRow a b -> Either Text (TableRow a (Map c Int))
 typeAndMergeTables tableDescription tableKeys rtr@(TableRow p _) =
   TableRow p . Map.unionsWith (+) <$> traverse (typeOneTable' tableDescription rtr) tableKeys
@@ -131,7 +133,6 @@ typeAndMergeTables tableDescription tableKeys rtr@(TableRow p _) =
 consolidateTables ::  forall d a b c.
                       (Ord b
                       , Array.Ix c
-                      , Bounded c
                       , Show b
                       , Show a
                       , Show c
@@ -146,9 +147,7 @@ consolidateTables tableDescription keysFrom rtr@(TableRow p _) = do
   let remapped = remap <$> merged
   return $ TableRow p $ Map.unions remapped
 
-
-
-reKeyTable :: (Ord k1, Ord k2, BRK.FiniteSet k2, Num x) => (k2 -> k1 -> Bool) -> TableRow a (Map k1 x) -> TableRow a (Map k2 x)
+reKeyTable :: (Ord k2, BRK.FiniteSet k2, Num x) => (k2 -> k1 -> Bool) -> TableRow a (Map k1 x) -> TableRow a (Map k2 x)
 reKeyTable f = fmap (reKeyMap f)
 
 -- This is present in containers >= 0.6.3.1 but that has conflicts.  Fix eventually

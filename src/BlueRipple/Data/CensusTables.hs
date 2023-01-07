@@ -9,12 +9,16 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
-module BlueRipple.Data.CensusTables where
+
+module BlueRipple.Data.CensusTables
+  (
+    module BlueRipple.Data.CensusTables
+  )
+where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames as BR
-import qualified BlueRipple.Data.KeyedTables as KT
 import qualified BlueRipple.Data.Keyed as K
 
 import qualified Data.Binary as B
@@ -25,16 +29,12 @@ import qualified Data.Array as Array
 import qualified Data.Csv as CSV
 import           Data.Csv ((.:))
 import qualified Data.Map as Map
-import qualified Data.Set as Set
 import qualified Frames                        as F
-import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
 import           Data.Discrimination            ( Grouping )
 import qualified Data.Vinyl as V
-import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
-import qualified Numeric
 
 F.declareColumn "SqMiles" ''Double
 F.declareColumn "SqKm" ''Double
@@ -77,27 +77,27 @@ csvParseDistrictType :: CSV.Parser Text -> CSV.Parser ET.DistrictType
 csvParsePistrictType =
 -}
 
--- Orphan
-instance CSV.FromField ET.DistrictType where
+-- To avoid an orphan instance of FromField DistrictType
+newtype DistrictTypeWrapper = DistrictTypeWrapper { unWrapDistrictType :: ET.DistrictType }
+
+instance CSV.FromField DistrictTypeWrapper where
   parseField s
-    | s == "Congressional" = pure ET.Congressional
-    | s == "StateLower" = pure ET.StateLower
-    | s == "StateUpper" = pure ET.StateUpper
+    | s == "Congressional" = pure $ DistrictTypeWrapper ET.Congressional
+    | s == "StateLower" = pure $ DistrictTypeWrapper ET.StateLower
+    | s == "StateUpper" = pure $ DistrictTypeWrapper ET.StateUpper
     | otherwise = mzero
 
-
-
-newtype LDPrefix = LDPrefix { unLDPrefix :: F.Record LDPrefixR } deriving (Show)
+newtype LDPrefix = LDPrefix { unLDPrefix :: F.Record LDPrefixR } deriving stock Show
 toLDPrefix :: Int -> ET.DistrictType -> Text -> Int -> Double -> Double -> Double -> Double -> LDPrefix
 toLDPrefix sf dt dn pop pwd inc sm sk
   = LDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
-  where
-    f x y = if x == 0 then 0 else realToFrac x * Numeric.log y
+--  where
+--    f x y = if x == 0 then 0 else realToFrac x * Numeric.log y
 
 instance CSV.FromNamedRecord LDPrefix where
   parseNamedRecord r = toLDPrefix
                        <$> r .: "StateFIPS"
-                       <*> r .: "DistrictType"
+                       <*> fmap unWrapDistrictType (r .: "DistrictType")
                        <*> r .: "DistrictName"
                        <*> r .: "TotalPopulation"
                        <*> r .: "pwPopPerSqMile"
@@ -105,15 +105,10 @@ instance CSV.FromNamedRecord LDPrefix where
                        <*> r .: "SqMiles"
                        <*> r .: "SqKm"
 
-
-
-
-
 -- types for tables
-
 data Age14 = A14_Under5 | A14_5To9 | A14_10To14 | A14_15To17 | A14_18To19 | A14_20To24
            | A14_25To29 | A14_30To34 | A14_35To44 | A14_45To54
-           | A14_55To64 | A14_65To74 | A14_75To84 | A14_85AndOver deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+           | A14_55To64 | A14_65To74 | A14_75To84 | A14_85AndOver deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 
 instance S.Serialize Age14
 instance B.Binary Age14
@@ -154,7 +149,7 @@ age14ToAge5F A14_85AndOver = DT.A5F_65AndOver
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
-data Citizenship = Native | Naturalized | NonCitizen  deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data Citizenship = Native | Naturalized | NonCitizen  deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize Citizenship
 instance B.Binary Citizenship
 instance Flat.Flat Citizenship
@@ -177,7 +172,7 @@ citizenshipToIsCitizen Native = True
 citizenshipToIsCitizen Naturalized = True
 citizenshipToIsCitizen NonCitizen = False
 
-data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize Education4
 instance B.Binary Education4
 instance Flat.Flat Education4
@@ -199,7 +194,7 @@ education4ToCollegeGrad E4_CollegeGrad = DT.Grad
 education4ToCollegeGrad _ = DT.NonGrad
 
 -- Easiest to have a type matching the census table
-data RaceEthnicity = R_White | R_Black | R_Asian | R_Other | E_Hispanic | E_WhiteNonHispanic deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data RaceEthnicity = R_White | R_Black | R_Asian | R_Other | E_Hispanic | E_WhiteNonHispanic deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize RaceEthnicity
 instance B.Binary RaceEthnicity
 instance Flat.Flat RaceEthnicity
@@ -212,7 +207,7 @@ derivingUnbox "RaceEthnicity"
 type instance FI.VectorFor RaceEthnicity = UVec.Vector
 type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
 
-data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize Employment
 instance B.Binary Employment
 instance Flat.Flat Employment
@@ -226,7 +221,7 @@ type instance FI.VectorFor Employment = UVec.Vector
 type EmploymentC = "Employment" F.:-> Employment
 
 {-
-data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving (Show, Eq, Ord)
+data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving stock (Show, Eq, Ord)
 
 type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByAge = (DT.Sex, Age14)
@@ -234,7 +229,7 @@ type family CensusTableKey (c :: CensusTable) :: Type where
   CensusTableKey 'SexByEducation = (DT.Sex, Education4)
 -}
 
-newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving (Eq, Ord, Show)
+newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving stock (Eq, Ord, Show)
 data TableYear = TY2020 | TY2018 | TY2016 | TY2014 | TY2012
 
 tableYear :: TableYear -> Int
@@ -276,7 +271,7 @@ sexByAgeByEmploymentPrefix TY2012 R_Other = NHGISPrefix <$> ["REC", "REE", "REF"
 sexByAgeByEmploymentPrefix TY2012 E_Hispanic = [NHGISPrefix "REI"]
 sexByAgeByEmploymentPrefix TY2012 E_WhiteNonHispanic = [NHGISPrefix "REH"]
 
-data EmpAge = EA_16To64 | EA_65AndOver deriving (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+data EmpAge = EA_16To64 | EA_65AndOver deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 derivingUnbox "EmpAge"
   [t|EmpAge -> Word8|]
   [|toEnum . fromEnum|]
