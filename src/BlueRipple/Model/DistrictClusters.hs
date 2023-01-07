@@ -20,12 +20,14 @@
 {-# LANGUAGE TupleSections             #-}
 {-# LANGUAGE UndecidableInstances      #-}
 
-module BlueRipple.Model.DistrictClusters where
+module BlueRipple.Model.DistrictClusters
+  (
+    module BlueRipple.Model.DistrictClusters
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames as BR
-import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.Keyed         as Keyed
 
 import qualified Knit.Report                   as K
@@ -35,6 +37,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Flat
 import qualified Frames.Serialize as FS
 
+import Data.Type.Equality (type (~))
 import qualified Data.Vector.Unboxed           as UVec
 import qualified Frames as F
 import qualified Frames.Melt as F
@@ -54,35 +57,27 @@ import qualified Data.Text as T
 
 import qualified Data.Massiv.Array as MA
 
-import qualified BlueRipple.Model.TSNE as BR
 import qualified Data.Algorithm.TSNE.Utils as TSNE
 import qualified Numeric.Clustering.Perplexity as Perplexity
 
-import qualified Data.Datamining.Clustering.SGM as SGM
 import qualified Data.Datamining.Clustering.Classifier as SOM
 import qualified Data.Datamining.Clustering.SOM as SOM
-import qualified Math.Geometry.Grid as Grid
 import qualified Math.Geometry.Grid.Square as Grid
-import qualified Math.Geometry.GridMap as GridMap
 import qualified Math.Geometry.GridMap.Lazy as GridMap
 import qualified Data.Random.Distribution.Uniform as RandomFu
-import qualified Data.Random as RandomFu
---import qualified Data.Sparse.SpMatrix as SLA
-import GHC.TypeLits (Symbol)
 import qualified Graphics.Vega.VegaLite.Configuration as FV
-import Numeric.LinearAlgebra (rows)
 import qualified Frames.Visualization.VegaLite.Data as FVD
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 
 
-data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtPop :: Int, districtVec :: UVec.Vector Double } deriving (Generic)
-deriving instance Show (F.Record as) => Show (DistrictP as rs)
-deriving instance Eq (F.Record as) => Eq (DistrictP as rs)
+data DistrictP as rs = DistrictP { districtId :: F.Record as, isModel :: Bool, districtPop :: Int, districtVec :: UVec.Vector Double } deriving stock Generic
+deriving stock instance Show (F.Record as) => Show (DistrictP as rs)
+deriving stock instance Eq (F.Record as) => Eq (DistrictP as rs)
 
 instance (V.RMap as, FS.RecFlat as) => Flat.Flat (DistrictP as rs) where
-  size (DistrictP id im dp dv) n = Flat.size (FS.toS id, im, dp, UVec.toList dv) n
-  encode (DistrictP id im dp dv) = Flat.encode (FS.toS id, im, dp, UVec.toList dv)
+  size (DistrictP id' im dp dv) n = Flat.size (FS.toS id', im, dp, UVec.toList dv) n
+  encode (DistrictP id' im dp dv) = Flat.encode (FS.toS id', im, dp, UVec.toList dv)
   decode = (\(idS, im, dp, dvL) -> DistrictP (FS.fromS idS) im dp (UVec.fromList dvL)) <$> Flat.decode
 
 
@@ -113,8 +108,7 @@ districtsForClustering dists =
 
 
 vecDemoAsRecs :: forall ks d.
-                  (Ord (F.Record ks)
-                  , Keyed.FiniteSet (F.Record ks)
+                  (Keyed.FiniteSet (F.Record ks)
                   , V.KnownField d
 --                  , Real (V.Snd d)
                   )
@@ -127,16 +121,13 @@ vecDemoAsRecs toD pop vecDemo =
   in zipWith (\k v -> k F.<+> (makeD v)) keyRecs values
 
 districtAsRecs :: forall ks d as rs.
-                  (Ord (F.Record ks)
-                  , ks F.⊆ rs
-                  , Keyed.FiniteSet (F.Record ks)
-                  , F.ElemOf rs d
+                  ( Keyed.FiniteSet (F.Record ks)
                   , V.KnownField d
-                  , Real (V.Snd d)
+--                  , Real (V.Snd d)
                   , rs ~ (ks V.++ '[d])
                   )
                => (Int -> Double -> V.Snd d) -> DistrictP as rs -> [F.Record (as V.++ rs)]
-districtAsRecs toD (DistrictP id _ pop vec) = fmap (\r -> id F.<+> r) $ vecDemoAsRecs @ks @d toD pop vec
+districtAsRecs toD (DistrictP id' _ pop vec) = fmap (\r -> id' F.<+> r) $ vecDemoAsRecs @ks @d toD pop vec
 
 
 absMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
@@ -149,25 +140,20 @@ euclideanMetric :: UVec.Vector Double -> UVec.Vector Double -> Double
 euclideanMetric xs ys = UVec.sum $ UVec.map (\x -> x * x) $ UVec.zipWith (-) xs ys
 
 districtDiff
-  :: forall ks d as rs.
+  :: forall as rs.
      (UVec.Vector Double -> UVec.Vector Double -> Double)
   -> DistrictP as rs
   -> DistrictP as rs
   -> Double
 districtDiff metric d1 d2 = metric (districtVec d1) (districtVec d2)
 
-districtMakeSimilar :: forall ks d as.(Ord (F.Record ks)
-                                      , ks F.⊆ (ks V.++ '[d])
-                                      , F.ElemOf (ks V.++ '[d]) d
-                                      , V.KnownField d
-                                      , Real (V.Snd d)
-                                      )
+districtMakeSimilar :: forall ks d as . (V.KnownField d)
                     => (Double -> V.Snd d)
                     -> DistrictP as (ks V.++ '[d])
                     -> Double
                     -> DistrictP as (ks V.++ '[d])
                     -> DistrictP as (ks V.++ '[d])
-districtMakeSimilar toD tgtD x patD =
+districtMakeSimilar _ tgtD x patD =
   let f t p = p * (1 - x) + t * x
       newPatVec = UVec.zipWith f (districtVec tgtD) (districtVec patD)
       newPatPop = round $ f (realToFrac $ districtPop tgtD) (realToFrac $ districtPop patD)
@@ -176,11 +162,8 @@ districtMakeSimilar toD tgtD x patD =
 buildSOM :: forall ks d as r.
   (K.KnitEffects r
   , K.Member PRF.RandomFu r
-  , ks F.⊆ (ks V.++ '[d])
   , V.KnownField d
-  , F.ElemOf (ks V.++ '[d]) d
   , Real (V.Snd d)
-  , Ord (F.Record ks)
   )
   => (UVec.Vector Double -> UVec.Vector Double -> Double) -- ^ metric for SOM
   -> (Int, Int) -- rectangular grid sizes
@@ -197,8 +180,8 @@ buildSOM metric (gridRows, gridCols) sampleFrom = do
       gm = GridMap.lazyGridMap g samples
       n' = fromIntegral (length sampleFrom)
       lrf = SOM.decayingGaussian 0.5 0.1 0.3 0.1 n'
-      dDiff = districtDiff @ks @d metric
-      dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral . round)
+      dDiff = districtDiff metric
+      dMakeSimilar = districtMakeSimilar @ks @d (fromIntegral @Int . round)
   return $ SOM.SOM gm lrf dDiff dMakeSimilar 0
 
 type SparseMatrix a = [(Int, Int, a)]
@@ -210,7 +193,7 @@ sameClusterMatrixSOM getKey som ps = sameClusterMatrix getKey (SOM.classify som)
 
 sameClusterMatrix :: forall k p dk. (Ord dk, Eq k) => (p -> dk) -> (p -> k) -> [p] -> SparseMatrix Int
 sameClusterMatrix getKey cluster ps =
-  let numPats = length ps
+  let --numPats = length ps
       getCluster :: p -> State.State (M.Map dk k) k
       getCluster p = do
         let k = getKey p
@@ -222,14 +205,14 @@ sameClusterMatrix getKey cluster ps =
             State.put (M.insert k c m)
             return c
       go :: (Int, [p]) -> State.State (M.Map dk k) [(Int, Int, Int)]
-      go (n, ps) = do
-        ks <- traverse getCluster ps
+      go (n, ps') = do
+        ks <- traverse getCluster ps'
         let f k1 (k2, m) = if k1 == k2 then Just (n, m, 1) else Nothing
             swapIndices (a, b, h) = (b, a, h)
         case ks of
           [] -> return []
           (kh : kt) -> do
-            let upper = catMaybes (fmap (f kh) $ zip kt [(n+1)..])
+            let upper = catMaybes (fmap (f kh) $ zip kt [(n + 1)..])
                 lower = fmap swapIndices upper
             return $ (n,n,1) : (upper ++ lower)
       scM = List.concat <$> (traverse go (zip [0..] $ List.tails ps))
@@ -246,7 +229,7 @@ randomSCM nPats nClusters = do
         in case ks of
           [] -> []
           (kh : kt) ->
-            let upper = catMaybes (fmap (f kh) $ zip kt [(n+1)..])
+            let upper = catMaybes (fmap (f kh) $ zip kt [(n + 1)..])
                 lower = fmap swapIndices upper
             in (n,n,1) : (upper ++ lower)
       scM = List.concat $ fmap go $ zip [0..] $ List.tails clustered
@@ -274,14 +257,14 @@ computeScaledDelta
   -> f a
   -> K.Sem r (F.FrameRec (ks V.++ [Method, Mean, Sigma, ScaledDelta, FlipIndex]))
 computeScaledDelta methodName distance perplexity qty key rows = do
-  let length = FL.fold FL.length rows
+  let length' = FL.fold FL.length rows
       datV = MA.fromList @MA.B MA.Seq $ FL.fold FL.list rows
       xs = MA.map qty datV
       rawDistances
-        = MA.computeAs MA.U $ TSNE.symmetric MA.Seq (MA.Sz1 length)
+        = MA.computeAs MA.U $ TSNE.symmetric MA.Seq (MA.Sz1 length')
           $ \(i MA.:. j) -> distance (datV MA.! i) (datV MA.! j)
-      meanDistance = MA.sum rawDistances / (realToFrac $ length * length)
-      distances = MA.computeAs MA.U $ MA.map (/meanDistance) rawDistances
+      meanDistance = MA.sum rawDistances / (realToFrac $ length' * length')
+      distances = MA.computeAs MA.U $ MA.map (/ meanDistance) rawDistances
   K.logLE K.Info "Computing probabilities from distances.."
 --  K.logLE K.Info $ T.pack $ show distances
   probabilities <- K.knitEither
@@ -298,7 +281,7 @@ computeScaledDelta methodName distance perplexity qty key rows = do
       asRec :: a -> (Double, Double) -> F.Record (ks V.++ [Method, Mean, Sigma, ScaledDelta, FlipIndex])
       asRec a (m, v) =
         let sigma = sqrt v
-            scaledDelta = (qty a - m)/sigma
+            scaledDelta = (qty a - m) / sigma
             flipIndex = if (qty a - 0.5) * (m - 0.5) < 0 then abs scaledDelta else 0
             suffixRec :: F.Record [Method, Mean, Sigma, ScaledDelta, FlipIndex]
             suffixRec = methodName F.&: m F.&: sigma F.&: scaledDelta F.&: flipIndex F.&: V.RNil

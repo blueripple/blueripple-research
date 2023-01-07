@@ -14,7 +14,11 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -O0 #-}
 
-module BlueRipple.Data.CensusLoaders where
+module BlueRipple.Data.CensusLoaders
+  (
+    module BlueRipple.Data.CensusLoaders
+  )
+where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.DataFrames as BR
@@ -25,7 +29,6 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Loaders as BR
 
 import qualified Control.Foldl as FL
-import qualified Data.Csv as CSV
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Vinyl as V
@@ -38,8 +41,6 @@ import qualified Data.Text.Read as TR
 import qualified Flat
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
-import qualified Frames.RecF as F
-import qualified Frames.TH as F
 import qualified Frames.InCore                 as FI
 import qualified Frames.Transform as FT
 import qualified Frames.MapReduce as FMR
@@ -48,7 +49,6 @@ import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
 import qualified Knit.Report as K
 import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified Numeric
 
 F.declareColumn "Count" ''Int
 
@@ -64,7 +64,7 @@ data CensusTables p d a s e r c l
                  , sexRaceCitizenship :: F.FrameRec (CensusRow p d [s, r, c])
                  , sexEducationRace :: F.FrameRec (CensusRow p d [s, e, r])
                  , sexRaceEmployment ::  F.FrameRec (CensusRow p d [s, r, l])
-                 } deriving (Generic)
+                 } deriving stock Generic
 
 instance Semigroup (CensusTables p d a s e r c l) where
   (CensusTables a1 a2 a3 a4) <> (CensusTables b1 b2 b3 b4) = CensusTables (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4)
@@ -172,6 +172,7 @@ censusTablesForDRACDs  :: (K.KnitEffects r
 censusTablesForDRACDs = censusTablesByDistrict fileByYear "DRA_CDs" where
   fileByYear = [ (BRC.TY2020, censusDataDir <> "/NC_DRA.csv")]
 
+noMaps :: Set a
 noMaps = Set.empty --fromList [""]
 
 censusTablesForProposedCDs :: (K.KnitEffects r
@@ -381,13 +382,10 @@ frameFromTableRows prefixToRec keyToRec year tableRows =
   in F.toFrame $ concat $ Vec.toList allRows
 
 rekeyCensusTables :: forall p ed a s e r c l a' s' e' r' c' l'.
-                     ( FA.CombineKeyAggregationsC '[a] '[a'] '[s] '[s']
-                     , FA.CombineKeyAggregationsC '[s] '[s'] '[r] '[r']
+                     ( FA.CombineKeyAggregationsC '[s] '[s'] '[r] '[r']
                      , FA.CombineKeyAggregationsC '[a] '[a'] [s, r] [s', r']
                      , FA.CombineKeyAggregationsC '[r] '[r'] '[c] '[c']
                      , FA.CombineKeyAggregationsC '[s] '[s'] [r, c] [r', c']
-                     , FA.CombineKeyAggregationsC '[s] '[s'] '[c] '[c']
-                     , FA.CombineKeyAggregationsC '[s] '[s'] '[e] '[e']
                      , FA.CombineKeyAggregationsC '[s] '[s'] [e, r] [e', r']
                      , FA.CombineKeyAggregationsC '[e] '[e'] '[r] '[r']
                      , FA.CombineKeyAggregationsC '[r] '[r'] '[l] '[l']

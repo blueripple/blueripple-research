@@ -691,7 +691,7 @@ pumsByPUMA
   → F.FrameRec (PUMS.PUMACounts [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])
 pumsByPUMA keepIf = FL.fold (PUMS.pumsRollupF keepIf $ pumsReKey . F.rcast)
 
-pumsByCD ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ F.FrameRec PUMS.PUMS → F.FrameRec BR.DatedCDFromPUMA2012 → K.Sem r (F.FrameRec PUMSByCDR)
+pumsByCD ∷ (K.KnitEffects r) ⇒ F.FrameRec PUMS.PUMS → F.FrameRec BR.DatedCDFromPUMA2012 → K.Sem r (F.FrameRec PUMSByCDR)
 pumsByCD pums cdFromPUMA = fmap F.rcast <$> PUMS.pumsCDRollup (earliest earliestYear) (pumsReKey . F.rcast) cdFromPUMA pums
  where
   earliestYear = 2016

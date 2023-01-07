@@ -9,39 +9,30 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 
-module BlueRipple.Model.Demographic.DataPrep where
+module BlueRipple.Model.Demographic.DataPrep
+  (
+    module BlueRipple.Model.Demographic.DataPrep
+  )
+where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
-import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Data.DataFrames as BRDF
-import qualified BlueRipple.Data.Keyed as BRK
 
 import qualified Control.MapReduce.Simple as MR
-import qualified Frames.MapReduce as FMR
 import qualified Frames.Transform as FT
 import qualified Frames.Streamly.Transform as FST
-import qualified Frames.Streamly.InCore as FS
-import qualified Frames.Serialize as FS
-import qualified Flat
 
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
-import qualified Data.Set as S
-import qualified Data.Vinyl as V
+
 import qualified Data.Vinyl.TypeLevel as V
-import qualified Data.Vector as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Numeric
-import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAg
-import qualified CmdStan as CS
-import qualified Stan.Parameters as SP
-import qualified Data.IntMap.Strict as IM
 
 
 {-
@@ -195,5 +186,8 @@ districtKey r = F.rgetField @BRDF.StateAbbreviation r <> "-" <> show (F.rgetFiel
 logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
 logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
 
+safeLog :: Double -> Double
 safeLog x =  if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here
+
+safeLogV :: Double -> K.Vector Double
 safeLogV x =  VU.singleton $ safeLog x

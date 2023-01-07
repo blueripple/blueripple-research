@@ -15,7 +15,12 @@
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# OPTIONS_GHC -O0 -freduction-depth=0 #-}
-module BlueRipple.Data.ACS_PUMS where
+
+module BlueRipple.Data.ACS_PUMS
+  (
+    module BlueRipple.Data.ACS_PUMS
+  )
+where
 
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as BR
@@ -42,7 +47,7 @@ import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
 import qualified Frames.SimpleJoins            as FJ
-import qualified Frames.Streamly.InCore        as FStreamly
+--import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.Transform     as FStreamly
 
 import qualified Knit.Report as K
