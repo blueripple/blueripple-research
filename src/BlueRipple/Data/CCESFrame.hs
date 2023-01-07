@@ -24,31 +24,16 @@ module BlueRipple.Data.CCESFrame
 where
 
 import           BlueRipple.Data.CCESPath
-import qualified Knit.Report                   as K
-
-import qualified Control.Foldl                 as FL
-import           Control.Monad.IO.Class         ( MonadIO(liftIO) )
-import qualified Data.List                     as L
-import           Data.Maybe                     ( catMaybes )
-import           Data.Proxy                     ( Proxy(..) )
 import qualified Data.Serialize                as S
 import qualified Data.Text                     as T
-import           Data.Text                      ( Text )
-import qualified Data.Vinyl                    as V
-import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vector.Unboxed as UVec
 import Data.Vector.Unboxed.Deriving (derivingUnbox)
 import qualified Frames                        as F
 import qualified Frames.InCore                 as FI
---import qualified Frames.Streamly.CSV                    as F
 import qualified Frames.Streamly.TH                     as FS
 import qualified Flat
 
-import qualified Pipes                         as P
-import qualified Pipes.Prelude                 as P
-
 import qualified Frames.ParseableTypes         as FP
-import qualified Frames.MaybeUtils             as FM
 import qualified Relude.Extra as Relude
 
 -- pre-declare cols with non-standard types
@@ -73,7 +58,7 @@ data CatalistRegistration = CR_Active
                           | CR_Inactive
                           | CR_Multiple
                           | CR_UnRegistered
-                          | CR_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                          | CR_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor CatalistRegistration = UVec.Vector
 instance S.Serialize CatalistRegistration
 instance Flat.Flat CatalistRegistration
@@ -109,7 +94,7 @@ data CatalistTurnout = CT_Absentee
                      | CT_Mail
                      | CT_Polling
                      | CT_Unknown
-                     | CT_Missing deriving (Show, Enum, Bounded, Eq, Ord, Generic)
+                     | CT_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 type instance FI.VectorFor CatalistTurnout = UVec.Vector
 instance S.Serialize CatalistTurnout
 instance Flat.Flat CatalistTurnout

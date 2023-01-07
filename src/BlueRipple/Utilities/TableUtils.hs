@@ -34,14 +34,13 @@ import qualified Text.Printf                   as PF
 import qualified Knit.Report                   as K
 
 import           BlueRipple.Utilities.KnitUtils ( brAddMarkDown )
-import System.IO (openTempFileWithDefaultPermissions)
 
 data CellStyle row col = CellStyle (row -> col -> T.Text)
 instance Semigroup (CellStyle r c) where
   (CellStyle f) <> (CellStyle g) = CellStyle (\r c -> f r c <> "; " <> g r c)
 
 instance Semigroup (CellStyle r c) => Monoid (CellStyle r c) where
-  mempty = CellStyle (\r c -> "")
+  mempty = CellStyle (\_ _ -> "")
   mappend = (<>)
 
 cellStyleIf :: Text -> (row -> col -> Bool) -> CellStyle row col
@@ -62,10 +61,17 @@ toCell (CellStyle csF) c colName toHtml r =
         )
         html
 
-normalCell :: T.Text = "border: 1px solid black"
-totalCell :: T.Text = "border: 2px solid black"
-highlightCellBlue :: T.Text = "border: 3px solid blue"
-highlightCellPurple :: T.Text = "border: 3px solid purple"
+normalCell :: Text
+normalCell = "border: 1px solid black"
+
+totalCell :: Text
+totalCell = "border: 2px solid black"
+
+highlightCellBlue :: Text
+highlightCellBlue = "border: 3px solid blue"
+
+highlightCellPurple :: Text
+highlightCellPurple = "border: 3px solid purple"
 
 numberToStyledHtml
   :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> a -> (BH.Html, T.Text)

@@ -7,7 +7,11 @@
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TypeApplications #-}
 
-module BlueRipple.Data.DistrictOverlaps where
+module BlueRipple.Data.DistrictOverlaps
+  (
+    module BlueRipple.Data.DistrictOverlaps
+  )
+where
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -18,14 +22,10 @@ import qualified Control.Foldl as FL
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import qualified Data.Text.Encoding as T
-import qualified Data.Text.Read as T
 import qualified Frames as F
 import qualified Data.Vector as Vec
 import qualified Data.Csv as CSV hiding (header)
-import qualified Data.Csv.Parser as CSV
 import qualified Knit.Report as K
---import Database.SQLite3.Direct (errmsg)
 
 
 data DistrictOverlaps a = DistrictOverlaps { stateAbbreviation :: Text
@@ -34,10 +34,10 @@ data DistrictOverlaps a = DistrictOverlaps { stateAbbreviation :: Text
                                            , populations :: Vec.Vector Int
                                            , overlaps :: Vec.Vector (Map Text Int) -- indexed by row number
                                            , rowByName :: Map Text Int
-                                           } deriving (Show, Eq, Ord, Generic, Functor)
+                                           } deriving stock (Show, Eq, Ord, Generic, Functor)
 
 
-data OverlapCSVRow = OverlapCSVRow { rowName :: Text,  pop :: Int,  overlapMap :: Map Text Int } deriving (Show, Eq, Ord, Generic)
+data OverlapCSVRow = OverlapCSVRow { rowName :: Text,  pop :: Int,  overlapMap :: Map Text Int } deriving stock (Show, Eq, Ord, Generic)
 
 
 instance CSV.FromNamedRecord OverlapCSVRow where
@@ -52,15 +52,15 @@ loadOverlapsFromCSV :: K.KnitEffects r => FilePath -> Text -> ET.DistrictType ->
 loadOverlapsFromCSV fp stateAbbr rowDType colDType = do
 --  let options = CSV.defaultDecodeOptions
   fileLBS <- K.liftKnit @IO (readFileLBS fp)
-  (header, rows) <- K.knitEither $ first toText $ CSV.decodeByName fileLBS
+  (_, rows) <- K.knitEither $ first toText $ CSV.decodeByName fileLBS
   let populationsV = fmap pop rows
       overlapsV =  fmap overlapMap rows
       namesV = fmap rowName rows
-  let rowByName = Map.fromList $ zip (Vec.toList namesV) [0..]
-  pure $ DistrictOverlaps stateAbbr rowDType colDType populationsV overlapsV rowByName
+  let rowByName' = Map.fromList $ zip (Vec.toList namesV) [0..]
+  pure $ DistrictOverlaps stateAbbr rowDType colDType populationsV overlapsV rowByName'
 
 overlapFractionsForRowByNumber :: DistrictOverlaps Int -> Int -> Map Text Double
-overlapFractionsForRowByNumber (DistrictOverlaps _ _ _ p ols _) n = fmap (\x -> realToFrac x/realToFrac (p Vec.! n)) $ ols Vec.! n
+overlapFractionsForRowByNumber (DistrictOverlaps _ _ _ p ols _) n = fmap (\x -> realToFrac x / realToFrac (p Vec.! n)) $ ols Vec.! n
 
 overlapFractionsForRowByName :: DistrictOverlaps Int -> Text -> Maybe (Map Text Double)
 overlapFractionsForRowByName  x t = overlapFractionsForRowByNumber x <$> Map.lookup t (rowByName x)

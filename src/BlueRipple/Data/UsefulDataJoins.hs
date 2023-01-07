@@ -13,7 +13,11 @@
 {-# LANGUAGE TypeOperators             #-}
 {-# OPTIONS_GHC  -O0 #-}
 
-module BlueRipple.Data.UsefulDataJoins where
+module BlueRipple.Data.UsefulDataJoins
+  (
+    module BlueRipple.Data.UsefulDataJoins
+  )
+where
 
 import qualified Control.Foldl                 as FL
 import qualified Data.Text                     as T
