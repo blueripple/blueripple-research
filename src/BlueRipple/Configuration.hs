@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings         #-}
 {-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE NoStrictData #-}
 {-# OPTIONS_GHC -fno-cse #-}
 module BlueRipple.Configuration
   (module BlueRipple.Configuration
@@ -16,6 +17,7 @@ import qualified Path.IO as Path
 import           Path (Path, Abs, Rel, Dir, File, PathException, (</>), parseRelDir)
 import qualified Data.Time.Calendar as Time
 import qualified System.Console.CmdArgs as CmdArgs
+import System.Console.CmdArgs ((&=)) -- , (+=), Annotate((:=)))
 import qualified Say
 import qualified Knit.Effect.Logger as K
 
@@ -83,39 +85,54 @@ knitLogSeverity LogDebugMinimal = K.logDebug 1
 knitLogSeverity LogDebugVerbose = K.logDebug 3
 knitLogSeverity LogDebugAll = K.logDebug 10
 
+-- subDir is partial. Which triggers a warning. But the name of the field is used to form the commandLine so
+-- we don't want to prefix it with an underscore to suppress the warning
 data CommandLine =
-  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, _subDir :: Maybe Text, postNames :: [Text] }
+  CLLocalDraft { logLevel :: LogLevel, stanChains :: Int, subDir :: Maybe Text, postNames :: [Text] }
   | CLOnlineDraft { logLevel :: LogLevel, stanChains :: Int, postNames :: [Text]}
   | CLPublished {logLevel :: LogLevel, stanChains :: Int, postNames :: [Text] }
   deriving stock (Show, CmdArgs.Data, Typeable, Eq)
 
+logLevelCL :: LogLevel
+logLevelCL = LogInfo &= CmdArgs.typ "LOGLEVEL" &= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
+
+
+stanChainsCL :: Int
+stanChainsCL = 4 &= CmdArgs.typ "NUMCHAINS" &= CmdArgs.help "Number of Stan chains to run."
+
+subDirCL :: Maybe Text
+subDirCL = Nothing &= CmdArgs.typFile &= CmdArgs.help "Subdirectory for draft"
+
+postNamesCL :: [Text]
+postNamesCL = [] &= CmdArgs.typ "[POSTS]" &= CmdArgs.help "post names" -- &= CmdArgs.args
+
 localDraft :: CommandLine
 localDraft = CLLocalDraft
              {
-               logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
-             , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-             , _subDir = Nothing CmdArgs.&= CmdArgs.help "Subdirectory for draft"
-             , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
-             } CmdArgs.&= CmdArgs.help "Build local drafts" CmdArgs.&= CmdArgs.auto
+               logLevel = logLevelCL
+             , stanChains = stanChainsCL
+             , subDir = subDirCL
+             , postNames = postNamesCL
+             } &= CmdArgs.help "Build local drafts" &= CmdArgs.auto
 
 onlineDraft :: CommandLine
 onlineDraft = CLOnlineDraft
-              { logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
-              , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-              , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
-              } CmdArgs.&= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
+              { logLevel = logLevelCL
+              , stanChains = stanChainsCL
+              , postNames = postNamesCL
+              } &= CmdArgs.help "Build online drafts (in blueripple.github.io directory)"
 
 published :: CommandLine
-published = CLPublished {
-  logLevel = LogInfo CmdArgs.&= CmdArgs.help "logging Verbosity. One of LogInfo, LogDiagnostic, LogDebugMinimal, LogDebugVerbose, LogDebugAll"
-  , stanChains = 4 CmdArgs.&= CmdArgs.help "Number of Stan chains to run."
-  , postNames = [] CmdArgs.&= CmdArgs.args CmdArgs.&= CmdArgs.typ "post function names"
-  } CmdArgs.&= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
+published = CLPublished
+            {
+              logLevel = logLevelCL
+            , stanChains = stanChainsCL
+            , postNames = postNamesCL
+            } &= CmdArgs.help "Build for publication (in blueripple.github.io directory)"
 
 
 commandLine :: CmdArgs.Mode (CmdArgs.CmdArgs CommandLine)
-commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, published]
-  CmdArgs.&= CmdArgs.help "Build Posts"
+commandLine = CmdArgs.cmdArgsMode $ CmdArgs.modes [localDraft, onlineDraft, published] &= CmdArgs.help "Build Posts"
 
 postStage :: CommandLine -> PostStage
 postStage (CLLocalDraft _ _ _ _) = LocalDraft

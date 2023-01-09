@@ -6,39 +6,32 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
+--{-# LANGUAGE NoStrictData #-}
 
-module Main where
+module Main
+  (main)
+where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
---import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 
---import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
-
---import qualified Stan.ModelBuilder as S
---import qualified Stan.ModelBuilder.TypedExpressions.Program as SP
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.RScriptBuilder as SR
---import qualified CmdStan as CS
 
 import qualified Knit.Report as K
---import qualified Knit.Effect.AtomicCache as K (cacheTime)
 import qualified Knit.Effect.AtomicCache as KC
 import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
---import qualified Polysemy
 
 import qualified Data.Map as M
 import qualified Data.Set as S
-import Data.Vinyl as V
---import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as VU
 import qualified Control.Foldl as FL
 import qualified Frames as F
@@ -85,12 +78,17 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    runAgeModel False
 --    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
+{-
     _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu
     _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu7
     _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu7
     _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu5
-    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu5
+-}
+--    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu5
+
+    modelResult <- runAgeModel True cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowAge
 --    runEduModel False cmdLine (SM.ModelConfig True SM.HCentered True) $ SM.designMatrixRowEdu2 @SM.ACSByStateEduMNR
+{-
     K.logLE K.Info "Some Examples!"
 --    modelResult <- K.ignoreCacheTime res_C
     let exRec :: DT.Sex -> DT.Age4 -> DT.RaceAlone4 -> DT.Hisp -> Double
@@ -103,8 +101,9 @@ main = do
         exR5 = exRec DT.Male DT.A4_45To64 DT.RA4_White DT.Hispanic 10000
         exRs = [exR1, exR2, exR3, exR4, exR5]
         showExs sa y = K.logLE K.Info $ sa <> ": " <> show y <> "=" <> show (SM.applyModelResult modelResult sa y)
-    traverse (showExs "TX") exRs
-    traverse (showExs "CT") exRs
+    _ <- traverse (showExs "TX") exRs
+    _ <- traverse (showExs "CT") exRs
+-}
     pure ()
   case resE of
     Right namedDocs →
@@ -133,7 +132,7 @@ postOnline ∷ Path.Path Rel t → Path.Path Rel t
 postOnline p = [Path.reldir|research/Demographics|] BR.</> p
 
 postPaths
-  ∷ (K.KnitEffects r, MonadIO (K.Sem r))
+  ∷ (K.KnitEffects r)
   ⇒ Text
   → BR.CommandLine
   → K.Sem r (BR.PostPaths BR.Abs)
@@ -152,7 +151,7 @@ postPaths t cmdLine = do
 logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> Text -> K.Sem r ()
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> "has " <> show (FL.fold FL.length x) <> " rows."
 
-runEduModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
+runEduModel :: (K.KnitMany r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
             → SM.ModelConfig ()
@@ -183,6 +182,7 @@ runEduModel clearCaches cmdLine mc dmr = do
     _ <- K.addHvega Nothing Nothing $ chart (FV.ViewConfig 100 500 5) acsMN
     pure ()
   res <- do
+    K.logLE K.Info "here"
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
       cacheDirE
@@ -197,14 +197,14 @@ runEduModel clearCaches cmdLine mc dmr = do
 --  K.logLE K.Info $ "result: " <> show res
   pure res
 
-runAgeModel :: (K.KnitEffects r, K.KnitMany r, BRK.CacheEffects r)
+runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
             -> SM.ModelConfig ()
             -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
             -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
 runAgeModel clearCaches cmdLine mc dmr = do
-  let cacheKeyE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
+  let cacheDirE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
       dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
                          "br-2022-Demographics/stanAge"
@@ -212,8 +212,8 @@ runAgeModel clearCaches cmdLine mc dmr = do
                          (Just $ SC.GQNames "pp" dataName)
                          dataName
       only2020 r = F.rgetField @BRDF.Year r == 2020
-      postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-  ageModelPaths <- postPaths "AgeModel" cmdLine
+      _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  _ageModelPaths <- postPaths "AgeModel" cmdLine
   acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
@@ -226,7 +226,7 @@ runAgeModel clearCaches cmdLine mc dmr = do
   res <- do
     K.ignoreCacheTimeM
       $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
-      cacheKeyE
+      cacheDirE
       (Right runnerInputNames)
       dw
       code
@@ -247,13 +247,13 @@ chart vc rows =
                          , ("Race", GV.Str $ show (F.rgetField @DT.RaceAlone4C r) <> "_" <> show (F.rgetField @DT.HispC r))
                          , ("Total", GV.Number $ realToFrac $ total v)
                          , ("Grads", GV.Number $ realToFrac $ grads v)
-                         , ("FracGrad", GV.Number $ realToFrac (grads v)/realToFrac (total v))
+                         , ("FracGrad", GV.Number $ realToFrac (grads v) / realToFrac (total v))
                          ]
       toVLDataRows x = GV.dataRow (rowToData x) []
       vlData = GV.dataFromRows [] $ concat $ fmap toVLDataRows $ FL.fold FL.list rows
       encAge = GV.position GV.X [GV.PName "Age", GV.PmType GV.Nominal]
       encSex = GV.color [GV.MName "Sex", GV.MmType GV.Nominal]
-      encState = GV.row [GV.FName "State", GV.FmType GV.Nominal]
+      _encState = GV.row [GV.FName "State", GV.FmType GV.Nominal]
       encRace = GV.column [GV.FName "Race", GV.FmType GV.Nominal]
       encFracGrad = GV.position GV.Y [GV.PName "FracGrad", GV.PmType GV.Quantitative]
       encTotal = GV.size [GV.MName "Total", GV.MmType GV.Quantitative]

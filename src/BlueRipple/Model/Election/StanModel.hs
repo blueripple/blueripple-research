@@ -1328,7 +1328,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 forT = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaTDS :> TNil) ncFS 1 (SP.build sigmaBetaTDS :> TNil) ncFV
                 forP = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaPDS :> TNil) ncFS 1 (SP.build sigmaBetaPDS :> TNil) ncFV
             return (forT, forP)
-          DSAlphaGroup _ -> undefined
+          DSAlphaGroup _ -> error "electionModelDM: Unhandled case DSAlphaGroup."
 --        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
         let acsPSWgtsV = TE.functionE TE.to_vector (acsPSWgts :> TNil)
         (elexModelF, cpsTF, ccesTF, ccesPF) <- case distribution model of

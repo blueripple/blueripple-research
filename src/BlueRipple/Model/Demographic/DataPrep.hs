@@ -161,7 +161,7 @@ filterZeroes = filter (\(_, v) -> v VU.! 0 > 0 || v VU.! 1 > 0)
 acsByStateAgeMN :: F.FrameRec ACSByState -> [ACSByStateAgeMN]
 acsByStateAgeMN = filterZeroes
                   . FL.fold (forMultinomial @[BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-                             (F.rgetField @DT.Age4C)
+                             (DT.age4ToSimple . F.rgetField @DT.Age4C)
                              (F.rgetField @PUMS.Citizens)
                              densityF
                             )
@@ -179,6 +179,21 @@ collegeGrad r = F.rgetField @DT.InCollege r || F.rgetField @DT.EducationC r `ele
 
 inCollege :: F.ElemOf rs DT.InCollege => F.Record rs -> Bool
 inCollege = F.rgetField @DT.InCollege
+
+-- if you are in college we treat it like you have a BA ??
+educationWithInCollege :: (F.ElemOf rs DT.EducationC, F.ElemOf rs DT.InCollege)
+                     => F.Record rs -> DT.Education
+educationWithInCollege r = case inCollege r of
+  False -> F.rgetField @DT.EducationC r
+  True -> case F.rgetField @DT.EducationC r of
+    DT.L9 -> DT.BA
+    DT.L12 -> DT.BA
+    DT.HS -> DT.BA
+    DT.SC -> DT.BA
+    DT.AS -> DT.BA
+    DT.BA -> DT.BA
+    DT.AD -> DT.AD
+
 
 districtKey :: (F.ElemOf rs BRDF.StateAbbreviation, F.ElemOf rs BRDF.CongressionalDistrict) => F.Record rs -> Text
 districtKey r = F.rgetField @BRDF.StateAbbreviation r <> "-" <> show (F.rgetField @BRDF.CongressionalDistrict r)

@@ -172,6 +172,7 @@ citizenshipToIsCitizen Native = True
 citizenshipToIsCitizen Naturalized = True
 citizenshipToIsCitizen NonCitizen = False
 
+{-
 data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 instance S.Serialize Education4
 instance B.Binary Education4
@@ -192,6 +193,7 @@ education4FromCollegeGrad DT.Grad = [E4_CollegeGrad]
 education4ToCollegeGrad :: Education4 -> DT.CollegeGrad
 education4ToCollegeGrad E4_CollegeGrad = DT.Grad
 education4ToCollegeGrad _ = DT.NonGrad
+-}
 
 -- Easiest to have a type matching the census table
 data RaceEthnicity = R_White | R_Black | R_Asian | R_Other | E_Hispanic | E_WhiteNonHispanic deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
@@ -443,13 +445,13 @@ sexByEducationPrefix TY2012 R_Other = NHGISPrefix <$> ["Q82", "Q84", "Q85", "Q86
 sexByEducationPrefix TY2012 E_Hispanic = [NHGISPrefix "Q88"]
 sexByEducationPrefix TY2012 E_WhiteNonHispanic = [NHGISPrefix "Q87"]
 
-sexByEducation :: NHGISPrefix -> Map (DT.Sex, Education4) Text
-sexByEducation (NHGISPrefix p) = Map.fromList [((DT.Male, E4_NonHSGrad), p <> "E003")
-                                              ,((DT.Male, E4_HSGrad), p <> "E004")
-                                              ,((DT.Male, E4_SomeCollege), p <> "E005")
-                                              ,((DT.Male, E4_CollegeGrad), p <> "E006")
-                                              ,((DT.Female, E4_NonHSGrad), p <> "E008")
-                                              ,((DT.Female, E4_HSGrad), p <> "E009")
-                                              ,((DT.Female, E4_SomeCollege), p <> "E010")
-                                              ,((DT.Female, E4_CollegeGrad), p <> "E011")
+sexByEducation :: NHGISPrefix -> Map (DT.Sex, DT.Education4) Text
+sexByEducation (NHGISPrefix p) = Map.fromList [((DT.Male, DT.E4_NonHSGrad), p <> "E003")
+                                              ,((DT.Male, DT.E4_HSGrad), p <> "E004")
+                                              ,((DT.Male, DT.E4_SomeCollege), p <> "E005")
+                                              ,((DT.Male, DT.E4_CollegeGrad), p <> "E006")
+                                              ,((DT.Female, DT.E4_NonHSGrad), p <> "E008")
+                                              ,((DT.Female, DT.E4_HSGrad), p <> "E009")
+                                              ,((DT.Female, DT.E4_SomeCollege), p <> "E010")
+                                              ,((DT.Female, DT.E4_CollegeGrad), p <> "E011")
                                               ]

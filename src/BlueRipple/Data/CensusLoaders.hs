@@ -114,7 +114,7 @@ instance (FieldC Flat.Flat a
 --type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[Count]
 
 type LoadedCensusTablesByLD
-  = CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC BRC.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
+  = CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                               , BR.CacheEffects r)
@@ -240,7 +240,7 @@ checkAllCongressionalAndConvert rs = do
 
 
 
-type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
+type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
 type CensusRecodedR  = BRC.LDLocationR
                        V.++ BRC.ExtensiveDataR
                        V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, Count, DT.PopPerSqMile]
@@ -257,12 +257,12 @@ censusDemographicsRecode rows =
              (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
 
-      edFld :: FL.Fold (F.Record [BRC.Education4C, BRC.RaceEthnicityC, Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, Count])
-      edFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad BRC.Education4 = BRK.AggF g where
-                     g DT.Grad BRC.E4_CollegeGrad = True
-                     g DT.NonGrad BRC.E4_SomeCollege = True
-                     g DT.NonGrad BRC.E4_NonHSGrad = True
-                     g DT.NonGrad BRC.E4_HSGrad = True
+      edFld :: FL.Fold (F.Record [DT.Education4C, BRC.RaceEthnicityC, Count]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, Count])
+      edFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad DT.Education4 = BRK.AggF g where
+                     g DT.Grad DT.E4_CollegeGrad = True
+                     g DT.NonGrad DT.E4_SomeCollege = True
+                     g DT.NonGrad DT.E4_NonHSGrad = True
+                     g DT.NonGrad DT.E4_HSGrad = True
                      g _ _ = False
                    edAggFRec = BRK.toAggFRec edAggF
                    raceAggFRec :: BRK.AggFRec Bool '[BRC.RaceEthnicityC] '[BRC.RaceEthnicityC] = BRK.toAggFRec BRK.aggFId
@@ -325,12 +325,12 @@ raceBySexByCitizenshipKeyRec (r, (s, c)) = s F.&: r F.&: c F.&: V.RNil
 {-# INLINE raceBySexByCitizenshipKeyRec #-}
 
 {-
-sexByEducationKeyRec :: (DT.Sex, BRC.Education4) -> F.Record [DT.SexC, BRC.Education4C]
+sexByEducationKeyRec :: (DT.Sex, DT.Education4) -> F.Record [DT.SexC, DT.Education4C]
 sexByEducationKeyRec (s, e) = s F.&: e F.&: V.RNil
 {-# INLINE sexByEducationKeyRec #-}
 -}
 
-raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Education4)) -> F.Record [DT.SexC, BRC.Education4C, BRC.RaceEthnicityC]
+raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, DT.Education4)) -> F.Record [DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
 raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 

@@ -51,6 +51,7 @@ import qualified Frames.Visualization.VegaLite.Data
                                                as FV
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Relude.Extra as Relude
+import qualified Data.Array as Array
 -- Serialize for caching
 -- Binary for caching
 -- Flat for caching
@@ -266,6 +267,33 @@ collegeGrad ed
   | ed == AS = NonGrad
   | otherwise = Grad
 
+data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
+instance S.Serialize Education4
+instance B.Binary Education4
+instance Flat.Flat Education4
+instance Grouping Education4
+instance K.FiniteSet Education4
+derivingUnbox "Education4"
+  [t|Education4 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FI.VectorFor Education4 = UVec.Vector
+type Education4C = "Education" F.:-> Education4
+
+education4FromCollegeGrad :: CollegeGrad -> [Education4]
+education4FromCollegeGrad NonGrad = [E4_NonHSGrad, E4_HSGrad, E4_SomeCollege]
+education4FromCollegeGrad Grad = [E4_CollegeGrad]
+
+education4ToCollegeGrad :: Education4 -> CollegeGrad
+education4ToCollegeGrad E4_CollegeGrad = Grad
+education4ToCollegeGrad _ = NonGrad
+
+educationToEducation4 :: Education -> Education4
+educationToEducation4 ed
+  | (ed == L9) || (ed == L12) = E4_NonHSGrad
+  | ed == HS = E4_HSGrad
+  | (ed == SC) || (ed == AS) = E4_SomeCollege
+  | otherwise = E4_CollegeGrad
 
 turnoutLevels :: CollegeGrad -> [Education]
 turnoutLevels NonGrad = [L9, L12, HS, SC] -- NB: Turnout data did not contain an Associates Degree row
