@@ -201,8 +201,8 @@ runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
             -> SM.ModelConfig ()
-            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
-            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC])
+            -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC])
+            -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC])
 runAgeModel clearCaches cmdLine mc dmr = do
   let cacheDirE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
       dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
@@ -215,9 +215,11 @@ runAgeModel clearCaches cmdLine mc dmr = do
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   _ageModelPaths <- postPaths "AgeModel" cmdLine
   acs_C <- fmap (F.filterFrame only2020) <$> PUMS.pumsLoader Nothing >>= DDP.cachedACSByState
+--  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
       mcWithId = "normal" <$ mc
+  K.ignoreCacheTime acsMN_C >>= print
   logLengthC acsMN_C "acsByStateMNAge"
   states <- FL.fold (FL.premap (view BRDF.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())

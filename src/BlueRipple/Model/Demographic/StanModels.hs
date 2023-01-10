@@ -337,7 +337,7 @@ designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [sexRP, raceAgeRP]
 
 
 
-designMatrixRowAge :: forall rs . (F.ElemOf rs DT.EducationC
+designMatrixRowAge :: forall rs . (F.ElemOf rs DT.Education4C
 --                                  , F.ElemOf rs DT.InCollege
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
@@ -347,13 +347,13 @@ designMatrixRowAge :: forall rs . (F.ElemOf rs DT.EducationC
 designMatrixRowAge = DM.DesignMatrixRow "DMAge" [sexRP, eduRP, raceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    eduRP = DM.boundedEnumRowPart Nothing "Education" (DT.educationToEducation4 . F.rgetField @DT.EducationC)
+    eduRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Education" (F.rgetField @DT.Education4C)
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
 
 
-designMatrixRowAge2 :: forall rs . (F.ElemOf rs DT.EducationC
-                                  , F.ElemOf rs DT.InCollege
+designMatrixRowAge2 :: forall rs . (F.ElemOf rs DT.Education4C
+--                                  , F.ElemOf rs DT.InCollege
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.RaceAlone4C
                                   , F.ElemOf rs DT.HispC
@@ -364,8 +364,8 @@ designMatrixRowAge2 = DM.DesignMatrixRow "DMAge2" [sexRP, raceEduRP]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
 --    eduRP = DM.boundedEnumRowPart Nothing "Education" DDP.educationWithInCollege -- HERE
     race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
-    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.HS)) "RaceEdu"
-                $ \r -> DM.BEProduct2 (race5Census r, DDP.educationWithInCollege r)
+    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
+                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Education4C r)
 
 --
 newtype ModelResult2 ks = ModelResult2 { unModelResult :: Map (F.Record ks) Double }
