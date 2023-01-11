@@ -111,6 +111,7 @@ common common-options
                        LambdaCase
                        OverloadedStrings
                        ScopedTypeVariables
+                       StrictData
                        TupleSections
                        TypeApplications
 
@@ -208,6 +209,7 @@ library
                  , BlueRipple.Model.TSNE
                  , BlueRipple.Model.Demographic.DataPrep
                  , BlueRipple.Model.Demographic.StanModels
+                 , BlueRipple.Model.Demographic.EnrichData
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
                  , BlueRipple.Utilities.Heidi

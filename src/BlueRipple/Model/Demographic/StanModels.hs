@@ -402,6 +402,7 @@ instance (V.RMap ks, FS.RecFlat ks, Flat.Flat g, Ord g, Ord (F.Rec FS.SElField k
   encode = Flat.encode . modelResultToFTuple
   decode = fmap modelResultFromFTuple Flat.decode
 
+
 applyModelResult :: (F.ElemOf rs DT.PopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
                  => ModelResult g ks -> g -> F.Record rs -> Either Text Double
 applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
@@ -452,7 +453,7 @@ stateModelResultAction mc dmr = SC.UseSummary f where
 --    modelResult <- ModelResult <$> getVector "alpha"
 
 type EduStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Age4C]
-type AgeStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.EducationC]
+type AgeStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Education4C]
 
 --addAgeSplits :: F.Record r
 

@@ -15,6 +15,8 @@ where
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+import qualified BlueRipple.Model.Demographic.EnrichData as DED
+
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -27,6 +29,7 @@ import qualified Stan.RScriptBuilder as SR
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
+import qualified Knit.Utilities.Streamly as KS
 import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 
@@ -35,6 +38,8 @@ import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
 import qualified Control.Foldl as FL
 import qualified Frames as F
+import qualified Frames.Transform as FT
+
 import Control.Lens (view)
 
 import Path (Dir, Rel)
@@ -76,18 +81,26 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
---    runAgeModel False
---    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
-{-
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu7
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu7
-    _ <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowEdu5
--}
---    modelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu5
-
-    modelResult <- runAgeModel True cmdLine (SM.ModelConfig () False SM.HCentered True) $ SM.designMatrixRowAge
---    runEduModel False cmdLine (SM.ModelConfig True SM.HCentered True) $ SM.designMatrixRowEdu2 @SM.ACSByStateEduMNR
+    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
+    ageModelResult <- runAgeModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowAge
+    -- create test frame
+    let onlyYear y r = F.rgetField @BRDF.Year r == y
+        onlyState sa r = F.rgetField @BRDF.StateAbbreviation r == sa
+        only sa y r = onlyState sa r && onlyYear y r
+    acsSample <- (F.filterFrame $ only "MA" 2020) <$> (K.ignoreCacheTimeM $  PUMS.pumsLoader Nothing >>= DDP.cachedACSByState)
+    let acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
+        acsSampleNoEdu = F.toFrame $ fst <$> DDP.acsByStateEduMN acsSample
+    K.logLE K.Info "sample ACS data"
+    BRK.logFrame acsSample
+    K.logLE K.Info "ACS data, aggregated by ages, split by age model"
+    enrichedAge <- KS.streamlyToKnit
+                   $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @PUMS.Citizens
+                   ageModelResult
+                   (F.rgetField @BRDF.StateAbbreviation)
+                   DT.EqualOrOver
+                   DT.Under
+                   acsSampleNoAge
+    BRK.logFrame enrichedAge
 {-
     K.logLE K.Info "Some Examples!"
 --    modelResult <- K.ignoreCacheTime res_C
@@ -104,6 +117,8 @@ main = do
     _ <- traverse (showExs "TX") exRs
     _ <- traverse (showExs "CT") exRs
 -}
+
+
     pure ()
   case resE of
     Right namedDocs →
