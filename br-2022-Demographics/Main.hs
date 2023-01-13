@@ -16,6 +16,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
+import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
@@ -62,6 +63,8 @@ templateVars =
 pandocTemplate ∷ K.TemplatePath
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
+
+
 main :: IO ()
 main = do
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
@@ -89,10 +92,15 @@ main = do
         only sa y r = onlyState sa r && onlyYear y r
     acsSample <- (F.filterFrame $ only "MA" 2020) <$> (K.ignoreCacheTimeM $  PUMS.pumsLoader Nothing >>= DDP.cachedACSByState)
     let acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
-        acsSampleNoEdu = F.toFrame $ fst <$> DDP.acsByStateEduMN acsSample
+
+        acsSampleNoEdu = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateEduMN acsSample
+        fixRows1 = F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.Age4C, PUMS.Citizens]
+        fixRows2 = F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]
     K.logLE K.Info "sample ACS data"
-    BRK.logFrame acsSample
-    K.logLE K.Info "ACS data, aggregated by ages, split by age model"
+    BRK.logFrame $ fmap fixRows1 acsSample
+    K.logLE K.Info "sample ACS data, aggregated by ages"
+    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, PUMS.Citizens]) acsSampleNoAge
+    K.logLE K.Info "sample ACS data, aggregated by ages, then split by age model"
     enrichedAge <- KS.streamlyToKnit
                    $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @PUMS.Citizens
                    ageModelResult
@@ -100,7 +108,18 @@ main = do
                    DT.EqualOrOver
                    DT.Under
                    acsSampleNoAge
-    BRK.logFrame enrichedAge
+    BRK.logFrame $ fmap fixRows2 enrichedAge
+
+    let allAges = S.fromList [DT.Under, DT.EqualOrOver]
+        allEdus = Keyed.elements @DT.Education4
+        dsFld = DED.desiredRowSumsFld @DT.Age4C @PUMS.Citizens @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC] allAges DT.age4ToSimple
+        desiredRowSumMap = FL.fold dsFld acsSampleNoEdu
+        desiredRowSumLookup k = maybe (Left $ show k <> " not found in desired sum row map") Right $ M.lookup k desiredRowSumMap
+        ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @DT.SimpleAgeC @DT.Education4C desiredRowSumLookup allEdus
+    nearestEnrichedAge <- K.knitEither $ FL.foldM ncFldM enrichedAge
+    K.logLE K.Info "ACS data, aggregated by ages, then split by age model, then age sums across education for given gender/race adjusted to original."
+    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
+    K.logLE K.Info $ show allEdus
 {-
     K.logLE K.Info "Some Examples!"
 --    modelResult <- K.ignoreCacheTime res_C
