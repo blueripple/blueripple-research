@@ -42,6 +42,9 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Melt as F
 
+
+
+
 -- produce rowSums
 desiredRowSumsFld :: forall a count ks b rs .
                      (ks F.⊆ rs
@@ -123,35 +126,52 @@ rowVal (RowMajorKey (a, _)) = a
 colVal :: RowMajorKey a b -> b
 colVal (RowMajorKey (_, b)) = b
 
-nearestCountsFrameIFld :: forall aC bC count .
-                          (V.Snd count ~ Int
-                          , Ord (V.Snd aC)
-                          , Ord (V.Snd bC)
-                          , V.KnownField aC
-                          , V.KnownField bC
-                          , V.KnownField count
-                          , F.ElemOf [aC, bC, count] aC
-                          , F.ElemOf [aC, bC, count] bC
-                          , F.ElemOf [aC, bC, count] count
-                          )
-                       => Map (V.Snd aC) Int
-                       -> Set (V.Snd bC)
-                       -> FL.Fold (F.Record [aC, bC, count]) [F.Record [aC, bC, count]]
-nearestCountsFrameIFld desiredRowSums colLabels = concat . makeRecords . newRows <$> givenMapFld where
-  allAs = M.keys desiredRowSums
-  allBs = S.elems colLabels
+rowMajorMapFld :: forall a b count .
+                  (V.Snd count ~ Int
+                   , Ord (V.Snd a)
+                   , Ord (V.Snd b)
+                   , V.KnownField a
+                   , V.KnownField b
+                   , V.KnownField count
+                   , F.ElemOf [a, b, count] a
+                   , F.ElemOf [a, b, count] b
+                   , F.ElemOf [a, b, count] count
+                   )
+               => Set (V.Snd a) -> Set (V.Snd b) -> FL.Fold (F.Record [a, b, count]) (Map (RowMajorKey (V.Snd a) (V.Snd b)) Int)
+rowMajorMapFld as bs = givenMapFld where
+  allAs = S.elems as
+  allBs = S.elems bs
   allABs = [RowMajorKey (a, b) | b <- allBs, a <- allAs]
 
-  zeroMap :: Map (RowMajorKey (V.Snd aC) (V.Snd bC)) Int
+  zeroMap :: Map (RowMajorKey (V.Snd a) (V.Snd b)) Int
   zeroMap = M.fromList $ (, 0) <$> allABs
 
-  asKeyVal :: F.Record [aC, bC, count] -> (RowMajorKey (V.Snd aC) (V.Snd bC), Int)
-  asKeyVal r = (RowMajorKey (F.rgetField @aC r, F.rgetField @bC r), F.rgetField @count r)
+  asKeyVal :: F.Record [a, b, count] -> (RowMajorKey (V.Snd a) (V.Snd b), Int)
+  asKeyVal r = (RowMajorKey (F.rgetField @a r, F.rgetField @b r), F.rgetField @count r)
 
   -- fold the input records to a map keyed by categories and add 0s when things are missing
-  givenMapFld :: FL.Fold (F.Record [aC, bC, count]) (Map (RowMajorKey (V.Snd aC) (V.Snd bC)) Int)
+  givenMapFld :: FL.Fold (F.Record [a, b, count]) (Map (RowMajorKey (V.Snd a) (V.Snd b)) Int)
   givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
 
+rowMajorMapTable :: (Ord a, Ord b) => Map (RowMajorKey a b) Int -> Map a (Map b Int)
+rowMajorMapTable = M.fromListWith (M.unionWith (+)) .  fmap (\(k, n) -> (rowVal k, M.singleton (colVal k) n)) .  M.toList
+
+nearestCountsFrameIFld :: forall a b count .
+                          (V.Snd count ~ Int
+                          , Ord (V.Snd a)
+                          , Ord (V.Snd b)
+                          , V.KnownField a
+                          , V.KnownField b
+                          , V.KnownField count
+                          , F.ElemOf [a, b, count] a
+                          , F.ElemOf [a, b, count] b
+                          , F.ElemOf [a, b, count] count
+                          )
+                       => Map (V.Snd a) Int
+                       -> Set (V.Snd b)
+                       -> FL.Fold (F.Record [a, b, count]) [F.Record [a, b, count]]
+nearestCountsFrameIFld desiredRowSums colLabels = concat . makeRecords . newRows <$> rowMajorMapFld @a @b @count rowLabels colLabels where
+  rowLabels = M.keysSet desiredRowSums
   -- splitAt but keeps going until entire list is split into things of given length and whatever is left
   splitAtAll :: Int -> [c] -> [[c]]
   splitAtAll n l = reverse $ go l [] where
@@ -162,8 +182,8 @@ nearestCountsFrameIFld desiredRowSums colLabels = concat . makeRecords . newRows
       where
         (slice, rest) = List.splitAt n remaining
 
-  toRows :: Map k a -> [[a]]
-  toRows = splitAtAll (length allBs) . M.elems
+  toRows :: Map k x -> [[x]]
+  toRows = splitAtAll (S.size colLabels) . M.elems
 
   adjustRow :: Int -> [Int] -> [Int]
   adjustRow desiredSum counts = fmap adjustCell counts
@@ -172,14 +192,14 @@ nearestCountsFrameIFld desiredRowSums colLabels = concat . makeRecords . newRows
           mult :: Double = realToFrac totalDiff /  realToFrac rowSum
           adjustCell n = n + round (mult * realToFrac n)
 
-  newRows :: Map (RowMajorKey (V.Snd aC) (V.Snd bC)) Int -> [[Int]]
+  newRows :: Map (RowMajorKey (V.Snd a) (V.Snd b)) Int -> [[Int]]
   newRows = zipWith adjustRow (M.elems desiredRowSums) . toRows
 
-  makeRec :: V.Snd aC -> (V.Snd bC, Int) -> F.Record [aC, bC, count]
+  makeRec :: V.Snd a -> (V.Snd b, Int) -> F.Record [a, b, count]
   makeRec a (b, n) =  a F.&: b F.&: n F.&: V.RNil
 
-  makeRecords :: [[Int]] -> [[F.Record [aC, bC, count]]]
-  makeRecords = zipWith (fmap . makeRec) allAs . fmap (zip allBs)
+  makeRecords :: [[Int]] -> [[F.Record [a, b, count]]]
+  makeRecords = zipWith (fmap . makeRec) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
 
 
 ---

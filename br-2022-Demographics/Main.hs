@@ -33,6 +33,7 @@ import qualified Knit.Effect.AtomicCache as KC
 import qualified Knit.Utilities.Streamly as KS
 import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
+import qualified Colonnade as C
 
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -90,16 +91,25 @@ main = do
     let onlyYear y r = F.rgetField @BRDF.Year r == y
         onlyState sa r = F.rgetField @BRDF.StateAbbreviation r == sa
         only sa y r = onlyState sa r && onlyYear y r
+        onlyGender g r = F.rgetField @DT.SexC r == g
+        onlyRE race eth r = F.rgetField @DT.RaceAlone4C r == race && F.rgetField @DT.HispC r == eth
+        exampleFilter r = onlyState "MA" r && onlyGender DT.Female r && onlyRE DT.RA4_White DT.NonHispanic r
     acsSample <- (F.filterFrame $ only "MA" 2020) <$> (K.ignoreCacheTimeM $  PUMS.pumsLoader Nothing >>= DDP.cachedACSByState)
     let acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
 
         acsSampleNoEdu = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateEduMN acsSample
-        fixRows1 = F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.Age4C, PUMS.Citizens]
-        fixRows2 = F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]
+--        fixRows1 = F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.Age4C, PUMS.Citizens]
+--        fixRows2 = F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]
     K.logLE K.Info "sample ACS data"
-    BRK.logFrame $ fmap fixRows1 acsSample
+    let allSimpleAges = S.fromList [DT.Under, DT.EqualOrOver]
+        allAges = Keyed.elements @DT.Age4
+        allEdus = Keyed.elements @DT.Education4
+    let acsTableMap = FL.fold (fmap DED.rowMajorMapTable $ DED.rowMajorMapFld allAges allEdus)
+          $ fmap (F.rcast @[DT.Age4C, DT.Education4C, PUMS.Citizens])
+          $ F.filterFrame exampleFilter acsSample
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) $ M.toList acsTableMap)
     K.logLE K.Info "sample ACS data, aggregated by ages"
-    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, PUMS.Citizens]) acsSampleNoAge
+--    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, PUMS.Citizens]) acsSampleNoAge
     K.logLE K.Info "sample ACS data, aggregated by ages, then split by age model"
     enrichedAge <- KS.streamlyToKnit
                    $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @PUMS.Citizens
@@ -108,17 +118,23 @@ main = do
                    DT.EqualOrOver
                    DT.Under
                    acsSampleNoAge
-    BRK.logFrame $ fmap fixRows2 enrichedAge
-
-    let allAges = S.fromList [DT.Under, DT.EqualOrOver]
-        allEdus = Keyed.elements @DT.Education4
-        dsFld = DED.desiredRowSumsFld @DT.Age4C @PUMS.Citizens @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC] allAges DT.age4ToSimple
+    let enrichedTableMap = FL.fold (fmap DED.rowMajorMapTable $ DED.rowMajorMapFld allSimpleAges allEdus)
+          $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])
+          $ F.filterFrame exampleFilter enrichedAge
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) $ M.toList enrichedTableMap)
+--    BRK.logFrame $ fmap fixRows2 enrichedAge
+    let dsFld = DED.desiredRowSumsFld @DT.Age4C @PUMS.Citizens @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC] allSimpleAges DT.age4ToSimple
         desiredRowSumMap = FL.fold dsFld acsSampleNoEdu
         desiredRowSumLookup k = maybe (Left $ show k <> " not found in desired sum row map") Right $ M.lookup k desiredRowSumMap
         ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @DT.SimpleAgeC @DT.Education4C desiredRowSumLookup allEdus
     nearestEnrichedAge <- K.knitEither $ FL.foldM ncFldM enrichedAge
+    let nearestTableMap = FL.fold (fmap DED.rowMajorMapTable $ DED.rowMajorMapFld allSimpleAges allEdus)
+          $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])
+          $ F.filterFrame exampleFilter nearestEnrichedAge
     K.logLE K.Info "ACS data, aggregated by ages, then split by age model, then age sums across education for given gender/race adjusted to original."
-    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) $ M.toList nearestTableMap)
+
+--    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
     K.logLE K.Info $ show allEdus
 {-
     K.logLE K.Info "Some Examples!"
@@ -143,6 +159,15 @@ main = do
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+
+mapColonnade :: (Show a, Show b, Ord b) => Set b -> C.Colonnade C.Headed (a, Map b Int) Text
+mapColonnade bs = C.headed "A" (show . fst)
+                  <> mconcat (fmap (\b -> C.headed (show b) (fixMaybe . M.lookup b . snd)) (S.toAscList bs))
+                  <>  C.headed "Total" (fixMaybe . sumM) where
+  fixMaybe = maybe "0" show
+  sumM x = fmap (FL.fold FL.sum) <$> traverse (\b -> M.lookup b (snd x)) $ S.toList bs
+
 
 -- emptyRel = [Path.reldir||]
 postDir ∷ Path.Path Rel Dir
