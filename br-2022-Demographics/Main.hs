@@ -126,7 +126,7 @@ main = do
     let dsFld = DED.desiredRowSumsFld @DT.Age4C @PUMS.Citizens @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC] allSimpleAges DT.age4ToSimple
         desiredRowSumMap = FL.fold dsFld acsSampleNoEdu
         desiredRowSumLookup k = maybe (Left $ show k <> " not found in desired sum row map") Right $ M.lookup k desiredRowSumMap
-        ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @DT.SimpleAgeC @DT.Education4C (DED.nearestCountsFrameIFld DED.nearestCountsProp) desiredRowSumLookup allEdus
+        ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @DT.SimpleAgeC @DT.Education4C (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup allEdus
     nearestEnrichedAge <- K.knitEither $ FL.foldM ncFldM enrichedAge
     let nearestTableMap = FL.fold (fmap DED.rowMajorMapTable $ DED.rowMajorMapFld id allSimpleAges allEdus)
           $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])

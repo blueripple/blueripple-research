@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
@@ -43,6 +44,9 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Numeric.LinearAlgebra as LA
 import qualified Data.Vector.Storable as VS
+
+import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
+import qualified Say as Say
 
 -- produce rowSums
 desiredRowSumsFld :: forall a count ks b rs .
@@ -171,21 +175,12 @@ nearestCountsFrameIFld innerComp desiredRowSums colLabels =
   $ mapMFold (innerComp  (M.elems desiredRowSums))
   $ (toRows <$> rowMajorMapFld @count @a id rowLabels colLabels) where
   rowLabels = M.keysSet desiredRowSums
-  -- splitAt but keeps going until entire list is split into things of given length and whatever is left
-  splitAtAll :: Int -> [c] -> [[c]]
-  splitAtAll n l = reverse $ go l [] where
-    go remaining accum =
-      if null rest
-      then remaining : accum
-      else go rest (slice : accum)
-      where
-        (slice, rest) = List.splitAt n remaining
 
   toRows :: Map k x -> [[x]]
   toRows = splitAtAll (S.size colLabels) . M.elems
 
   mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
-  mapMFold f (FL.Fold step init extract) = FL.FoldM (\x h -> pure $ step x h) (pure $ init) (f . extract)
+  mapMFold f (FL.Fold step init' extract) = FL.FoldM (\x h -> pure $ step x h) (pure init') (f . extract)
 
   makeRec :: V.Snd a -> (V.Snd b, Int) -> F.Record [a, b, count]
   makeRec a (b, n) =  a F.&: b F.&: n F.&: V.RNil
@@ -193,6 +188,15 @@ nearestCountsFrameIFld innerComp desiredRowSums colLabels =
   makeRecords :: [[Int]] -> [[F.Record [a, b, count]]]
   makeRecords = zipWith (fmap . makeRec) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
 
+ -- splitAt but keeps going until entire list is split into things of given length and whatever is left
+splitAtAll :: Int -> [c] -> [[c]]
+splitAtAll n l = reverse $ go l [] where
+  go remaining accum =
+    if null rest
+    then remaining : accum
+    else go rest (slice : accum)
+    where
+      (slice, rest) = List.splitAt n remaining
 
 nearestCountsProp :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsProp dRowSums oCounts = do
@@ -205,6 +209,79 @@ nearestCountsProp dRowSums oCounts = do
 
   pure $ zipWith adjustRow dRowSums oCounts
 
+nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL dRowSumsI oCountsI = do
+  let toDouble = realToFrac @Int @LA.R
+      aV = LA.fromList $ fmap toDouble dRowSumsI
+      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI
+      nV = LA.fromList $ (toDouble <$> mconcat oCountsI)
+      (rows, cols) = LA.size nM
+      oneV = LA.fromList $ replicate (rows * cols) 1
+      update q d = VS.zipWith (*) q (VS.zipWith (+) oneV d)
+      converge maxN n tol tolF qV deltaV = do
+        when (n >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
+        if tolF deltaV >= tol
+          then (do
+                   let qV' = update qV deltaV
+                   deltaV' <- updateFromGuess rows cols aV nV qV'
+                   converge maxN (n + 1) tol tolF qV' deltaV'
+               )
+          else pure qV
+  let nMax = 5
+      absTol = 0.001
+      tolF dV = VS.sum $ VS.zipWith (*) dV dV
+  deltaV <- updateFromGuess rows cols aV nV nV
+  qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
+  pure $ splitAtAll cols (fmap round $ LA.toList qVsol)
+
+
+
+updateFromGuess :: Int -- rows
+                -> Int -- cols
+                -> LA.Vector LA.R -- desired row sums
+                -> LA.Vector LA.R -- N in row major form
+                -> LA.Vector LA.R -- current guess, row major
+                -> Either Text (LA.Vector LA.R) -- delta, row major
+updateFromGuess rows cols aV nV qV = do
+  let nSum = VS.sum nV
+      qSum = VS.sum qV
+      invnSum = 1 / nSum
+      safeDiv x y = if y == 0 then 1 else x / y
+      nDivq = VS.zipWith safeDiv nV qV
+      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
+      rowIndex l = l `div` cols
+      colIndex l = l `mod` cols
+      f l = [((l, rowIndex l), 1), ((l, rows + colIndex l), 1)]
+      ur :: LA.Matrix LA.R
+      ur = LA.assoc (rows * cols, rows + cols) 0 $ mconcat $ fmap f [0..(rows * cols - 1)]
+      rowSumMask :: Int -> LA.Vector LA.R
+      rowSumMask j = LA.assoc (rows * cols) 0 $ fmap (\k -> (k + j * cols, 1)) [0..(cols - 1)]
+      rowSumVec j = LA.scale invnSum $ VS.zipWith (*) qV (rowSumMask j)
+      colSumMask :: Int -> LA.Vector LA.R
+      colSumMask k = LA.assoc (rows * cols) 0 $ fmap (\j -> (k + j * cols, 1)) [0..(rows - 1)]
+      colSumVec k = LA.scale invnSum $ VS.zipWith (*) qV (colSumMask k)
+      ll =  LA.fromRows (fmap rowSumVec [0..(rows - 1)]) LA.=== LA.fromRows (fmap colSumVec [0..(cols - 1)])
+      lr = LA.konst 0 (rows + cols, rows +  cols)
+      m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
+      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
+      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
+      qRowSumsV = rowSums qV
+
+--      colSumsL = fmap (realToFrac @LA.I @LA.R . VS.sum) $ LA.toColumns oCountsM
+      rhsV = LA.vjoin [VS.map (\x -> x - nSum / qSum) nDivq
+                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
+                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
+                      ]
+      rhsM = LA.fromColumns [rhsV]
+      funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
+                    <> "\nm=\n" <> toText (LA.dispf 4 m)
+                    <> "\nrhs=\n" <> toText (LA.dispf 4 rhsM)
+--      luPacked = LA.luPacked m
+--      luSol = LA.luSolve luPacked rhsM
+  luSol <- maybeToRight ("LU solver failure:" <> funcDetails) $ LA.linearSolve m rhsM
+  let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails <> "\ndelta=\n" <> toText (LA.dispf 4 luSol)
+  mSol :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty (LA.subVector 0 (rows * cols) . head) $ LA.toColumns luSol
+  pure mSol
 
 enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                               (rs F.⊆ rs
