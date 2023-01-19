@@ -214,46 +214,166 @@ nearestCountsProp dRowSums oCounts = do
 
   pure $ zipWith adjustRow dRowSums oCounts
 
-nearestCountsKL_NL :: [Int] -> [[Int]] -> Either Text [[Int]]
-nearestCountsKL_NL dRowSumsI oCountsI = do
+nearestCountsKL_NL1 :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL_NL1 dRowSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
       nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI
       nVRaw = LA.fromList (toDouble <$> mconcat oCountsI)
       nSum = VS.sum nVRaw
       nV = LA.scale (1 / nSum) nVRaw
-      aV = LA.scale (1 / nSum) $ LA.fromList $ fmap toDouble dRowSumsI
+      aV = let avRaw =  LA.fromList $ fmap toDouble dRowSumsI in LA.scale (1 / VS.sum avRaw) avRaw
       (rows, cols) = LA.size nM
 --      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
       indexes l = l `divMod` cols
+      mGuessV = LA.scale (1 / nSum) $ LA.fromList $ mconcat $ zipWith (\l rs -> fmap ((* rs) . toDouble) l) oCountsI (VS.toList aV)
+
+
       rowSums :: LA.Vector LA.R -> LA.Vector LA.R
       rowSums = LA.fromList . fmap VS.sum . LA.toRows . LA.reshape cols
       colSums :: LA.Vector LA.R -> LA.Vector LA.R
       colSums = LA.fromList . fmap VS.sum . LA.toColumns . LA.reshape cols
 --      nRowSums = rowSums cols nV
-      nColSums = colSums nV
+      nColSumsV = colSums nV
       nSize = rows * cols
+
+      kl :: LA.Vector LA.R -> Double
+      kl mV = result where
+        klTermF x y = if y == 0 then 0 else x * Numeric.log (x / y)
+--        logNMV = VS.zipWith klTermF nV mV
+        result =  Numeric.log (VS.sum mV) + VS.sum (VS.zipWith klTermF nV mV)
+        !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\nkl=" <> show result
       -- our vector is components of M in row major order, followed by Lagrange multipliers
       subVectors :: LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
       subVectors v = (mV, lambdaV, gammaV) where
         mV = LA.subVector 0 nSize v
         lambdaV = LA.subVector nSize rows v
         gammaV = LA.subVector (nSize + rows) cols v
+
+      f :: LA.Vector LA.R -> Double
+      f v = result
+        where
+          (mV, lambdaV, gammaV) = subVectors v
+          rowSumErrs = rowSums mV - aV
+          colSumErrs = colSums mV - nColSumsV
+          mult3 x y z = x * y * z
+          result =  0.5 * kl mV
+                    + VS.sum (VS.zipWith3 mult3 lambdaV rowSumErrs rowSumErrs)
+                    + VS.sum (VS.zipWith3 mult3 gammaV colSumErrs colSumErrs)
+
+      subVectorsR :: LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
+      subVectorsR v = (mV, lambdaV, gammaV) where
+        mV = LA.subVector 0 (nSize - 1) v
+        lambdaV = LA.subVector (nSize - 1) rows v
+        gammaV = LA.subVector (nSize - 1 + rows) cols v
+
+
+      fR :: LA.Vector LA.R -> Double
+      fR v = result
+        where
+          (mrV, lambdaV, gammaV) = subVectorsR v
+          mV = VS.cons (1 - VS.sum mrV) mrV
+          rowSumErrs = rowSums mV - aV
+          colSumErrs = colSums mV - nColSumsV
+          mult3 x y z = x * y * z
+          result =  0.5 * kl mV
+                    + VS.sum (VS.zipWith3 mult3 lambdaV rowSumErrs rowSumErrs)
+                    + VS.sum (VS.zipWith3 mult3 gammaV colSumErrs colSumErrs)
+
+--          !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\nlV=" <> show lambdaV <> "; gV=" <> show gammaV <> "\nf=" <> show result
+
+      fGradients :: LA.Vector LA.R -> LA.Vector LA.R
+      fGradients v = VS.concat [mGradV, lambdaGradV, gammaGradV] where
+        (mV, lambdaV, gammaV) = subVectors v
+        sumM = VS.sum mV
+        rowSumErrors = LA.scale 2 $ rowSums mV - aV
+        colSumErrors = LA.scale 2 $ colSums mV - nColSumsV
+        klGrad x y = if y == 0 || x == 0 then (1 / sumM) - 1 else (1 / sumM) - (x / y)
+        klGrads = VS.zipWith klGrad nV mV
+        mLambdaGradV = VS.zipWith (*) lambdaV rowSumErrors
+        mGammaGradV = VS.zipWith (*) gammaV colSumErrors
+        mGradF l = klGrads VS.! l + mLambdaGradV VS.! j + mGammaGradV VS.! k
+          where
+            (j, k) = indexes l
+        mGradV = VS.generate nSize mGradF
+        lambdaGradV = rowSums mV - aV
+        gammaGradV = colSums mV - nColSumsV
+        !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\nlV=" <> show lambdaV <> "; gV=" <> show gammaV
+             <> "\nmGradV=" <> show mGradV <> "\nlGradV=" <> show lambdaGradV <> "; gGradV=" <> show gammaGradV
+
+      nlStarting = VS.concat [VS.drop 1 mGuessV, VS.replicate (rows + cols) 0] -- we start at n with 0 multipliers
+      nlObjectiveD v = (f v, fGradients v)
+      nlBounds = [NLOPT.LowerBounds $ VS.concat [VS.replicate (nSize - 1) 0, VS.replicate (rows + cols) $ negate 100]
+                 , NLOPT.UpperBounds $ VS.concat [VS.replicate (nSize - 1) 1, VS.replicate (rows + cols) 100]
+                 ]
+      nlStop = NLOPT.ParameterRelativeTolerance 0.01 :| [NLOPT.MaximumEvaluations 100]
+--      nlAlgo = NLOPT.TNEWTON nlObjectiveD Nothing --nlBounds [] []
+--      nlAlgo = NLOPT.SLSQP nlObjectiveD nlBounds [] []
+      nlAlgo = NLOPT.NELDERMEAD fR nlBounds Nothing
+      nlProblem = NLOPT.LocalProblem (fromIntegral $ nSize - 1 + rows + cols) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem nlStarting
+  case nlSol of
+    Left result -> Left $ show result <> "\n" <> "rowSums=\n" <> show dRowSumsI <> "\nN=\n" <> show oCountsI
+    Right solution -> do
+      let sol = splitAtAll cols . fmap (round @_ @Int) . LA.toList . LA.scale nSum $ LA.subVector 0 nSize (NLOPT.solutionParams solution)
+      Left $ "Succeeded! rowSums=\n" <> show dRowSumsI <> "\nN=\n" <> show oCountsI <> "\nM=\n" <> show sol
+
+nearestCountsKL_NL2 :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL_NL2 dRowSumsI oCountsI = do
+  let toDouble = realToFrac @Int @LA.R
+      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI
+      nVRaw = LA.fromList (toDouble <$> mconcat oCountsI)
+      nSum = VS.sum nVRaw
+      nV = LA.scale (1 / nSum) nVRaw
+      aV = let avRaw =  LA.fromList $ fmap toDouble dRowSumsI in LA.scale (1 / VS.sum avRaw) avRaw
+      (rows, cols) = LA.size nM
+--      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
+      indexes l = l `divMod` cols
+      mGuessV = LA.scale (1 / nSum) $ LA.fromList $ mconcat $ zipWith (\l rs -> fmap ((* rs) . toDouble) l) oCountsI (VS.toList aV)
+
+
+      rowSums :: LA.Vector LA.R -> LA.Vector LA.R
+      rowSums = LA.fromList . fmap VS.sum . LA.toRows . LA.reshape cols
+      colSums :: LA.Vector LA.R -> LA.Vector LA.R
+      colSums = LA.fromList . fmap VS.sum . LA.toColumns . LA.reshape cols
+--      nRowSums = rowSums cols nV
+      nColSumsV = colSums nV
+      nSize = rows * cols
+
       kl :: LA.Vector LA.R -> Double
-      kl v = Numeric.log (VS.sum v) + VS.sum (VS.zipWith (*) nV logNMV) where
-        safeLogRatio x y = if y == 0 then 0 else Numeric.log (x / y)
-        logNMV = VS.zipWith safeLogRatio nV v
-{-      nlCBounds = [NLOPT.LowerBounds $ VS.replicate nSize 0, NLOPT.UpperBounds $ VS.replicate nSize 1]
+      kl mV = result where
+        safeLogRatio x y = if y == 0 then 0 else x * Numeric.log (x / y)
+        logNMV = VS.zipWith safeLogRatio nV mV
+        result =  Numeric.log (VS.sum mV) + VS.sum (VS.zipWith (*) nV logNMV)
+        !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\nkl=" <> show result
+
+      nlCBounds = [NLOPT.LowerBounds $ VS.replicate nSize 0, NLOPT.UpperBounds $ VS.replicate nSize 1]
 
       klGradients :: LA.Vector LA.R -> LA.Vector LA.R
-      klGradients v = VS.zipWith g nV v where
-        mSum = VS.sum v
+      klGradients mV = result where
+        mSum = VS.sum mV
         g x y = if y == 0 then 0 else (1 / mSum) - x / y -- M_jk should be zero if N_jk is, and then this ratio is 1. Any other M_jk == 0 is a real error
+        result = VS.zipWith g nV mV
+--        !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\ngrad(kl)=" <> show result
 
-      rowSumConstraint j v = (rowSums v VS.! j - aV VS.! j, VS.generate nSize (\l -> if fst (indexes l) == j then 1 else 0))
-      colSumConstraint k v = (colSums v VS.! k - nColSums VS.! k, VS.generate nSize (\l -> if snd (indexes l) == k then 1 else 0))
+
+      rowSumConstraint j v = (rowSums v) VS.! j - aV VS.! j
+      colSumConstraint k v = (colSums v) VS.! k  - nColSumsV VS.! k
+      sumConstraint v = VS.sum v - 1
       toNLEC f = NLOPT.EqualityConstraint (NLOPT.Scalar f) 0.01
-      nlConstraints = fmap (toNLEC . rowSumConstraint) [0..(rows - 1)]
-                      <> fmap (toNLEC . colSumConstraint) [0..(cols - 1)]
+--      toNLECD f = NLOPT.EqualityConstraintD (NLOPT.Scalar f) 0.01
+{-
+      rowSumConstraintD j v =  VS.generate nSize (\l -> if fst (indexes l) == j then 1 else 0)
+      colSumConstraintD k v = VS.generate nSize (\l -> if snd (indexes l) == k then 1 else 0)
+
+      nlScalarConstraintsD = fmap ((\n -> toNLEC $ \v -> (rowSumConstraint n v, rowSumConstraintD n v))) [0..(rows - 1)]
+                            <> fmap ((\n -> toNLEC $ \v -> (colSumConstraint n v, colSumConstraintD n v))) [0..(cols - 1)]
+
+-}
+      nlScalarConstraints = [toNLEC sumConstraint]
+                            <> fmap (toNLEC . rowSumConstraint) [0..(rows - 1)]
+                            <> fmap (toNLEC . colSumConstraint) [0..(cols - 1)]
+
+
 {-
       rowSumConstraint v size = (rowSums v - aV, LA.konst 0 (nSize, rows))
   {-                               , LA.tr
@@ -265,65 +385,69 @@ nearestCountsKL_NL dRowSumsI oCountsI = do
                                   $ LA.reshape cols
                                   $ VS.generate (cols * nSize) (\q -> let (col, l) = divMod cols q in if snd (indexes l) == col then 1 else 0))
 -}
+
       nlRowSumConstraint = NLOPT.EqualityConstraint (NLOPT.Vector (fromIntegral rows) rowSumConstraint) 0.001
       nlColSumConstraint = NLOPT.EqualityConstraint (NLOPT.Vector (fromIntegral cols) colSumConstraint) 0.001
 
-      nlConstraints = [nlRowSumConstraint, nlColSumConstraint]
+      nlVecConstraints = [nlRowSumConstraint, nlColSumConstraint]
 -}
       nlCObjectiveD v = (kl v, klGradients v)
-      nlStop = NLOPT.ParameterRelativeTolerance 0.01 :| [NLOPT.MaximumEvaluations 10]
-      nlCAlgo = NLOPT.SLSQP nlCObjectiveD nlCBounds [] nlConstraints
+      nlCObjective v = kl v
+      nlStop = NLOPT.ParameterRelativeTolerance 0.01 :| [NLOPT.MaximumEvaluations 100]
+--      nlCAlgo = NLOPT.SLSQP nlCObjectiveD nlCBounds [] nlScalarConstraintsD
+--      nlCAlgo = NLOPT.SLSQP nlCObjectiveD nlCBounds [] nlScalarConstraintsD
+      nlCAlgo = NLOPT.COBYLA nlCObjective nlCBounds [] nlScalarConstraints Nothing
       nlCProblem = NLOPT.LocalProblem (fromIntegral nSize) nlStop nlCAlgo
-      nlCSol = NLOPT.minimizeLocal nlCProblem nV
+      nlCSol = NLOPT.minimizeLocal nlCProblem mGuessV
   case nlCSol of
     Left result -> Left $ show result
-    Right solution -> Right . splitAtAll cols . fmap round . LA.toList . LA.scale nSum $ LA.subVector 0 nSize (NLOPT.solutionParams solution)
+    Right solution -> do
+      let solV = NLOPT.solutionParams solution
+          sol = splitAtAll cols . fmap round . LA.toList . LA.scale nSum $ solV
+      Left
+        $ "Succeeded! (" <> show (NLOPT.solutionResult solution) <> ")\n"
+        <> "rowSums=\n" <> show dRowSumsI <> "\nN=\n" <> show oCountsI <> "\nM=\n" <> show sol
+        <> "\nsolV=" <> show solV
+        <> "\naV=" <> show aV
+        <> "\nsumConstraint=" <> show (sumConstraint solV)
+        <> "\nrowSumConstraints=" <> show ((fmap ((flip rowSumConstraint) solV)) [0..(rows - 1)])
+        <> "\ncolSumConstraints=" <> show ((fmap ((flip colSumConstraint) solV)) [0..(cols - 1)])
+
+--      Right . splitAtAll cols . fmap round . LA.toList . LA.scale nSum $ LA.subVector 0 nSize (NLOPT.solutionParams solution)
+
+{-
+
 -}
-
-      f :: LA.Vector LA.R -> Double
-      f v = 0.5 * kl mV
-            + (VS.sum $ VS.zipWith (*) lambdaV (rowSums mV - aV))
-            + (VS.sum $ VS.zipWith (*) gammaV (colSums mV - nColSums))
-        where
-          (mV, lambdaV, gammaV) = subVectors v
-
-      fGradients :: LA.Vector LA.R -> LA.Vector LA.R
-      fGradients v = VS.concat [mGradV, lambdaGradV, gammaGradV] where
-        (mV, lambdaV, gammaV) = subVectors v
-        sumM = VS.sum mV
-        klGrad x y = if y == 0 then 0 else (1 / sumM) - (x / y)
-        klGrads = VS.zipWith klGrad nV mV
-        mGradF l = klGrads VS.! l + lambdaV VS.! j + gammaV VS.! k
-          where
-            (j, k) = indexes l
-        mGradV = VS.generate nSize mGradF
-        lambdaGradV = rowSums mV - aV
-        gammaGradV = colSums mV - nColSums
-      nlStarting = VS.concat [nV, VS.replicate (rows + cols) 0] -- we start at n with 0 multipliers
-      nlObjectiveD v = (f v, fGradients v)
-      nlBounds = [NLOPT.LowerBounds $ VS.concat [VS.replicate nSize 0, VS.replicate (rows + cols) $ negate 100]
-                 , NLOPT.UpperBounds $ VS.concat [VS.replicate nSize 1, VS.replicate (rows + cols) 100]
-                 ]
-      nlStop = NLOPT.ParameterRelativeTolerance 0.01 :| [NLOPT.MaximumEvaluations 10]
-      nlAlgo = NLOPT.VAR2 nlObjectiveD Nothing --nlBounds [] []
-      nlProblem = NLOPT.LocalProblem (fromIntegral $ nSize + rows + cols) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem nlStarting
-  case nlSol of
-    Left result -> Left $ show result
-    Right solution -> Right . splitAtAll cols . fmap round . LA.toList . LA.scale nSum $ LA.subVector 0 nSize (NLOPT.solutionParams solution)
-
 
 nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsKL dRowSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
+
+      transpose :: [[a]] -> [[a]]
+      transpose = go [] where
+        go x [] = fmap reverse x
+        go [] (r : rs) = go (fmap (\y -> [y]) r) rs
+        go x (r :rs) = go (List.zipWith (:) r x) rs
+
+      remove :: Int -> [Int] -> [[Int]] -> [[Int]]
+      remove _ [] l = l
+      remove n (ix : ixs) l = remove (n + 1) ixs $ let (h, t) = List.splitAt (ix - n) l in h <> List.drop 1 t
+
+      restore :: [Int] -> [[Int]] -> [[Int]]
+      restore [] l = l
+      restore (ix : ixs) l = restore ixs $ take ix l <> (replicate cols 0 : drop ix l)
+
+
       rsZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..] dRowSumsI
+      csZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..]
+                 $ fmap (FL.fold FL.sum) $ transpose oCountsI
       dRowSumsI' = filter (/= 0) dRowSumsI
       aV = LA.fromList $ fmap toDouble dRowSumsI'
-      oCountsI' = remove 0 rsZeroIx oCountsI where
-        remove _ [] l = l
-        remove n (ix : ixs) l = remove (n + 1) ixs $ let (h, t) = List.splitAt (ix - n) l in h <> List.drop 1 t
-      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI'
-      nV = LA.fromList (toDouble <$> mconcat oCountsI')
+      oCountsI' = remove 0 rsZeroIx oCountsI
+      oCountsI'' = transpose $ remove 0 csZeroIx $ transpose oCountsI'
+
+      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI''
+      nV = LA.fromList (toDouble <$> mconcat oCountsI'')
       (rows, cols) = LA.size nM
       oneV = LA.fromList $ replicate (rows * cols) 1
       update q d = VS.zipWith (*) q (VS.zipWith (+) oneV d)
@@ -341,10 +465,9 @@ nearestCountsKL dRowSumsI oCountsI = do
       tolF dV = VS.sum $ VS.zipWith (*) dV dV
   deltaV <- updateFromGuess rows cols aV nV nV
   qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
-  let sol' = splitAtAll cols (fmap round $ LA.toList qVsol)
-      sol = restore rsZeroIx sol' where
-        restore [] l = l
-        restore (ix : ixs) l = restore ixs $ take ix l <> (replicate cols 0 : drop ix l)
+  let sol'' = splitAtAll cols (fmap round $ LA.toList qVsol)
+      sol' = transpose $ restore csZeroIx $ transpose sol''
+      sol = restore rsZeroIx sol'
   pure sol
 
 
