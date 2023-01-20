@@ -54,13 +54,13 @@ import GHC.Base (VecElem(DoubleElemRep))
 
 
 -- produce rowSums
-desiredRowSumsFld :: forall kOuter k r .
-                     (Ord kOuter, Ord k)
-                  => (r -> Int)
-                  -> (r -> kOuter)
-                  -> (r -> k)
-                  -> Set k
-                  -> FL.Fold r (Map kOuter (Map k Int))
+desiredRowSumsFld :: forall kOuter rk d .
+                     (Ord kOuter, Ord rk)
+                  => (d -> Int)
+                  -> (d -> kOuter)
+                  -> (d -> rk)
+                  -> Set rk
+                  -> FL.Fold d (Map kOuter (Map rk Int))
 desiredRowSumsFld count outerKey innerKey allBs  =
   fmap M.fromList
   $ MR.mapReduceFold
@@ -72,30 +72,86 @@ desiredRowSumsFld count outerKey innerKey allBs  =
     innerAndCount r = (innerKey r, count r)
     zeroMap = M.fromList $ (, 0) <$> S.toList allBs
 --    asKeyVal r = (reKey $ F.rgetField @a r, F.rgetField @count r)
-    reduceFld :: FL.Fold (k, Int) (Map k Int)
+    reduceFld :: FL.Fold (rk, Int) (Map rk Int)
     reduceFld = M.unionWith (+) zeroMap <$> FL.foldByKeyMap FL.sum
 
-nearestCountsFrameFld :: forall count a b ks rs .
-                         (F.ElemOf rs a
-                         , F.ElemOf rs b
-                         , F.ElemOf rs count
+rowMajorMapFld :: forall d rk ck .
+                  (Ord rk, Ord ck)
+               => (d -> Int) -> (d -> rk) -> (d -> ck) -> Set rk -> Set ck -> FL.Fold d (Map (rk, ck) Int)
+rowMajorMapFld count rowKey colKey allRowKeysS allColKeysS = givenMapFld where
+  allRowKeysL = S.elems allRowKeysS
+  allColKeysL = S.elems allColKeysS
+  allRowColKeysL = [(rk, ck) | rk <- allRowKeysL, ck <- allColKeysL]
+
+  zeroMap :: Map (rk, ck) Int
+  zeroMap = M.fromList $ (, 0) <$> allRowColKeysL
+
+  asKeyVal :: d -> ((rk, ck), Int)
+  asKeyVal d = ((rowKey d, colKey d), count d)
+
+  -- fold the input records to a map keyed by categories and add 0s when things are missing
+  givenMapFld :: FL.Fold d (Map (rk, ck) Int)
+  givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
+
+
+rowMajorMapFld' :: forall count a b c .
+                  (V.Snd count ~ Int
+                   , Ord c
+                   , Ord (V.Snd b)
+                   , V.KnownField a
+                   , V.KnownField b
+                   , V.KnownField count
+                   , F.ElemOf [a, b, count] a
+                   , F.ElemOf [a, b, count] b
+                   , F.ElemOf [a, b, count] count
+                   )
+               => (V.Snd a -> c) -> Set c -> Set (V.Snd b) -> FL.Fold (F.Record [a, b, count]) (Map (c, V.Snd b) Int)
+rowMajorMapFld' rowMerge cs bs = givenMapFld where
+  allCs = S.elems cs
+  allBs = S.elems bs
+  allCBs = [(c, b) | c <- allCs, b <- allBs]
+
+  zeroMap :: Map (c, V.Snd b) Int
+  zeroMap = M.fromList $ (, 0) <$> allCBs
+
+  asKeyVal :: F.Record [a, b, count] -> ((c, V.Snd b), Int)
+  asKeyVal r = ((rowMerge (F.rgetField @a r), F.rgetField @b r), F.rgetField @count r)
+
+  -- fold the input records to a map keyed by categories and add 0s when things are missing
+  givenMapFld :: FL.Fold (F.Record [a, b, count]) (Map (c, V.Snd b) Int)
+  givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
+
+rowMajorMapTable :: (Ord a, Ord b) => Map (a, b) Int -> Map a (Map b Int)
+rowMajorMapTable = M.fromListWith (M.unionWith (+)) .  fmap (\(k, n) -> (fst k, M.singleton (snd k) n)) .  M.toList
+
+totaledTable :: (Ord a, Ord b, Show a) => Map (a, b) Int -> [(Text, Map b Int)]
+totaledTable m = mList ++ [("Total", totals)] where
+  mAsList = M.toList $ rowMajorMapTable m
+  mList = fmap (first show) mAsList
+  totals = foldl' (M.unionWith (+)) mempty $ fmap snd mAsList
+
+nearestCountsFrameFld :: forall count rks cks outerKs rs .
+                         (F.ElemOf rs count
                          , V.Snd count ~ Int
                          , V.KnownField count
-                         , V.KnownField a
-                         , V.KnownField b
-                         , Ord (F.Record ks)
-                         , ks F.⊆ rs
-                         , FSI.RecVec (ks V.++ [a, b, count])
+                         , Ord (F.Record outerKs)
+                         , outerKs F.⊆ rs
+                         , rks F.⊆ rs
+                         , cks F.⊆ rs
+                         , FSI.RecVec (outerKs V.++ rks V.++ cks V.++ '[count])
+                         , (outerKs V.++ ((rks V.++ cks) V.++ '[count]) ~ ((outerKs V.++ rks) V.++ cks) V.++ '[count])
+                         , ((rks V.++ cks) V.++ '[count]) F.⊆ rs
                          )
-                      => (Map (V.Snd a) Int -> Set (V.Snd b) ->  FL.FoldM (Either Text) (F.Record [a, b, count]) [F.Record [a, b, count]])
-                      -> (F.Record ks -> Either Text (Map (V.Snd a) Int)) -- desired row sums
-                      -> Set (V.Snd b) -- column category in full in case some are missing from the frame
-                      -> FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (ks V.++ [a, b, count]))
+                      => (Map (F.Record rks) Int -> Set (F.Record cks)
+                          ->  FL.FoldM (Either Text) (F.Record (rks V.++ cks V.++ '[count])) [F.Record (rks V.++ cks V.++ '[count])])
+                      -> (F.Record outerKs -> Either Text (Map (F.Record rks) Int)) -- desired row sums
+                      -> Set (F.Record cks) -- column category in full in case some are missing from the frame
+                      -> FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ rks V.++ cks V.++ '[count]))
 nearestCountsFrameFld iFldE desiredRowSumsLookup cols =
   FMR.concatFoldM $
   FMR.mapReduceFoldM
   (FMR.generalizeUnpack FMR.noUnpack)
-  (FMR.generalizeAssign $ FMR.assignKeysAndData @ks @[a, b, count])
+  (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(rks V.++ cks V.++ '[count]))
   (MR.ReduceFoldM reduceM)
   where
     convertFldE :: Either d (FL.FoldM (Either d) e f) -> FL.FoldM (Either d) e f
@@ -107,7 +163,7 @@ nearestCountsFrameFld iFldE desiredRowSumsLookup cols =
       in F.toFrame . fmap (rk V.<+>) <$> convertFldE eFld
 
 --  (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const $ nearestCountsFrameIFld @a @b @count desiredRowSums cols)
-
+{-
 newtype RowMajorKey a b = RowMajorKey (a, b) deriving newtype Show
 
 instance (Eq a, Eq b) => Eq (RowMajorKey a b) where
@@ -124,75 +180,37 @@ rowVal (RowMajorKey (a, _)) = a
 
 colVal :: RowMajorKey a b -> b
 colVal (RowMajorKey (_, b)) = b
+-}
 
-rowMajorMapFld :: forall count a b c .
-                  (V.Snd count ~ Int
-                   , Ord c
-                   , Ord (V.Snd b)
-                   , V.KnownField a
-                   , V.KnownField b
-                   , V.KnownField count
-                   , F.ElemOf [a, b, count] a
-                   , F.ElemOf [a, b, count] b
-                   , F.ElemOf [a, b, count] count
-                   )
-               => (V.Snd a -> c) -> Set c -> Set (V.Snd b) -> FL.Fold (F.Record [a, b, count]) (Map (RowMajorKey c (V.Snd b)) Int)
-rowMajorMapFld rowMerge cs bs = givenMapFld where
-  allCs = S.elems cs
-  allBs = S.elems bs
-  allCBs = [RowMajorKey (c, b) | c <- allCs, b <- allBs]
 
-  zeroMap :: Map (RowMajorKey c (V.Snd b)) Int
-  zeroMap = M.fromList $ (, 0) <$> allCBs
 
-  asKeyVal :: F.Record [a, b, count] -> (RowMajorKey c (V.Snd b), Int)
-  asKeyVal r = (RowMajorKey (rowMerge (F.rgetField @a r), F.rgetField @b r), F.rgetField @count r)
-
-  -- fold the input records to a map keyed by categories and add 0s when things are missing
-  givenMapFld :: FL.Fold (F.Record [a, b, count]) (Map (RowMajorKey c (V.Snd b)) Int)
-  givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
-
-rowMajorMapTable :: (Ord a, Ord b) => Map (RowMajorKey a b) Int -> Map a (Map b Int)
-rowMajorMapTable = M.fromListWith (M.unionWith (+)) .  fmap (\(k, n) -> (rowVal k, M.singleton (colVal k) n)) .  M.toList
-
-totaledTable :: (Ord a, Ord b, Show a) => Map (RowMajorKey a b) Int -> [(Text, Map b Int)]
-totaledTable m = mList ++ [("Total", totals)] where
-  mAsList = M.toList $ rowMajorMapTable m
-  mList = fmap (first show) mAsList
-  totals = foldl' (M.unionWith (+)) mempty $ fmap snd mAsList
-
-nearestCountsFrameIFld :: forall a b count .
-                          (V.Snd count ~ Int
-                          , Ord (V.Snd a)
-                          , Ord (V.Snd b)
-                          , V.KnownField a
-                          , V.KnownField b
-                          , V.KnownField count
-                          , F.ElemOf [a, b, count] a
-                          , F.ElemOf [a, b, count] b
-                          , F.ElemOf [a, b, count] count
-                          )
-                       => ([Int] -> [[Int]] -> Either Text [[Int]])
-                       -> Map (V.Snd a) Int
-                       -> Set (V.Snd b)
-                       -> FL.FoldM (Either Text) (F.Record [a, b, count]) [F.Record [a, b, count]]
-nearestCountsFrameIFld innerComp desiredRowSums colLabels =
-  fmap (concat . makeRecords)
+nearestCountsIFld :: forall d rk ck .
+                     (Ord rk, Ord ck)
+                  => ([Int] -> [[Int]] -> Either Text [[Int]])
+                  -> (d -> Int)
+                  -> (d -> rk)
+                  -> (d -> ck)
+                  -> Map rk Int
+                  -> Set ck
+                  -> FL.FoldM (Either Text) d [(rk, ck, Int)]
+nearestCountsIFld innerComp count rowKey colKey desiredRowSums colLabels =
+  fmap (concat . makeTuples)
   $ mapMFold (innerComp  (M.elems desiredRowSums))
-  $ (toRows <$> rowMajorMapFld @count @a id rowLabels colLabels) where
-  rowLabels = M.keysSet desiredRowSums
+  $ (toRows <$> rowMajorMapFld count rowKey colKey rowLabels colLabels)
+  where
+    rowLabels = M.keysSet desiredRowSums
 
-  toRows :: Map k x -> [[x]]
-  toRows = splitAtAll (S.size colLabels) . M.elems
+    toRows :: Map k x -> [[x]]
+    toRows = splitAtAll (S.size colLabels) . M.elems
 
-  mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
-  mapMFold f (FL.Fold step init' extract) = FL.FoldM (\x h -> pure $ step x h) (pure init') (f . extract)
+    mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
+    mapMFold f (FL.Fold step init' extract) = FL.FoldM (\x h -> pure $ step x h) (pure init') (f . extract)
 
-  makeRec :: V.Snd a -> (V.Snd b, Int) -> F.Record [a, b, count]
-  makeRec a (b, n) =  a F.&: b F.&: n F.&: V.RNil
+    makeTuple :: rk -> (ck, Int) -> (rk, ck, Int)
+    makeTuple a (b, n) =  (a, b, n)
 
-  makeRecords :: [[Int]] -> [[F.Record [a, b, count]]]
-  makeRecords = zipWith (fmap . makeRec) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
+    makeTuples :: [[Int]] -> [[(rk, ck, Int)]]
+    makeTuples = zipWith (fmap . makeTuple) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
 
  -- splitAt but keeps going until entire list is split into things of given length and whatever is left
 splitAtAll :: Int -> [c] -> [[c]]
