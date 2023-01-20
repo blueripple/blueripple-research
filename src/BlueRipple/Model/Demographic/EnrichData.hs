@@ -214,6 +214,204 @@ nearestCountsProp dRowSums oCounts = do
 
   pure $ zipWith adjustRow dRowSums oCounts
 
+-- Hand rolled solver
+-- Linearize equations solving for the stationary point
+-- of minimizing KL divergence plus lagrange multipliers for
+-- row and column sums
+-- then iterate linearized solution until delta is small.
+-- Requires SVD. Why?
+nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL dRowSumsI oCountsI = do
+  let toDouble = realToFrac @Int @LA.R
+
+      transpose :: [[a]] -> [[a]]
+      transpose = go [] where
+        go x [] = fmap reverse x
+        go [] (r : rs) = go (fmap (\y -> [y]) r) rs
+        go x (r :rs) = go (List.zipWith (:) r x) rs
+
+      -- we need to remove zero rows and columns.
+      remove :: Int -> [Int] -> [[Int]] -> [[Int]]
+      remove _ [] l = l
+      remove n (ix : ixs) l = remove (n + 1) ixs $ let (h, t) = List.splitAt (ix - n) l in h <> List.drop 1 t
+
+      -- But then put them back after solving.
+      restore :: [Int] -> [[Int]] -> [[Int]]
+      restore [] l = l
+      restore (ix : ixs) l = restore ixs $ take ix l <> (replicate cols 0 : drop ix l)
+
+      rsZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..] dRowSumsI
+      csZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..]
+                 $ fmap (FL.fold FL.sum) $ transpose oCountsI
+      dRowSumsI' = filter (/= 0) dRowSumsI
+      aV = LA.fromList $ fmap toDouble dRowSumsI'
+      oCountsI' = remove 0 rsZeroIx oCountsI
+      oCountsI'' = transpose $ remove 0 csZeroIx $ transpose oCountsI'
+
+      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI''
+      (rows, cols) = LA.size nM
+  case cols of
+    1 -> Right [dRowSumsI] -- if there is only 1 column, the desired row sums are the answer
+    _ -> do
+      let oCountsD = fmap (fmap toDouble) oCountsI''
+          nV = LA.fromList $ mconcat oCountsD
+          nRowSums = VS.fromList $ fmap (FL.fold FL.sum) oCountsD
+          rowSumRatios = VS.zipWith (/) aV nRowSums
+          firstGuessV = LA.fromList $ mconcat $ zipWith (\l r -> fmap (* r) l) oCountsD (VS.toList rowSumRatios)
+          update = VS.zipWith (\q d -> q * (1 + d))
+          converge maxN n tol tolF qV deltaV = do
+            when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
+            if tolF deltaV >= tol
+              then (do
+                       let qV' = update qV deltaV
+                       deltaV' <- updateFromGuess rows cols aV nV qV'
+                       converge maxN (n + 1) tol tolF qV' deltaV'
+                   )
+              else pure qV
+      let nMax = 20
+          absTol = 0.0001
+          tolF dV = VS.sum $ VS.zipWith (*) dV dV
+      deltaV <- updateFromGuess rows cols aV nV firstGuessV
+      qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
+      let sol'' = splitAtAll cols (fmap round $ LA.toList qVsol)
+          sol' = transpose $ restore csZeroIx $ transpose sol''
+          sol = restore rsZeroIx sol'
+      pure sol
+
+updateFromGuess :: Int -- rows
+                -> Int -- cols
+                -> LA.Vector LA.R -- desired row sums
+                -> LA.Vector LA.R -- N in row major form
+                -> LA.Vector LA.R -- current guess, row major, then lambda, then gamma
+                -> Either Text (LA.Vector LA.R) -- delta, row major
+updateFromGuess rows cols aV nV qV = do
+  let nSum = VS.sum nV
+      qSum = VS.sum qV
+      invnSum = 1 / nSum
+      safeDiv x y = if y == 0 then 1 else x / y
+      nDivq = VS.zipWith safeDiv nV qV
+      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
+      indexes l = l `divMod` cols
+      f l = let (j, k) = indexes l in [((l, j), 1), ((l, rows + k), 1)]
+      ur :: LA.Matrix LA.R
+      ur = LA.assoc (rows * cols, rows + cols) 0 $ mconcat $ fmap f [0..(rows * cols - 1)]
+
+      rowSumMask :: Int -> LA.Vector LA.R
+      rowSumMask j = LA.assoc (rows * cols) 0 $ fmap (\k -> (k + j * cols, 1)) [0..(cols - 1)]
+      rowSumVec j = LA.scale invnSum $ VS.zipWith (*) qV (rowSumMask j)
+
+      colSumMask :: Int -> LA.Vector LA.R
+      colSumMask k = LA.assoc (rows * cols) 0 $ fmap (\j -> (k + j * cols, 1)) [0..(rows - 1)]
+      colSumVec k = LA.scale invnSum $ VS.zipWith (*) qV (colSumMask k)
+
+      ll =  LA.fromRows (fmap rowSumVec [0..(rows - 1)]) LA.=== LA.fromRows (fmap colSumVec [0..(cols - 1)])
+      lr = LA.konst 0 (rows + cols, rows +  cols)
+      m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
+      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
+      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
+      qRowSumsV = rowSums qV
+
+      rhsV = LA.vjoin [VS.map (\x -> x - nSum / qSum) nDivq
+                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
+                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
+                      ]
+      rhsM = LA.fromColumns [rhsV]
+      funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
+                    <> "\nm=\n" <> toText (LA.dispf 4 m)
+                    <> "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
+      svdSol = LA.linearSolveSVD m rhsM
+
+--  let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
+--  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\ndelta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr svdSol)
+  mSol :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty (VS.take (rows * cols) . head) $ LA.toColumns svdSol
+  pure mSol
+
+enrichFrameFromBinaryModel :: forall t count m g ks rs a .
+                              (rs F.⊆ rs
+                              , ks F.⊆ rs
+                              , FSI.RecVec rs
+                              , FSI.RecVec (t ': rs)
+                              , V.KnownField t
+                              , V.Snd t ~ a
+                              , V.KnownField count
+                              , F.ElemOf rs count
+                              , Integral (V.Snd count)
+                              , MonadThrow m
+                              , Prim.PrimMonad m
+                              , F.ElemOf rs DT.PopPerSqMile
+                              , Ord g
+                              , Show g
+                              , Ord (F.Record ks)
+                              , Show (F.Record rs)
+                              , Ord a
+                              )
+                           => DM.ModelResult g ks
+                           -> (F.Record rs -> g)
+                           -> a
+                           -> a
+                           -> F.FrameRec rs
+                           -> m (F.FrameRec (t ': rs))
+enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @t @count smf where
+  smf r = do
+    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x) in M.fromList [(aTrue, nTrue), (aFalse, n - nTrue)]
+    pTrue <- DM.applyModelResult mr (getGeo r) r
+    pure $ smf' pTrue
+
+-- | produce a map of splits across type a. Doubles must sum to 1.
+newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
+
+splitRec :: forall t count rs a . (V.KnownField t
+                                  , V.Snd t ~ a
+                                  , V.KnownField count
+                                  , F.ElemOf rs count
+                                  )
+         => SplitModelF (V.Snd count) a -> F.Record rs -> [F.Record (t ': rs)]
+splitRec (SplitModelF f) r =
+  let makeOne (a, n) = a F.&: (F.rputField @count n) r
+      splits = M.toList $ f $ F.rgetField @count r
+  in makeOne <$> splits
+
+enrichFromModel :: forall t count ks rs a . (ks F.⊆ rs
+                                            , V.KnownField t
+                                            , V.Snd t ~ a
+                                            , V.KnownField count
+                                            , F.ElemOf rs count
+                                            )
+                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
+                      -> F.Record rs -- ^ record to enrich
+                      -> Either Text [F.Record (t ': rs)]
+enrichFromModel modelResultF recordToEnrich = flip (splitRec @t @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
+
+data ModelLookupException = ModelLookupException Text deriving stock (Show)
+instance Exception ModelLookupException
+
+
+-- this should build the new frame in-core and in a streaming manner,
+-- not needing to build the entire list before placing in-core
+enrichFrameFromModel :: forall t count ks rs a m . (ks F.⊆ rs
+                                                   , FSI.RecVec rs
+                                                   , FSI.RecVec (t ': rs)
+                                                   , V.KnownField t
+                                                   , V.Snd t ~ a
+                                                   , V.KnownField count
+                                                   , F.ElemOf rs count
+                                                   , MonadThrow m
+                                                   , Prim.PrimMonad m
+                                                   )
+                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
+                     -> F.FrameRec rs -- ^ record to enrich
+                     -> m (F.FrameRec (t ': rs))
+enrichFrameFromModel modelResultF =  FST.transform f where
+  f = Streamly.concatMapM g
+  g r = do
+    case enrichFromModel @t @count modelResultF r of
+      Left err -> throwM $ ModelLookupException err
+      Right rs -> pure $ Streamly.fromList rs
+
+
+
+{-
+
 nearestCountsKL_NL1 :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsKL_NL1 dRowSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
@@ -226,7 +424,6 @@ nearestCountsKL_NL1 dRowSumsI oCountsI = do
 --      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
       indexes l = l `divMod` cols
       mGuessV = LA.scale (1 / nSum) $ LA.fromList $ mconcat $ zipWith (\l rs -> fmap ((* rs) . toDouble) l) oCountsI (VS.toList aV)
-
 
       rowSums :: LA.Vector LA.R -> LA.Vector LA.R
       rowSums = LA.fromList . fmap VS.sum . LA.toRows . LA.reshape cols
@@ -259,26 +456,6 @@ nearestCountsKL_NL1 dRowSumsI oCountsI = do
           result =  0.5 * kl mV
                     + VS.sum (VS.zipWith3 mult3 lambdaV rowSumErrs rowSumErrs)
                     + VS.sum (VS.zipWith3 mult3 gammaV colSumErrs colSumErrs)
-
-      subVectorsR :: LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
-      subVectorsR v = (mV, lambdaV, gammaV) where
-        mV = LA.subVector 0 (nSize - 1) v
-        lambdaV = LA.subVector (nSize - 1) rows v
-        gammaV = LA.subVector (nSize - 1 + rows) cols v
-
-
-      fR :: LA.Vector LA.R -> Double
-      fR v = result
-        where
-          (mrV, lambdaV, gammaV) = subVectorsR v
-          mV = VS.cons (1 - VS.sum mrV) mrV
-          rowSumErrs = rowSums mV - aV
-          colSumErrs = colSums mV - nColSumsV
-          mult3 x y z = x * y * z
-          result =  0.5 * kl mV
-                    + VS.sum (VS.zipWith3 mult3 lambdaV rowSumErrs rowSumErrs)
-                    + VS.sum (VS.zipWith3 mult3 gammaV colSumErrs colSumErrs)
-
 --          !_ = Unsafe.unsafePerformIO $ Say.say $ "\nmV=" <> show mV <> "\nlV=" <> show lambdaV <> "; gV=" <> show gammaV <> "\nf=" <> show result
 
       fGradients :: LA.Vector LA.R -> LA.Vector LA.R
@@ -302,14 +479,14 @@ nearestCountsKL_NL1 dRowSumsI oCountsI = do
 
       nlStarting = VS.concat [VS.drop 1 mGuessV, VS.replicate (rows + cols) 0] -- we start at n with 0 multipliers
       nlObjectiveD v = (f v, fGradients v)
-      nlBounds = [NLOPT.LowerBounds $ VS.concat [VS.replicate (nSize - 1) 0, VS.replicate (rows + cols) $ negate 100]
-                 , NLOPT.UpperBounds $ VS.concat [VS.replicate (nSize - 1) 1, VS.replicate (rows + cols) 100]
+      nlBounds = [NLOPT.LowerBounds $ VS.concat [VS.replicate nSize 0, VS.replicate (rows + cols) $ negate 100]
+                 , NLOPT.UpperBounds $ VS.concat [VS.replicate nSize 1, VS.replicate (rows + cols) 100]
                  ]
       nlStop = NLOPT.ParameterRelativeTolerance 0.01 :| [NLOPT.MaximumEvaluations 100]
 --      nlAlgo = NLOPT.TNEWTON nlObjectiveD Nothing --nlBounds [] []
 --      nlAlgo = NLOPT.SLSQP nlObjectiveD nlBounds [] []
-      nlAlgo = NLOPT.NELDERMEAD fR nlBounds Nothing
-      nlProblem = NLOPT.LocalProblem (fromIntegral $ nSize - 1 + rows + cols) nlStop nlAlgo
+      nlAlgo = NLOPT.NELDERMEAD f nlBounds Nothing
+      nlProblem = NLOPT.LocalProblem (fromIntegral $ nSize + rows + cols) nlStop nlAlgo
       nlSol = NLOPT.minimizeLocal nlProblem nlStarting
   case nlSol of
     Left result -> Left $ show result <> "\n" <> "rowSums=\n" <> show dRowSumsI <> "\nN=\n" <> show oCountsI
@@ -419,192 +596,7 @@ nearestCountsKL_NL2 dRowSumsI oCountsI = do
 
 -}
 
-nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
-nearestCountsKL dRowSumsI oCountsI = do
-  let toDouble = realToFrac @Int @LA.R
-
-      transpose :: [[a]] -> [[a]]
-      transpose = go [] where
-        go x [] = fmap reverse x
-        go [] (r : rs) = go (fmap (\y -> [y]) r) rs
-        go x (r :rs) = go (List.zipWith (:) r x) rs
-
-      remove :: Int -> [Int] -> [[Int]] -> [[Int]]
-      remove _ [] l = l
-      remove n (ix : ixs) l = remove (n + 1) ixs $ let (h, t) = List.splitAt (ix - n) l in h <> List.drop 1 t
-
-      restore :: [Int] -> [[Int]] -> [[Int]]
-      restore [] l = l
-      restore (ix : ixs) l = restore ixs $ take ix l <> (replicate cols 0 : drop ix l)
-
-
-      rsZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..] dRowSumsI
-      csZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..]
-                 $ fmap (FL.fold FL.sum) $ transpose oCountsI
-      dRowSumsI' = filter (/= 0) dRowSumsI
-      aV = LA.fromList $ fmap toDouble dRowSumsI'
-      oCountsI' = remove 0 rsZeroIx oCountsI
-      oCountsI'' = transpose $ remove 0 csZeroIx $ transpose oCountsI'
-
-      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI''
-      nV = LA.fromList (toDouble <$> mconcat oCountsI'')
-      (rows, cols) = LA.size nM
-      oneV = LA.fromList $ replicate (rows * cols) 1
-      update q d = VS.zipWith (*) q (VS.zipWith (+) oneV d)
-      converge maxN n tol tolF qV deltaV = do
-        when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
-        if tolF deltaV >= tol
-          then (do
-                   let qV' = update qV deltaV
-                   deltaV' <- updateFromGuess rows cols aV nV qV'
-                   converge maxN (n + 1) tol tolF qV' deltaV'
-               )
-          else pure qV
-  let nMax = 5
-      absTol = 0.001
-      tolF dV = VS.sum $ VS.zipWith (*) dV dV
-  deltaV <- updateFromGuess rows cols aV nV nV
-  qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
-  let sol'' = splitAtAll cols (fmap round $ LA.toList qVsol)
-      sol' = transpose $ restore csZeroIx $ transpose sol''
-      sol = restore rsZeroIx sol'
-  pure sol
-
-
-
-updateFromGuess :: Int -- rows
-                -> Int -- cols
-                -> LA.Vector LA.R -- desired row sums
-                -> LA.Vector LA.R -- N in row major form
-                -> LA.Vector LA.R -- current guess, row major
-                -> Either Text (LA.Vector LA.R) -- delta, row major
-updateFromGuess rows cols aV nV qV = do
-  let nSum = VS.sum nV
-      qSum = VS.sum qV
-      invnSum = 1 / nSum
-      safeDiv x y = if y == 0 then 1 else x / y
-      nDivq = VS.zipWith safeDiv nV qV
-      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
-      rowIndex l = l `div` cols
-      colIndex l = l `mod` cols
-      f l = [((l, rowIndex l), 1), ((l, rows + colIndex l), 1)]
-
-      ur :: LA.Matrix LA.R
-      ur = LA.assoc (rows * cols, rows + cols) 0 $ mconcat $ fmap f [0..(rows * cols - 1)]
-      rowSumMask :: Int -> LA.Vector LA.R
-      rowSumMask j = LA.assoc (rows * cols) 0 $ fmap (\k -> (k + j * cols, 1)) [0..(cols - 1)]
-      rowSumVec j = LA.scale invnSum $ VS.zipWith (*) qV (rowSumMask j)
-      colSumMask :: Int -> LA.Vector LA.R
-      colSumMask k = LA.assoc (rows * cols) 0 $ fmap (\j -> (k + j * cols, 1)) [0..(rows - 1)]
-      colSumVec k = LA.scale invnSum $ VS.zipWith (*) qV (colSumMask k)
-      ll =  LA.fromRows (fmap rowSumVec [0..(rows - 1)]) LA.=== LA.fromRows (fmap colSumVec [0..(cols - 1)])
-      lr = LA.konst 0 (rows + cols, rows +  cols)
-      m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
-      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
-      qRowSumsV = rowSums qV
-
---      colSumsL = fmap (realToFrac @LA.I @LA.R . VS.sum) $ LA.toColumns oCountsM
-      rhsV = LA.vjoin [VS.map (\x -> x - nSum / qSum) nDivq
-                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
-                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
-                      ]
-      rhsM = LA.fromColumns [rhsV]
-      funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
-                    <> "\nm=\n" <> toText (LA.dispf 4 m)
-                    <> "\nrhs=\n" <> toText (LA.dispf 4 rhsM)
---      luPacked = LA.luPacked m
-
---      luSol = LA.luSolve luPacked rhsM
-  let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
-  luSol <- maybeToRight ("LU solver failure:" <> funcDetails) $ LA.linearSolve m rhsM
-  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\ndelta=\n" <> toText (LA.dispf 4 luSol)
-  mSol :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty (LA.subVector 0 (rows * cols) . head) $ LA.toColumns luSol
-  pure mSol
-
-enrichFrameFromBinaryModel :: forall t count m g ks rs a .
-                              (rs F.⊆ rs
-                              , ks F.⊆ rs
-                              , FSI.RecVec rs
-                              , FSI.RecVec (t ': rs)
-                              , V.KnownField t
-                              , V.Snd t ~ a
-                              , V.KnownField count
-                              , F.ElemOf rs count
-                              , Integral (V.Snd count)
-                              , MonadThrow m
-                              , Prim.PrimMonad m
-                              , F.ElemOf rs DT.PopPerSqMile
-                              , Ord g
-                              , Show g
-                              , Ord (F.Record ks)
-                              , Show (F.Record rs)
-                              , Ord a
-                              )
-                           => DM.ModelResult g ks
-                           -> (F.Record rs -> g)
-                           -> a
-                           -> a
-                           -> F.FrameRec rs
-                           -> m (F.FrameRec (t ': rs))
-enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @t @count smf where
-  smf r = do
-    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x) in M.fromList [(aTrue, nTrue), (aFalse, n - nTrue)]
-    pTrue <- DM.applyModelResult mr (getGeo r) r
-    pure $ smf' pTrue
-
--- | produce a map of splits across type a. Doubles must sum to 1.
-newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
-
-splitRec :: forall t count rs a . (V.KnownField t
-                                  , V.Snd t ~ a
-                                  , V.KnownField count
-                                  , F.ElemOf rs count
-                                  )
-         => SplitModelF (V.Snd count) a -> F.Record rs -> [F.Record (t ': rs)]
-splitRec (SplitModelF f) r =
-  let makeOne (a, n) = a F.&: (F.rputField @count n) r
-      splits = M.toList $ f $ F.rgetField @count r
-  in makeOne <$> splits
-
-enrichFromModel :: forall t count ks rs a . (ks F.⊆ rs
-                                            , V.KnownField t
-                                            , V.Snd t ~ a
-                                            , V.KnownField count
-                                            , F.ElemOf rs count
-                                            )
-                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
-                      -> F.Record rs -- ^ record to enrich
-                      -> Either Text [F.Record (t ': rs)]
-enrichFromModel modelResultF recordToEnrich = flip (splitRec @t @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
-
-data ModelLookupException = ModelLookupException Text deriving stock (Show)
-instance Exception ModelLookupException
-
-
--- this should build the new frame in-core and in a streaming manner,
--- not needing to build the entire list before placing in-core
-enrichFrameFromModel :: forall t count ks rs a m . (ks F.⊆ rs
-                                                   , FSI.RecVec rs
-                                                   , FSI.RecVec (t ': rs)
-                                                   , V.KnownField t
-                                                   , V.Snd t ~ a
-                                                   , V.KnownField count
-                                                   , F.ElemOf rs count
-                                                   , MonadThrow m
-                                                   , Prim.PrimMonad m
-                                                   )
-                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
-                     -> F.FrameRec rs -- ^ record to enrich
-                     -> m (F.FrameRec (t ': rs))
-enrichFrameFromModel modelResultF =  FST.transform f where
-  f = Streamly.concatMapM g
-  g r = do
-    case enrichFromModel @t @count modelResultF r of
-      Left err -> throwM $ ModelLookupException err
-      Right rs -> pure $ Streamly.fromList rs
-
-
+-}
 
 {-
 -- given counts N_jk, as a list of (Vector Int) rows in givenCounts
