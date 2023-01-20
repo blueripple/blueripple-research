@@ -210,6 +210,7 @@ library
                  , BlueRipple.Model.Demographic.DataPrep
                  , BlueRipple.Model.Demographic.StanModels
                  , BlueRipple.Model.Demographic.EnrichData
+                 , BlueRipple.Model.Demographic.EnrichCensus
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
                  , BlueRipple.Utilities.Heidi

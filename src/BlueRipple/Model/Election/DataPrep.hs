@@ -45,7 +45,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import qualified Control.MapReduce as FMR
 import qualified Data.Map.Strict as M
-import qualified Data.Serialize as S
+--import qualified Data.Serialize as S
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
@@ -182,10 +182,11 @@ presidentialRaceKey ∷ F.Record PresidentialElectionDataR → F.Record StateKey
 presidentialRaceKey = F.rcast
 
 -- frames are not directly serializable so we have to do...shenanigans
+{-
 instance S.Serialize HouseModelData where
   put (HouseModelData h s p c) = S.put (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
   get = (\(h, s, p, c) → HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> S.get
-
+-}
 instance Flat.Flat HouseModelData where
   size (HouseModelData h s p c) n = Flat.size (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c) n
   encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
@@ -233,9 +234,11 @@ ccesAndPUMSForYears ys (CCESAndPUMS cces cpsV pums dist) =
       f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
    in CCESAndPUMS (f cces) (f cpsV) (f pums) (f dist)
 
+{-
 instance S.Serialize CCESAndPUMS where
   put (CCESAndPUMS cces cpsV pums dist) = S.put (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist)
   get = (\(cces, cpsV, pums, dist) → CCESAndPUMS (FS.unSFrame cces) (FS.unSFrame cpsV) (FS.unSFrame pums) (FS.unSFrame dist)) <$> S.get
+-}
 
 instance Flat.Flat CCESAndPUMS where
   size (CCESAndPUMS cces cpsV pums dist) n = Flat.size (FS.SFrame cces, FS.SFrame cpsV, FS.SFrame pums, FS.SFrame dist) n

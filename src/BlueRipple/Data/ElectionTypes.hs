@@ -19,10 +19,10 @@ module BlueRipple.Data.ElectionTypes
   where
 
 import BlueRipple.Data.DataFrames (CongressionalDistrict)
-import qualified Data.Binary as B
+--import qualified Data.Binary as B
 import qualified Data.Default as Def
 import Data.Discrimination (Grouping)
-import qualified Data.Serialize as S
+--import qualified Data.Serialize as S
 import qualified Data.Text as T
 import qualified Data.Text.Read as TR
 import qualified Data.Vector.Unboxed as UVec
@@ -47,8 +47,8 @@ data MajorPartyParticipation
   | Both
   deriving stock (Show, Enum, Eq, Ord, Bounded, Generic)
 
-instance S.Serialize MajorPartyParticipation
-instance B.Binary MajorPartyParticipation
+--instance S.Serialize MajorPartyParticipation
+--instance B.Binary MajorPartyParticipation
 instance Flat.Flat MajorPartyParticipation
 instance FCSV.ShowCSV MajorPartyParticipation
 instance Grouping MajorPartyParticipation
@@ -73,8 +73,8 @@ FS.declareColumn "MajorPartyParticipationC" ''MajorPartyParticipation
 
 data PartyT = Democratic | Republican | Other deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
-instance S.Serialize PartyT
-instance B.Binary PartyT
+--instance S.Serialize PartyT
+--instance B.Binary PartyT
 instance Flat.Flat PartyT
 instance Grouping PartyT
 instance Def.Default PartyT where
@@ -97,8 +97,8 @@ instance FV.ToVLDataValue (F.ElField Party) where
 
 data OfficeT = House | Senate | President deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
-instance S.Serialize OfficeT
-instance B.Binary OfficeT
+--instance S.Serialize OfficeT
+--instance B.Binary OfficeT
 instance Flat.Flat OfficeT
 instance Grouping OfficeT
 
@@ -119,8 +119,8 @@ instance FV.ToVLDataValue (F.ElField Office) where
 
 data DistrictType = Congressional | StateUpper | StateLower deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 
-instance S.Serialize DistrictType
-instance B.Binary DistrictType
+--instance S.Serialize DistrictType
+--instance B.Binary DistrictType
 instance Flat.Flat DistrictType
 instance Grouping DistrictType
 instance FCSV.ShowCSV DistrictType
@@ -167,8 +167,8 @@ FS.declareColumn "PrefType" ''PrefTypeT
 
 instance Grouping PrefTypeT
 
-instance S.Serialize PrefTypeT
-instance B.Binary PrefTypeT
+--instance S.Serialize PrefTypeT
+--instance B.Binary PrefTypeT
 instance Flat.Flat PrefTypeT
 
 instance FCSV.ShowCSV PrefTypeT
@@ -188,8 +188,8 @@ data VoteShareType = TwoPartyShare | FullShare deriving stock (Enum, Bounded, Eq
 FS.declareColumn "VoteShareTypeC" ''VoteShareType
 
 instance Grouping VoteShareType
-instance S.Serialize VoteShareType
-instance B.Binary VoteShareType
+--instance S.Serialize VoteShareType
+--instance B.Binary VoteShareType
 instance Flat.Flat VoteShareType
 instance FCSV.ShowCSV VoteShareType
 derivingUnbox
@@ -209,8 +209,8 @@ FS.declareColumn "ElectoralWeightSource" ''ElectoralWeightSourceT
 
 instance Grouping ElectoralWeightSourceT
 
-instance S.Serialize ElectoralWeightSourceT
-instance B.Binary ElectoralWeightSourceT
+--instance S.Serialize ElectoralWeightSourceT
+--instance B.Binary ElectoralWeightSourceT
 instance Flat.Flat ElectoralWeightSourceT
 
 instance FCSV.ShowCSV ElectoralWeightSourceT
@@ -239,8 +239,8 @@ FS.declareColumn "ElectoralWeightOf" ''ElectoralWeightOfT
 
 instance Grouping ElectoralWeightOfT
 
-instance S.Serialize ElectoralWeightOfT
-instance B.Binary ElectoralWeightOfT
+--instance S.Serialize ElectoralWeightOfT
+--instance B.Binary ElectoralWeightOfT
 instance Flat.Flat ElectoralWeightOfT
 
 instance FCSV.ShowCSV ElectoralWeightOfT
@@ -283,8 +283,8 @@ FS.declareColumn "VoteWhyNotC" ''VoteWhyNot
 
 instance Grouping VoteWhyNot
 
-instance S.Serialize VoteWhyNot
-instance B.Binary VoteWhyNot
+--instance S.Serialize VoteWhyNot
+--instance B.Binary VoteWhyNot
 instance Flat.Flat VoteWhyNot
 
 instance FCSV.ShowCSV VoteWhyNot
@@ -313,8 +313,8 @@ FS.declareColumn "RegWhyNotC" ''RegWhyNot
 
 instance Grouping RegWhyNot
 
-instance S.Serialize RegWhyNot
-instance B.Binary RegWhyNot
+--instance S.Serialize RegWhyNot
+--instance B.Binary RegWhyNot
 instance Flat.Flat RegWhyNot
 
 derivingUnbox
@@ -335,8 +335,8 @@ FS.declareColumn "VoteHowC" ''VoteHow
 
 instance Grouping VoteHow
 
-instance S.Serialize VoteHow
-instance B.Binary VoteHow
+--instance S.Serialize VoteHow
+--instance B.Binary VoteHow
 instance Flat.Flat VoteHow
 
 instance FCSV.ShowCSV VoteHow
@@ -360,8 +360,8 @@ FS.declareColumn "VoteWhenC" ''VoteWhen
 
 instance Grouping VoteWhen
 
-instance S.Serialize VoteWhen
-instance B.Binary VoteWhen
+--instance S.Serialize VoteWhen
+--instance B.Binary VoteWhen
 instance Flat.Flat VoteWhen
 
 derivingUnbox
@@ -385,8 +385,8 @@ FS.declareColumn "VotedYNC" ''VotedYN
 
 instance Grouping VotedYN
 
-instance S.Serialize VotedYN
-instance B.Binary VotedYN
+--instance S.Serialize VotedYN
+--instance B.Binary VotedYN
 instance Flat.Flat VotedYN
 
 instance FCSV.ShowCSV VotedYN
@@ -409,8 +409,8 @@ FS.declareColumn "RegisteredYNC" ''RegisteredYN
 
 instance Grouping RegisteredYN
 
-instance S.Serialize RegisteredYN
-instance B.Binary RegisteredYN
+--instance S.Serialize RegisteredYN
+--instance B.Binary RegisteredYN
 instance Flat.Flat RegisteredYN
 
 instance FCSV.ShowCSV RegisteredYN
