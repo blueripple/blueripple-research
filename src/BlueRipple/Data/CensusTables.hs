@@ -21,8 +21,8 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Keyed as K
 
-import qualified Data.Binary as B
-import qualified Data.Serialize as S
+--import qualified Data.Binary as B
+--import qualified Data.Serialize as S
 import qualified Flat
 
 import qualified Data.Array as Array
@@ -110,8 +110,8 @@ data Age14 = A14_Under5 | A14_5To9 | A14_10To14 | A14_15To17 | A14_18To19 | A14_
            | A14_25To29 | A14_30To34 | A14_35To44 | A14_45To54
            | A14_55To64 | A14_65To74 | A14_75To84 | A14_85AndOver deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 
-instance S.Serialize Age14
-instance B.Binary Age14
+--instance S.Serialize Age14
+--instance B.Binary Age14
 instance Flat.Flat Age14
 instance Grouping Age14
 instance K.FiniteSet Age14
@@ -150,8 +150,8 @@ reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
 data Citizenship = Native | Naturalized | NonCitizen  deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
-instance S.Serialize Citizenship
-instance B.Binary Citizenship
+--instance S.Serialize Citizenship
+--instance B.Binary Citizenship
 instance Flat.Flat Citizenship
 instance Grouping Citizenship
 instance K.FiniteSet Citizenship
@@ -174,8 +174,8 @@ citizenshipToIsCitizen NonCitizen = False
 
 {-
 data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
-instance S.Serialize Education4
-instance B.Binary Education4
+--instance S.Serialize Education4
+--instance B.Binary Education4
 instance Flat.Flat Education4
 instance Grouping Education4
 instance K.FiniteSet Education4
@@ -197,8 +197,8 @@ education4ToCollegeGrad _ = DT.NonGrad
 
 -- Easiest to have a type matching the census table
 data RaceEthnicity = R_White | R_Black | R_Asian | R_Other | E_Hispanic | E_WhiteNonHispanic deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
-instance S.Serialize RaceEthnicity
-instance B.Binary RaceEthnicity
+--instance S.Serialize RaceEthnicity
+--instance B.Binary RaceEthnicity
 instance Flat.Flat RaceEthnicity
 instance Grouping RaceEthnicity
 instance K.FiniteSet RaceEthnicity
@@ -210,8 +210,8 @@ type instance FI.VectorFor RaceEthnicity = UVec.Vector
 type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
 
 data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
-instance S.Serialize Employment
-instance B.Binary Employment
+--instance S.Serialize Employment
+--instance B.Binary Employment
 instance Flat.Flat Employment
 instance Grouping Employment
 instance K.FiniteSet Employment

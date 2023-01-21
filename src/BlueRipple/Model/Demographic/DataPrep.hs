@@ -27,6 +27,7 @@ import qualified Frames.Streamly.Transform as FST
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
 
+import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
@@ -49,7 +50,7 @@ setupACSRows densRP = do
   return (acsData, acsCit, dmACS)
 -}
 
-type Categoricals = [DT.Age4C, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC]
+type Categoricals = [DT.CitC, DT.Age4C, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC]
 type ACSByCD = PUMS.CDCounts Categoricals
 type ACSByState = PUMS.StateCounts Categoricals
 
@@ -81,6 +82,20 @@ acsByState acsByPUMA = F.rcast <$> FST.mapMaybe simplifyAgeM (FL.fold (PUMS.pums
   earliest year = (>= year) . F.rgetField @BRDF.Year
   filteredACSByPUMA = F.filterFrame (earliest earliestYear) acsByPUMA
 
+splitCitizensR :: (F.ElemOf rs PUMS.Citizens
+                 , F.ElemOf rs PUMS.NonCitizens
+                 , (F.RDelete PUMS.Citizens (F.RDelete PUMS.NonCitizens rs) V.++ '[DT.CitC, DT.PopCount]) F.⊆ (rs V.++ [DT.CitC, DT.PopCount])
+                 )
+              => F.Record rs -> [F.Record (F.RDelete PUMS.Citizens (F.RDelete PUMS.NonCitizens rs) V.++ [DT.CitC, DT.PopCount])]
+splitCitizensR r = F.rcast <$> [rc, rnc] where
+  cits = F.rgetField @PUMS.Citizens r
+  ncits = F.rgetField @PUMS.NonCitizens r
+  g :: DT.Cit -> Int -> F.Record [DT.CitC, DT.PopCount]
+  g c n = c F.&: n F.&: V.RNil
+  rc = r F.<+> g DT.Cit cits
+  rnc = r F.<+> g DT.NonCit ncits
+
+
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
 simplifyAgeM r =
   let f g = Just $ FT.recordSingleton @DT.Age4C g F.<+> r
@@ -94,7 +109,6 @@ simplifyAgeM r =
 shrinkEducation :: (F.ElemOf rs DT.EducationC) => F.Record rs -> F.Record (DT.Education4C ': rs)
 shrinkEducation r = FT.recordSingleton @DT.Education4C (ed4 r)  F.<+> r where
   ed4 = DT.educationToEducation4 . F.rgetField @DT.EducationC
-
 
 cachedACSByState
   ∷ ∀ r
@@ -139,6 +153,7 @@ forMultinomial label count extraF =
      MR.noUnpack
      (MR.assign (F.rcast @ks) (\r -> (F.rcast @as r, (label r, count r))))
      (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
+
 
 
 type ACSByStateAgeMNR =  [BRDF.Year, BRDF.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.PopPerSqMile]

@@ -718,6 +718,8 @@ pumsEDUCDToEducation n
 intToInCollege :: Int -> Bool
 intToInCollege n = n == 6
 
+
+
 -- PUMSSEX
 intToSex :: Int -> BR.Sex
 intToSex n = if n == 1 then BR.Male else BR.Female

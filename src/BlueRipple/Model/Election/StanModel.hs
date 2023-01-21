@@ -90,7 +90,7 @@ FS.declareColumn "ModelDesc" ''Text
 
 groupBuilderDM :: forall rs ks k.
                   (F.ElemOf rs BR.StateAbbreviation
-                  , F.ElemOf rs Census.Count
+                  , F.ElemOf rs DT.PopCount
                   , Typeable rs
                   , V.RMap ks
                   , V.ReifyConstraint Show F.ElField ks
@@ -146,7 +146,7 @@ groupBuilderDM model psGroup states cds psKeys = do
   when (Set.member ET.President $ votesFrom model) $ loadCCESPrefData ET.President (voteShareType model)
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
-  psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @Census.Count))
+  psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @DT.PopCount))
   SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
 
@@ -1128,7 +1128,7 @@ electionModelDM :: forall rs ks r mk.
                    , F.ElemOf rs DT.SexC
                    , F.ElemOf rs DT.Race5C
                    , F.ElemOf rs DT.PopPerSqMile
-                   , F.ElemOf rs Census.Count
+                   , F.ElemOf rs DT.PopCount
                    , FI.RecVec rs
                    , ks F.⊆ rs
                    , Typeable rs
@@ -1460,7 +1460,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               (Just name)
               elexData
               psData
-              (realToFrac . F.rgetField @Census.Count)
+              (realToFrac . F.rgetField @DT.PopCount)
               (MRP.PSShare $ snd psCalcs)
               (Just grp)
         _ <- postStratify "Turnout" turnoutPS psGroup
