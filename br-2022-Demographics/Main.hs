@@ -94,7 +94,7 @@ main = do
         only sa y r = onlyState sa r && onlyYear y r
         onlyGender g r = F.rgetField @DT.SexC r == g
         onlyRE race eth r = F.rgetField @DT.RaceAlone4C r == race && F.rgetField @DT.HispC r == eth
-        exampleFilter r = onlyState "AZ" r && onlyGender DT.Female r && onlyRE DT.RA4_Other DT.Hispanic r
+        exampleFilter r = onlyState "AZ" r && onlyRE DT.RA4_Other DT.Hispanic r
     acsSample <- (F.filterFrame $ onlyYear 2020) <$> (K.ignoreCacheTimeM $  PUMS.pumsLoader Nothing >>= DDP.cachedACSByState)
     let acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @PUMS.Citizens (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
 
@@ -103,6 +103,7 @@ main = do
     let allSimpleAges = S.fromList [DT.Under, DT.EqualOrOver]
         allAges = Keyed.elements @DT.Age4
         allEdus = Keyed.elements @DT.Education4
+        allEduSex = S.fromList $ [(e, s) | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
         allSimpleAgesR = S.map (FT.recordSingleton @DT.SimpleAgeC) allSimpleAges
         allAgesR = S.map (FT.recordSingleton @DT.Age4C) allAges
         allEdusR = S.map (FT.recordSingleton @DT.Education4C) allEdus
@@ -111,13 +112,13 @@ main = do
                              $ DED.rowMajorMapFld
                              (F.rgetField @PUMS.Citizens)
                              (DT.age4ToSimple . F.rgetField @DT.Age4C)
-                             (F.rgetField @DT.Education4C)
+                              (\r -> (F.rgetField @DT.Education4C r, F.rgetField @DT.SexC r))
                              allSimpleAges
-                             allEdus
+                             allEduSex
                            )
-          $ fmap (F.rcast @[DT.Age4C, DT.Education4C, PUMS.Citizens])
+          $ fmap (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, PUMS.Citizens])
           $ F.filterFrame exampleFilter acsSample
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) acsTable)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEduSex) acsTable)
     K.logLE K.Info "sample ACS data, aggregated by ages, then split by age model"
     enrichedAge <- KS.streamlyToKnit
                    $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @PUMS.Citizens
@@ -130,13 +131,13 @@ main = do
                                   $ DED.rowMajorMapFld
                                   (F.rgetField @PUMS.Citizens)
                                   (F.rgetField @DT.SimpleAgeC)
-                                  (F.rgetField @DT.Education4C)
+                                   (\r -> (F.rgetField @DT.Education4C r, F.rgetField @DT.SexC r))
                                   allSimpleAges
-                                  allEdus
+                                  allEduSex
                                 )
-          $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])
+          $ fmap (F.rcast @[DT.SimpleAgeC, DT.SexC, DT.Education4C, PUMS.Citizens])
           $ F.filterFrame exampleFilter enrichedAge
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) enrichedTable)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEduSex) enrichedTable)
 --    BRK.logFrame $ fmap fixRows2 enrichedAge
     let dsFld = DED.desiredRowSumsFld
                 (F.rgetField @PUMS.Citizens)
@@ -152,15 +153,15 @@ main = do
     let nearestTable = FL.fold (fmap DED.totaledTable
                                 $ DED.rowMajorMapFld
                                  (F.rgetField @PUMS.Citizens)
-                                 (F.rcast @'[DT.SimpleAgeC])
-                                 (F.rcast @[DT.Education4C, DT.SexC])
-                                 allSimpleAgesR
-                                 (S.fromList allEduSexR)
+                                 (F.rgetField @DT.SimpleAgeC)
+                                 (\r -> (F.rgetField @DT.Education4C r, F.rgetField @DT.SexC r))
+                                 allSimpleAges
+                                 allEduSex
                                )
           $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, DT.SexC, PUMS.Citizens])
           $ F.filterFrame exampleFilter nearestEnrichedAge
     K.logLE K.Info "ACS data, aggregated by ages, then split by age model, then age sums across education for given gender/race adjusted to original."
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade (S.fromList allEduSexR)) nearestTable)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEduSex) nearestTable)
 
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
     K.logLE K.Info $ show allEdus
