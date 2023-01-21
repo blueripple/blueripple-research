@@ -38,6 +38,7 @@ import qualified Colonnade as C
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vinyl as V
 import qualified Control.Foldl as FL
 import qualified Frames as F
 import qualified Frames.Transform as FT
@@ -102,7 +103,18 @@ main = do
     let allSimpleAges = S.fromList [DT.Under, DT.EqualOrOver]
         allAges = Keyed.elements @DT.Age4
         allEdus = Keyed.elements @DT.Education4
-    let acsTable = FL.fold (fmap DED.totaledTable $ DED.rowMajorMapFld DT.age4ToSimple allSimpleAges allEdus)
+        allSimpleAgesR = S.map (FT.recordSingleton @DT.SimpleAgeC) allSimpleAges
+        allAgesR = S.map (FT.recordSingleton @DT.Age4C) allAges
+        allEdusR = S.map (FT.recordSingleton @DT.Education4C) allEdus
+
+    let acsTable = FL.fold (fmap DED.totaledTable
+                             $ DED.rowMajorMapFld
+                             (F.rgetField @PUMS.Citizens)
+                             (DT.age4ToSimple . F.rgetField @DT.Age4C)
+                             (F.rgetField @DT.Education4C)
+                             allSimpleAges
+                             allEdus
+                           )
           $ fmap (F.rcast @[DT.Age4C, DT.Education4C, PUMS.Citizens])
           $ F.filterFrame exampleFilter acsSample
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) acsTable)
@@ -114,7 +126,14 @@ main = do
                    DT.EqualOrOver
                    DT.Under
                    acsSampleNoAge
-    let enrichedTable = FL.fold (fmap DED.totaledTable $ DED.rowMajorMapFld id allSimpleAges allEdus)
+    let enrichedTable = FL.fold (fmap DED.totaledTable
+                                  $ DED.rowMajorMapFld
+                                  (F.rgetField @PUMS.Citizens)
+                                  (F.rgetField @DT.SimpleAgeC)
+                                  (F.rgetField @DT.Education4C)
+                                  allSimpleAges
+                                  allEdus
+                                )
           $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])
           $ F.filterFrame exampleFilter enrichedAge
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) enrichedTable)
@@ -122,17 +141,26 @@ main = do
     let dsFld = DED.desiredRowSumsFld
                 (F.rgetField @PUMS.Citizens)
                 (F.rcast @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC])
-                (DT.age4ToSimple . F.rgetField @DT.Age4C)
-                allSimpleAges
+                (FT.recordSingleton @DT.SimpleAgeC . DT.age4ToSimple . F.rgetField @DT.Age4C)
+                allSimpleAgesR
         desiredRowSumMap = FL.fold dsFld acsSampleNoEdu
         desiredRowSumLookup k = maybe (Left $ show k <> " not found in desired sum row map") Right $ M.lookup k desiredRowSumMap
-        ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @DT.SimpleAgeC @DT.Education4C (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup allEdus
+        allEduSexR :: [F.Record '[DT.Education4C, DT.SexC]]= [e F.&: s F.&: V.RNil | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
+        ncFldM = DED.nearestCountsFrameFld @PUMS.Citizens @'[DT.SimpleAgeC] @'[DT.Education4C, DT.SexC]
+                 (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup (S.fromList allEduSexR)
     nearestEnrichedAge <- K.knitEither $ FL.foldM ncFldM enrichedAge
-    let nearestTable = FL.fold (fmap DED.totaledTable $ DED.rowMajorMapFld id allSimpleAges allEdus)
-          $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, PUMS.Citizens])
+    let nearestTable = FL.fold (fmap DED.totaledTable
+                                $ DED.rowMajorMapFld
+                                 (F.rgetField @PUMS.Citizens)
+                                 (F.rcast @'[DT.SimpleAgeC])
+                                 (F.rcast @[DT.Education4C, DT.SexC])
+                                 allSimpleAgesR
+                                 (S.fromList allEduSexR)
+                               )
+          $ fmap (F.rcast @[DT.SimpleAgeC, DT.Education4C, DT.SexC, PUMS.Citizens])
           $ F.filterFrame exampleFilter nearestEnrichedAge
     K.logLE K.Info "ACS data, aggregated by ages, then split by age model, then age sums across education for given gender/race adjusted to original."
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdus) nearestTable)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade (S.fromList allEduSexR)) nearestTable)
 
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
     K.logLE K.Info $ show allEdus

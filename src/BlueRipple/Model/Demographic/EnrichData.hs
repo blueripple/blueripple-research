@@ -21,7 +21,7 @@ where
 
 import qualified BlueRipple.Model.Demographic.StanModels as DM
 
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
+--import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 
 import qualified Control.MapReduce.Simple as MR
@@ -42,14 +42,14 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Melt as F
+import qualified Frames.Transform as FT
 import qualified Numeric.LinearAlgebra as LA
-import qualified Numeric.NLOPT as NLOPT
-import qualified Numeric
+--import qualified Numeric.NLOPT as NLOPT
+--import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
-import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
-import qualified Say as Say
-import GHC.Base (VecElem(DoubleElemRep))
+--import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
+--import qualified Say as Say
 
 
 
@@ -93,34 +93,6 @@ rowMajorMapFld count rowKey colKey allRowKeysS allColKeysS = givenMapFld where
   givenMapFld :: FL.Fold d (Map (rk, ck) Int)
   givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
 
-
-rowMajorMapFld' :: forall count a b c .
-                  (V.Snd count ~ Int
-                   , Ord c
-                   , Ord (V.Snd b)
-                   , V.KnownField a
-                   , V.KnownField b
-                   , V.KnownField count
-                   , F.ElemOf [a, b, count] a
-                   , F.ElemOf [a, b, count] b
-                   , F.ElemOf [a, b, count] count
-                   )
-               => (V.Snd a -> c) -> Set c -> Set (V.Snd b) -> FL.Fold (F.Record [a, b, count]) (Map (c, V.Snd b) Int)
-rowMajorMapFld' rowMerge cs bs = givenMapFld where
-  allCs = S.elems cs
-  allBs = S.elems bs
-  allCBs = [(c, b) | c <- allCs, b <- allBs]
-
-  zeroMap :: Map (c, V.Snd b) Int
-  zeroMap = M.fromList $ (, 0) <$> allCBs
-
-  asKeyVal :: F.Record [a, b, count] -> ((c, V.Snd b), Int)
-  asKeyVal r = ((rowMerge (F.rgetField @a r), F.rgetField @b r), F.rgetField @count r)
-
-  -- fold the input records to a map keyed by categories and add 0s when things are missing
-  givenMapFld :: FL.Fold (F.Record [a, b, count]) (Map (c, V.Snd b) Int)
-  givenMapFld = M.unionWith (+) zeroMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.sum)
-
 rowMajorMapTable :: (Ord a, Ord b) => Map (a, b) Int -> Map a (Map b Int)
 rowMajorMapTable = M.fromListWith (M.unionWith (+)) .  fmap (\(k, n) -> (fst k, M.singleton (snd k) n)) .  M.toList
 
@@ -131,13 +103,10 @@ totaledTable m = mList ++ [("Total", totals)] where
   totals = foldl' (M.unionWith (+)) mempty $ fmap snd mAsList
 
 nearestCountsFrameFld :: forall count rks cks outerKs rs .
-                         (F.ElemOf rs count
-                         , V.Snd count ~ Int
+                         (V.Snd count ~ Int
                          , V.KnownField count
                          , Ord (F.Record outerKs)
                          , outerKs F.⊆ rs
-                         , rks F.⊆ rs
-                         , cks F.⊆ rs
                          , FSI.RecVec (outerKs V.++ rks V.++ cks V.++ '[count])
                          , (outerKs V.++ ((rks V.++ cks) V.++ '[count]) ~ ((outerKs V.++ rks) V.++ cks) V.++ '[count])
                          , ((rks V.++ cks) V.++ '[count]) F.⊆ rs
@@ -182,6 +151,26 @@ colVal :: RowMajorKey a b -> b
 colVal (RowMajorKey (_, b)) = b
 -}
 
+nearestCountsFrameIFld :: forall count rks cks .
+                          (F.ElemOf ((rks V.++ cks) V.++ '[count]) count
+                          , V.Snd count ~ Int
+                          , V.KnownField count
+                          , Ord (F.Record rks)
+                          , Ord (F.Record cks)
+                          , rks F.⊆ ((rks V.++ cks) V.++ '[count])
+                          , cks F.⊆ ((rks V.++ cks) V.++ '[count])
+                          , (rks V.++ (cks V.++ '[count])) ~  ((rks V.++ cks) V.++ '[count])
+                          )
+                       =>  ([Int] -> [[Int]] -> Either Text [[Int]])
+                       -> Map (F.Record rks) Int
+                       -> Set (F.Record cks)
+                       ->  FL.FoldM (Either Text) (F.Record (rks V.++ cks V.++ '[count])) [F.Record (rks V.++ cks V.++ '[count])]
+nearestCountsFrameIFld innerComp rowSums allColumns =
+  fmap (fmap toRecord)
+  $ nearestCountsIFld innerComp (F.rgetField @count) (F.rcast @rks) (F.rcast @cks) rowSums allColumns
+  where
+    toRecord :: (F.Record rks, F.Record cks, Int) -> F.Record (rks V.++ cks V.++ '[count])
+    toRecord (rkr, ckr, n) = rkr F.<+> ckr F.<+> FT.recordSingleton @count n
 
 
 nearestCountsIFld :: forall d rk ck .
@@ -243,8 +232,8 @@ nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsKL dRowSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
 
-      transpose :: [[a]] -> [[a]]
-      transpose = go [] where
+      transp :: [[a]] -> [[a]]
+      transp = go [] where
         go x [] = fmap reverse x
         go [] (r : rs) = go (fmap (\y -> [y]) r) rs
         go x (r :rs) = go (List.zipWith (:) r x) rs
@@ -261,11 +250,11 @@ nearestCountsKL dRowSumsI oCountsI = do
 
       rsZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..] dRowSumsI
       csZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..]
-                 $ fmap (FL.fold FL.sum) $ transpose oCountsI
+                 $ fmap (FL.fold FL.sum) $ transp oCountsI
       dRowSumsI' = filter (/= 0) dRowSumsI
       aV = LA.fromList $ fmap toDouble dRowSumsI'
       oCountsI' = remove 0 rsZeroIx oCountsI
-      oCountsI'' = transpose $ remove 0 csZeroIx $ transpose oCountsI'
+      oCountsI'' = transp $ remove 0 csZeroIx $ transp oCountsI'
 
       nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI''
       (rows, cols) = LA.size nM
@@ -293,7 +282,7 @@ nearestCountsKL dRowSumsI oCountsI = do
       deltaV <- updateFromGuess rows cols aV nV firstGuessV
       qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
       let sol'' = splitAtAll cols (fmap round $ LA.toList qVsol)
-          sol' = transpose $ restore csZeroIx $ transpose sol''
+          sol' = transp $ restore csZeroIx $ transp sol''
           sol = restore rsZeroIx sol'
       pure sol
 
@@ -370,36 +359,35 @@ enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                            -> a
                            -> F.FrameRec rs
                            -> m (F.FrameRec (t ': rs))
-enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @t @count smf where
+enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count smf where
   smf r = do
-    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x) in M.fromList [(aTrue, nTrue), (aFalse, n - nTrue)]
+    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x)
+                                      in M.fromList [(FT.recordSingleton @t aTrue, nTrue)
+                                                    , (FT.recordSingleton @t aFalse, n - nTrue)
+                                                    ]
     pTrue <- DM.applyModelResult mr (getGeo r) r
     pure $ smf' pTrue
 
 -- | produce a map of splits across type a. Doubles must sum to 1.
 newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
 
-splitRec :: forall t count rs a . (V.KnownField t
-                                  , V.Snd t ~ a
-                                  , V.KnownField count
+splitRec :: forall count rs cks . (V.KnownField count
                                   , F.ElemOf rs count
                                   )
-         => SplitModelF (V.Snd count) a -> F.Record rs -> [F.Record (t ': rs)]
+         => SplitModelF (V.Snd count) (F.Record cks) -> F.Record rs -> [F.Record (cks V.++ rs)]
 splitRec (SplitModelF f) r =
-  let makeOne (a, n) = a F.&: (F.rputField @count n) r
+  let makeOne (colRec, n) = colRec F.<+> F.rputField @count n r
       splits = M.toList $ f $ F.rgetField @count r
   in makeOne <$> splits
 
-enrichFromModel :: forall t count ks rs a . (ks F.⊆ rs
-                                            , V.KnownField t
-                                            , V.Snd t ~ a
+enrichFromModel :: forall count ks rs cks . (ks F.⊆ rs
                                             , V.KnownField count
                                             , F.ElemOf rs count
                                             )
-                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
+                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
                       -> F.Record rs -- ^ record to enrich
-                      -> Either Text [F.Record (t ': rs)]
-enrichFromModel modelResultF recordToEnrich = flip (splitRec @t @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
+                      -> Either Text [F.Record (cks V.++ rs)]
+enrichFromModel modelResultF recordToEnrich = flip (splitRec @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
 
 data ModelLookupException = ModelLookupException Text deriving stock (Show)
 instance Exception ModelLookupException
@@ -407,23 +395,21 @@ instance Exception ModelLookupException
 
 -- this should build the new frame in-core and in a streaming manner,
 -- not needing to build the entire list before placing in-core
-enrichFrameFromModel :: forall t count ks rs a m . (ks F.⊆ rs
+enrichFrameFromModel :: forall count ks rs cks m . (ks F.⊆ rs
                                                    , FSI.RecVec rs
-                                                   , FSI.RecVec (t ': rs)
-                                                   , V.KnownField t
-                                                   , V.Snd t ~ a
+                                                   , FSI.RecVec (cks V.++  rs)
                                                    , V.KnownField count
                                                    , F.ElemOf rs count
                                                    , MonadThrow m
                                                    , Prim.PrimMonad m
                                                    )
-                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) a)) -- ^ model results to apply
+                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
                      -> F.FrameRec rs -- ^ record to enrich
-                     -> m (F.FrameRec (t ': rs))
+                     -> m (F.FrameRec (cks V.++ rs))
 enrichFrameFromModel modelResultF =  FST.transform f where
   f = Streamly.concatMapM g
   g r = do
-    case enrichFromModel @t @count modelResultF r of
+    case enrichFromModel @count modelResultF r of
       Left err -> throwM $ ModelLookupException err
       Right rs -> pure $ Streamly.fromList rs
 
