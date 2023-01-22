@@ -32,6 +32,7 @@ module BlueRipple.Data.CPSVoterPUMS
 --  , cpsKeysToASER4
   , cpsKeysToASER5
   , cpsKeysToASER4H
+  , cpsKeysToCASER4H
 --  , cpsKeysToIdentity
   , cpsPossibleVoter
   , cpsVoted
@@ -400,6 +401,21 @@ cpsKeysToASER4H addInCollegeToGrads r =
      F.&: F.rgetField @DT.RaceAlone4C r
      F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
+
+cpsKeysToCASER4H :: Bool
+                 -> F.Record [DT.CitC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+                 -> F.Record [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+cpsKeysToCASER4H addInCollegeToGrads r =
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+  in F.rgetField @DT.CitC r
+     F.&: (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: F.rgetField @DT.RaceAlone4C r
+     F.&: F.rgetField @DT.HispC r
+     F.&: V.RNil
+
 
 
 cpsKeysToASER :: Bool -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC] -> F.Record DT.CatColsASER

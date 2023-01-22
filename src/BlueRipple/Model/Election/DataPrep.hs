@@ -308,7 +308,8 @@ pumsMR
      , FI.RecVec (ks V.++ DemographicsR)
      , ks F.⊆ (ks V.++ PUMSDataR)
      , F.ElemOf (ks V.++ PUMSDataR) DT.AvgIncome
-     , F.ElemOf (ks V.++ PUMSDataR) PUMS.Citizens
+     , F.ElemOf (ks V.++ PUMSDataR) DT.PopCount
+     , F.ElemOf (ks V.++ PUMSDataR) DT.CitC
      , F.ElemOf (ks V.++ PUMSDataR) DT.CollegeGradC
      , F.ElemOf (ks V.++ PUMSDataR) DT.HispC
      , F.ElemOf (ks V.++ PUMSDataR) PUMS.NonCitizens
@@ -331,12 +332,12 @@ pumsDataF
       (F.Record PUMSDataR)
       (F.Record DemographicsR)
 pumsDataF =
-  let cit = F.rgetField @PUMS.Citizens
-      citF = FL.premap cit FL.sum
+  let ppl = F.rgetField @DT.PopCount
+      pplF = FL.premap ppl FL.sum
       intRatio x y = realToFrac x / realToFrac y
-      fracF f = intRatio <$> FL.prefilter f citF <*> citF
-      citWgtdSumF f = FL.premap (\r → realToFrac (cit r) * f r) FL.sum
-      citWgtdF f = (/) <$> citWgtdSumF f <*> fmap realToFrac citF
+      fracF f = intRatio <$> FL.prefilter f pplF <*> pplF
+      pplWgtdSumF f = FL.premap (\r → realToFrac (ppl r) * f r) FL.sum
+      pplWgtdF f = (/) <$> pplWgtdSumF f <*> fmap realToFrac pplF
       race4A = F.rgetField @DT.RaceAlone4C
       hisp = F.rgetField @DT.HispC
       wnh r = race4A r == DT.RA4_White && hisp r == DT.NonHispanic
@@ -358,9 +359,9 @@ pumsDataF =
           V.:& FF.toFoldRecord (fracF asian)
           V.:& FF.toFoldRecord (fracF other)
           V.:& FF.toFoldRecord (fracF whiteNonHispanicGrad)
-          V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.AvgIncome))
-          V.:& FF.toFoldRecord (citWgtdF (F.rgetField @DT.PopPerSqMile))
-          V.:& FF.toFoldRecord citF
+          V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.AvgIncome))
+          V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PopPerSqMile))
+          V.:& FF.toFoldRecord pplF
           V.:& V.RNil
 
 -- This is the thing to apply to loaded result data (with incumbents)
@@ -438,7 +439,7 @@ aggregatePartiesF =
           (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r → fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
 
 type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
-type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ '[PUMS.Citizens]
+type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ '[DT.PopCount]
 
 {-
 addUnopposed :: (F.ElemOf rs DVotes, F.ElemOf rs RVotes) => F.Record rs -> F.Record (rs V.++ '[ET.Unopposed])
@@ -450,7 +451,7 @@ makeStateElexDataFrame
   ∷ (K.KnitEffects r)
   ⇒ ET.OfficeT
   → Int
-  → F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[PUMS.Citizens])
+  → F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[DT.PopCount])
   → F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, BR.Special]
   → K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
 makeStateElexDataFrame office earliestYear acsByState elex = do
@@ -460,7 +461,7 @@ makeStateElexDataFrame office earliestYear acsByState elex = do
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @'[PUMS.Citizens])
+            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @'[DT.PopCount])
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       cvapByState = FL.fold cvapFld acsByState
   flattenedElex ←
@@ -524,7 +525,7 @@ makeCDElexDataFrame office earliestYear acsByCD elex = do
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] @'[PUMS.Citizens])
+            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] @'[DT.PopCount])
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       cvapByCD = FL.fold cvapFld acsByCD
   flattenedElex ←
@@ -645,13 +646,13 @@ cpsCountedTurnoutByState ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ K.Sem r (K
 cpsCountedTurnoutByState = do
   let afterYear y r = F.rgetField @BR.Year r >= y
       possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
-      citizen r = F.rgetField @DT.IsCitizen r
+      citizen r = F.rgetField @DT.CitC r == DT.Cit
       includeRow r = afterYear 2012 r && possible r && citizen r
       votedF r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
       wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r
       fld =
         BRCF.weightedCountFold @_ @CPS.CPSVoterPUMS
-          (\r → F.rcast @StateKeyR r `V.rappend` CPS.cpsKeysToASER4H True (F.rcast r))
+          (\r → F.rcast @StateKeyR r `V.rappend` CPS.cpsKeysToCASER4H True (F.rcast r))
           (F.rcast @[ET.VotedYNC, CPS.CPSVoterPUMSWeight])
           includeRow
           votedF
@@ -660,12 +661,13 @@ cpsCountedTurnoutByState = do
   BR.retrieveOrMakeFrame "model/house/cpsVByState.bin" cpsRaw_C $ return . FL.fold fld
 
 pumsReKey
-  ∷ F.Record '[DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-  → F.Record '[DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+  ∷ F.Record '[DT.CitC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+  → F.Record '[DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 pumsReKey r =
   let cg = DT.collegeGrad $ F.rgetField @DT.EducationC r
       ic = F.rgetField @DT.InCollege r
-   in DT.age5FToSimple (F.rgetField @DT.Age5FC r)
+   in   F.rgetField @DT.CitC r
+        F.&: DT.age5FToSimple (F.rgetField @DT.Age5FC r)
         F.&: F.rgetField @DT.SexC r
         F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
         F.&: F.rgetField @DT.RaceAlone4C r
@@ -691,7 +693,7 @@ type HouseModelCensusTablesByState =
 pumsByPUMA
   ∷ (F.Record PUMS.PUMS → Bool)
   → F.FrameRec PUMS.PUMS
-  → F.FrameRec (PUMS.PUMACounts [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])
+  → F.FrameRec (PUMS.PUMACounts [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])
 pumsByPUMA keepIf = FL.fold (PUMS.pumsRollupF keepIf $ pumsReKey . F.rcast)
 
 pumsByCD ∷ (K.KnitEffects r) ⇒ F.FrameRec PUMS.PUMS → F.FrameRec BR.DatedCDFromPUMA2012 → K.Sem r (F.FrameRec PUMSByCDR)
@@ -722,15 +724,15 @@ cachedPumsByState
   ∷ ∀ r
    . (K.KnitEffects r, BR.CacheEffects r)
   ⇒ K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[PUMS.Citizens])))
+  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[DT.PopCount])))
 cachedPumsByState pums_C = do
-  let zeroCount ∷ F.Record '[PUMS.Citizens]
+  let zeroCount ∷ F.Record '[DT.PopCount]
       zeroCount = 0 F.&: V.RNil
       addZeroF =
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @StateKeyR @(CensusPredictorR V.++ '[PUMS.Citizens]))
+            (FMR.assignKeysAndData @StateKeyR @(CensusPredictorR V.++ '[DT.PopCount]))
             ( FMR.makeRecsWithKey id $
                 FMR.ReduceFold $
                   const $
@@ -765,24 +767,24 @@ prepCCESAndPums clearCache = do
   BR.retrieveOrMakeD allCacheKey deps $ \(ccesByCD, cpsVByState, acsByCD) → do
     -- get Density and avg income from PUMS and combine with election data for the district level data
     let acsCDFixed = fmap fixDC_CD acsByCD
-        diInnerFold ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, PUMS.Citizens, PUMS.NonCitizens]) (F.Record [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome])
+        diInnerFold ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, DT.PopCount]) (F.Record [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome])
         diInnerFold =
-          let cit = F.rgetField @PUMS.Citizens -- Weight by voters. If voters/non-voters live in different places, we get voters experience.
+          let ppl = F.rgetField @DT.PopCount -- Weight by voters. If voters/non-voters live in different places, we get voters experience.
           --              ppl r = cit r + F.rgetField @PUMS.NonCitizens r
-              citF = FL.premap cit FL.sum
+              pplF = FL.premap ppl FL.sum
 --              wgtdAMeanF w f = (/) <$> FL.premap (\r → w r * f r) FL.sum <*> FL.premap w FL.sum
 --              wgtdGMeanF w f = fmap Numeric.exp $ (/) <$> FL.premap (\r → w r * Numeric.log (f r)) FL.sum <*> FL.premap w FL.sum
-              citWeightedAMeanF = wgtdAMeanF (realToFrac . cit) -- (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
-              citWeightedGMeanF = wgtdGMeanF (realToFrac . cit) -- (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
+              pplWeightedAMeanF = wgtdAMeanF (realToFrac . ppl) -- (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
+              pplWeightedGMeanF = wgtdGMeanF (realToFrac . ppl) -- (/) <$> FL.premap (\r -> realToFrac (cit r) * f r) FL.sum <*> fmap realToFrac citF
               --              pplWgtdAMeanF = wgtdAMeanF (realToFrac . ppl)
               --              pplF = FL.premap ppl FL.sum
               --              pplWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (ppl r) * f r) FL.sum <*> fmap realToFrac pplF
-           in (\c d i → c F.&: d F.&: i F.&: V.RNil) <$> citF <*> citWeightedGMeanF (F.rgetField @DT.PopPerSqMile) <*> citWeightedAMeanF (F.rgetField @DT.AvgIncome)
+           in (\c d i → c F.&: d F.&: i F.&: V.RNil) <$> pplF <*> pplWeightedGMeanF (F.rgetField @DT.PopPerSqMile) <*> pplWeightedAMeanF (F.rgetField @DT.AvgIncome)
         diByCDFold ∷ FL.Fold (F.Record PUMSByCDR) (F.FrameRec DistrictDemDataR)
         diByCDFold =
           FMR.concatFold $
             FMR.mapReduceFold
-              FMR.noUnpack
+              (FMR.filterUnpack $ \r -> F.rgetField @DT.CitC r == DT.Cit)
               (FMR.assignKeysAndData @CDKeyR)
               (FMR.foldAndAddKey diInnerFold)
         diByStateFold ∷ FL.Fold (F.Record PUMSByCDR) (F.FrameRec StateDemDataR)
@@ -923,11 +925,11 @@ fixACSFld ∷ FL.Fold (F.Record PUMSWithDensity) (F.FrameRec ACSWithDensityEM)
 fixACSFld =
   let --safeLog x = if x < 1e-12 then 0 else Numeric.log x
       density = F.rgetField @DT.PopPerSqMile
-      cit = F.rgetField @PUMS.Citizens
-      citFld = FL.premap cit FL.sum
-      citWgtdDensityFld = wgtdGMeanF (realToFrac . cit) density -- fmap Numeric.exp ((/) <$> FL.premap (\r -> realToFrac (cit r) * safeLog (density r)) FL.sum <*> fmap realToFrac citFld)
+      ppl = F.rgetField @DT.PopCount
+      pplFld = FL.premap ppl FL.sum
+      pplWgtdDensityFld = wgtdGMeanF (realToFrac . ppl) density -- fmap Numeric.exp ((/) <$> FL.premap (\r -> realToFrac (cit r) * safeLog (density r)) FL.sum <*> fmap realToFrac citFld)
       dataFld ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.PopCount]) (F.Record [DT.PopPerSqMile, DT.PopCount])
-      dataFld = (\d c → d F.&: c F.&: V.RNil) <$> citWgtdDensityFld <*> citFld
+      dataFld = (\d c → d F.&: c F.&: V.RNil) <$> pplWgtdDensityFld <*> pplFld
    in FMR.concatFold $
         FMR.mapReduceFold
           (FMR.simpleUnpack $ addRace5)
@@ -972,7 +974,7 @@ cpsDiagnostics _ cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       surveyedF = F.rgetField @BRCF.Count
       votedF = F.rgetField @BRCF.Successes
-      cvap = F.rgetField @PUMS.Citizens
+      cvap = F.rgetField @DT.PopCount
       ratio x y = realToFrac @_ @Double x / realToFrac @_ @Double y
       pT r = if surveyedF r == 0 then 0.6 else ratio (votedF r) (surveyedF r)
       compute rw rc =
@@ -994,7 +996,7 @@ cpsDiagnostics _ cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
     let acsFixed = F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) acsByState
         cpsFixed = F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) cpsByState
         (psByState, _, rowDiff) =
-          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @CensusPredictorR @[BRCF.Count, BRCF.Successes] @'[PUMS.Citizens]
+          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @CensusPredictorR @[BRCF.Count, BRCF.Successes] @'[DT.PopCount]
             compute
             (FF.foldAllConstrained @Num FL.sum)
             (F.rcast <$> cpsFixed)
@@ -1036,7 +1038,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
       pRP r = if presVotesF r == 0 then 0.5 else ratio (presRVotesF r) (presVotesF r)
       pDH r = if houseVotesF r == 0 then 0.5 else ratio (houseDVotesF r) (houseVotesF r)
       pRH r = if houseVotesF r == 0 then 0.5 else ratio (houseRVotesF r) (houseVotesF r)
-      cvap = F.rgetField @PUMS.Citizens
+      cvap = F.rgetField @DT.PopCount
       addRace5F r = r F.<+> (FT.recordSingleton @DT.Race5C $ DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r))
       compute rw rc =
         let psVoted = pT rw * realToFrac (cvap rc)
@@ -1055,7 +1057,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
           FMR.concatFold $
             FMR.mapReduceFold
               FMR.noUnpack
-              (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CCESBucketR) @'[PUMS.Citizens])
+              (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CCESBucketR) @'[DT.PopCount])
               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         acsFixed = FL.fold acsFixFld $ (fmap addRace5F $ F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) acs)
         ccesZero ∷ F.Record [Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
@@ -1072,7 +1074,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
               )
         ccesWithZeros = FL.fold addZeroFld cces
     let (psByState, _, rowDiff) =
-          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @(BR.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes] @'[PUMS.Citizens]
+          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @(BR.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes] @'[DT.PopCount]
             compute
             (FF.foldAllConstrained @Num FL.sum)
             (F.rcast <$> ccesWithZeros)

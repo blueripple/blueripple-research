@@ -271,8 +271,8 @@ pumsCDRollup
    , FJ.CanLeftJoinM [BR.Year, BR.StateFIPS, BR.PUMA] (PUMACounts ks) BR.DatedCDFromPUMA2012
    , FI.RecVec (ks ++ PUMSCountToFields)
    , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
-   , F.ElemOf (ks ++ PUMSCountToFields) Citizens
-   , F.ElemOf (ks ++ PUMSCountToFields) NonCitizens
+--   , F.ElemOf (ks ++ PUMSCountToFields) Citizens
+--   , F.ElemOf (ks ++ PUMSCountToFields) NonCitizens
    , (ks ++ PUMSCountToFields) ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields)
    , F.ElemOf (ks ++ PUMSCountToFields) DT.AvgIncome
    , F.ElemOf (ks ++ PUMSCountToFields) DT.AvgSocSecIncome

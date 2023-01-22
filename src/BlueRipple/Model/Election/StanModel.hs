@@ -275,7 +275,7 @@ setupCPSData m densRP = do
 
 setupElexData :: forall rs md gq.
                  (Typeable rs
-                 , F.ElemOf rs PUMS.Citizens
+                 , F.ElemOf rs DT.PopCount
                  , F.ElemOf rs TVotes
                  , F.ElemOf rs DVotes
                  , F.ElemOf rs RVotes)
@@ -291,7 +291,7 @@ setupElexData :: forall rs md gq.
 setupElexData vst eScale office = do
   let rescale x = x `div` eScale
   elexData <- SB.dataSetTag @(F.Record rs) SC.ModelData ("Elections_" <> show office)
-  cvapElex <- SB.addCountData elexData ("CVAP_Elex_" <> officeText office) (rescale . F.rgetField @PUMS.Citizens)
+  cvapElex <- SB.addCountData elexData ("CVAP_Elex_" <> officeText office) (rescale . F.rgetField @DT.PopCount)
   votedElex <- SB.addCountData elexData ("Voted_Elex" <> officeText office) (rescale . F.rgetField @TVotes)
   vir <- SB.addCountData elexData ("VotesInRace_Elex_" <> officeText office)
                  $ case vst of
@@ -301,7 +301,7 @@ setupElexData vst eScale office = do
   return (elexData, cvapElex, votedElex, vir, dVotesInRace)
 
 getElexData :: forall rs md gq. (Typeable rs
-                                , F.ElemOf rs PUMS.Citizens
+                                , F.ElemOf rs DT.PopCount
                                 , F.ElemOf rs TVotes
                                 , F.ElemOf rs DVotes
                                 , F.ElemOf rs RVotes)
@@ -326,7 +326,7 @@ setupACSPSRows m densRP incF = do
       dmRowP o = designMatrixRowPS' m densRP (DMPref o) (incF o)
       officeMap = M.fromList $ let x = Set.toList offices in zip x x
   acsPSData <- SB.dataSetTag @(F.Record ACSWithDensityEM) SC.ModelData "ACS"
-  acsWgts <- SB.addCountData acsPSData "ACS_CVAP_WGT" (F.rgetField @PUMS.Citizens)
+  acsWgts <- SB.addCountData acsPSData "ACS_CVAP_WGT" (F.rgetField @DT.PopCount)
   dmACST <- DM.addDesignMatrix acsPSData dmRowT (Just "DMTurnout")
   dmACSPs <- traverse (\o -> DM.addDesignMatrix acsPSData (dmRowP o) (Just "DMPref")) officeMap
   return (acsPSData, acsWgts, dmACST, dmACSPs)
@@ -732,7 +732,7 @@ elexDSSp offices o dsSp
   | ET.President `Set.member` offices = if o == ET.President then DSPNone else dsSp
   | otherwise = DSPNone
 
-type ElectionC rs = (F.ElemOf rs PUMS.Citizens
+type ElectionC rs = (F.ElemOf rs DT.PopCount
                    , F.ElemOf rs TVotes
                    , F.ElemOf rs DVotes
                    , F.ElemOf rs RVotes)
