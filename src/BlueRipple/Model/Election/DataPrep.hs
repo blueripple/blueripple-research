@@ -192,8 +192,8 @@ instance Flat.Flat HouseModelData where
   encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
   decode = (\(h, s, p, c) → HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
 
-type PUMSDataR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, PUMS.Citizens, PUMS.NonCitizens]
-type PUMSDataEMR = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, PUMS.Citizens, PUMS.NonCitizens]
+type PUMSDataR = [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, DT.PopCount]
+type PUMSDataEMR = [DT.CitC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount]
 
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
 type PUMSByCDEMR = CDKeyR V.++ PUMSDataEMR
@@ -203,8 +203,8 @@ type PUMSByState = F.FrameRec PUMSByStateR
 
 -- unweighted, which we address via post-stratification
 -- type AHSuccesses = "AHSucceses" F.:-> Double
-type CensusPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-type CensusPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CensusPredictorR = [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CensusPredictorEMR = [DT.CitC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR = CensusPredictorR V.++ BRCF.CountCols
 type CPSVDataEMR = CensusPredictorEMR V.++ BRCF.CountCols -- V.++ '[AHSuccesses]
 type CPSVByStateR = StateKeyR V.++ CPSVDataR
@@ -214,8 +214,8 @@ type CPSVByStateAH = CPSVByStateR -- V.++ '[AHSuccesses]
 -- type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
 type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
-type DistrictDemDataR = CDKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
-type StateDemDataR = StateKeyR V.++ [PUMS.Citizens, DT.PopPerSqMile, DT.AvgIncome]
+type DistrictDemDataR = CDKeyR V.++ [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome]
+type StateDemDataR = StateKeyR V.++ [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome]
 type AllCatR = '[BR.Year] V.++ CensusPredictorR
 data CCESAndPUMS = CCESAndPUMS
   { ccesRows ∷ F.FrameRec CCESWithDensity
@@ -886,7 +886,7 @@ fldAgeInACS =
     FMR.mapReduceFold
       FMR.noUnpack
       (FMR.assignKeysAndData @(CDKeyR V.++ CensusPredictorEMR))
-      (FMR.foldAndAddKey $ sumButLeaveDensity @'[PUMS.Citizens, PUMS.NonCitizens] (realToFrac . F.rgetField @PUMS.Citizens))
+      (FMR.foldAndAddKey $ sumButLeaveDensity @'[DT.PopCount] (realToFrac . F.rgetField @DT.PopCount))
 
 sumButLeaveDensityCCES ∷ FL.Fold (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile]))) (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile])))
 sumButLeaveDensityCCES =
@@ -914,7 +914,7 @@ fldAgeInCCES =
 
 type PUMSWithDensity = PUMSByCDR -- V.++ '[DT.PopPerSqMile]
 type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
-type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, PUMS.Citizens]
+type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, DT.PopCount]
 
 type CPSVWithDensity = CPSVByStateR V.++ '[DT.PopPerSqMile]
 type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
@@ -926,7 +926,7 @@ fixACSFld =
       cit = F.rgetField @PUMS.Citizens
       citFld = FL.premap cit FL.sum
       citWgtdDensityFld = wgtdGMeanF (realToFrac . cit) density -- fmap Numeric.exp ((/) <$> FL.premap (\r -> realToFrac (cit r) * safeLog (density r)) FL.sum <*> fmap realToFrac citFld)
-      dataFld ∷ FL.Fold (F.Record [DT.PopPerSqMile, PUMS.Citizens]) (F.Record [DT.PopPerSqMile, PUMS.Citizens])
+      dataFld ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.PopCount]) (F.Record [DT.PopPerSqMile, DT.PopCount])
       dataFld = (\d c → d F.&: c F.&: V.RNil) <$> citWgtdDensityFld <*> citFld
    in FMR.concatFold $
         FMR.mapReduceFold

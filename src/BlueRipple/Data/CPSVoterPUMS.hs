@@ -38,9 +38,9 @@ module BlueRipple.Data.CPSVoterPUMS
 
   ) where
 
-import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as BR
-import qualified BlueRipple.Data.DemographicTypes as BR
-import qualified BlueRipple.Data.ElectionTypes as BR
+import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as CPS
+import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -67,14 +67,14 @@ import qualified Knit.Report as K
 cpsVoterPUMSLoader :: (K.KnitEffects r, BR.CacheEffects r)
                    => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
 cpsVoterPUMSLoader = do
-  let cpsPUMSDataPath = BR.LocalData $ T.pack BR.cpsVoterPUMSCSV
+  let cpsPUMSDataPath = BR.LocalData $ T.pack CPS.cpsVoterPUMSCSV
   cachedStateAbbrCrosswalk <- BR.stateAbbrCrosswalkLoader
   cachedCPSDataPath <- K.liftKnit $ BR.dataPathWithCacheTime cpsPUMSDataPath
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedCPSDataPath
   BR.retrieveOrMakeFrame "data/cpsVoterPUMSWithAbbrs.bin" cachedDeps $ \(stateAbbrCrosswalk, dataPath) -> do
-    let filterF r = (F.rgetField @BR.CPSAGE r >= 18) && (F.rgetField @BR.CPSCITIZEN r /= 5)
+    let filterF r = (F.rgetField @CPS.CPSAGE r >= 18) && (F.rgetField @CPS.CPSCITIZEN r /= 5)
     withoutAbbr <- K.ignoreCacheTimeM
-                   $ BR.cachedFrameLoader @(F.RecordColumns BR.CPSVoterPUMS_Raw) @CPSVoterPUMS'
+                   $ BR.cachedFrameLoader @(F.RecordColumns CPS.CPSVoterPUMS_Raw) @CPSVoterPUMS'
                    dataPath
                    Nothing
                    (Just filterF)
@@ -106,19 +106,19 @@ type CPSVoterPUMS = '[ BR.Year
                      , BR.StateFIPS
                      , BR.StateAbbreviation
                      , BR.CountyFIPS
-                     , BR.Age4C
-                     , BR.SexC
-                     , BR.RaceAlone4C
-                     , BR.HispC
-                     , BR.IsCitizen
-                     , BR.CollegeGradC
-                     , BR.InCollege
-                     , BR.VoteWhyNotC
-                     , BR.RegWhyNotC
-                     , BR.VoteHowC
-                     , BR.VoteWhenC
-                     , BR.VotedYNC
-                     , BR.RegisteredYNC
+                     , DT.CitC
+                     , DT.Age4C
+                     , DT.SexC
+                     , DT.RaceAlone4C
+                     , DT.HispC
+                     , DT.CollegeGradC
+                     , DT.InCollege
+                     , ET.VoteWhyNotC
+                     , ET.RegWhyNotC
+                     , ET.VoteHowC
+                     , ET.VoteWhenC
+                     , ET.VotedYNC
+                     , ET.RegisteredYNC
                      , CPSVoterPUMSWeight
                      ]
 
@@ -215,28 +215,28 @@ cpsVoterPUMSElectoralWeights
   ((ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ rs
-  , F.ElemOf cs BR.IsCitizen
-  , F.ElemOf cs BR.VotedYNC
-  , FI.RecVec (ls V.++ ks V.++ BR.EWCols)
-  , (ls V.++ (ks V.++ BR.EWCols)) ~ ((ls V.++ ks) V.++ BR.EWCols)
+  , F.ElemOf cs DT.CitC
+  , F.ElemOf cs ET.VotedYNC
+  , FI.RecVec (ls V.++ ks V.++ ET.EWCols)
+  , (ls V.++ (ks V.++ ET.EWCols)) ~ ((ls V.++ ks) V.++ ET.EWCols)
   , Ord (F.Record (ls V.++ ks))
   , Ord (F.Record ls)
   , BR.FiniteSet (F.Record ks)
-  , ls F.⊆ ((ls V.++ ks) V.++ BR.EWCols)
-  , (ks V.++ BR.EWCols) F.⊆ ((ls V.++ ks) V.++ BR.EWCols)
-  , ks F.⊆ (ks V.++ BR.EWCols)
-  , BR.EWCols F.⊆ (ks V.++ BR.EWCols)
+  , ls F.⊆ ((ls V.++ ks) V.++ ET.EWCols)
+  , (ks V.++ ET.EWCols) F.⊆ ((ls V.++ ks) V.++ ET.EWCols)
+  , ks F.⊆ (ks V.++ ET.EWCols)
+  , ET.EWCols F.⊆ (ks V.++ ET.EWCols)
   )
   => (F.Record rs -> F.Record ls)
   -> (F.Record rs -> F.Record ks)
   -> (F.Record cs -> Double)
-  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ BR.EWCols))
+  -> FL.Fold (F.Record rs) (F.FrameRec (ls V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSElectoralWeights getLoc getKey getWgt =
-  let toRec :: Double -> F.Record BR.EWCols
-      toRec w =  BR.EW_Census F.&: BR.EW_Citizen F.&: w F.&: V.RNil
-      citizen r = F.rgetField @BR.IsCitizen r
-      possibleVoter r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
-      voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
+  let toRec :: Double -> F.Record ET.EWCols
+      toRec w =  ET.EW_Census F.&: ET.EW_Citizen F.&: w F.&: V.RNil
+      citizen r = F.rgetField @DT.CitC r == DT.Cit
+      possibleVoter r = cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
+      voted r = cpsVoted $ F.rgetField @ET.VotedYNC r
   in cpsVoterPUMSRollupWeightedCounts @cs
      getLoc
      getKey
@@ -249,69 +249,69 @@ cpsVoterPUMSElectoralWeights getLoc getKey getWgt =
 
 cpsVoterPUMSElectoralWeightsByState
   :: forall ks.
-  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
-  , FI.RecVec (ks ++ BR.EWCols)
+  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitC
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
+  , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
-  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight])
   , BR.FiniteSet (F.Record ks)
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeight
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightOf
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightSource
-  , (ks V.++ BR.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ BR.EWCols)
-  , ks F.⊆ (ks V.++ BR.EWCols)
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightSource
+  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols)
+  , ks F.⊆ (ks V.++ ET.EWCols)
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ BR.EWCols))
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSElectoralWeightsByState getCatKey =
-  cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]
+  cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]
   (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
 
 cpsVoterPUMSNationalElectoralWeights
   :: forall ks.
-  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.IsCitizen
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight]) BR.VotedYNC
-  , FI.RecVec (ks ++ BR.EWCols)
+  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitC
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
+  , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
-  , ks F.⊆ ('[BR.Year] V.++ ks V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight])
+  , ks F.⊆ ('[BR.Year] V.++ ks V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight])
   , BR.FiniteSet (F.Record ks)
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeight
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightOf
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightSource
-  , (ks V.++ BR.EWCols) F.⊆ ('[BR.Year] V.++ ks V.++ BR.EWCols)
-  , ks F.⊆ (ks V.++ BR.EWCols)
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightSource
+  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year] V.++ ks V.++ ET.EWCols)
+  , ks F.⊆ (ks V.++ ET.EWCols)
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year] V.++ ks V.++ BR.EWCols))
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSNationalElectoralWeights getCatKey =
-  cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight] (F.rcast @'[BR.Year]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
+  cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight] (F.rcast @'[BR.Year]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
 
 cpsVoterPUMSElectoralWeightsByCD
   :: forall ks.
-  (F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.CountyWeight
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.IsCitizen
-  , F.ElemOf (ks ++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.VotedYNC
-  , FI.RecVec (ks ++ BR.EWCols)
+  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.CountyWeight
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) DT.CitC
+  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) ET.VotedYNC
+  , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
   , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
              V.++ ks
-             V.++ '[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
+             V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
   , BR.FiniteSet (F.Record ks)
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeight
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightOf
-  , F.ElemOf (ks V.++ BR.EWCols) BR.ElectoralWeightSource
-  , (ks V.++ BR.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ BR.EWCols)
-  , ks F.⊆ (ks V.++ BR.EWCols)
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
+  , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightSource
+  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ ET.EWCols)
+  , ks F.⊆ (ks V.++ ET.EWCols)
   )
   => (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
   -> FL.Fold (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-  (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ BR.EWCols))
+  (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSElectoralWeightsByCD getCatKey =
   let wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
-  in cpsVoterPUMSElectoralWeights @[BR.IsCitizen, BR.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
+  in cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
      (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]) getCatKey wgt
 
 
@@ -329,13 +329,13 @@ cpsCountVotersByStateF
   (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ BRCF.CountCols))
 cpsCountVotersByStateF _ year =
   let isYear y r = F.rgetField @BR.Year r == y
-      possible r = cpsPossibleVoter $ F.rgetField @BR.VotedYNC r
-      citizen r = F.rgetField @BR.IsCitizen r
+      possible r = cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
+      citizen r = F.rgetField @DT.CitC r == DT.Cit
       includeRow r = isYear year r &&  possible r && citizen r
-      voted r = cpsVoted $ F.rgetField @BR.VotedYNC r
+      voted r = cpsVoted $ F.rgetField @ET.VotedYNC r
   in BRCF.weightedCountFold
      (F.rcast @(BR.StateAbbreviation ': ks))
-     (F.rcast @[BR.VotedYNC, CPSVoterPUMSWeight])
+     (F.rcast @[ET.VotedYNC, CPSVoterPUMSWeight])
      includeRow
      voted
      (F.rgetField @CPSVoterPUMSWeight)
@@ -374,242 +374,242 @@ cpsCountVotersByCDF _ year =
 -- "in college" people to either Grad or NonGrad buckets in terms of voting pref.
 
 cpsKeysToASER5 :: Bool
-               -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
-               -> F.Record BR.CatColsASER5
+               -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+               -> F.Record DT.CatColsASER5
 cpsKeysToASER5 addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-      ra4 =  F.rgetField @BR.RaceAlone4C r
-      h = F.rgetField @BR.HispC r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: BR.race5FromRaceAlone4AndHisp True ra4 h
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+      ra4 =  F.rgetField @DT.RaceAlone4C r
+      h = F.rgetField @DT.HispC r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: DT.race5FromRaceAlone4AndHisp True ra4 h
      F.&: V.RNil
 
 
 cpsKeysToASER4H :: Bool
-                -> F.Record [BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC]
-                -> F.Record [BR.SimpleAgeC, BR.SexC, BR.CollegeGradC, BR.RaceAlone4C, BR.HispC]
+                -> F.Record [DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+                -> F.Record [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 cpsKeysToASER4H addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: F.rgetField @BR.RaceAlone4C r
-     F.&: F.rgetField @BR.HispC r
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: F.rgetField @DT.RaceAlone4C r
+     F.&: F.rgetField @DT.HispC r
      F.&: V.RNil
 
 
-cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.RaceAlone4C, BR.HispC] -> F.Record BR.CatColsASER
+cpsKeysToASER :: Bool -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC] -> F.Record DT.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-      ra4 =  F.rgetField @BR.RaceAlone4C r
-      h = F.rgetField @BR.HispC r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: (BR.simpleRaceFromRaceAlone4AndHisp True ra4 h)
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+      ra4 =  F.rgetField @DT.RaceAlone4C r
+      h = F.rgetField @DT.HispC r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: (DT.simpleRaceFromRaceAlone4AndHisp True ra4 h)
      F.&: V.RNil
 
 
 {-
-cpsKeysToASER4 :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER4
+cpsKeysToASER4 :: Bool -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.Race5C] -> F.Record DT.CatColsASER4
 cpsKeysToASER4 addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: (BR.race4FromRace5 $ F.rgetField @BR.Race5C r)
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: (DT.race4FromRace5 $ F.rgetField @DT.Race5C r)
      F.&: V.RNil
 
-cpsKeysToASER :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASER
+cpsKeysToASER :: Bool -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.Race5C] -> F.Record DT.CatColsASER
 cpsKeysToASER addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
-     F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
+     F.&: (DT.simpleRaceFromRace5 $ F.rgetField @DT.Race5C r)
      F.&: V.RNil
 
-cpsKeysToASE :: Bool -> F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASE
+cpsKeysToASE :: Bool -> F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.Race5C] -> F.Record DT.CatColsASE
 cpsKeysToASE addInCollegeToGrads r =
-  let cg = F.rgetField @BR.CollegeGradC r
-      ic = addInCollegeToGrads && F.rgetField @BR.InCollege r
-  in (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-     F.&: (F.rgetField @BR.SexC r)
-     F.&: (if cg == BR.Grad || ic then BR.Grad else BR.NonGrad)
+  let cg = F.rgetField @DT.CollegeGradC r
+      ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
+  in (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+     F.&: (F.rgetField @DT.SexC r)
+     F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
      F.&: V.RNil
 
-cpsKeysToASR :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record BR.CatColsASR
+cpsKeysToASR :: F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.Race5C] -> F.Record DT.CatColsASR
 cpsKeysToASR r =
-  (BR.age4ToSimple $ F.rgetField @BR.Age4C r)
-  F.&: (F.rgetField @BR.SexC r)
-  F.&: (BR.simpleRaceFromRace5 $ F.rgetField @BR.Race5C r)
+  (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
+  F.&: (F.rgetField @DT.SexC r)
+  F.&: (DT.simpleRaceFromRace5 $ F.rgetField @DT.Race5C r)
   F.&: V.RNil
 
-cpsKeysToIdentity :: F.Record '[BR.Age4C, BR.SexC, BR.CollegeGradC, BR.InCollege, BR.Race5C] -> F.Record '[]
+cpsKeysToIdentity :: F.Record '[DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.Race5C] -> F.Record '[]
 cpsKeysToIdentity = const V.RNil
 -}
 -- we have to drop all records with age < 18
-intToAge4 :: Int -> BR.Age4
+intToAge4 :: Int -> DT.Age4
 intToAge4 n
   | n < 18 = error "CPS Voter record with age < 18"
-  | n < 24 = BR.A4_18To24
-  | n < 45 = BR.A4_25To44
-  | n < 65 = BR.A4_45To64
-  | otherwise = BR.A4_65AndOver
+  | n < 24 = DT.A4_18To24
+  | n < 45 = DT.A4_25To44
+  | n < 65 = DT.A4_45To64
+  | otherwise = DT.A4_65AndOver
 
-intToCollegeGrad :: Int -> BR.CollegeGrad
-intToCollegeGrad n = if n < 111 then BR.NonGrad else BR.Grad
+intToCollegeGrad :: Int -> DT.CollegeGrad
+intToCollegeGrad n = if n < 111 then DT.NonGrad else DT.Grad
 
 intToInCollege :: Int -> Bool
 intToInCollege n = n == 4
 
-intToSex :: Int -> BR.Sex
-intToSex n = if n == 1 then BR.Male else BR.Female
+intToSex :: Int -> DT.Sex
+intToSex n = if n == 1 then DT.Male else DT.Female
 
-intToRaceAlone4 :: Int -> BR.RaceAlone4
+intToRaceAlone4 :: Int -> DT.RaceAlone4
 intToRaceAlone4 rN
-  | rN == 100 = BR.RA4_White
-  | rN == 200 = BR.RA4_Black
-  | rN == 651 = BR.RA4_Asian
-  | otherwise = BR.RA4_Other
+  | rN == 100 = DT.RA4_White
+  | rN == 200 = DT.RA4_Black
+  | rN == 651 = DT.RA4_Asian
+  | otherwise = DT.RA4_Other
 
-intToHisp :: Int -> BR.Hisp
+intToHisp :: Int -> DT.Hisp
 intToHisp hN
-  | (hN >= 100) && (hN <= 901) = BR.Hispanic
-  | otherwise = BR.NonHispanic
+  | (hN >= 100) && (hN <= 901) = DT.Hispanic
+  | otherwise = DT.NonHispanic
 
 {-
-intsToRace5 :: Int -> Int -> BR.Race5
+intsToRace5 :: Int -> Int -> DT.Race5
 intsToRace5 hN rN
-  | (hN >= 100) && (hN <= 901) = BR.R5_Hispanic
-  | rN == 100 = BR.R5_WhiteNonHispanic
-  | rN == 200 = BR.R5_Black
-  | rN == 651 = BR.R5_Asian
-  | otherwise = BR.R5_Other
+  | (hN >= 100) && (hN <= 901) = DT.R5_Hispanic
+  | rN == 100 = DT.R5_WhiteNonHispanic
+  | rN == 200 = DT.R5_Black
+  | rN == 651 = DT.R5_Asian
+  | otherwise = DT.R5_Other
 -}
 
-intToIsCitizen :: Int -> Bool
-intToIsCitizen n = n /= 5
+intToCit :: Int -> DT.Cit
+intToCit n = if n /= 5 then DT.Cit else DT.NonCit
 
-intToVoteWhyNot :: Int -> BR.VoteWhyNot
+intToVoteWhyNot :: Int -> ET.VoteWhyNot
 intToVoteWhyNot n
-  | n == 1 = BR.VWN_PhysicallyUnable
-  | n == 2 = BR.VWN_Away
-  | n == 3 = BR.VWN_Forgot
-  | n == 4 = BR.VWN_NotInterested
-  | n == 5 = BR.VWN_Busy
-  | n == 6 = BR.VWN_Transport
-  | n == 7 = BR.VWN_DislikeChoices
-  | n == 8 = BR.VWN_RegIssue
-  | n == 9 = BR.VWN_Weather
-  | n == 10 = BR.VWN_BadPollingPlace
-  | otherwise = BR.VWN_Other
+  | n == 1 = ET.VWN_PhysicallyUnable
+  | n == 2 = ET.VWN_Away
+  | n == 3 = ET.VWN_Forgot
+  | n == 4 = ET.VWN_NotInterested
+  | n == 5 = ET.VWN_Busy
+  | n == 6 = ET.VWN_Transport
+  | n == 7 = ET.VWN_DislikeChoices
+  | n == 8 = ET.VWN_RegIssue
+  | n == 9 = ET.VWN_Weather
+  | n == 10 = ET.VWN_BadPollingPlace
+  | otherwise = ET.VWN_Other
 
-intToRegWhyNot :: Int -> BR.RegWhyNot
+intToRegWhyNot :: Int -> ET.RegWhyNot
 intToRegWhyNot n
-  | n == 1 = BR.RWN_MissedDeadline
-  | n == 2 = BR.RWN_DidntKnowHow
-  | n == 3 = BR.RWN_Residency
-  | n == 4 = BR.RWN_PhysicallyUnable
-  | n == 5 = BR.RWN_Language
-  | n == 6 = BR.RWN_NotInterested
-  | n == 7 = BR.RWN_MyVoteIrrelevant
-  | otherwise = BR.RWN_Other
+  | n == 1 = ET.RWN_MissedDeadline
+  | n == 2 = ET.RWN_DidntKnowHow
+  | n == 3 = ET.RWN_Residency
+  | n == 4 = ET.RWN_PhysicallyUnable
+  | n == 5 = ET.RWN_Language
+  | n == 6 = ET.RWN_NotInterested
+  | n == 7 = ET.RWN_MyVoteIrrelevant
+  | otherwise = ET.RWN_Other
 
 
-intToVoteHow :: Int -> BR.VoteHow
+intToVoteHow :: Int -> ET.VoteHow
 intToVoteHow n
-  | n == 1 = BR.VH_InPerson
-  | n == 2 = BR.VH_ByMail
-  | otherwise = BR.VH_Other
+  | n == 1 = ET.VH_InPerson
+  | n == 2 = ET.VH_ByMail
+  | otherwise = ET.VH_Other
 
-intToVoteWhen :: Int -> BR.VoteWhen
+intToVoteWhen :: Int -> ET.VoteWhen
 intToVoteWhen n
-  | n == 1 = BR.VW_ElectionDay
-  | n == 2 = BR.VW_BeforeElectionDay
-  | otherwise = BR.VW_Other
+  | n == 1 = ET.VW_ElectionDay
+  | n == 2 = ET.VW_BeforeElectionDay
+  | otherwise = ET.VW_Other
 
-intToVotedYN :: Int -> BR.VotedYN
+intToVotedYN :: Int -> ET.VotedYN
 intToVotedYN n
-  | n == 1 = BR.VYN_DidNotVote
-  | n == 2 = BR.VYN_Voted
-  | n == 96 = BR.VYN_Refused
-  | n == 97 = BR.VYN_DontKnow
-  | n == 98 = BR.VYN_NoResponse
-  | otherwise = BR.VYN_NotInUniverse
+  | n == 1 = ET.VYN_DidNotVote
+  | n == 2 = ET.VYN_Voted
+  | n == 96 = ET.VYN_Refused
+  | n == 97 = ET.VYN_DontKnow
+  | n == 98 = ET.VYN_NoResponse
+  | otherwise = ET.VYN_NotInUniverse
 
-cpsPossibleVoter :: BR.VotedYN -> Bool
-cpsPossibleVoter BR.VYN_DidNotVote = True
-cpsPossibleVoter BR.VYN_Voted = True
-cpsPossibleVoter BR.VYN_Refused = False
-cpsPossibleVoter BR.VYN_DontKnow = False
-cpsPossibleVoter BR.VYN_NoResponse = False
-cpsPossibleVoter BR.VYN_NotInUniverse = False
+cpsPossibleVoter :: ET.VotedYN -> Bool
+cpsPossibleVoter ET.VYN_DidNotVote = True
+cpsPossibleVoter ET.VYN_Voted = True
+cpsPossibleVoter ET.VYN_Refused = False
+cpsPossibleVoter ET.VYN_DontKnow = False
+cpsPossibleVoter ET.VYN_NoResponse = False
+cpsPossibleVoter ET.VYN_NotInUniverse = False
 
-cpsVoted :: BR.VotedYN -> Bool
-cpsVoted BR.VYN_Voted = True
+cpsVoted :: ET.VotedYN -> Bool
+cpsVoted ET.VYN_Voted = True
 cpsVoted _ = False
 
-intToRegisteredYN :: Int -> BR.RegisteredYN
+intToRegisteredYN :: Int -> ET.RegisteredYN
 intToRegisteredYN n
-  | n == 1 = BR.RYN_NotRegistered
-  | n == 2 = BR.RYN_Registered
-  | otherwise = BR.RYN_Other
+  | n == 1 = ET.RYN_NotRegistered
+  | n == 2 = ET.RYN_Registered
+  | otherwise = ET.RYN_Other
 
 
 
-transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
+transformCPSVoterPUMSRow :: CPS.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
 transformCPSVoterPUMSRow = F.rcast . addCols  where
-  addCols = (FT.addOneFromOne @BR.CPSRACE @BR.RaceAlone4C intToRaceAlone4)
-            . (FT.addOneFromOne @BR.CPSHISPAN @BR.HispC intToHisp)
-            . (FT.addName @BR.CPSVOSUPPWT @CPSVoterPUMSWeight)
-            . (FT.addName @BR.CPSCOUNTY @BR.CountyFIPS)
-            . (FT.addName @BR.CPSSTATEFIP @BR.StateFIPS)
-            . (FT.addName @BR.CPSYEAR @BR.Year)
-            . (FT.addOneFromOne @BR.CPSVOREG @BR.RegisteredYNC intToRegisteredYN)
-            . (FT.addOneFromOne @BR.CPSVOTED @BR.VotedYNC intToVotedYN)
-            . (FT.addOneFromOne @BR.CPSVOTEWHEN @BR.VoteWhenC intToVoteWhen)
-            . (FT.addOneFromOne @BR.CPSVOTEHOW @BR.VoteHowC intToVoteHow)
-            . (FT.addOneFromOne @BR.CPSVOYNOTREG @BR.RegWhyNotC intToRegWhyNot)
-            . (FT.addOneFromOne @BR.CPSVOWHYNOT @BR.VoteWhyNotC intToVoteWhyNot)
-            . (FT.addOneFromOne @BR.CPSSCHLCOLL @BR.InCollege intToInCollege)
-            . (FT.addOneFromOne @BR.CPSEDUC @BR.CollegeGradC intToCollegeGrad)
-            . (FT.addOneFromOne @BR.CPSCITIZEN @BR.IsCitizen intToIsCitizen)
-            . (FT.addOneFromOne @BR.CPSSEX @BR.SexC intToSex)
-            . (FT.addOneFromOne @BR.CPSAGE @BR.Age4C intToAge4)
+  addCols = (FT.addOneFromOne @CPS.CPSRACE @DT.RaceAlone4C intToRaceAlone4)
+            . (FT.addOneFromOne @CPS.CPSHISPAN @DT.HispC intToHisp)
+            . (FT.addName @CPS.CPSVOSUPPWT @CPSVoterPUMSWeight)
+            . (FT.addName @CPS.CPSCOUNTY @BR.CountyFIPS)
+            . (FT.addName @CPS.CPSSTATEFIP @BR.StateFIPS)
+            . (FT.addName @CPS.CPSYEAR @BR.Year)
+            . (FT.addOneFromOne @CPS.CPSVOREG @ET.RegisteredYNC intToRegisteredYN)
+            . (FT.addOneFromOne @CPS.CPSVOTED @ET.VotedYNC intToVotedYN)
+            . (FT.addOneFromOne @CPS.CPSVOTEWHEN @ET.VoteWhenC intToVoteWhen)
+            . (FT.addOneFromOne @CPS.CPSVOTEHOW @ET.VoteHowC intToVoteHow)
+            . (FT.addOneFromOne @CPS.CPSVOYNOTREG @ET.RegWhyNotC intToRegWhyNot)
+            . (FT.addOneFromOne @CPS.CPSVOWHYNOT @ET.VoteWhyNotC intToVoteWhyNot)
+            . (FT.addOneFromOne @CPS.CPSSCHLCOLL @DT.InCollege intToInCollege)
+            . (FT.addOneFromOne @CPS.CPSEDUC @DT.CollegeGradC intToCollegeGrad)
+            . (FT.addOneFromOne @CPS.CPSCITIZEN @DT.CitC intToCit)
+            . (FT.addOneFromOne @CPS.CPSSEX @DT.SexC intToSex)
+            . (FT.addOneFromOne @CPS.CPSAGE @DT.Age4C intToAge4)
 
 
 {-
-transformCPSVoterPUMSRow :: BR.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
+transformCPSVoterPUMSRow :: CPS.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'
 transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
-  addAge = FT.recordSingleton @BR.Age4C . intToAge4 . F.rgetField @BR.CPSAGE
-  addSex =  FT.recordSingleton @BR.SexC . intToSex . F.rgetField @BR.CPSSEX
-  hN = F.rgetField @BR.CPSHISPAN
-  rN = F.rgetField @BR.CPSRACE
-  addRace r = FT.recordSingleton @BR.Race5C $ intsToRace5 (hN r) (rN r)
-  addIsCitizen = FT.recordSingleton @BR.IsCitizen . intToIsCitizen . F.rgetField @BR.CPSCITIZEN
-  addCollegeGrad = FT.recordSingleton @BR.CollegeGradC . intToCollegeGrad . F.rgetField @BR.CPSEDUC
-  addInCollege = FT.recordSingleton @BR.InCollege . intToInCollege . F.rgetField @BR.CPSSCHLCOLL
-  addVoteWhyNot = FT.recordSingleton @BR.VoteWhyNotC . intToVoteWhyNot . F.rgetField @BR.CPSVOWHYNOT
-  addRegWhyNot = FT.recordSingleton @BR.RegWhyNotC . intToRegWhyNot . F.rgetField @BR.CPSVOYNOTREG
-  addVoteHow = FT.recordSingleton @BR.VoteHowC . intToVoteHow . F.rgetField @BR.CPSVOTEHOW
-  addVoteWhen = FT.recordSingleton @BR.VoteWhenC . intToVoteWhen . F.rgetField @BR.CPSVOTEWHEN
-  addVotedYN = FT.recordSingleton @BR.VotedYNC . intToVotedYN . F.rgetField @BR.CPSVOTED
-  addRegisteredYN = FT.recordSingleton @BR.RegisteredYNC . intToRegisteredYN . F.rgetField @BR.CPSVOREG
-  mutate = FT.retypeColumn @BR.CPSYEAR @BR.Year
-           . FT.retypeColumn @BR.CPSSTATEFIP @BR.StateFIPS
-           . FT.retypeColumn @BR.CPSCOUNTY @BR.CountyFIPS
+  addAge = FT.recordSingleton @DT.Age4C . intToAge4 . F.rgetField @CPS.CPSAGE
+  addSex =  FT.recordSingleton @DT.SexC . intToSex . F.rgetField @CPS.CPSSEX
+  hN = F.rgetField @CPS.CPSHISPAN
+  rN = F.rgetField @CPS.CPSRACE
+  addRace r = FT.recordSingleton @DT.Race5C $ intsToRace5 (hN r) (rN r)
+  addIsCit = FT.recordSingleton @DT.CitC . intToCit . F.rgetField @CPS.CPSCITIZEN
+  addCollegeGrad = FT.recordSingleton @DT.CollegeGradC . intToCollegeGrad . F.rgetField @CPS.CPSEDUC
+  addInCollege = FT.recordSingleton @DT.InCollege . intToInCollege . F.rgetField @CPS.CPSSCHLCOLL
+  addVoteWhyNot = FT.recordSingleton @ET.VoteWhyNotC . intToVoteWhyNot . F.rgetField @CPS.CPSVOWHYNOT
+  addRegWhyNot = FT.recordSingleton @ET.RegWhyNotC . intToRegWhyNot . F.rgetField @CPS.CPSVOYNOTREG
+  addVoteHow = FT.recordSingleton @ET.VoteHowC . intToVoteHow . F.rgetField @CPS.CPSVOTEHOW
+  addVoteWhen = FT.recordSingleton @ET.VoteWhenC . intToVoteWhen . F.rgetField @CPS.CPSVOTEWHEN
+  addVotedYN = FT.recordSingleton @ET.VotedYNC . intToVotedYN . F.rgetField @CPS.CPSVOTED
+  addRegisteredYN = FT.recordSingleton @ET.RegisteredYNC . intToRegisteredYN . F.rgetField @CPS.CPSVOREG
+  mutate = FT.retypeColumn @CSP.CPSYEAR @BR.Year
+           . FT.retypeColumn @CPS.CPSSTATEFIP @BR.StateFIPS
+           . FT.retypeColumn @CPS.CPSCOUNTY @BR.CountyFIPS
            . FT.mutate addAge
            . FT.mutate addSex
            . FT.mutate addRace
-           . FT.mutate addIsCitizen
+           . FT.mutate addIsCit
            . FT.mutate addCollegeGrad
            . FT.mutate addInCollege
            . FT.mutate addVoteWhyNot
@@ -618,7 +618,7 @@ transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
            . FT.mutate addVoteWhen
            . FT.mutate addVotedYN
            . FT.mutate addRegisteredYN
-           . FT.retypeColumn @BR.CPSVOSUPPWT @CPSVoterPUMSWeight
+           . FT.retypeColumn @CPS.CPSVOSUPPWT @CPSVoterPUMSWeight
 -}
 
 -- to use in maybeRecsToFrame
