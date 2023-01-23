@@ -175,6 +175,7 @@ library
   ghc-options: -O2 -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16 -fprint-potential-instances
 
   exposed-modules: BlueRipple.Configuration
+                 , BlueRipple.Data.BasicRowFolds
                  , BlueRipple.Data.Keyed
                  , BlueRipple.Data.KeyedTables
                  , BlueRipple.Data.CountFolds
