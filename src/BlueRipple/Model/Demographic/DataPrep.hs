@@ -37,64 +37,16 @@ import qualified Knit.Report as K
 import qualified Numeric
 
 
-{-
-setupACSRows :: (Typeable md, Typeable gq)
-             => DM.DesignMatrixRowPart (F.Record ACSByCD)
-             -> S.StanBuilderM md gq (S.RowTypeTag (F.Record ACSByCD)
-                                     , TE.IntArrayE
-                                     , TE.MatrixE)
-setupACSRows densRP = do
-  let dmRow = designMatrixRowACS densRP
-  acsData <- S.dataSetTag @(F.Record ACSByCD) SC.ModelData "ACS"
-  acsCit <- SB.addCountData acsData "ACS_CVAP" (F.rgetField @PUMS.Citizens)
-  dmACS <- DM.addDesignMatrix acsData dmRow (Just "DM")
-  return (acsData, acsCit, dmACS)
--}
-
 type Categoricals = [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC]
 type ACSByCD = PUMS.CDCounts Categoricals
 type ACSByState = PUMS.StateCounts Categoricals
 
-{-
-acsByCD ∷ (K.KnitEffects r, BRK.CacheEffects r)
-        ⇒ F.FrameRec PUMS.PUMS
-        → F.FrameRec BRL.DatedCDFromPUMA2012
-        → K.Sem r (F.FrameRec ACSByCD)
-acsByCD acsByPUMA cdFromPUMA = fmap F.rcast <$> PUMS.pumsCDRollup (earliest earliestYear) (acsReKey . F.rcast) cdFromPUMA acsByPUMA
- where
-  earliestYear = 2016
-  earliest year = (>= year) . F.rgetField @BRDF.Year
-
-cachedACSByCD
-  ∷ ∀ r
-   . (K.KnitEffects r, BRK.CacheEffects r)
-  ⇒ K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
-  → K.ActionWithCacheTime r (F.FrameRec BRL.DatedCDFromPUMA2012)
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByCD))
-cachedACSByCD acs_C cdFromPUMA_C = do
-  let acsByCDDeps = (,) <$> acs_C <*> cdFromPUMA_C
-  BRK.retrieveOrMakeFrame "model/age/acsByCD.bin" acsByCDDeps $
-    \(acsByPUMA, cdFromPUMA) → acsByCD acsByPUMA cdFromPUMA
--}
 acsByState ∷ F.FrameRec PUMS.PUMS → F.FrameRec ACSByState
 acsByState acsByPUMA = F.rcast <$> FST.mapMaybe simplifyAgeM (FL.fold (PUMS.pumsStateRollupF (reKey .  F.rcast)) filteredACSByPUMA)
  where
   earliestYear = 2016
   earliest year = (>= year) . F.rgetField @BRDF.Year
   filteredACSByPUMA = F.filterFrame (earliest earliestYear) acsByPUMA
-
-splitCitizensR :: (F.ElemOf rs PUMS.Citizens
-                 , F.ElemOf rs PUMS.NonCitizens
-                 , (F.RDelete PUMS.Citizens (F.RDelete PUMS.NonCitizens rs) V.++ '[DT.CitizenC, DT.PopCount]) F.⊆ (rs V.++ [DT.CitizenC, DT.PopCount])
-                 )
-              => F.Record rs -> [F.Record (F.RDelete PUMS.Citizens (F.RDelete PUMS.NonCitizens rs) V.++ [DT.CitizenC, DT.PopCount])]
-splitCitizensR r = F.rcast <$> [rc, rnc] where
-  cits = F.rgetField @PUMS.Citizens r
-  ncits = F.rgetField @PUMS.NonCitizens r
-  g :: DT.Citizen -> Int -> F.Record [DT.CitizenC, DT.PopCount]
-  g c n = c F.&: n F.&: V.RNil
-  rc = r F.<+> g DT.Citizen cits
-  rnc = r F.<+> g DT.NonCitizen ncits
 
 
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
