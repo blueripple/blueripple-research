@@ -21,6 +21,7 @@ module BlueRipple.Data.CensusLoaders
 where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.KeyedTables as KT
 import qualified BlueRipple.Data.CensusTables as BRC
@@ -180,10 +181,10 @@ censusTablesForProposedCDs :: (K.KnitEffects r
                            => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesForProposedCDs = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
-  let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list)
+  let states = FL.fold (FL.premap (F.rgetField @GT.StateAbbreviation) FL.list)
                $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
                                  && not (F.rgetField @BR.OneDistrict r)
-                                 && not (F.rgetField @BR.StateAbbreviation r `Set.member` noMaps)
+                                 && not (F.rgetField @GT.StateAbbreviation r `Set.member` noMaps)
                                ) stateInfo
       fileByYear = fmap (\sa -> (BRC.TY2020, censusDataDir <> "/cd117_" <> sa <> ".csv")) states
   censusTablesByDistrict fileByYear "proposedCDs"
@@ -208,9 +209,9 @@ censusTablesFor2022SLDs ::  (K.KnitEffects r
                     => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesFor2022SLDs = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
-  let statesAnd = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.SLDUpperOnly r)) FL.list)
+  let statesAnd = FL.fold (FL.premap (\r -> (F.rgetField @GT.StateAbbreviation r, F.rgetField @BR.SLDUpperOnly r)) FL.list)
                   $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
-                                         && not (F.rgetField @BR.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
+                                         && not (F.rgetField @GT.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
                                   ) stateInfo
       fileByYear = concat
                    $ fmap (\(sa, uo) -> [(BRC.TY2020, censusDataDir <> "/" <> sa <> "_2022_sldu.csv")] ++
@@ -220,18 +221,18 @@ censusTablesFor2022SLDs = do
 
 checkAllCongressionalAndConvert :: forall r a b.
                                    (K.KnitEffects r
-                                   , F.ElemOf ((a V.++ b V.++ '[DT.PopCount]) V.++ '[BR.CongressionalDistrict]) BR.CongressionalDistrict
-                                   , (a V.++ b V.++ '[DT.PopCount]) F.⊆ ((CensusRow BRC.LDLocationR a b) V.++ '[BR.CongressionalDistrict])
+                                   , F.ElemOf ((a V.++ b V.++ '[DT.PopCount]) V.++ '[GT.CongressionalDistrict]) GT.CongressionalDistrict
+                                   , (a V.++ b V.++ '[DT.PopCount]) F.⊆ ((CensusRow BRC.LDLocationR a b) V.++ '[GT.CongressionalDistrict])
                                    , FI.RecVec (a V.++ b V.++ '[DT.PopCount])
                                    )
                                 => F.FrameRec (CensusRow BRC.LDLocationR a b)
-                                -> K.Sem r (F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b))
+                                -> K.Sem r (F.FrameRec (CensusRow '[BR.StateFips, GT.CongressionalDistrict] a b))
 checkAllCongressionalAndConvert rs = do
-  let isCongressional r = F.rgetField @ET.DistrictTypeC r == ET.Congressional
+  let isCongressional r = F.rgetField @GT.DistrictTypeC r == GT.Congressional
       asInteger t = first (("checkAllCongressionalAndConvert.isInteger: " <>) . toText)
                     $ TR.decimal t >>= (\x -> if T.null (snd x) then Right (fst x) else Left "Text remaining after parsing integer")
-      cdE r = FT.recordSingleton @BR.CongressionalDistrict <$> (asInteger $ F.rgetField @ET.DistrictName r)
-      convertedE ::  Either Text (F.FrameRec (CensusRow '[BR.StateFips, BR.CongressionalDistrict] a b))
+      cdE r = FT.recordSingleton @GT.CongressionalDistrict <$> (asInteger $ F.rgetField @GT.DistrictName r)
+      convertedE ::  Either Text (F.FrameRec (CensusRow '[BR.StateFips, GT.CongressionalDistrict] a b))
       convertedE = F.toFrame <$> (traverse (fmap F.rcast . FT.mutateM cdE) $ FL.fold FL.list $ F.filterFrame isCongressional rs)
       frameLength x = FL.fold FL.length x
   converted <- K.knitEither $ convertedE

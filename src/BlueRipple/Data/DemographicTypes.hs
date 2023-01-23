@@ -16,12 +16,12 @@
 module BlueRipple.Data.DemographicTypes
   (
     module BlueRipple.Data.DemographicTypes
-  , module BlueRipple.Data.DataFrames
+--  , module BlueRipple.Data.DataFrames
   )
 where
 
 import qualified BlueRipple.Data.DataFrames    as BR
-import BlueRipple.Data.DataFrames (StateAbbreviation, StateFIPS, CountyFIPS)
+--import BlueRipple.Data.DataFrames (StateAbbreviation, StateFIPS, CountyFIPS)
 import qualified BlueRipple.Data.Keyed         as K
 
 import qualified Control.Foldl                 as FL
@@ -37,7 +37,8 @@ import Data.Type.Equality (type (~))
 import qualified Flat
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
-import qualified Frames.InCore                 as FI
+import qualified Frames.Streamly.InCore        as FSI
+import qualified Frames.Streamly.TH            as FTH
 import qualified Frames.Folds                  as FF
 import qualified Frames.MapReduce              as FMR
 import qualified Frames.Transform              as FT
@@ -55,7 +56,7 @@ import qualified Data.Array as Array
 -- Serialize for caching
 -- Binary for caching
 -- Flat for caching
--- FI.VectorFor for frames
+-- FSI.VectorFor for frames
 -- Grouping for leftJoin
 -- FiniteSet for composition of aggregations
 
@@ -70,9 +71,10 @@ derivingUnbox "DemographicGrouping"
   [t|DemographicGrouping -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor DemographicGrouping = UVec.Vector
+type instance FSI.VectorFor DemographicGrouping = UVec.Vector
 
-type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
+--type DemographicGroupingC = "DemographicGrouping" F.:-> DemographicGrouping
+FTH.declareColumn "DemographicGroupingC" ''DemographicGrouping
 
 instance FV.ToVLDataValue (F.ElField DemographicGroupingC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
@@ -88,13 +90,19 @@ derivingUnbox "PopCountOfT"
   [t|PopCountOfT -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor PopCountOfT = UVec.Vector
+type instance FSI.VectorFor PopCountOfT = UVec.Vector
 
-type PopCountOf = "PopCountOf" F.:-> PopCountOfT
+--type PopCountOf = "PopCountOf" F.:-> PopCountOfT
+FTH.declareColumn "PopCountOf" ''PopCountOfT
+
 instance FV.ToVLDataValue (F.ElField PopCountOf) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type PopCount = "PopCount" F.:-> Int
+--type PopCount = "PopCount" F.:-> Int
+FTH.declareColumn "PopCount" ''Int
+
+--type PopPerSqMile = "PopPerSqMile" F.:-> Double
+FTH.declareColumn "PopPerSqMile" ''Double
 
 data Sex = Female | Male deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 deriving anyclass instance Hashable Sex
@@ -107,9 +115,10 @@ derivingUnbox "Sex"
   [t|Sex -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Sex = UVec.Vector
+type instance FSI.VectorFor Sex = UVec.Vector
 
-type SexC = "Sex" F.:-> Sex
+--type SexC = "Sex" F.:-> Sex
+FTH.declareColumn "SexC" ''Sex
 
 instance FV.ToVLDataValue (F.ElField SexC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
@@ -125,29 +134,31 @@ derivingUnbox "SimpleRace"
   [t|SimpleRace -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor SimpleRace = UVec.Vector
+type instance FSI.VectorFor SimpleRace = UVec.Vector
 
-type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
+--type SimpleRaceC = "SimpleRace" F.:-> SimpleRace
+FTH.declareColumn "SimpleRaceC" ''SimpleRace
 
 instance FV.ToVLDataValue (F.ElField SimpleRaceC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type IsCitizen = "IsCitizen" F.:-> Bool
+--type IsCitizen = "IsCitizen" F.:-> Bool
 
-data Cit = NonCit | Cit deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
-deriving anyclass instance Hashable Cit
+data Citizen = NonCitizen | Citizen deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
+deriving anyclass instance Hashable Citizen
 --instance S.Serialize Citizen
 --instance B.Binary Citizen
-instance Flat.Flat Cit
-instance Grouping Cit
-instance K.FiniteSet Cit
-derivingUnbox "Cit"
-  [t|Cit -> Word8|]
+instance Flat.Flat Citizen
+instance Grouping Citizen
+instance K.FiniteSet Citizen
+derivingUnbox "Citizen"
+  [t|Citizen -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Cit = UVec.Vector
+type instance FSI.VectorFor Citizen = UVec.Vector
 
-type CitC = "Citizen" F.:-> Cit
+--type CitC = "Citizen" F.:-> Cit
+FTH.declareColumn "CitizenC" ''Citizen
 
 data CollegeGrad = NonGrad | Grad deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 deriving anyclass instance Hashable CollegeGrad
@@ -160,9 +171,11 @@ derivingUnbox "CollegeGrad"
   [t|CollegeGrad -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor CollegeGrad = UVec.Vector
+type instance FSI.VectorFor CollegeGrad = UVec.Vector
 
-type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
+--type CollegeGradC = "CollegeGrad" F.:-> CollegeGrad
+FTH.declareColumn "CollegeGradC" ''CollegeGrad
+
 
 instance FV.ToVLDataValue (F.ElField CollegeGradC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
@@ -179,9 +192,11 @@ derivingUnbox "SimpleAge"
   [t|SimpleAge -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor SimpleAge = UVec.Vector
+type instance FSI.VectorFor SimpleAge = UVec.Vector
 
-type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
+--type SimpleAgeC = "SimpleAge" F.:-> SimpleAge
+FTH.declareColumn "SimpleAgeC" ''SimpleAge
+
 instance FV.ToVLDataValue (F.ElField SimpleAgeC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
@@ -195,9 +210,10 @@ derivingUnbox "Age4"
   [t|Age4 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Age4 = UVec.Vector
+type instance FSI.VectorFor Age4 = UVec.Vector
 
-type Age4C = "Age4" F.:-> Age4
+--type Age4C = "Age4" F.:-> Age4
+FTH.declareColumn "Age4C" ''Age4
 
 simpleAgeFrom4 :: SimpleAge -> [Age4]
 simpleAgeFrom4 Under       = [A4_18To24, A4_25To44]
@@ -220,9 +236,11 @@ derivingUnbox "Age5F"
   [t|Age5F -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Age5F = UVec.Vector
+type instance FSI.VectorFor Age5F = UVec.Vector
 
-type Age5FC = "Age5F" F.:-> Age5F
+--type Age5FC = "Age5F" F.:-> Age5F
+FTH.declareColumn "Age5FC" ''Age5F
+
 
 simpleAgeFrom5F :: SimpleAge -> [Age5F]
 simpleAgeFrom5F Under       = [A5F_Under18, A5F_18To24, A5F_25To44]
@@ -247,9 +265,11 @@ derivingUnbox "Age5"
   [t|Age5 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Age5 = UVec.Vector
+type instance FSI.VectorFor Age5 = UVec.Vector
 
-type Age5C = "Age5" F.:-> Age5
+--type Age5C = "Age5" F.:-> Age5
+FTH.declareColumn "Age5C" ''Age5
+
 
 simpleAgeFrom5 :: SimpleAge -> [Age5]
 simpleAgeFrom5 Under       = [A5_18To24, A5_25To44]
@@ -265,9 +285,11 @@ derivingUnbox "Education"
   [t|Education -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Education = UVec.Vector
+type instance FSI.VectorFor Education = UVec.Vector
 
-type EducationC = "Education" F.:-> Education
+--type EducationC = "Education" F.:-> Education
+FTH.declareColumn "EducationC" ''Education
+
 
 acsLevels :: CollegeGrad -> [Education]
 acsLevels NonGrad = [L9, L12, HS, SC, AS]
@@ -292,8 +314,10 @@ derivingUnbox "Education4"
   [t|Education4 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Education4 = UVec.Vector
-type Education4C = "Education" F.:-> Education4
+type instance FSI.VectorFor Education4 = UVec.Vector
+
+--type Education4C = "Education" F.:-> Education4
+FTH.declareColumn "Education4C" ''Education4
 
 education4FromCollegeGrad :: CollegeGrad -> [Education4]
 education4FromCollegeGrad NonGrad = [E4_NonHSGrad, E4_HSGrad, E4_SomeCollege]
@@ -372,10 +396,10 @@ derivingUnbox "ACSRace"
   [t|ACSRace -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor ACSRace = UVec.Vector
+type instance FSI.VectorFor ACSRace = UVec.Vector
 
-type ACSRaceC = "ACSRace" F.:-> ACSRace
-
+--type ACSRaceC = "ACSRace" F.:-> ACSRace
+FTH.declareColumn "ACSRaceC" ''ACSRace
 
 acsRaceLabel :: ACSRace -> T.Text
 acsRaceLabel ACS_All              = "All"
@@ -408,9 +432,10 @@ derivingUnbox "TurnoutRace"
   [t|TurnoutRace -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor TurnoutRace = UVec.Vector
+type instance FSI.VectorFor TurnoutRace = UVec.Vector
 
-type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
+--type TurnoutRaceC = "TurnoutRace" F.:-> TurnoutRace
+FTH.declareColumn "TurnoutRaceC" ''TurnoutRace
 
 data Race5 = R5_Other | R5_Black | R5_Hispanic | R5_Asian | R5_WhiteNonHispanic deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 deriving anyclass instance Hashable Race5
@@ -423,9 +448,11 @@ derivingUnbox "Race5"
   [t|Race5 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Race5 = UVec.Vector
+type instance FSI.VectorFor Race5 = UVec.Vector
 
-type Race5C = "Race5" F.:-> Race5
+--type Race5C = "Race5" F.:-> Race5
+FTH.declareColumn "Race5C" ''Race5
+
 instance FV.ToVLDataValue (F.ElField Race5C) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
@@ -447,9 +474,11 @@ derivingUnbox "Race4"
   [t|Race4 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Race4 = UVec.Vector
+type instance FSI.VectorFor Race4 = UVec.Vector
 
-type Race4C = "Race4" F.:-> Race4
+--type Race4C = "Race4" F.:-> Race4
+FTH.declareColumn "Race4C" ''Race4
+
 instance FV.ToVLDataValue (F.ElField Race4C) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
@@ -465,8 +494,11 @@ derivingUnbox "Hisp"
   [t|Hisp -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Hisp = UVec.Vector
-type HispC = "Hisp" F.:-> Hisp
+type instance FSI.VectorFor Hisp = UVec.Vector
+
+--type HispC = "Hisp" F.:-> Hisp
+FTH.declareColumn "HispC" ''Hisp
+
 instance FV.ToVLDataValue (F.ElField HispC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
@@ -483,8 +515,12 @@ derivingUnbox "RaceAlone4"
   [t|RaceAlone4 -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor RaceAlone4 = UVec.Vector
-type RaceAlone4C = "RaceAlone4" F.:-> RaceAlone4
+type instance FSI.VectorFor RaceAlone4 = UVec.Vector
+
+--type RaceAlone4C = "RaceAlone4" F.:-> RaceAlone4
+FTH.declareColumn "RaceAlone4C" ''RaceAlone4
+
+
 instance FV.ToVLDataValue (F.ElField RaceAlone4C) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
@@ -562,12 +598,13 @@ derivingUnbox "Language"
   [t|Language -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor Language = UVec.Vector
+type instance FSI.VectorFor Language = UVec.Vector
 
-type LanguageC = "Language" F.:-> Language
+--type LanguageC = "Language" F.:-> Language
+FTH.declareColumn "LanguageC" ''Language
+
 instance FV.ToVLDataValue (F.ElField LanguageC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
-
 
 data SpeaksEnglish = SE_Yes | SE_No | SE_Some deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
 deriving anyclass instance Hashable SpeaksEnglish
@@ -581,103 +618,45 @@ derivingUnbox "SpeaksEnglish"
   [t|SpeaksEnglish -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor SpeaksEnglish = UVec.Vector
+type instance FSI.VectorFor SpeaksEnglish = UVec.Vector
 
-type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
+--type SpeaksEnglishC = "SpeaksEnglish" F.:-> SpeaksEnglish
+FTH.declareColumn "SpeaksEnglishC" ''SpeaksEnglish
+
 instance FV.ToVLDataValue (F.ElField SpeaksEnglishC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type PctNativeEnglish = "PctNativeEnglish" F.:-> Double
-type PctNoEnglish = "PctNoEnglish" F.:-> Double
+--type PctNativeEnglish = "PctNativeEnglish" F.:-> Double
+FTH.declareColumn "PctNativeEnglish" ''Double
 
-type Income = "Income" F.:-> Double
-type AvgIncome = "AvgIncome" F.:-> Double
-type MedianIncome = "MedianIncome" F.:-> Double
+--type PctNoEnglish = "PctNoEnglish" F.:-> Double
+FTH.declareColumn "PctNoEnglish" ''Double
 
-type SocSecIncome = "SocSecIncome" F.:-> Double
-type AvgSocSecIncome = "AvgSocSecIncome" F.:-> Double
+--type Income = "Income" F.:-> Double
+FTH.declareColumn "Income" ''Double
 
-type PctOfPovertyLine = "PctOfPovertyLine" F.:-> Double
-type PctUnderPovertyLine = "PctUnderPovertyLine" F.:-> Double
-type PctUnder2xPovertyLine = "PctUnder2xPovertyLine" F.:-> Double
+--type AvgIncome = "AvgIncome" F.:-> Double
+FTH.declareColumn "AvgIncome" ''Double
 
-data CensusRegion = Northeast | Midwest | South | West | OtherRegion deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
-deriving anyclass instance Hashable CensusRegion
+--type MedianIncome = "MedianIncome" F.:-> Double
+FTH.declareColumn "MedianIncome" ''Double
 
---instance S.Serialize CensusRegion
---instance B.Binary CensusRegion
-instance Flat.Flat CensusRegion
-instance Grouping CensusRegion
-instance K.FiniteSet CensusRegion
-derivingUnbox "CensusRegion"
-  [t|CensusRegion -> Word8|]
-  [|toEnum . fromEnum|]
-  [|toEnum . fromEnum|]
-type instance FI.VectorFor CensusRegion = UVec.Vector
+--type SocSecIncome = "SocSecIncome" F.:-> Double
+FTH.declareColumn "SocSecIncome" ''Double
 
-type CensusRegionC = "CensusRegion" F.:-> CensusRegion
+--type AvgSocSecIncome = "AvgSocSecIncome" F.:-> Double
+FTH.declareColumn "AvgSocSecIncome" ''Double
 
-data CensusDivision = NewEngland
-                    | MiddleAtlantic
-                    | EastNorthCentral
-                    | WestNorthCentral
-                    | SouthAtlantic
-                    | EastSouthCentral
-                    | WestSouthCentral
-                    | Mountain
-                    | Pacific
-                    | OtherDivision
-                  deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
-deriving anyclass instance Hashable CensusDivision
+--type PctOfPovertyLine = "PctOfPovertyLine" F.:-> Double
+FTH.declareColumn "PctOfPovertyLine" ''Double
 
---instance S.Serialize CensusDivision
---instance B.Binary CensusDivision
-instance Flat.Flat CensusDivision
-instance Grouping CensusDivision
-instance K.FiniteSet CensusDivision
-derivingUnbox "CensusDivision"
-  [t|CensusDivision -> Word8|]
-  [|toEnum . fromEnum|]
-  [|toEnum . fromEnum|]
-type instance FI.VectorFor CensusDivision = UVec.Vector
+--type PctUnderPovertyLine = "PctUnderPovertyLine" F.:-> Double
+FTH.declareColumn "PctUnderPovertyLine" ''Double
 
-type CensusDivisionC = "CensusDivision" F.:-> CensusDivision
-
-censusDivisionToRegion :: CensusDivision -> CensusRegion
-censusDivisionToRegion NewEngland = Northeast
-censusDivisionToRegion MiddleAtlantic = Northeast
-censusDivisionToRegion EastNorthCentral = Midwest
-censusDivisionToRegion WestNorthCentral = Midwest
-censusDivisionToRegion SouthAtlantic = South
-censusDivisionToRegion EastSouthCentral = South
-censusDivisionToRegion WestSouthCentral = South
-censusDivisionToRegion Mountain = West
-censusDivisionToRegion Pacific = West
-censusDivisionToRegion OtherDivision = OtherRegion
-
-type PopPerSqMile = "PopPerSqMile" F.:-> Double
+--type PctUnder2xPovertyLine = "PctUnder2xPovertyLine" F.:-> Double
+FTH.declareColumn "PctUnder2xPovertyLine" ''Double
 
 
-data CensusMetro = MetroUnknown
-                 | NonMetro
-                 | MetroPrincipal
-                 | MetroOther
-                 | MetroMixed deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
-deriving anyclass instance Hashable CensusMetro
-
---instance S.Serialize CensusMetro
---instance B.Binary CensusMetro
-instance Flat.Flat CensusMetro
-instance Grouping CensusMetro
-instance K.FiniteSet CensusMetro
-derivingUnbox "CensusMetro"
-  [t|CensusMetro -> Word8|]
-  [|toEnum . fromEnum|]
-  [|toEnum . fromEnum|]
-type instance FI.VectorFor CensusMetro = UVec.Vector
-
-type CensusMetroC = "CensusMetro" F.:-> CensusMetro
-type PctInMetro = "PctIntMetro" F.:-> Double
 
 data EmploymentStatus = Employed
                       | Unemployed
@@ -694,9 +673,11 @@ derivingUnbox "EmploymentStatus"
   [t|EmploymentStatus -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
-type instance FI.VectorFor EmploymentStatus = UVec.Vector
+type instance FSI.VectorFor EmploymentStatus = UVec.Vector
 
-type EmploymentStatusC = "EmploymentStatus" F.:-> EmploymentStatus
+--type EmploymentStatusC = "EmploymentStatus" F.:-> EmploymentStatus
+FTH.declareColumn "EmploymentStatusC" ''EmploymentStatus
+
 type PctUnemployed = "PctUnemployed" F.:-> Double
 
 type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]

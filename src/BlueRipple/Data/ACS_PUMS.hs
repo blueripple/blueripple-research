@@ -24,6 +24,7 @@ where
 
 import qualified BlueRipple.Data.ACS_PUMS_Loader.ACS_PUMS_Frame as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -102,9 +103,9 @@ pumsRowsLoaderAdults :: (K.KnitEffects r, BR.CacheEffects r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= DT.A5F_Under18) . F.rgetField @DT.Age5FC))
 
-type PUMABucket = [DT.CitC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-type PUMADesc = [BR.Year, BR.StateFIPS, DT.CensusDivisionC, BR.PUMA]
-type PUMADescWA = [BR.Year, BR.StateFIPS, BR.StateAbbreviation, DT.CensusDivisionC, BR.PUMA]
+type PUMABucket = [DT.CitizenC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+type PUMADesc = [BR.Year, GT.StateFIPS, GT.CensusDivisionC, GT.PUMA]
+type PUMADescWA = [BR.Year, GT.StateFIPS, GT.StateAbbreviation, GT.CensusDivisionC, GT.PUMA]
 
 pumsCountF_old :: FL.Fold (F.Record PUMS_Typed) (F.FrameRec PUMS_Counted)
 pumsCountF_old = fmap F.toFrame
@@ -160,9 +161,9 @@ pumsLoader' dataPath mRawCacheKey cacheKey filterTypedM = do
   let cachedDeps = (,) <$> cachedStateAbbrCrosswalk <*> cachedPums
   BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(stateAbbrCrosswalk, pums) -> do
       K.logLE K.Diagnostic "Loading state abbreviation crosswalk."
-      let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @BR.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
+      let abbrFromFIPS = FL.fold (FL.premap (\r -> (F.rgetField @BR.StateFIPS r, F.rgetField @GT.StateAbbreviation r)) FL.map) stateAbbrCrosswalk
       K.logLE K.Diagnostic "Now loading and counting raw PUMS data from disk..."
-      let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (BR.StateAbbreviation ': rs))
+      let addStateAbbreviation :: F.ElemOf rs BR.StateFIPS => F.Record rs -> Maybe (F.Record (GT.StateAbbreviation ': rs))
           addStateAbbreviation r =
             let fips = F.rgetField @BR.StateFIPS r
                 abbrM = M.lookup fips abbrFromFIPS
@@ -228,7 +229,7 @@ sumPUMSCountedF wgtM flds =
                     , round <$> wgtdSumF (realToFrac . F.rgetField @NonCitizens))
 -}
   in  FF.sequenceRecFold
-      $ FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctInMetro))
+      $ FF.toFoldRecord (pplWgtdF (F.rgetField @GT.PctInMetro))
       V.:& FF.toFoldRecord (pplWgtdLogF (F.rgetField @DT.PopPerSqMile))
       V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctNativeEnglish))
       V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctNoEnglish))
@@ -262,22 +263,20 @@ pumsRollupF keepIf mapKeys =
   in FL.prefilter keepIf $ FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
 
-type CDDescWA = [DT.StateFIPS, DT.StateAbbreviation, DT.CensusDivisionC, BR.CongressionalDistrict]
+type CDDescWA = [GT.StateFIPS, GT.StateAbbreviation, GT.CensusDivisionC, GT.CongressionalDistrict]
 type CDCounts ks = '[BR.Year] ++ CDDescWA ++ ks ++ PUMSCountToFields
+
 pumsCDRollup
  :: forall ks r
  . (K.KnitEffects r
---   , BR.CacheEffects r
    , FJ.CanLeftJoinM [BR.Year, BR.StateFIPS, BR.PUMA] (PUMACounts ks) BR.DatedCDFromPUMA2012
    , FI.RecVec (ks ++ PUMSCountToFields)
    , ks ⊆ (PUMADescWA ++ PUMSCountToFields ++ ks)
---   , F.ElemOf (ks ++ PUMSCountToFields) Citizens
---   , F.ElemOf (ks ++ PUMSCountToFields) NonCitizens
    , (ks ++ PUMSCountToFields) ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields)
    , F.ElemOf (ks ++ PUMSCountToFields) DT.AvgIncome
    , F.ElemOf (ks ++ PUMSCountToFields) DT.AvgSocSecIncome
 --   , F.ElemOf (ks ++ PUMSCountToFields) BR.MedianIncome
-   , F.ElemOf (ks ++ PUMSCountToFields) DT.PctInMetro
+   , F.ElemOf (ks ++ PUMSCountToFields) GT.PctInMetro
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctNativeEnglish
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctNoEnglish
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctUnder2xPovertyLine
@@ -286,22 +285,21 @@ pumsCDRollup
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PopPerSqMile
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PopCount
    , ks ⊆ (ks ++ PUMSCountToFields)
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgIncome
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgSocSecIncome
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopCount
---   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) Citizens
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.FracPUMAInCD
---   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.MedianIncome
---   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) NonCitizens
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctInMetro
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNativeEnglish
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNoEnglish
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnderPovertyLine
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnder2xPovertyLine
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnemployed
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopPerSqMile
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.CongressionalDistrict
-   , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [BR.CongressionalDistrict, BR.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgSocSecIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopCount
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.FracPUMAInCD
+--   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.MedianIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.PctInMetro
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNativeEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNoEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnderPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnder2xPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnemployed
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopPerSqMile
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.CongressionalDistrict
+   , F.ElemOf ('[BR.Year] ++ CDDescWA ++ ks) GT.CongressionalDistrict
+   , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
    , Ord (F.Record ks)
    , BR.FiniteSet (F.Record ks)
 --   , V.RMap ks
@@ -340,7 +338,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   -- roll it up to the CD level
   let pumaWeighting r = F.rgetField @BR.FracPUMAInCD r
       demoByCD  = BRF.frameCompactMRM
-                  FMR.noUnpack
+                  FMR.noUnpack --(FMR.Unpack $ \r -> [FT.addName @BR.CongressionalDistrict @GT.CongressionalDistrict r])
                   (FMR.assignKeysAndData
                     @('[BR.Year] ++ CDDescWA ++ ks)
                     @('[BR.FracPUMAInCD] ++ PUMSCountToFields))
@@ -355,7 +353,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   return demoByCD'
 
 
-type StateCounts ks = '[BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields
+type StateCounts ks = '[BR.Year, GT.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields
 
 pumsStateRollupF
   :: forall ks
@@ -368,7 +366,7 @@ pumsStateRollupF
   -> FL.Fold (F.Record PUMS) (F.FrameRec (StateCounts ks))
 pumsStateRollupF mapKeys =
   let unpack = FMR.Unpack (pure @[] . FT.transform mapKeys)
-      assign = FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.StateFIPS] ++ ks) @PUMSCountToFields
+      assign = FMR.assignKeysAndData @([BR.Year, GT.StateAbbreviation, BR.StateFIPS] ++ ks) @PUMSCountToFields
       reduce = FMR.foldAndAddKey (sumPUMSCountedF Nothing id)
   in FMR.concatFold $ FMR.mapReduceFold unpack assign reduce
 
@@ -446,12 +444,12 @@ type NonCitizens = "NonCitizens" F.:-> Int
 
 type PUMS_Typed = '[ BR.Year
                    , PUMSWeight
-                   , DT.StateFIPS
-                   , DT.CensusDivisionC
-                   , BR.PUMA
-                   , DT.CensusMetroC
+                   , GT.StateFIPS
+                   , GT.CensusDivisionC
+                   , GT.PUMA
+                   , GT.CensusMetroC
                    , DT.PopPerSqMile
-                   , DT.CitC
+                   , DT.CitizenC
                    , DT.Age5FC
                    , DT.EducationC
                    , DT.InCollege
@@ -467,17 +465,17 @@ type PUMS_Typed = '[ BR.Year
                  ]
 
 type PUMS_Counted = '[BR.Year
-                     , DT.StateFIPS
-                     , DT.CensusDivisionC
-                     , BR.PUMA
-                     , DT.CitC
+                     , GT.StateFIPS
+                     , GT.CensusDivisionC
+                     , GT.PUMA
+                     , DT.CitizenC
                      , DT.Age5FC
                      , DT.SexC
                      , DT.EducationC
                      , DT.InCollege
                      , DT.RaceAlone4C
                      , DT.HispC
-                     , DT.PctInMetro
+                     , GT.PctInMetro
                      , DT.PopPerSqMile
                      , DT.PctNativeEnglish
                      , DT.PctNoEnglish
@@ -491,13 +489,13 @@ type PUMS_Counted = '[BR.Year
                      ]
 
 type PUMS = '[BR.Year
-             , DT.StateFIPS
-             , DT.StateAbbreviation
-             , DT.CensusDivisionC
+             , GT.StateFIPS
+             , GT.StateAbbreviation
+             , GT.CensusDivisionC
              , BR.PUMA
-             , DT.PctInMetro
+             , GT.PctInMetro
              , DT.PopPerSqMile
-             , DT.CitC
+             , DT.CitizenC
              , DT.Age5FC
              , DT.SexC
              , DT.EducationC
@@ -516,22 +514,22 @@ type PUMS = '[BR.Year
              ]
 
 
-regionF :: FL.Fold DT.CensusRegion DT.CensusRegion
-regionF = FL.lastDef DT.OtherRegion
+regionF :: FL.Fold GT.CensusRegion GT.CensusRegion
+regionF = FL.lastDef GT.OtherRegion
 {-# INLINE regionF #-}
 
-divisionF :: FL.Fold DT.CensusDivision DT.CensusDivision
-divisionF = FL.lastDef DT.OtherDivision
+divisionF :: FL.Fold GT.CensusDivision GT.CensusDivision
+divisionF = FL.lastDef GT.OtherDivision
 {-# INLINE divisionF #-}
 
 asPct :: Double -> Double -> Double
 asPct x y = 100 * x / y
 {-# INLINE asPct #-}
 
-metroF :: FL.Fold (Double, DT.CensusMetro) Double
+metroF :: FL.Fold (Double, GT.CensusMetro) Double
 metroF =
   let wgtF = FL.premap fst FL.sum
-      wgtInCityF = FL.prefilter ((`elem` [DT.MetroPrincipal, DT.MetroOther, DT.MetroMixed]) . snd) wgtF
+      wgtInCityF = FL.prefilter ((`elem` [GT.MetroPrincipal, GT.MetroOther, GT.MetroMixed]) . snd) wgtF
   in asPct <$> wgtInCityF <*> wgtF
 {-# INLINE metroF #-}
 
@@ -604,7 +602,7 @@ pctUnderF factor =
 {-# INLINE pctUnderF #-}
 
 type PUMSCountFromFields = [PUMSWeight
-                           , DT.CensusMetroC
+                           , GT.CensusMetroC
                            , DT.PopPerSqMile
                            , DT.LanguageC
                            , DT.SpeaksEnglishC
@@ -614,7 +612,7 @@ type PUMSCountFromFields = [PUMSWeight
                            , DT.PctOfPovertyLine
                            ]
 
-type PUMSCountToFields = [DT.PctInMetro
+type PUMSCountToFields = [GT.PctInMetro
                          , DT.PopPerSqMile
                          , DT.PctNativeEnglish
                          , DT.PctNoEnglish
@@ -637,7 +635,7 @@ pumsRowCount2F =
       pplF = FL.premap wgt FL.sum
 --      nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
 
-      pctInMetroF = FL.premap (wgtAnd (F.rgetField @DT.CensusMetroC)) metroF
+      pctInMetroF = FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF
       popPerSqMileF = FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) densityF
       nativeEnglishF = FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF
       noEnglishF = FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF
@@ -670,7 +668,7 @@ pumsRowCountF =
       wgtAnd f r = (realToFrac @_ @Double (wgt r), f r)
       pplF = FL.premap wgt FL.sum
   in FF.sequenceRecFold
-     $ FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.CensusMetroC)) metroF)
+     $ FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) densityF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF)
@@ -699,8 +697,8 @@ intToCitizen :: Int -> Bool
 intToCitizen n = if n >= 3 then False else True
 
 -- PUMSCITIZEN
-intToCit :: Int -> DT.Cit
-intToCit n = if n >= 3 then DT.NonCit else DT.Cit
+intToCit :: Int -> DT.Citizen
+intToCit n = if n >= 3 then DT.NonCitizen else DT.Citizen
 
 
 -- PUMSEDUCD (rather than EDUC)
@@ -767,26 +765,26 @@ intToSpeaksEnglish n
   | otherwise             = DT.SE_No
 
 
-intToCensusDivision :: Int -> DT.CensusDivision
+intToCensusDivision :: Int -> GT.CensusDivision
 intToCensusDivision n
-  | n == 11 = DT.NewEngland
-  | n == 12 = DT.MiddleAtlantic
-  | n == 21 = DT.EastNorthCentral
-  | n == 22 = DT.WestNorthCentral
-  | n == 31 = DT.SouthAtlantic
-  | n == 32 = DT.EastSouthCentral
-  | n == 33 = DT.WestSouthCentral
-  | n == 41 = DT.Mountain
-  | n == 42 = DT.Pacific
-  | otherwise = DT.OtherDivision
+  | n == 11 = GT.NewEngland
+  | n == 12 = GT.MiddleAtlantic
+  | n == 21 = GT.EastNorthCentral
+  | n == 22 = GT.WestNorthCentral
+  | n == 31 = GT.SouthAtlantic
+  | n == 32 = GT.EastSouthCentral
+  | n == 33 = GT.WestSouthCentral
+  | n == 41 = GT.Mountain
+  | n == 42 = GT.Pacific
+  | otherwise = GT.OtherDivision
 
-intToCensusMetro :: Int -> DT.CensusMetro
+intToCensusMetro :: Int -> GT.CensusMetro
 intToCensusMetro n
-  | n == 1 = DT.NonMetro
-  | n == 2 = DT.MetroPrincipal
-  | n == 3 = DT.MetroOther
-  | n == 4 = DT.MetroMixed
-  | otherwise = DT.MetroUnknown
+  | n == 1 = GT.NonMetro
+  | n == 2 = GT.MetroPrincipal
+  | n == 3 = GT.MetroOther
+  | n == 4 = GT.MetroMixed
+  | otherwise = GT.MetroUnknown
 
 intToEmploymentStatus :: Int -> DT.EmploymentStatus
 intToEmploymentStatus n
@@ -801,14 +799,15 @@ transformPUMSRow :: BR.PUMS_Raw2 -> F.Record PUMS_Typed
 transformPUMSRow = F.rcast . addCols where
   addCols = (FT.addOneFromOne @BR.PUMSRACE  @DT.RaceAlone4C intToRaceAlone4)
             . (FT.addOneFromOne @BR.PUMSHISPAN @DT.HispC intToHisp)
-            . (FT.addName  @BR.PUMSSTATEFIP @DT.StateFIPS)
-            . (FT.addName @BR.PUMSPUMA @BR.PUMA)
-            . (FT.addOneFromOne @BR.PUMSREGION @DT.CensusDivisionC intToCensusDivision)
-            . (FT.addOneFromOne @BR.PUMSMETRO @DT.CensusMetroC intToCensusMetro)
+            . (FT.addName  @BR.PUMSSTATEFIP @GT.StateFIPS)
+--            . (FT.addName @BR.CongressionalDistrict @GT.CongressionalDistrict)
+            . (FT.addName @BR.PUMSPUMA @GT.PUMA)
+            . (FT.addOneFromOne @BR.PUMSREGION @GT.CensusDivisionC intToCensusDivision)
+            . (FT.addOneFromOne @BR.PUMSMETRO @GT.CensusMetroC intToCensusMetro)
             . (FT.addName @BR.PUMSDENSITY @DT.PopPerSqMile)
             . (FT.addName @BR.PUMSYEAR @BR.Year)
             . (FT.addName @BR.PUMSPERWT @PUMSWeight)
-            . (FT.addOneFromOne @BR.PUMSCITIZEN @DT.CitC intToCit)
+            . (FT.addOneFromOne @BR.PUMSCITIZEN @DT.CitizenC intToCit)
             . (FT.addOneFromOne @BR.PUMSAGE @DT.Age5FC intToAge5F)
             . (FT.addOneFromOne @BR.PUMSSEX @DT.SexC intToSex)
 --            . (FT.addOneFromOne @BR.PUMSEDUCD @DT.CollegeGradC intToCollegeGrad)

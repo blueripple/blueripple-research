@@ -27,7 +27,8 @@ module BlueRipple.Model.DistrictClusters
 where
 
 import qualified BlueRipple.Data.DataFrames as BR
-import qualified BlueRipple.Data.ElectionTypes as ET
+--import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Keyed         as Keyed
 
 import qualified Knit.Report                   as K
@@ -85,11 +86,11 @@ districtsForClustering :: forall dcs c.
                           (V.KnownField c
                           , V.Snd c ~ Int
                           , dcs F.⊆  (dcs V.++ '[c])
-                          , (dcs V.++ '[c]) F.⊆ ([BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, c] V.++ dcs)
+                          , (dcs V.++ '[c]) F.⊆ ([BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, c] V.++ dcs)
                           , F.ElemOf (dcs V.++ '[c]) c
                           , Ord (F.Record dcs))
-                          => F.FrameRec ([BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, c] V.++ dcs)
-                       -> [DistrictP [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, c] (dcs V.++ '[c])]
+                          => F.FrameRec ([BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, c] V.++ dcs)
+                       -> [DistrictP [BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, c] (dcs V.++ '[c])]
 districtsForClustering dists =
 --  pumsByCDWithVoteShare <- K.ignoreCacheTime pumsByCDWithVoteShare_C
   let asVec rs = UVec.fromList
@@ -101,7 +102,7 @@ districtsForClustering dists =
   in FL.fold
     (FMR.mapReduceFold
      FMR.noUnpack
-     (FMR.assignKeysAndData @[BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName] @(dcs V.++ '[c]))
+     (FMR.assignKeysAndData @[BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] @(dcs V.++ '[c]))
      (FMR.ReduceFold $ \k -> fmap (\rs -> DistrictP (k F.<+> popRec (pop rs)) False (pop rs) (asVec rs)) FL.list)
     )
     dists
@@ -298,7 +299,7 @@ tsneChartCat :: forall t f.(V.KnownField t, Foldable f, Show (V.Snd t))
              => T.Text
              -> T.Text
              -> FV.ViewConfig
-             -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2])
+             -> f (F.Record [BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, t, TSNE1, TSNE2])
              -> GV.VegaLite
 tsneChartCat title labelName vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
@@ -322,12 +323,12 @@ tsneChartCat title labelName vc rows =
   in FV.configuredVegaLite vc [FV.title title, GV.layer [ptSpec, labelSpec], vlData]
 
 
-tsneChartNum :: forall t f.(V.KnownField t, Foldable f, Real (V.Snd t), F.ElemOf [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2] t)
+tsneChartNum :: forall t f.(V.KnownField t, Foldable f, Real (V.Snd t), F.ElemOf [BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, t, TSNE1, TSNE2] t)
              => T.Text
              -> T.Text
              -> (V.Snd t -> V.Snd t)
              -> FV.ViewConfig
-             -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, t, TSNE1, TSNE2])
+             -> f (F.Record [BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, t, TSNE1, TSNE2])
              -> GV.VegaLite
 tsneChartNum title numName f vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"
@@ -357,7 +358,7 @@ tsneChartNum title numName f vc rows =
 tsneChart' :: forall f.(Foldable f)
           => T.Text
           -> FV.ViewConfig
-          -> f (F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName, TSNE1, TSNE2])
+          -> f (F.Record [BR.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, TSNE1, TSNE2])
           -> GV.VegaLite
 tsneChart' title vc rows =
   let toVLDataRec = FVD.asVLData GV.Str "State"

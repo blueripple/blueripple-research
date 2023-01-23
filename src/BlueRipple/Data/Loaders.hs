@@ -21,6 +21,7 @@ where
 
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import BlueRipple.Data.LoadersCore
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -64,7 +65,7 @@ type PEFromCols = [BR.Year, BR.State, BR.StatePo, BR.StateFips, BR.Candidate, BR
 
 type ElectionDataCols = [ET.Office, BR.Candidate, ET.Party, ET.Votes, ET.TotalVotes]
 
-type PresidentialElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ ElectionDataCols
+type PresidentialElectionCols = [BR.Year, GT.StateName, GT.StateAbbreviation, GT.StateFIPS] V.++ ElectionDataCols
 type PresidentialElectionColsI = PresidentialElectionCols V.++ '[ET.Incumbent]
 
 fixPresidentialElectionRow ::
@@ -72,8 +73,9 @@ fixPresidentialElectionRow ::
 fixPresidentialElectionRow = F.rcast . addCols
   where
     addCols =
-      (FT.addName @BR.StatePo @BR.StateAbbreviation)
-        . (FT.addName @BR.StateFips @BR.StateFIPS)
+      (FT.addName @BR.StatePo @GT.StateAbbreviation)
+      . (FT.addName @BR.State @GT.StateName)
+        . (FT.addName @BR.StateFips @GT.StateFIPS)
         . (FT.addName @BR.Candidatevotes @ET.Votes)
         . (FT.addName @BR.Totalvotes @ET.TotalVotes)
         . (FT.addOneFromValue @ET.Office ET.President)
@@ -92,7 +94,7 @@ presidentialByStateFrame =
     "presByState.bin"
 
 presidentialElectionKey :: F.Record PresidentialElectionCols -> (Text, Int)
-presidentialElectionKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Year r)
+presidentialElectionKey r = (F.rgetField @GT.StateAbbreviation r, F.rgetField @BR.Year r)
 
 presidentialElectionsWithIncumbency ::
   (K.KnitEffects r, BR.CacheEffects r) =>
@@ -103,7 +105,7 @@ presidentialElectionsWithIncumbency = do
   --  K.clearIfPresent "data/presidentialWithIncumbency.bin"
   BR.retrieveOrMakeFrame "data/presidentialWithIncumbency.bin" presidentialElex_C (return . g)
 
-type ElectionIntegrityCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS
+type ElectionIntegrityCols = [BR.Year, GT.StateAbbreviation, BR.StateFIPS
                              , BR.PEIRatingstate
                              , BR.PEIVoting, BR.PEIVotingi
                              ]
@@ -148,7 +150,7 @@ electionIntegrityByState2016 = cachedMaybeFrameLoader
                                (F.rcast @ElectionIntegrityCols . addCols)
                                Nothing "electionIntegrityByState2016.bin"
   where
-    addCols = (FT.addName @BR.PEIStateAbbreviation @BR.StateAbbreviation)
+    addCols = (FT.addName @BR.PEIStateAbbreviation @GT.StateAbbreviation)
               . (FT.addName @BR.PEIYear @BR.Year)
               . (FT.addName @BR.PEIStateFIPS @BR.StateFIPS)
 
@@ -165,15 +167,18 @@ electionIntegrityByState2018 = cachedMaybeFrameLoader
                                (F.rcast @ElectionIntegrityCols . addCols)
                                Nothing "electionIntegrityByState2018.bin"
   where
-    addCols = (FT.addName @BR.PEIStateAbbreviation @BR.StateAbbreviation)
+    addCols = (FT.addName @BR.PEIStateAbbreviation @GT.StateAbbreviation)
               . (FT.addName @BR.PEIYear @BR.Year)
               . (FT.addName @BR.PEIStateFIPS @BR.StateFIPS)
 
+type CDFromPUMA2012R = FT.ReType BR.CongressionalDistrict GT.CongressionalDistrict
+                       (FT.ReType BR.StateAbbreviation GT.StateAbbreviation
+                       (F.RecordColumns BR.CDFromPUMA2012))
 
 cdFromPUMA2012Loader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   Int ->
-  K.Sem r (K.ActionWithCacheTime r (F.Frame BR.CDFromPUMA2012))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec CDFromPUMA2012R))
 cdFromPUMA2012Loader congress = do
   (csvPath, cacheKey) <- case congress of
     113 -> return (BR.cd113FromPUMA2012CSV, "data/cd113FromPUMA2012.bin")
@@ -184,13 +189,13 @@ cdFromPUMA2012Loader congress = do
   cachedFrameLoader (DataSets $ toText csvPath) Nothing Nothing id Nothing cacheKey --"cd116FromPUMA2012.bin"
 
 
-type DatedCDFromPUMA2012 = '[BR.Year] V.++ F.RecordColumns BR.CDFromPUMA2012
+type DatedCDFromPUMA2012 = '[BR.Year] V.++ CDFromPUMA2012R
 
 allCDFromPUMA2012Loader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
   K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
 allCDFromPUMA2012Loader = do
-  let addYear :: Int -> BR.CDFromPUMA2012 -> F.Record DatedCDFromPUMA2012
+  let addYear :: Int -> F.Record CDFromPUMA2012R -> F.Record DatedCDFromPUMA2012
       addYear y r = (y F.&: V.RNil) `V.rappend` r
       loadWithYear :: (K.KnitEffects r, BR.CacheEffects r) => (Int, Int) -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
       loadWithYear (year, congress) = fmap (fmap (addYear year)) <$> cdFromPUMA2012Loader congress
@@ -309,43 +314,43 @@ rawStateAbbrCrosswalkLoader = cachedFrameLoader (DataSets $ toText BR.statesCSV)
 
 stateAbbrCrosswalkLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec [GT.StateName, GT.StateFIPS, GT.StateAbbreviation, GT.CensusRegionC, GT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]))
 stateAbbrCrosswalkLoader = do
   statesRaw_C <- rawStateAbbrCrosswalkLoader
   BR.retrieveOrMakeFrame "data/stateAbbr.bin" statesRaw_C $ \fRaw ->
     K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
 {-# INLINEABLE stateAbbrCrosswalkLoader #-}
 
-parseCensusRegion :: T.Text -> Either Text DT.CensusRegion
-parseCensusRegion "Northeast" = Right DT.Northeast
-parseCensusRegion "Midwest" = Right DT.Midwest
-parseCensusRegion "South" = Right DT.South
-parseCensusRegion "West" = Right DT.West
-parseCensusRegion "OtherRegion" = Right DT.OtherRegion
+parseCensusRegion :: T.Text -> Either Text GT.CensusRegion
+parseCensusRegion "Northeast" = Right GT.Northeast
+parseCensusRegion "Midwest" = Right GT.Midwest
+parseCensusRegion "South" = Right GT.South
+parseCensusRegion "West" = Right GT.West
+parseCensusRegion "OtherRegion" = Right GT.OtherRegion
 parseCensusRegion x = Left $ "Unparsed census region: " <> x
 
-parseCensusDivision :: T.Text -> Either Text DT.CensusDivision
-parseCensusDivision "NewEngland" = Right DT.NewEngland
-parseCensusDivision "MiddleAtlantic" = Right DT.MiddleAtlantic
-parseCensusDivision "EastNorthCentral" = Right DT.EastNorthCentral
-parseCensusDivision "WestNorthCentral" = Right DT.WestNorthCentral
-parseCensusDivision "SouthAtlantic" = Right DT.SouthAtlantic
-parseCensusDivision "EastSouthCentral" = Right DT.EastSouthCentral
-parseCensusDivision "WestSouthCentral" = Right DT.WestSouthCentral
-parseCensusDivision "Mountain" = Right DT.Mountain
-parseCensusDivision "Pacific" = Right DT.Pacific
-parseCensusDivision "OtherDivision" = Right DT.OtherDivision
+parseCensusDivision :: T.Text -> Either Text GT.CensusDivision
+parseCensusDivision "NewEngland" = Right GT.NewEngland
+parseCensusDivision "MiddleAtlantic" = Right GT.MiddleAtlantic
+parseCensusDivision "EastNorthCentral" = Right GT.EastNorthCentral
+parseCensusDivision "WestNorthCentral" = Right GT.WestNorthCentral
+parseCensusDivision "SouthAtlantic" = Right GT.SouthAtlantic
+parseCensusDivision "EastSouthCentral" = Right GT.EastSouthCentral
+parseCensusDivision "WestSouthCentral" = Right GT.WestSouthCentral
+parseCensusDivision "Mountain" = Right GT.Mountain
+parseCensusDivision "Pacific" = Right GT.Pacific
+parseCensusDivision "OtherDivision" = Right GT.OtherDivision
 parseCensusDivision x = Left $ "Unparsed census division: " <> x
 
 
 parseCensusCols :: BR.States
-                -> Either Text (F.Record [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly])
+                -> Either Text (F.Record [GT.StateName, GT.StateFIPS, GT.StateAbbreviation, GT.CensusRegionC, GT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly])
 parseCensusCols r = do
   region <- parseCensusRegion $ F.rgetField @BR.Region r
   division <- parseCensusDivision $ F.rgetField @BR.Division r
-  return $ F.rcast @[BR.StateName, BR.StateFIPS, BR.StateAbbreviation] r `V.rappend` (region F.&: division F.&: V.RNil) `V.rappend` F.rcast @[BR.OneDistrict, BR.SLDUpperOnly] r
-
-
+  return $ F.rcast @[GT.StateName, GT.StateFIPS, GT.StateAbbreviation] (FT.retypeColumn @BR.StateAbbreviation @GT.StateAbbreviation r)
+    `V.rappend` (region F.&: division F.&: V.RNil)
+    `V.rappend` F.rcast @[BR.OneDistrict, BR.SLDUpperOnly] r
 
 type StateTurnoutCols = F.RecordColumns BR.StateTurnout
 
@@ -371,7 +376,7 @@ stateTurnoutLoader =
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
 
 
-type HouseElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ([BR.Special, BR.Runoff, BR.Stage] V.++ ElectionDataCols)
+type HouseElectionCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.StateFIPS, GT.CongressionalDistrict] V.++ ([BR.Special, BR.Runoff, BR.Stage] V.++ ElectionDataCols)
 
 type HouseElectionColsI = HouseElectionCols V.++ '[ET.Incumbent]
 
@@ -382,10 +387,10 @@ processHouseElectionRow :: BR.HouseElections -> F.Record HouseElectionCols
 processHouseElectionRow r = F.rcast @HouseElectionCols (mutate r)
   where
     mutate =
-      FT.retypeColumn @BR.StatePo @BR.StateAbbreviation
+      FT.retypeColumn @BR.StatePo @GT.StateAbbreviation
         . FT.retypeColumn @BR.StateFips @BR.StateFIPS
         . FT.mutate (const $ FT.recordSingleton @ET.Office ET.House)
-        . FT.retypeColumn @BR.District @BR.CongressionalDistrict
+        . FT.retypeColumn @BR.District @GT.CongressionalDistrict
         . FT.retypeColumn @BR.Candidatevotes @ET.Votes
         . FT.retypeColumn @BR.Totalvotes @ET.TotalVotes
         . FT.mutate
@@ -470,7 +475,7 @@ lastWinners n key winnerMap' r = do
   fmap snd <$> traverse (\m -> lastLess m ky ascendingWinners) [1..n]
 
 houseRaceKey :: F.Record HouseElectionCols -> (Text, Int)
-houseRaceKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.CongressionalDistrict r)
+houseRaceKey r = (F.rgetField @GT.StateAbbreviation r, F.rgetField @GT.CongressionalDistrict r)
 houseElectionKey :: F.Record HouseElectionCols -> ((Text, Int), Int)
 houseElectionKey r = (houseRaceKey r, F.rgetField @BR.Year r)
 
@@ -495,18 +500,18 @@ addIncumbency n key sameCand runoff wm r =
         Just prs -> not $ null $ filter (sameCand r) prs
   in r V.<+> ((incumbent F.&: V.RNil) :: F.Record '[ET.Incumbent])
 
-fixAtLargeDistricts :: (F.ElemOf rs BR.StateAbbreviation, F.ElemOf rs BR.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
+fixAtLargeDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
 fixAtLargeDistricts n = fmap fixOne where
   statesWithAtLargeCDs = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
-  fixOne r = if F.rgetField @BR.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @BR.CongressionalDistrict n r else r
+  fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @GT.CongressionalDistrict n r else r
 
 
-type SenateElectionCols = [BR.Year, BR.State, BR.StateAbbreviation, BR.StateFIPS] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
+type SenateElectionCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.StateFIPS] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
 
 type SenateElectionColsI = SenateElectionCols V.++ '[ET.Incumbent]
 -- NB: If there are 2 specials at the same time, this will fail to distinguish them. :(
 senateRaceKey :: F.Record SenateElectionCols -> (Text, Bool)
-senateRaceKey r = (F.rgetField @BR.StateAbbreviation r, F.rgetField @BR.Special r)
+senateRaceKey r = (F.rgetField @GT.StateAbbreviation r, F.rgetField @BR.Special r)
 
 senateElectionKey :: F.Record SenateElectionCols -> ((Text, Bool), Int)
 senateElectionKey r = (senateRaceKey r, F.rgetField @BR.Year r)
@@ -515,7 +520,7 @@ processSenateElectionRow :: BR.SenateElections -> F.Record SenateElectionCols
 processSenateElectionRow r = F.rcast @SenateElectionCols (mutate r)
   where
     mutate =
-      FT.retypeColumn @BR.SenateStatePo @BR.StateAbbreviation
+      FT.retypeColumn @BR.SenateStatePo @GT.StateAbbreviation
         . FT.retypeColumn @BR.SenateStateFips @BR.StateFIPS
         . FT.retypeColumn @BR.SenateYear @BR.Year
         . FT.retypeColumn @BR.SenateState @BR.State

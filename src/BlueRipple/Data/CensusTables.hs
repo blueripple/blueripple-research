@@ -18,6 +18,7 @@ where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Keyed as K
 
@@ -43,8 +44,8 @@ F.declareColumn "PWLogPopPerSqMile" ''Double
 F.declareColumn "PerCapitaIncome" ''Double
 F.declareColumn "TotalIncome" ''Double
 
-type LDLocationR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictName]
-type LDPrefixR = [BR.StateFips, ET.DistrictTypeC, ET.DistrictName, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type LDLocationR = [BR.StateFips, GT.DistrictTypeC, GT.DistrictName]
+type LDPrefixR = [BR.StateFips, GT.DistrictTypeC, GT.DistrictName, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome, PWPopPerSqMile]
 
 {-
@@ -78,17 +79,17 @@ csvParsePistrictType =
 -}
 
 -- To avoid an orphan instance of FromField DistrictType
-newtype DistrictTypeWrapper = DistrictTypeWrapper { unWrapDistrictType :: ET.DistrictType }
+newtype DistrictTypeWrapper = DistrictTypeWrapper { unWrapDistrictType :: GT.DistrictType }
 
 instance CSV.FromField DistrictTypeWrapper where
   parseField s
-    | s == "Congressional" = pure $ DistrictTypeWrapper ET.Congressional
-    | s == "StateLower" = pure $ DistrictTypeWrapper ET.StateLower
-    | s == "StateUpper" = pure $ DistrictTypeWrapper ET.StateUpper
+    | s == "Congressional" = pure $ DistrictTypeWrapper GT.Congressional
+    | s == "StateLower" = pure $ DistrictTypeWrapper GT.StateLower
+    | s == "StateUpper" = pure $ DistrictTypeWrapper GT.StateUpper
     | otherwise = mzero
 
 newtype LDPrefix = LDPrefix { unLDPrefix :: F.Record LDPrefixR } deriving stock Show
-toLDPrefix :: Int -> ET.DistrictType -> Text -> Int -> Double -> Double -> Double -> Double -> LDPrefix
+toLDPrefix :: Int -> GT.DistrictType -> Text -> Int -> Double -> Double -> Double -> Double -> LDPrefix
 toLDPrefix sf dt dn pop pwd inc sm sk
   = LDPrefix $ sf F.&: dt F.&: dn F.&: pop F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
 --  where

@@ -26,12 +26,13 @@ where
 
 import Prelude hiding (pred)
 import qualified BlueRipple.Configuration as BR
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.CensusLoaders as Census
+--import qualified BlueRipple.Data.ACS_PUMS as PUMS
+--import qualified BlueRipple.Data.CensusLoaders as Census
 import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Model.StanMRP as MRP
@@ -89,7 +90,7 @@ FS.declareColumn "ModelDesc" ''Text
 
 
 groupBuilderDM :: forall rs ks k.
-                  (F.ElemOf rs BR.StateAbbreviation
+                  (F.ElemOf rs GT.StateAbbreviation
                   , F.ElemOf rs DT.PopCount
                   , Typeable rs
                   , V.RMap ks
@@ -108,7 +109,7 @@ groupBuilderDM :: forall rs ks k.
 groupBuilderDM model psGroup states cds psKeys = do
   let loadCPSTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
         cpsData <- SB.addModelDataToGroupBuilder "CPS" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @BRCF.Count) . cpsVEMRows)
-        SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForData stateGroup cpsData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
       officeFilterF x r = F.rgetField @ET.Office r == x
       -- filter out anything with no votes at all or where someone was running unopposed
       zeroVoteFilterF r = F.rgetField @TVotes r /= 0 && F.rgetField @DVotes r /= 0 && F.rgetField @RVotes r /= 0
@@ -118,25 +119,25 @@ groupBuilderDM model psGroup states cds psKeys = do
       loadElexData office = case office of
           ET.President -> do
             elexData <- SB.addModelDataToGroupBuilder "Elections_President" (SB.ToFoldable $ elexFilter ET.President . stateElectionRows)
-            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
           ET.Senate -> do
             elexData <- SB.addModelDataToGroupBuilder "Elections_Senate" (SB.ToFoldable $ elexFilter ET.Senate . stateElectionRows)
-            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
           ET.House -> do
             elexData <- SB.addModelDataToGroupBuilder "Elections_House" (SB.ToFoldable $ elexFilter ET.House. cdElectionRows)
-            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+            SB.addGroupIndexForData stateGroup elexData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
             SB.addGroupIndexForData cdGroup elexData $ SB.makeIndexFromFoldable show districtKey cds
       loadCCESTurnoutData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
         ccesTurnoutData <- SB.addModelDataToGroupBuilder "CCEST" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @Surveyed) . ccesEMRows)
-        SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForData stateGroup ccesTurnoutData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
       loadCCESPrefData :: ET.OfficeT -> ET.VoteShareType -> SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) ()
       loadCCESPrefData office vst = do
         ccesPrefData <- SB.addModelDataToGroupBuilder ("CCESP_" <> show office)
                         (SB.ToFoldable $ F.filterFrame (not . zeroCCESVotes office vst) . ccesEMRows)
-        SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForData stateGroup ccesPrefData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
       loadACSData :: SB.StanGroupBuilderM CCESAndCPSEM (F.FrameRec rs) () = do
         acsData <- SB.addModelDataToGroupBuilder "ACS" (SB.ToFoldable $ acsRows)
-        SB.addGroupIndexForData stateGroup acsData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+        SB.addGroupIndexForData stateGroup acsData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
         SB.addGroupIndexForData cdGroup acsData $ SB.makeIndexFromFoldable show districtKey cds
 
   loadACSData
@@ -147,7 +148,7 @@ groupBuilderDM model psGroup states cds psKeys = do
   when (Set.member ET.House $ votesFrom model) $ loadCCESPrefData ET.House (voteShareType model)
 
   psData <- SB.addGQDataToGroupBuilder "PSData" (SB.ToFoldable $ F.filterFrame ((/= 0) . F.rgetField @DT.PopCount))
-  SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @BR.StateAbbreviation) states
+  SB.addGroupIndexForData stateGroup psData $ SB.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
   SB.addGroupIndexForData psGroup psData $ SB.makeIndexFromFoldable show F.rcast psKeys
 
 -- If only presidential eleciton is included, incumbency is not useful since it's a constant
@@ -1123,7 +1124,7 @@ electionModelDM :: forall rs ks r mk.
                    (K.KnitEffects r
                    , BR.CacheEffects r
                    , ModelKeyC ks
-                   , F.ElemOf rs BR.StateAbbreviation
+                   , F.ElemOf rs GT.StateAbbreviation
                    , F.ElemOf rs DT.CollegeGradC
                    , F.ElemOf rs DT.SexC
                    , F.ElemOf rs DT.Race5C
@@ -1159,11 +1160,11 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
   reportZeroRows
   stElexRows <- K.ignoreCacheTime $ fmap stateElectionRows dat_C
   cdElexRows <- K.ignoreCacheTime $ fmap cdElectionRows dat_C
-  let stIncPair r = (F.rcast @[BR.Year, BR.StateAbbreviation] r, realToFrac $ F.rgetField @Incumbency r)
-      cdIncPair r =  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
+  let stIncPair r = (F.rcast @[BR.Year, GT.StateAbbreviation] r, realToFrac $ F.rgetField @Incumbency r)
+      cdIncPair r =  (F.rcast @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] r, realToFrac $ F.rgetField @Incumbency r)
       presIncMap = FL.fold (FL.premap stIncPair FL.map) $ F.filterFrame ((== ET.President) . F.rgetField @ET.Office) stElexRows
       houseIncMap = FL.fold (FL.premap cdIncPair FL.map) $ F.filterFrame ((== ET.House) . F.rgetField @ET.Office) cdElexRows
-      incF :: forall as.([BR.Year, BR.StateAbbreviation] F.⊆ as, [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ as)
+      incF :: forall as.([BR.Year, GT.StateAbbreviation] F.⊆ as, [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] F.⊆ as)
            => ET.OfficeT -> F.Record as -> Double
       incF o r = case o of
         ET.President -> fromMaybe 0 $ M.lookup (F.rcast r) presIncMap
@@ -1513,7 +1514,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           $ "CPSV "
           <> show (FL.fold FL.length $ cpsVEMRows modelData)
           <> " rows."
-        let states = FL.fold (FL.premap (F.rgetField @BR.StateAbbreviation) FL.list) (ccesEMRows modelData)
+        let states = FL.fold (FL.premap (F.rgetField @GT.StateAbbreviation) FL.list) (ccesEMRows modelData)
             cds = FL.fold (FL.premap districtKey FL.list) (ccesEMRows modelData)
             psKeys = FL.fold (FL.premap F.rcast FL.list) gqData
             groups = groupBuilderDM model psGroup states cds psKeys
@@ -1670,9 +1671,9 @@ psDataLabel m psName = psName
                        <> "_"  <> printDensityTransform (densityTransform m)
                        <> "_" <> printComponents (modelComponents m)
 
-type SLDLocation = (Text, ET.DistrictType, Text)
+type SLDLocation = (Text, GT.DistrictType, Text)
 
-sldLocationToRec :: SLDLocation -> F.Record [BR.StateAbbreviation, ET.DistrictTypeC, ET.DistrictName]
+sldLocationToRec :: SLDLocation -> F.Record [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
 sldLocationToRec (sa, dt, dn) = sa F.&: dt F.&: dn F.&: V.RNil
 
 
@@ -1684,7 +1685,7 @@ data ModelCrossTabs = ModelCrossTabs
     bySex :: ModelResults '[DT.SexC]
   , byEducation :: ModelResults '[DT.CollegeGradC]
   , byRace :: ModelResults '[DT.Race5C]
-  , byState :: ModelResults '[BR.StateAbbreviation]
+  , byState :: ModelResults '[GT.StateAbbreviation]
   }
 
 instance Flat.Flat ModelCrossTabs where
@@ -1744,19 +1745,19 @@ mergeRace5AndHispanic r =
       h = F.rgetField @DT.HispC r
   in if (h == DT.Hispanic) then DT.R5_Hispanic else r5
 
---sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
-sldKey :: (F.ElemOf rs BR.StateAbbreviation
-          , F.ElemOf rs ET.DistrictTypeC
-          , F.ElemOf rs ET.DistrictName)
+--sldKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
+sldKey :: (F.ElemOf rs GT.StateAbbreviation
+          , F.ElemOf rs GT.DistrictTypeC
+          , F.ElemOf rs GT.DistrictName)
        => F.Record rs -> SLDLocation
-sldKey r = (F.rgetField @BR.StateAbbreviation r
-           , F.rgetField @ET.DistrictTypeC r
-           , F.rgetField @ET.DistrictName r
+sldKey r = (F.rgetField @GT.StateAbbreviation r
+           , F.rgetField @GT.DistrictTypeC r
+           , F.rgetField @GT.DistrictName r
            )
-districtKey :: (F.ElemOf rs BR.StateAbbreviation
-               , F.ElemOf rs BR.CongressionalDistrict)
+districtKey :: (F.ElemOf rs GT.StateAbbreviation
+               , F.ElemOf rs GT.CongressionalDistrict)
             => F.Record rs -> Text
-districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
+districtKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @GT.CongressionalDistrict r)
 
 wnh :: (F.ElemOf rs DT.RaceAlone4C
        , F.ElemOf rs DT.HispC)

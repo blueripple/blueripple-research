@@ -42,6 +42,7 @@ module BlueRipple.Data.CPSVoterPUMS
 import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as CPS
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.LoadersCore as BR
 import qualified BlueRipple.Data.Loaders as BR
@@ -83,7 +84,7 @@ cpsVoterPUMSLoader = do
                    Nothing
                    "cpsVoterPUMS.bin"
     fmap (fmap F.rcast) (K.knitMaybe "missing state abbreviation in state abbreviation crosswalk"
-                          $ FJ.leftJoinM @'[BR.StateFIPS] withoutAbbr stateAbbrCrosswalk)
+                          $ FJ.leftJoinM @'[GT.StateFIPS] withoutAbbr stateAbbrCrosswalk)
 
 
 -- NB: This should not be used for state-level rollup since some rows will be duplicated if the county is in more than one CD.
@@ -104,10 +105,10 @@ cpsVoterPUMSWithCDLoader = do
 type CPSVoterPUMSWeight = "CPSVoterPUMSWeight" F.:-> Double
 
 type CPSVoterPUMS = '[ BR.Year
-                     , BR.StateFIPS
-                     , BR.StateAbbreviation
-                     , BR.CountyFIPS
-                     , DT.CitC
+                     , GT.StateFIPS
+                     , GT.StateAbbreviation
+                     , GT.CountyFIPS
+                     , DT.CitizenC
                      , DT.Age4C
                      , DT.SexC
                      , DT.RaceAlone4C
@@ -123,7 +124,7 @@ type CPSVoterPUMS = '[ BR.Year
                      , CPSVoterPUMSWeight
                      ]
 
-type CPSVoterPUMS' = V.RDelete BR.StateAbbreviation CPSVoterPUMS
+type CPSVoterPUMS' = V.RDelete GT.StateAbbreviation CPSVoterPUMS
 
 
 cpsVoterPUMSRollup
@@ -216,7 +217,7 @@ cpsVoterPUMSElectoralWeights
   ((ls V.++ ks) F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ (ls V.++ ks V.++ cs)
   , cs F.⊆ rs
-  , F.ElemOf cs DT.CitC
+  , F.ElemOf cs DT.CitizenC
   , F.ElemOf cs ET.VotedYNC
   , FI.RecVec (ls V.++ ks V.++ ET.EWCols)
   , (ls V.++ (ks V.++ ET.EWCols)) ~ ((ls V.++ ks) V.++ ET.EWCols)
@@ -235,7 +236,7 @@ cpsVoterPUMSElectoralWeights
 cpsVoterPUMSElectoralWeights getLoc getKey getWgt =
   let toRec :: Double -> F.Record ET.EWCols
       toRec w =  ET.EW_Census F.&: ET.EW_Citizen F.&: w F.&: V.RNil
-      citizen r = F.rgetField @DT.CitC r == DT.Cit
+      citizen r = F.rgetField @DT.CitizenC r == DT.Citizen
       possibleVoter r = cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
       voted r = cpsVoted $ F.rgetField @ET.VotedYNC r
   in cpsVoterPUMSRollupWeightedCounts @cs
@@ -250,33 +251,33 @@ cpsVoterPUMSElectoralWeights getLoc getKey getWgt =
 
 cpsVoterPUMSElectoralWeightsByState
   :: forall ks.
-  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitC
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
+  (F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitizenC
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
   , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
-  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight])
+  , ks F.⊆ ('[BR.Year, GT.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight])
   , BR.FiniteSet (F.Record ks)
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightSource
-  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols)
+  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, GT.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols)
   , ks F.⊆ (ks V.++ ET.EWCols)
   )
   => (F.Record CPSVoterPUMS -> F.Record ks)
-  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols))
+  -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year, GT.StateAbbreviation, BR.StateFIPS] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSElectoralWeightsByState getCatKey =
-  cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]
-  (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
+  cpsVoterPUMSElectoralWeights @[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]
+  (F.rcast @[BR.Year, GT.StateAbbreviation, BR.StateFIPS]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
 
 cpsVoterPUMSNationalElectoralWeights
   :: forall ks.
-  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitC
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
+  (F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) DT.CitizenC
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight]) ET.VotedYNC
   , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
-  , ks F.⊆ ('[BR.Year] V.++ ks V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight])
+  , ks F.⊆ ('[BR.Year] V.++ ks V.++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight])
   , BR.FiniteSet (F.Record ks)
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
@@ -287,33 +288,33 @@ cpsVoterPUMSNationalElectoralWeights
   => (F.Record CPSVoterPUMS -> F.Record ks)
   -> FL.Fold (F.Record CPSVoterPUMS) (F.FrameRec ('[BR.Year] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSNationalElectoralWeights getCatKey =
-  cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight] (F.rcast @'[BR.Year]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
+  cpsVoterPUMSElectoralWeights @[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight] (F.rcast @'[BR.Year]) getCatKey (F.rgetField @CPSVoterPUMSWeight)
 
 cpsVoterPUMSElectoralWeightsByCD
   :: forall ks.
-  (F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) CPSVoterPUMSWeight
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.CountyWeight
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) DT.CitC
-  , F.ElemOf (ks ++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) ET.VotedYNC
+  (F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) CPSVoterPUMSWeight
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) BR.CountyWeight
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) DT.CitizenC
+  , F.ElemOf (ks ++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]) ET.VotedYNC
   , FI.RecVec (ks ++ ET.EWCols)
   , Ord (F.Record ks)
-  , ks F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]
+  , ks F.⊆ ('[BR.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
              V.++ ks
-             V.++ '[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
+             V.++ '[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight])
   , BR.FiniteSet (F.Record ks)
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeight
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightOf
   , F.ElemOf (ks V.++ ET.EWCols) ET.ElectoralWeightSource
-  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ ET.EWCols)
+  , (ks V.++ ET.EWCols) F.⊆ ('[BR.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ ks V.++ ET.EWCols)
   , ks F.⊆ (ks V.++ ET.EWCols)
   )
-  => (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
-  -> FL.Fold (F.Record (CPSVoterPUMS V.++ [BR.CongressionalDistrict, BR.CountyWeight]))
-  (F.FrameRec ('[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict] V.++ ks V.++ ET.EWCols))
+  => (F.Record (CPSVoterPUMS V.++ [GT.CongressionalDistrict, BR.CountyWeight]) -> F.Record ks)
+  -> FL.Fold (F.Record (CPSVoterPUMS V.++ [GT.CongressionalDistrict, BR.CountyWeight]))
+  (F.FrameRec ('[BR.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ ks V.++ ET.EWCols))
 cpsVoterPUMSElectoralWeightsByCD getCatKey =
   let wgt r = F.rgetField @CPSVoterPUMSWeight r * F.rgetField @BR.CountyWeight r
-  in cpsVoterPUMSElectoralWeights @[DT.CitC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
-     (F.rcast @[BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.CongressionalDistrict]) getCatKey wgt
+  in cpsVoterPUMSElectoralWeights @[DT.CitizenC, ET.VotedYNC, CPSVoterPUMSWeight, BR.CountyWeight]
+     (F.rcast @[BR.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]) getCatKey wgt
 
 
 -- rollup for MRP
@@ -327,15 +328,15 @@ cpsCountVotersByStateF
   -> Int -- year
   -> FMR.Fold
   (F.Record CPSVoterPUMS)
-  (F.FrameRec ('[BR.StateAbbreviation] V.++ ks V.++ BRCF.CountCols))
+  (F.FrameRec ('[GT.StateAbbreviation] V.++ ks V.++ BRCF.CountCols))
 cpsCountVotersByStateF _ year =
   let isYear y r = F.rgetField @BR.Year r == y
       possible r = cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
-      citizen r = F.rgetField @DT.CitC r == DT.Cit
+      citizen r = F.rgetField @DT.CitizenC r == DT.Citizen
       includeRow r = isYear year r &&  possible r && citizen r
       voted r = cpsVoted $ F.rgetField @ET.VotedYNC r
   in BRCF.weightedCountFold
-     (F.rcast @(BR.StateAbbreviation ': ks))
+     (F.rcast @(GT.StateAbbreviation ': ks))
      (F.rcast @[ET.VotedYNC, CPSVoterPUMSWeight])
      includeRow
      voted
@@ -403,12 +404,12 @@ cpsKeysToASER4H addInCollegeToGrads r =
      F.&: V.RNil
 
 cpsKeysToCASER4H :: Bool
-                 -> F.Record [DT.CitC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-                 -> F.Record [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+                 -> F.Record [DT.CitizenC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+                 -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 cpsKeysToCASER4H addInCollegeToGrads r =
   let cg = F.rgetField @DT.CollegeGradC r
       ic = addInCollegeToGrads && F.rgetField @DT.InCollege r
-  in F.rgetField @DT.CitC r
+  in F.rgetField @DT.CitizenC r
      F.&: (DT.age4ToSimple $ F.rgetField @DT.Age4C r)
      F.&: (F.rgetField @DT.SexC r)
      F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
@@ -511,8 +512,8 @@ intsToRace5 hN rN
   | otherwise = DT.R5_Other
 -}
 
-intToCit :: Int -> DT.Cit
-intToCit n = if n /= 5 then DT.Cit else DT.NonCit
+intToCit :: Int -> DT.Citizen
+intToCit n = if n /= 5 then DT.Citizen else DT.NonCitizen
 
 intToVoteWhyNot :: Int -> ET.VoteWhyNot
 intToVoteWhyNot n
@@ -586,6 +587,7 @@ transformCPSVoterPUMSRow = F.rcast . addCols  where
   addCols = (FT.addOneFromOne @CPS.CPSRACE @DT.RaceAlone4C intToRaceAlone4)
             . (FT.addOneFromOne @CPS.CPSHISPAN @DT.HispC intToHisp)
             . (FT.addName @CPS.CPSVOSUPPWT @CPSVoterPUMSWeight)
+--            . (FT.addName @BR.StateAbbreviation @GT.StateAbbreviation)
             . (FT.addName @CPS.CPSCOUNTY @BR.CountyFIPS)
             . (FT.addName @CPS.CPSSTATEFIP @BR.StateFIPS)
             . (FT.addName @CPS.CPSYEAR @BR.Year)
@@ -597,7 +599,7 @@ transformCPSVoterPUMSRow = F.rcast . addCols  where
             . (FT.addOneFromOne @CPS.CPSVOWHYNOT @ET.VoteWhyNotC intToVoteWhyNot)
             . (FT.addOneFromOne @CPS.CPSSCHLCOLL @DT.InCollege intToInCollege)
             . (FT.addOneFromOne @CPS.CPSEDUC @DT.CollegeGradC intToCollegeGrad)
-            . (FT.addOneFromOne @CPS.CPSCITIZEN @DT.CitC intToCit)
+            . (FT.addOneFromOne @CPS.CPSCITIZEN @DT.CitizenC intToCit)
             . (FT.addOneFromOne @CPS.CPSSEX @DT.SexC intToSex)
             . (FT.addOneFromOne @CPS.CPSAGE @DT.Age4C intToAge4)
 
@@ -610,7 +612,7 @@ transformCPSVoterPUMSRow r = F.rcast @CPSVoterPUMS' (mutate r) where
   hN = F.rgetField @CPS.CPSHISPAN
   rN = F.rgetField @CPS.CPSRACE
   addRace r = FT.recordSingleton @DT.Race5C $ intsToRace5 (hN r) (rN r)
-  addIsCit = FT.recordSingleton @DT.CitC . intToCit . F.rgetField @CPS.CPSCITIZEN
+  addIsCit = FT.recordSingleton @DT.CitizenC . intToCit . F.rgetField @CPS.CPSCITIZEN
   addCollegeGrad = FT.recordSingleton @DT.CollegeGradC . intToCollegeGrad . F.rgetField @CPS.CPSEDUC
   addInCollege = FT.recordSingleton @DT.InCollege . intToInCollege . F.rgetField @CPS.CPSSCHLCOLL
   addVoteWhyNot = FT.recordSingleton @ET.VoteWhyNotC . intToVoteWhyNot . F.rgetField @CPS.CPSVOWHYNOT

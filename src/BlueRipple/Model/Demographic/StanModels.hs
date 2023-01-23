@@ -21,6 +21,7 @@ where
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Keyed as BRK
 
 import qualified Stan.ModelBuilder as S
@@ -276,16 +277,16 @@ betaBinomialModel dmr mc = do
     ((\(a, b) n -> md.trials `at` n :> a `at` n :> b `at` n :> TNil) <$> tempPs)
   pure ()
 
-groupBuilderState :: (F.ElemOf rs DT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
+groupBuilderState :: (F.ElemOf rs GT.StateAbbreviation, Typeable rs, Typeable a) => [Text] -> S.StanGroupBuilderM [(F.Record rs, a)] () ()
 groupBuilderState states = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
-  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation . fst) states
-  S.addGroupIntMapForDataSet stateGroup acsData $ S.dataToIntMapFromFoldable (F.rgetField @DT.StateAbbreviation . fst) states
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation . fst) states
+  S.addGroupIntMapForDataSet stateGroup acsData $ S.dataToIntMapFromFoldable (F.rgetField @GT.StateAbbreviation . fst) states
 
 groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec DDP.ACSByCD) () ()
 groupBuilderCD states cds = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
-  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @DT.StateAbbreviation) states
+  S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
   S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show DDP.districtKey cds
 
 cdGroup :: S.GroupTypeTag Text

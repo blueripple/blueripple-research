@@ -25,6 +25,7 @@ module BlueRipple.Data.CCES
 import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.CountFolds as BR
 import qualified BlueRipple.Data.LoadersCore as BR
@@ -68,8 +69,8 @@ type CESR = [BR.Year
             , CESCaseId
             , CESWeight
 --            , CESRegisteredWeight
-            , BR.StateAbbreviation
-            , BR.CongressionalDistrict
+            , GT.StateAbbreviation
+            , GT.CongressionalDistrict
             , DT.Age5C
             , DT.SimpleAgeC
             , DT.SexC
@@ -110,7 +111,8 @@ ces20Loader = K.wrapPrefix "ces20Loader" $ do
       fixCES20 r = fixPresVote
                    $ fixCESCLInt @(FixHouseVote (F.RecordColumns CES20))
                    $ fixCES  r
-      transformCES20 = transformCESCLInt . transformCES 2020 . (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Democratic ET.Republican)
+      transformCES20 = transformCESCLInt . transformCES 2020 .
+                       (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Democratic ET.Republican)
   K.logLE (K.Debug 3) "Loading/Re-building CES 2020 data"
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
   ces20FileDep <- K.fileDependency (toString ces2020CSV)
@@ -151,7 +153,8 @@ ces16Loader = K.wrapPrefix "ces16Loader" $ do
   K.logLE (K.Debug 3) "Loading/Building CES 2016 data"
   let fixCES16 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES16) -> F.Rec (Maybe F.:. F.ElField) (FixBoth (F.RecordColumns CES16))
       fixCES16 = fixPresVote . fixCESCLText @(FixHouseVote (F.RecordColumns CES16)) . fixCES
-      transformCES16 = transformCESCLText . transformCES 2016 . (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Republican ET.Democratic)
+      transformCES16 = transformCESCLText . transformCES 2016
+                       . (FT.addOneFromOne @MCESPresVote @MPresVoteParty $ intToPresParty ET.Republican ET.Democratic)
   stateXWalk_C <- BR.stateAbbrCrosswalkLoader
   ces16FileDep <- K.fileDependency (toString ces2016CSV)
   let deps = (,) <$> stateXWalk_C <*> ces16FileDep
@@ -172,21 +175,21 @@ intToPresParty p1 p2 mn = fmap f mn where
     2 -> p2
     _ -> ET.Other
 
-addStateAbbreviations :: forall qs rs r. (F.ElemOf rs BR.StateFIPS
-                                         , F.ElemOf (rs V.++ '[BR.StateAbbreviation]) BR.StateFIPS
+addStateAbbreviations :: forall qs rs r. (F.ElemOf rs GT.StateFIPS
+                                         , F.ElemOf (rs V.++ '[GT.StateAbbreviation]) GT.StateFIPS
                                          , V.RMap rs
-                                         , V.RMap (rs V.++ '[BR.StateAbbreviation])
-                                         , FI.RecVec (rs V.++ '[BR.StateAbbreviation])
+                                         , V.RMap (rs V.++ '[GT.StateAbbreviation])
+                                         , FI.RecVec (rs V.++ '[GT.StateAbbreviation])
                                          , FI.RecVec rs
-                                         , rs F.⊆ (rs V.++ '[BR.StateAbbreviation])
-                                         , qs F.⊆ (rs V.++ '[BR.StateAbbreviation])
+                                         , rs F.⊆ (rs V.++ '[GT.StateAbbreviation])
+                                         , qs F.⊆ (rs V.++ '[GT.StateAbbreviation])
                                          , K.KnitEffects r)
-                      => F.FrameRec [BR.StateName, BR.StateFIPS, BR.StateAbbreviation, DT.CensusRegionC, DT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]
+                      => F.FrameRec [GT.StateName, GT.StateFIPS, GT.StateAbbreviation, GT.CensusRegionC, GT.CensusDivisionC, BR.OneDistrict, BR.SLDUpperOnly]
                       -> F.FrameRec rs
                       -> K.Sem r (F.FrameRec qs)
 addStateAbbreviations stateXWalk allButStateAbbrevs = do
-  let (withStateAbbreviations, missingStateFIPS) = FJ.leftJoinWithMissing @'[BR.StateFIPS] allButStateAbbrevs
-                                                   $ fmap (F.rcast @[BR.StateFIPS, BR.StateAbbreviation]) stateXWalk
+  let (withStateAbbreviations, missingStateFIPS) = FJ.leftJoinWithMissing @'[GT.StateFIPS] allButStateAbbrevs
+                                                   $ fmap (F.rcast @[GT.StateFIPS, GT.StateAbbreviation]) stateXWalk
   unless (null missingStateFIPS)
     $ K.knitError $ "Missing state FIPS when joining CES2020 data with state crosswalk: " <> show missingStateFIPS
   return $ fmap F.rcast withStateAbbreviations
@@ -233,7 +236,7 @@ fixHouseVote :: forall rs.(F.ElemOf rs CESHouseVote, (F.RDelete CESHouseVote rs)
 fixHouseVote x = F.rcast @(F.RDelete CESHouseVote rs) x F.<+> (missingHouseVote $ F.rcast x)
 
 
-type TransformAddsR = [BR.Year, BR.CongressionalDistrict, BR.StateFIPS, DT.Age5C, DT.SimpleAgeC, DT.SexC, DT.EducationC, DT.CollegeGradC
+type TransformAddsR = [BR.Year, GT.CongressionalDistrict, GT.StateFIPS, DT.Age5C, DT.SimpleAgeC, DT.SexC, DT.EducationC, DT.CollegeGradC
                       , DT.Race5C, DT.SimpleRaceC, DT.HispC, PartisanId3, PartisanId7, MHouseVoteParty]
 
 transformCES :: (F.ElemOf rs CESCD
@@ -264,8 +267,8 @@ transformCES yr = addCols where
           4 -> c4P
           _ -> "Other"
   addCols = (FT.addOneFromValue @BR.Year yr)
-            . (FT.addName @CESCD @BR.CongressionalDistrict)
-            . (FT.addName @CESStateFips @BR.StateFIPS)
+            . (FT.addName @CESCD @GT.CongressionalDistrict)
+            . (FT.addName @CESStateFips @GT.StateFIPS)
             . (FT.addOneFromOne @CESBirthyr @DT.Age5C (intToAgeT . birthYrToAge))
             . (FT.addOneFromOne @CESBirthyr @DT.SimpleAgeC (intToSimpleAge . birthYrToAge))
             . (FT.addOneFromOne @CESGender @DT.SexC intToSex)

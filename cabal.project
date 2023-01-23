@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/Frames-utils
 jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
@@ -59,10 +59,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/heidi
   tag: 83e0f7e6ba80baaa18ab7daafe7083828fc74d60
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-utils
-  tag: 27d00ed0026577fe443133c70e11317623b857c7
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-utils
+--  tag: 27d00ed0026577fe443133c70e11317623b857c7
 
 source-repository-package
   type: git

@@ -36,6 +36,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import BlueRipple.Data.ElectionTypes (CVAP)
 import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ModelingTypes as MT
@@ -102,8 +103,8 @@ FS.declareColumn "FracCitizen" ''Double
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 FS.declareColumn "Incumbency" ''Int
 
-type StateKeyR = [BR.Year, BR.StateAbbreviation]
-type CDKeyR = StateKeyR V.++ '[BR.CongressionalDistrict]
+type StateKeyR = [BR.Year, GT.StateAbbreviation]
+type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
 
 type DemographicsR =
   [ FracUnder45
@@ -192,8 +193,8 @@ instance Flat.Flat HouseModelData where
   encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
   decode = (\(h, s, p, c) → HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
 
-type PUMSDataR = [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, DT.PopCount]
-type PUMSDataEMR = [DT.CitC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount]
+type PUMSDataR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, DT.PopCount]
+type PUMSDataEMR = [DT.CitizenC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount]
 
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
 type PUMSByCDEMR = CDKeyR V.++ PUMSDataEMR
@@ -203,8 +204,8 @@ type PUMSByState = F.FrameRec PUMSByStateR
 
 -- unweighted, which we address via post-stratification
 -- type AHSuccesses = "AHSucceses" F.:-> Double
-type CensusPredictorR = [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-type CensusPredictorEMR = [DT.CitC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CensusPredictorR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+type CensusPredictorEMR = [DT.CitizenC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 type CPSVDataR = CensusPredictorR V.++ BRCF.CountCols
 type CPSVDataEMR = CensusPredictorEMR V.++ BRCF.CountCols -- V.++ '[AHSuccesses]
 type CPSVByStateR = StateKeyR V.++ CPSVDataR
@@ -309,10 +310,9 @@ pumsMR
      , ks F.⊆ (ks V.++ PUMSDataR)
      , F.ElemOf (ks V.++ PUMSDataR) DT.AvgIncome
      , F.ElemOf (ks V.++ PUMSDataR) DT.PopCount
-     , F.ElemOf (ks V.++ PUMSDataR) DT.CitC
+     , F.ElemOf (ks V.++ PUMSDataR) DT.CitizenC
      , F.ElemOf (ks V.++ PUMSDataR) DT.CollegeGradC
      , F.ElemOf (ks V.++ PUMSDataR) DT.HispC
-     , F.ElemOf (ks V.++ PUMSDataR) PUMS.NonCitizens
      , F.ElemOf (ks V.++ PUMSDataR) DT.PopPerSqMile
      , F.ElemOf (ks V.++ PUMSDataR) DT.RaceAlone4C
      , F.ElemOf (ks V.++ PUMSDataR) DT.SexC
@@ -452,8 +452,8 @@ makeStateElexDataFrame
   ⇒ ET.OfficeT
   → Int
   → F.FrameRec (StateKeyR V.++ CensusPredictorR V.++ '[DT.PopCount])
-  → F.FrameRec [BR.Year, BR.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, BR.Special]
-  → K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation]))
+  → F.FrameRec [BR.Year, GT.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, BR.Special]
+  → K.Sem r (F.FrameRec (ElectionResultR [BR.Year, GT.StateAbbreviation]))
 makeStateElexDataFrame office earliestYear acsByState elex = do
   let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
       length' = FL.fold FL.length
@@ -461,15 +461,15 @@ makeStateElexDataFrame office earliestYear acsByState elex = do
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation] @'[DT.PopCount])
+            (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation] @'[DT.PopCount])
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       cvapByState = FL.fold cvapFld acsByState
   flattenedElex ←
     K.knitEither $
       FL.foldM
-        (electionF @[BR.Year, BR.StateAbbreviation, BR.Special])
+        (electionF @[BR.Year, GT.StateAbbreviation, BR.Special])
         (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
-  let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation] flattenedElex cvapByState
+  let (elexWithCVAP, missing) = FJ.leftJoinWithMissing @[BR.Year, GT.StateAbbreviation] flattenedElex cvapByState
   when (not $ null missing) $ K.knitError $ "makeStateElexDataFrame: missing keys in elex/ACS join=" <> show missing
   when (length' elexWithCVAP /= length' flattenedElex) $ K.knitError "makeStateElexDataFrame: added rows in elex/ACS join"
   return $ fmap (F.rcast . addOffice) elexWithCVAP
@@ -481,7 +481,7 @@ prepPresidentialElectionData
   ∷ (K.KnitEffects r, BR.CacheEffects r)
   ⇒ Bool
   → Int
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation])))
+  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, GT.StateAbbreviation])))
 prepPresidentialElectionData clearCache earliestYear = do
   let cacheKey = "model/house/presElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -496,7 +496,7 @@ prepSenateElectionData
   ∷ (K.KnitEffects r, BR.CacheEffects r)
   ⇒ Bool
   → Int
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation])))
+  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, GT.StateAbbreviation])))
 prepSenateElectionData clearCache earliestYear = do
   let cacheKey = "model/house/senateElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -512,29 +512,29 @@ makeCDElexDataFrame
   ⇒ ET.OfficeT
   → Int
   → F.FrameRec PUMSByCDR
-  → F.FrameRec [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
-  → K.Sem r (F.FrameRec (ElectionResultR [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]))
+  → F.FrameRec [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
+  → K.Sem r (F.FrameRec (ElectionResultR [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]))
 makeCDElexDataFrame office earliestYear acsByCD elex = do
   let addOffice rs = FT.recordSingleton @ET.Office office F.<+> rs
       lengthF = FL.fold FL.length
       fixDC_CD r =
-        if (F.rgetField @BR.StateAbbreviation r == "DC")
-          then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+        if (F.rgetField @GT.StateAbbreviation r == "DC")
+          then FT.fieldEndo @GT.CongressionalDistrict (const 1) r
           else r
   let cvapFld =
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] @'[DT.PopCount])
+            (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] @'[DT.PopCount])
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       cvapByCD = FL.fold cvapFld acsByCD
   flattenedElex ←
     K.knitEither $
       FL.foldM
-        (electionF @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+        (electionF @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
         (fmap F.rcast $ F.filterFrame ((>= earliestYear) . F.rgetField @BR.Year) elex)
   let (elexWithCVAP, missing) =
-        FJ.leftJoinWithMissing @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+        FJ.leftJoinWithMissing @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
           (fmap fixDC_CD flattenedElex)
           (fmap fixDC_CD cvapByCD)
   when (not $ null missing) $ K.knitError $ "makeCDElexDataFrame: missing keys in elex/ACS join=" <> show missing
@@ -545,7 +545,7 @@ prepHouseElectionData
   ∷ (K.KnitEffects r, BR.CacheEffects r)
   ⇒ Bool
   → Int
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])))
+  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (ElectionResultR '[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict])))
 prepHouseElectionData clearCache earliestYear = do
   let cacheKey = "model/house/houseElexWithCVAP.bin"
   when clearCache $ BR.clearIfPresentD cacheKey
@@ -570,7 +570,7 @@ countCCESVotesF =
 ccesMR :: (Foldable f, Monad m) => Int -> f (F.Record CCES.CCES_MRP) -> m (F.FrameRec CCESByCDR)
 ccesMR earliestYear = BRF.frameCompactMRM
                      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-                     (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
+                     (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.HispC])
                      countCCESVotesF
 
 ccesCountedDemHouseVotesByCD :: (K.KnitEffects r, BR.CacheEffects r) => Bool -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
@@ -620,7 +620,7 @@ cesMR ∷ (Foldable f, Functor f, Monad m) ⇒ Int → f (F.Record CCES.CESPR) �
 cesMR earliestYear =
   BRF.frameCompactMRM
     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-    (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
+    (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
     countCESVotesF
     . fmap cesRecodeHispanic
 
@@ -629,7 +629,7 @@ cesFold earliestYear =
   FMR.concatFold $
     FMR.mapReduceFold
       (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-      (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
+      (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
       (FMR.foldAndAddKey countCESVotesF)
 
 cesCountedDemVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ Bool → K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
@@ -646,7 +646,7 @@ cpsCountedTurnoutByState ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ K.Sem r (K
 cpsCountedTurnoutByState = do
   let afterYear y r = F.rgetField @BR.Year r >= y
       possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
-      citizen r = F.rgetField @DT.CitC r == DT.Cit
+      citizen r = F.rgetField @DT.CitizenC r == DT.Citizen
       includeRow r = afterYear 2012 r && possible r && citizen r
       votedF r = CPS.cpsVoted $ F.rgetField @ET.VotedYNC r
       wgt r = F.rgetField @CPS.CPSVoterPUMSWeight r
@@ -661,12 +661,12 @@ cpsCountedTurnoutByState = do
   BR.retrieveOrMakeFrame "model/house/cpsVByState.bin" cpsRaw_C $ return . FL.fold fld
 
 pumsReKey
-  ∷ F.Record '[DT.CitC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-  → F.Record '[DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
+  ∷ F.Record '[DT.CitizenC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+  → F.Record '[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
 pumsReKey r =
   let cg = DT.collegeGrad $ F.rgetField @DT.EducationC r
       ic = F.rgetField @DT.InCollege r
-   in   F.rgetField @DT.CitC r
+   in   F.rgetField @DT.CitizenC r
         F.&: DT.age5FToSimple (F.rgetField @DT.Age5FC r)
         F.&: F.rgetField @DT.SexC r
         F.&: (if cg == DT.Grad || ic then DT.Grad else DT.NonGrad)
@@ -680,20 +680,20 @@ copy2019to2020 rows = rows <> fmap changeYear2020 (F.filterFrame year2019 rows)
   year2019 r = F.rgetField @BR.Year r == 2019
   changeYear2020 r = F.rputField @BR.Year 2020 r
 
-type SenateRaceKeyR = [BR.Year, BR.StateAbbreviation, BR.Special, BR.Stage]
+type SenateRaceKeyR = [BR.Year, GT.StateAbbreviation, BR.Special, BR.Stage]
 
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 type HouseModelCensusTablesByCD =
-  Census.CensusTables Census.LDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
+  Census.CensusTables Census.LDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
 
 type HouseModelCensusTablesByState =
-  Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.IsCitizen Census.EmploymentC
+  Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
 
 pumsByPUMA
   ∷ (F.Record PUMS.PUMS → Bool)
   → F.FrameRec PUMS.PUMS
-  → F.FrameRec (PUMS.PUMACounts [DT.CitC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])
+  → F.FrameRec (PUMS.PUMACounts [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC])
 pumsByPUMA keepIf = FL.fold (PUMS.pumsRollupF keepIf $ pumsReKey . F.rcast)
 
 pumsByCD ∷ (K.KnitEffects r) ⇒ F.FrameRec PUMS.PUMS → F.FrameRec BR.DatedCDFromPUMA2012 → K.Sem r (F.FrameRec PUMSByCDR)
@@ -741,7 +741,7 @@ cachedPumsByState pums_C = do
   BR.retrieveOrMakeFrame "model/house/pumsByState.bin" pums_C $
     pure . FL.fold addZeroF . pumsByState
 
--- caFilter = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @BR.StateAbbreviation r == "CA")
+-- caFilter = F.filterFrame (\r -> F.rgetField @BR.Year r == 2020 && F.rgetField @GT.StateAbbreviation r == "CA")
 
 prepCCESAndPums ∷ ∀ r. (K.KnitEffects r, BR.CacheEffects r) ⇒ Bool → K.Sem r (K.ActionWithCacheTime r CCESAndPUMS)
 prepCCESAndPums clearCache = do
@@ -750,8 +750,8 @@ prepCCESAndPums clearCache = do
   let earliestYear = 2016 -- set by ces for now
       earliest year = (>= year) . F.rgetField @BR.Year
       fixDC_CD r =
-        if (F.rgetField @BR.StateAbbreviation r == "DC")
-          then FT.fieldEndo @BR.CongressionalDistrict (const 1) r
+        if (F.rgetField @GT.StateAbbreviation r == "DC")
+          then FT.fieldEndo @GT.CongressionalDistrict (const 1) r
           else r
 --      fLength = FL.fold FL.length
 --      lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
@@ -784,7 +784,7 @@ prepCCESAndPums clearCache = do
         diByCDFold =
           FMR.concatFold $
             FMR.mapReduceFold
-              (FMR.filterUnpack $ \r -> F.rgetField @DT.CitC r == DT.Cit)
+              (FMR.filterUnpack $ \r -> F.rgetField @DT.CitizenC r == DT.Citizen)
               (FMR.assignKeysAndData @CDKeyR)
               (FMR.foldAndAddKey diInnerFold)
         diByStateFold ∷ FL.Fold (F.Record PUMSByCDR) (F.FrameRec StateDemDataR)
@@ -807,24 +807,24 @@ type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PopPerSqMile]
 addPopDensByDistrict
   ∷ ∀ rs
    . ( FJ.CanLeftJoinM
-        [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+        [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
         rs
-        [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile]
---     , [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] F.⊆ [BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile]
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.CongressionalDistrict
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.StateAbbreviation
+        [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
+--     , [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] F.⊆ [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
+     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.CongressionalDistrict
+     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.StateAbbreviation
      , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
      )
   ⇒ F.FrameRec DistrictDemDataR
   → F.FrameRec rs
   → Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
 addPopDensByDistrict ddd rs = do
-  let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
+  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
       (joined, missing) =
         FJ.leftJoinWithMissing
-          @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict]
+          @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
           @rs
-          @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict, DT.PopPerSqMile]
+          @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
           rs
           ddd'
   when (not $ null missing) $ Left $ "missing keys in join of density data by district: " <> show missing
@@ -833,23 +833,23 @@ addPopDensByDistrict ddd rs = do
 addPopDensByState
   ∷ ∀ rs
    . ( FJ.CanLeftJoinM
-        [BR.Year, BR.StateAbbreviation]
+        [BR.Year, GT.StateAbbreviation]
         rs
-        [BR.Year, BR.StateAbbreviation, DT.PopPerSqMile]
---     , [BR.Year, BR.StateAbbreviation] F.⊆ [BR.Year, BR.StateAbbreviation, DT.PopPerSqMile]
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.StateAbbreviation
+        [BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
+--     , [BR.Year, GT.StateAbbreviation] F.⊆ [BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
+     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.StateAbbreviation
      , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
      )
   ⇒ F.FrameRec StateDemDataR
   → F.FrameRec rs
   → Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
 addPopDensByState ddd rs = do
-  let ddd' = F.rcast @[BR.Year, BR.StateAbbreviation, DT.PopPerSqMile] <$> ddd
+  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, DT.PopPerSqMile] <$> ddd
       (joined, missing) =
         FJ.leftJoinWithMissing
-          @[BR.Year, BR.StateAbbreviation]
+          @[BR.Year, GT.StateAbbreviation]
           @rs
-          @[BR.Year, BR.StateAbbreviation, DT.PopPerSqMile]
+          @[BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
           rs
           ddd'
   when (not $ null missing) $ Left $ "missing keys in join of density data by state: " <> show missing
@@ -961,8 +961,8 @@ cpsDiagnostics
       r
       ( K.ActionWithCacheTime
           r
-          ( F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, BRCF.Successes]
-          , F.FrameRec [BR.Year, BR.StateAbbreviation, BRCF.Count, BRCF.Successes]
+          ( F.FrameRec [BR.Year, GT.StateAbbreviation, BRCF.Count, BRCF.Successes]
+          , F.FrameRec [BR.Year, GT.StateAbbreviation, BRCF.Count, BRCF.Successes]
           )
       )
 cpsDiagnostics _ cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
@@ -970,7 +970,7 @@ cpsDiagnostics _ cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
         FMR.concatFold $
           FMR.mapReduceFold
             FMR.noUnpack
-            (FMR.assignKeysAndData @'[BR.Year, BR.StateAbbreviation] @[BRCF.Count, BRCF.Successes])
+            (FMR.assignKeysAndData @'[BR.Year, GT.StateAbbreviation] @[BRCF.Count, BRCF.Successes])
             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
       surveyedF = F.rgetField @BRCF.Count
       votedF = F.rgetField @BRCF.Successes
@@ -996,7 +996,7 @@ cpsDiagnostics _ cpsByState_C = K.wrapPrefix "cpDiagnostics" $ do
     let acsFixed = F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) acsByState
         cpsFixed = F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) cpsByState
         (psByState, _, rowDiff) =
-          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @CensusPredictorR @[BRCF.Count, BRCF.Successes] @'[DT.PopCount]
+          BRPS.joinAndPostStratify @'[BR.Year, GT.StateAbbreviation] @CensusPredictorR @[BRCF.Count, BRCF.Successes] @'[DT.PopCount]
             compute
             (FF.foldAllConstrained @Num FL.sum)
             (F.rcast <$> cpsFixed)
@@ -1021,7 +1021,7 @@ ccesDiagnostics
   --                -> CCESVoteSource
   → K.ActionWithCacheTime r (F.FrameRec PUMSByCDR)
   → K.ActionWithCacheTime r (F.FrameRec CCESByCDR)
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, BR.StateAbbreviation, CVAP, Surveyed, Voted, PSVoted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]))
+  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec [BR.Year, GT.StateAbbreviation, CVAP, Surveyed, Voted, PSVoted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]))
 ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnostics" $ do
   K.logLE K.Info $ "computing CES diagnostics..."
   let surveyedF = F.rgetField @Surveyed
@@ -1057,7 +1057,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
           FMR.concatFold $
             FMR.mapReduceFold
               FMR.noUnpack
-              (FMR.assignKeysAndData @([BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict] V.++ CCESBucketR) @'[DT.PopCount])
+              (FMR.assignKeysAndData @([BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ CCESBucketR) @'[DT.PopCount])
               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         acsFixed = FL.fold acsFixFld $ (fmap addRace5F $ F.filterFrame (\r → F.rgetField @BR.Year r >= 2016) acs)
         ccesZero ∷ F.Record [Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes]
@@ -1066,7 +1066,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
           FMR.concatFold $
             FMR.mapReduceFold
               FMR.noUnpack
-              (FMR.assignKeysAndData @[BR.Year, BR.StateAbbreviation, BR.CongressionalDistrict])
+              (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
               ( FMR.makeRecsWithKey id $
                   FMR.ReduceFold $
                     const $
@@ -1074,7 +1074,7 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
               )
         ccesWithZeros = FL.fold addZeroFld cces
     let (psByState, _, rowDiff) =
-          BRPS.joinAndPostStratify @'[BR.Year, BR.StateAbbreviation] @(BR.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes] @'[DT.PopCount]
+          BRPS.joinAndPostStratify @'[BR.Year, GT.StateAbbreviation] @(GT.CongressionalDistrict ': CCESBucketR) @[Surveyed, Voted, PresVotes, PresDVotes, PresRVotes, HouseVotes, HouseDVotes, HouseRVotes] @'[DT.PopCount]
             compute
             (FF.foldAllConstrained @Num FL.sum)
             (F.rcast <$> ccesWithZeros)
@@ -1083,8 +1083,8 @@ ccesDiagnostics clearCaches cacheSuffix acs_C cces_C = K.wrapPrefix "ccesDiagnos
     when (rowDiff /= 0) $ K.knitError $ "ccesDiagnostics: joinAndPostStratify join added/lost rows! (diff=)" <> show rowDiff
     pure psByState
 
-type StateElectionR = ElectionResultR '[BR.Year, BR.StateAbbreviation]
-type CDElectionR = ElectionResultR '[BR.Year, BR.StateAbbreviation, ET.CongressionalDistrict]
+type StateElectionR = ElectionResultR '[BR.Year, GT.StateAbbreviation]
+type CDElectionR = ElectionResultR '[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
 
 {-
 -- many many people who identify as hispanic also identify as white. So we need to choose.
@@ -1094,16 +1094,16 @@ mergeRace5AndHispanic r =
       h = F.rgetField @DT.HispC r
   in if (h == DT.Hispanic) then DT.R5_Hispanic else r5
 
---sldKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
-sldKey :: (F.ElemOf rs BR.StateAbbreviation
+--sldKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @ET.DistrictTypeC r) <> "-" <> show (F.rgetField @ET.DistrictNumber r)
+sldKey :: (F.ElemOf rs GT.StateAbbreviation
           ,F.ElemOf rs ET.DistrictTypeC
           ,F.ElemOf rs ET.DistrictNumber)
        => F.Record rs -> SLDLocation
-sldKey r = (F.rgetField @BR.StateAbbreviation r
+sldKey r = (F.rgetField @GT.StateAbbreviation r
            , F.rgetField @ET.DistrictTypeC r
            , F.rgetField @ET.DistrictNumber r
            )
-districtKey r = F.rgetField @BR.StateAbbreviation r <> "-" <> show (F.rgetField @BR.CongressionalDistrict r)
+districtKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @GT.CongressionalDistrict r)
 
 wnh r = (F.rgetField @DT.RaceAlone4C r == DT.RA4_White) && (F.rgetField @DT.HispC r == DT.NonHispanic)
 wnhNonGrad r = wnh r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)

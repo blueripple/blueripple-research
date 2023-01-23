@@ -24,8 +24,9 @@ module BlueRipple.Data.Loaders.Redistricting
 import BlueRipple.Data.Loaders.RedistrictingTables
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
+--import qualified BlueRipple.Data.DemographicTypes as DT
+--import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.GeographicTypes as GT
 
 import qualified Data.Map as M
 import qualified Data.Vinyl.TypeLevel as V
@@ -36,11 +37,12 @@ import qualified Knit.Report as K
 
 -- so these are not re-declared and take on the correct types
 import BlueRipple.Data.DataFrames (Population)
-import BlueRipple.Data.ElectionTypes (DistrictName,VAP,DemShare,RepShare)
+import BlueRipple.Data.ElectionTypes (VAP,DemShare,RepShare)
+import BlueRipple.Data.GeographicTypes (DistrictName)
 
 FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 
-type DRAnalysis = F.Record ([DT.StateAbbreviation, PlanName, ET.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
+type DRAnalysis = F.Record ([GT.StateAbbreviation, PlanName, GT.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
 
 fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
 fixRow pi' r = Just $ pi' F.<+> r
@@ -60,8 +62,8 @@ loadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
 loadRedistrictingPlanAnalysis pi' pf = do
   let RedistrictingPlanFiles _ aFP = pf
-  let cacheKey = "data/redistricting/" <> F.rgetField @DT.StateAbbreviation pi'
-                 <> "_" <> show (F.rgetField @ET.DistrictTypeC pi')
+  let cacheKey = "data/redistricting/" <> F.rgetField @GT.StateAbbreviation pi'
+                 <> "_" <> show (F.rgetField @GT.DistrictTypeC pi')
                  <> "_" <> F.rgetField @PlanName pi' <> ".bin"
   fileDep <- K.fileDependency $ toString aFP
   BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi')
