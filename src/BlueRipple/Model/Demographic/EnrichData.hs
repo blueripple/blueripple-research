@@ -281,8 +281,8 @@ nearestCountsKL dRowSumsI oCountsI = do
                        converge maxN (n + 1) tol tolF qV' deltaV'
                    )
               else pure qV
-      let nMax = 20
-          absTol = 0.0001
+      let nMax = 1000
+          absTol = 0.001
           tolF dV = VS.sum $ VS.zipWith (*) dV dV
       deltaV <- updateFromGuess rows cols aV nV firstGuessV
       qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
