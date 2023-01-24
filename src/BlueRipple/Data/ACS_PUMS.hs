@@ -116,7 +116,7 @@ pumsCountF_old = fmap F.toFrame
 {-# INLINEABLE pumsCountF_old #-}
 
 pumsCount :: Foldable f => f (F.Record PUMS_Typed) -> K.StreamlyM (F.FrameRec PUMS_Counted)
-pumsCount = BRF.frameCompactMRM
+pumsCount = BRF.frameCompactMR
             FMR.noUnpack
             (FMR.assignKeysAndData @(PUMADesc V.++ PUMABucket) @PUMSCountFromFields)
              pumsRowCountF
@@ -337,7 +337,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   unless (null missing) $ K.knitError $ "missing items in join: " <> show missing
   -- roll it up to the CD level
   let pumaWeighting r = F.rgetField @BR.FracPUMAInCD r
-      demoByCD  = BRF.frameCompactMRM
+      demoByCD  = BRF.frameCompactMR
                   FMR.noUnpack --(FMR.Unpack $ \r -> [FT.addName @BR.CongressionalDistrict @GT.CongressionalDistrict r])
                   (FMR.assignKeysAndData
                     @('[BR.Year] ++ CDDescWA ++ ks)
@@ -353,7 +353,7 @@ pumsCDRollup keepIf mapKeys cdFromPUMA pums = do
   return demoByCD'
 
 
-type StateCounts ks = '[BR.Year, GT.StateAbbreviation, BR.StateFIPS] ++ ks ++ PUMSCountToFields
+type StateCounts ks = '[BR.Year, GT.StateAbbreviation, GT.StateFIPS] ++ ks ++ PUMSCountToFields
 
 pumsStateRollupF
   :: forall ks

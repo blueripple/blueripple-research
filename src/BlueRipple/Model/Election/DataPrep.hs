@@ -322,7 +322,7 @@ pumsMR
   → (F.FrameRec (ks V.++ DemographicsR))
 pumsMR =
   runIdentity
-    . BRF.frameCompactMRM
+    . BRF.frameCompactMR
       FMR.noUnpack
       (FMR.assignKeysAndData @ks)
       pumsDataF
@@ -618,7 +618,7 @@ cesRecodeHispanic r =
 -- using each year's common content
 cesMR ∷ (Foldable f, Functor f, Monad m) ⇒ Int → f (F.Record CCES.CESPR) → m (F.FrameRec CCESByCDR)
 cesMR earliestYear =
-  BRF.frameCompactMRM
+  BRF.frameCompactMR
     (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
     (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
     countCESVotesF

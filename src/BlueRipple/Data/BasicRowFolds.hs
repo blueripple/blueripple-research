@@ -20,8 +20,6 @@ import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
-import Numeric.LinearAlgebra (rows)
-import Data.Aeson.KeyMap (keys)
 
 
 {-
@@ -45,10 +43,11 @@ rowFold :: (Ord (F.Record gks)
         -> (F.Record rs' -> F.Record gks) -- time and geographic keys
         -> (F.Record rs' -> F.Record cs) -- data fields
         -> FL.Fold (F.Record cs) (F.Record ds) -- how to merge data once rows are grouped
+--        -> (F.Record ks -> )
         -> f (F.Record rs)
         -> K.StreamlyM (F.FrameRec (gks V.++ ds))
 rowFold fixRow keys datFields datFld rows =
-  BRF.frameCompactMRM
+  BRF.frameCompactMR
   (MR.Unpack fixRow)
   (MR.Assign $ \r -> (keys r, datFields r))
   datFld

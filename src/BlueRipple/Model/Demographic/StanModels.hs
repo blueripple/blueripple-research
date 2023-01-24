@@ -283,90 +283,83 @@ groupBuilderState states = do
   S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation . fst) states
   S.addGroupIntMapForDataSet stateGroup acsData $ S.dataToIntMapFromFoldable (F.rgetField @GT.StateAbbreviation . fst) states
 
+{-
 groupBuilderCD :: [Text] -> [Text] -> S.StanGroupBuilderM (F.FrameRec DDP.ACSByCD) () ()
 groupBuilderCD states cds = do
   acsData <- S.addModelDataToGroupBuilder "ACS" (S.ToFoldable id)
   S.addGroupIndexForData stateGroup acsData $ S.makeIndexFromFoldable show (F.rgetField @GT.StateAbbreviation) states
   S.addGroupIndexForData cdGroup acsData $ S.makeIndexFromFoldable show DDP.districtKey cds
-
+-}
 cdGroup :: S.GroupTypeTag Text
 cdGroup = S.GroupTypeTag "CD"
 
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-designMatrixRowEdu :: forall rs . (F.ElemOf rs DT.Age4C
+designMatrixRowEdu :: forall rs . (F.ElemOf rs DT.CitizenC
+                                  ,  F.ElemOf rs DT.Age4C
                                   ,  F.ElemOf rs DT.SexC
-                                  ,  F.ElemOf rs DT.RaceAlone4C
-                                  ,  F.ElemOf rs DT.HispC
+                                  ,  F.ElemOf rs DT.Race5C
                                   )
                    => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [sexRP, ageRP, raceRP]
+designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [citRP, sexRP, ageRP, raceRP]
   where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC )
     ageRP = DM.boundedEnumRowPart (Just DT.A4_25To44) "Age" (F.rgetField @DT.Age4C)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
 
-
-designMatrixRowEdu7 :: forall rs . (F.ElemOf rs DT.Age4C
+designMatrixRowEdu7 :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Age4C
                                    , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.RaceAlone4C
-                                   , F.ElemOf rs DT.HispC
+                                   , F.ElemOf rs DT.Race5C
                                    )
                    => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [sexRP, raceAgeRP]
+designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [citRP, sexRP, raceAgeRP]
   where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceAgeRP = DM.boundedEnumRowPart Nothing "RaceAge"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
 
-
-designMatrixRowEdu2 :: forall rs . (F.ElemOf rs DT.Age4C
+designMatrixRowEdu2 :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Age4C
                                    , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.RaceAlone4C
-                                   , F.ElemOf rs DT.HispC
+                                   , F.ElemOf rs DT.Race5C
                                    )
                    => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [sexRP, raceAgeRP]
+designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [citRP, sexRP, raceAgeRP]
   where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Age4C r)
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
 
-
-
-designMatrixRowAge :: forall rs . (F.ElemOf rs DT.Education4C
---                                  , F.ElemOf rs DT.InCollege
+designMatrixRowAge :: forall rs . (F.ElemOf rs DT.CitizenC
+                                  , F.ElemOf rs DT.Education4C
                                   , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
+                                  , F.ElemOf rs DT.Race5C
                                   )
                    => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowAge = DM.DesignMatrixRow "DMAge" [sexRP, eduRP, raceRP]
+designMatrixRowAge = DM.DesignMatrixRow "DMAge" [citRP, sexRP, eduRP, raceRP]
   where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Education" (F.rgetField @DT.Education4C)
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" race5Census
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
 
-
-designMatrixRowAge2 :: forall rs . (F.ElemOf rs DT.Education4C
---                                  , F.ElemOf rs DT.InCollege
-                                  , F.ElemOf rs DT.SexC
-                                  , F.ElemOf rs DT.RaceAlone4C
-                                  , F.ElemOf rs DT.HispC
-                                  )
+designMatrixRowAge2 :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Education4C
+                                   , F.ElemOf rs DT.SexC
+                                   , F.ElemOf rs DT.Race5C
+                                   )
                    => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowAge2 = DM.DesignMatrixRow "DMAge2" [sexRP, raceEduRP]
+designMatrixRowAge2 = DM.DesignMatrixRow "DMAge2" [citRP, sexRP, raceEduRP]
   where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
---    eduRP = DM.boundedEnumRowPart Nothing "Education" DDP.educationWithInCollege -- HERE
-    race5Census r = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
     raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
-                $ \r -> DM.BEProduct2 (race5Census r, F.rgetField @DT.Education4C r)
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
 
 --
 newtype ModelResult2 ks = ModelResult2 { unModelResult :: Map (F.Record ks) Double }

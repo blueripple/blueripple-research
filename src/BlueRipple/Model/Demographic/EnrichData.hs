@@ -77,7 +77,12 @@ desiredRowSumsFld count outerKey innerKey allBs  =
 
 rowMajorMapFld :: forall d rk ck .
                   (Ord rk, Ord ck)
-               => (d -> Int) -> (d -> rk) -> (d -> ck) -> Set rk -> Set ck -> FL.Fold d (Map (rk, ck) Int)
+               => (d -> Int)
+               -> (d -> rk)
+               -> (d -> ck)
+               -> Set rk
+               -> Set ck
+               -> FL.Fold d (Map (rk, ck) Int)
 rowMajorMapFld count rowKey colKey allRowKeysS allColKeysS = givenMapFld where
   allRowKeysL = S.elems allRowKeysS
   allColKeysL = S.elems allColKeysS

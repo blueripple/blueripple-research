@@ -45,7 +45,7 @@ import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Data.HashTable.Class          as HashTable
 import qualified Data.HashTable.ST.Cuckoo      as HashTable.Cuckoo
 
-frameCompactMRM :: ( Ord (Frames.Record ks)
+frameCompactMR :: ( Ord (Frames.Record ks)
                     , Frames.InCore.RecVec (ks V.++ ds)
                     , Foldable f
                     , Monad m
@@ -55,7 +55,7 @@ frameCompactMRM :: ( Ord (Frames.Record ks)
   -> Foldl.Fold (Frames.Record cs) (Frames.Record ds)
   -> f (Frames.Record as)
   -> m (Frames.FrameRec (ks V.++ ds))
-frameCompactMRM unpack (MapReduce.Assign a) fld =
+frameCompactMR unpack (MapReduce.Assign a) fld =
   let unpackS = case unpack of
                   MapReduce.Filter f -> Streamly.filter f
                   MapReduce.Unpack f -> Streamly.concatMap (Streamly.fromFoldable . f)
@@ -64,7 +64,8 @@ frameCompactMRM unpack (MapReduce.Assign a) fld =
       . Streamly.map a
       . unpackS
       . Streamly.fromFoldable
-{-# INLINEABLE frameCompactMRM #-}
+{-# INLINEABLE frameCompactMR #-}
+
 
 toStreamlyFold :: Monad m => Foldl.Fold a b -> Streamly.Fold.Fold m a b
 #if MIN_VERSION_streamly(0,8,0)
