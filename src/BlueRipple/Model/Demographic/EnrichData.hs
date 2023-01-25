@@ -48,8 +48,8 @@ import qualified Numeric.LinearAlgebra as LA
 --import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
---import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
---import qualified Say as Say
+import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
+import qualified Say as Say
 
 
 
@@ -270,26 +270,41 @@ nearestCountsKL dRowSumsI oCountsI = do
           nV = LA.fromList $ mconcat oCountsD
           nRowSums = VS.fromList $ fmap (FL.fold FL.sum) oCountsD
           rowSumRatios = VS.zipWith (/) aV nRowSums
-          firstGuessV = LA.fromList $ mconcat $ zipWith (\l r -> fmap (* r) l) oCountsD (VS.toList rowSumRatios)
-          update = VS.zipWith (\q d -> q * (1 + d))
-          converge maxN n tol tolF qV deltaV = do
+          firstGuessV = VS.concat [LA.fromList $ mconcat $ zipWith (\l r -> fmap (* r) l) oCountsD (VS.toList rowSumRatios)
+                                  , VS.replicate (rows + cols) 0
+                                  ]
+          update g d = VS.concat [qV', lV', gaV']
+            where (qV, lV, gaV) = subVectors rows cols g
+                  (dqV, dlV, dgaV) = subVectors rows cols d
+                  qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
+                  lV' = lV + dlV
+                  gaV' = gaV + dgaV
+          converge maxN n tol tolF gV deltaV = do
             when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
             if tolF deltaV >= tol
               then (do
-                       let qV' = update qV deltaV
-                       deltaV' <- updateFromGuess rows cols aV nV qV'
-                       converge maxN (n + 1) tol tolF qV' deltaV'
+                       let gV' = update gV deltaV
+                       deltaV' <- updateFromGuess rows cols aV nV gV'
+                       converge maxN (n + 1) tol tolF gV' deltaV'
                    )
-              else pure qV
-      let nMax = 1000
-          absTol = 0.001
-          tolF dV = VS.sum $ VS.zipWith (*) dV dV
+              else pure gV
+      let nMax = 10
+          absTol = 0.0001
+          tolF dV = let tV = VS.take (rows * cols) dV in (VS.sum $ VS.zipWith (*) tV tV) / (realToFrac $ rows * cols)
       deltaV <- updateFromGuess rows cols aV nV firstGuessV
-      qVsol <- converge nMax 0 absTol tolF (update nV deltaV) deltaV
-      let sol'' = splitAtAll cols (fmap round $ LA.toList qVsol)
+      xVsol <- converge nMax 0 absTol tolF (update firstGuessV deltaV) deltaV
+      let qVSol = VS.take (rows * cols) xVsol
+      let sol'' = splitAtAll cols (fmap round $ LA.toList qVSol)
           sol' = transp $ restore csZeroIx $ transp sol''
           sol = restore rsZeroIx sol'
       pure sol
+
+subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
+subVectors rows cols v = (mV, lambdaV, gammaV) where
+  nSize = rows * cols
+  mV = LA.subVector 0 nSize v
+  lambdaV = LA.subVector nSize rows v
+  gammaV = LA.subVector (nSize + rows) cols v
 
 updateFromGuess :: Int -- rows
                 -> Int -- cols
@@ -297,8 +312,9 @@ updateFromGuess :: Int -- rows
                 -> LA.Vector LA.R -- N in row major form
                 -> LA.Vector LA.R -- current guess, row major, then lambda, then gamma
                 -> Either Text (LA.Vector LA.R) -- delta, row major
-updateFromGuess rows cols aV nV qV = do
-  let nSum = VS.sum nV
+updateFromGuess rows cols aV nV gV = do
+  let (qV, lambdaV, gammaV) = subVectors rows cols gV
+      nSum = VS.sum nV
       qSum = VS.sum qV
       invnSum = 1 / nSum
       safeDiv x y = if y == 0 then 1 else x / y
@@ -320,24 +336,37 @@ updateFromGuess rows cols aV nV qV = do
       ll =  LA.fromRows (fmap rowSumVec [0..(rows - 1)]) LA.=== LA.fromRows (fmap colSumVec [0..(cols - 1)])
       lr = LA.konst 0 (rows + cols, rows +  cols)
       m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
-      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
-      qRowSumsV = rowSums qV
+      (sVals, sVecs) = LA.rightSV m
+  case  VS.minimum sVals < 1e-15 of
+    True -> do
+      let solIndex = VS.minIndex sVals
+          singSolM =  sVecs LA.¿ [solIndex] --LA.subMatrix (0, solIndex) (rows * cols + rows + cols - 1, 1) sVecs
+      singSolV <- maybeToRight "No singular vectors??" $ viaNonEmpty head $ LA.toColumns singSolM
+      let funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
+--                        <> "\nm=\n" <> toText (LA.dispf 4 m)
+      let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
+      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (Sing): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr singSolM)
+      pure singSolV
+    False -> do
+      let rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
+          colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
+          qRowSumsV = rowSums qV
+          rhsuF l x = let (j, k) = indexes l in x - (nSum / qSum) - lambdaV VS.! j - gammaV VS.! k
+          rhsuV = VS.zipWith rhsuF (VS.generate (rows * cols) id) nDivq
+          rhsV = LA.vjoin [rhsuV --VS.map (\x -> x - nSum / qSum) nDivq
+                          , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
+                          , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
+                          ]
+          rhsM = LA.fromColumns [rhsV]
+          funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
+--                        <> "\nm=\n" <> toText (LA.dispf 4 m)
+                        <> "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
+      let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
+      luSolM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
+      luSolV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns luSolM
+      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr luSolM)
+      pure luSolV
 
-      rhsV = LA.vjoin [VS.map (\x -> x - nSum / qSum) nDivq
-                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
-                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
-                      ]
-      rhsM = LA.fromColumns [rhsV]
-      funcDetails = "rowSums=\n" <> show aV <> "\nN=\n" <> show nV <> "\nQ=\n" <> show qV
-                    <> "\nm=\n" <> toText (LA.dispf 4 m)
-                    <> "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
-      svdSol = LA.linearSolveSVD m rhsM
-
---  let !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
---  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\ndelta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr svdSol)
-  mSol :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty (VS.take (rows * cols) . head) $ LA.toColumns svdSol
-  pure mSol
 
 enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                               (rs F.⊆ rs

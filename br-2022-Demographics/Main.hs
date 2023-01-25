@@ -156,7 +156,7 @@ main = do
                 (\r -> asrRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
                 (S.map asrRec allASR)
         desiredRowSumMap = FL.fold dsFld acsSample --NoEdu
-        desiredRowSumLookup k = maybe (Left $ show k <> " not found in desired sum row map") Right $ M.lookup k desiredRowSumMap
+        desiredRowSumLookup k = maybeToRight (show k <> " not found in desired sum row map") $ M.lookup k desiredRowSumMap
 --        allEduSexR :: [F.Record '[DT.Education4C, DT.SexC]]= [e F.&: s F.&: V.RNil | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
         ncFldM = DED.nearestCountsFrameFld @DT.PopCount @'[DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C]
                  (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup (S.map ceRec allCE)
