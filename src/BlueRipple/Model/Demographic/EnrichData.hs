@@ -275,36 +275,54 @@ nearestCountsKL dRowSumsI oCountsI = do
 
           -- This is likely a pretty good guess! It satisfies all the constraints. So step 1 is just to bootstrap the iteration
           -- by finding a starting value of the Lagrange multipliers, an overdetermined problem
-          lgSolM = LA.linearSolveLS (lgMatrix rows cols) (LA.fromColumns [rhsUVec0 rows cols nV firstGuessV])
-      lgSolV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns lgSolM
-      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) LG=" <> show lgSolM
-      let fullFirstGuessV = VS.concat [firstGuessV, lgSolV]
-          update g d = VS.concat [qV', lV', gaV']
-            where (qV, lV, gaV) = subVectors rows cols g
-                  (dqV, dlV, dgaV) = subVectors rows cols d
-                  qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
-                  lV' = lV + dlV
-                  gaV' = gaV + dgaV
-          converge maxN n tol tolF gV deltaVM = do
-            when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
-            let gV' = maybe gV (update gV) deltaVM
-            if maybe True (\dV -> tolF dV >= tol) deltaVM
-              then (do
---                       let gV' = update gV deltaV
-                       deltaV' <- updateFromGuess rows cols aV nV gV'
-                       converge maxN (n + 1) tol tolF gV' (Just deltaV')
-                   )
-              else pure gV
+          rhsM = LA.fromColumns [rhsUV0 rows cols nV firstGuessV]
+          solM = LA.linearSolveSVD (lgMatrix rows cols) rhsM
+      solV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns solM
+--      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) rhs=" <> toText (LA.dispf 4 rhsM) <> "\nLG=" <> show solM
+      let fullFirstGuessV = VS.concat [firstGuessV, solV]
       let nMax = 100
           absTol = 0.0001
-          tolF dV = let tV = VS.take (rows * cols) dV in (VS.sum $ VS.zipWith (*) tV tV) / (realToFrac $ rows * cols)
---      deltaV <- updateFromGuess rows cols aV nV fullFirstGuessV
-      xVsol <- converge nMax 0 absTol tolF fullFirstGuessV Nothing
+--          tolF dV = let tV = VS.take (rows * cols) dV in (VS.sum $ VS.zipWith (*) tV tV) / (realToFrac $ rows * cols)
+      xVsol <- converge (updateGuess rows cols) (newDelta rows cols aV nV) checkNewGuessInf nMax absTol fullFirstGuessV
       let qVSol = VS.take (rows * cols) xVsol
       let sol'' = splitAtAll cols (fmap round $ LA.toList qVSol)
           sol' = transp $ restore csZeroIx $ transp sol''
           sol = restore rsZeroIx sol'
       pure sol
+
+-- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
+-- So rather than check the smallness of delta, we check the smallness of the actual change in
+-- probabilities, lambda & gamma
+checkNewGuess :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+checkNewGuess xV yV = sqrt (LA.norm_2 (xV - yV)) / realToFrac (VS.length xV)
+
+-- maximum of the absolute differences
+checkNewGuessInf :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+checkNewGuessInf xV yV = VS.maximum $ VS.map abs (xV - yV)
+
+updateGuess :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+updateGuess rows cols g d = VS.concat [qV', lV', gaV']
+  where (qV, lV, gaV) = subVectors rows cols g
+        (dqV, dlV, dgaV) = subVectors rows cols d
+        qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
+        lV' = lV + dlV
+        gaV' = gaV + dgaV
+
+converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
+         -> (LA.Vector LA.R -> Either Text (LA.Vector LA.R))
+         -> (LA.Vector LA.R -> LA.Vector LA.R -> Double)
+         -> Int -> Double -> LA.Vector LA.R -> Either Text (LA.Vector LA.R)
+converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
+  where
+    go n gV deltaVM = do
+      when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
+      let gV' = maybe guessV (updGuess gV) deltaVM
+      if n == 0 || (tolF gV gV' >= tol)
+        then (do
+                 deltaV <- deltaF gV'
+                 go (n + 1) gV' (Just deltaV)
+             )
+        else pure gV'
 
 subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
 subVectors rows cols v = (mV, lambdaV, gammaV) where
@@ -319,8 +337,8 @@ lgMatrix rows cols = LA.assoc (rows * cols, rows + cols) 0 $ mconcat $ fmap f [0
     indexes l = l `divMod` cols
     f l = let (j, k) = indexes l in [((l, j), 1), ((l, rows + k), 1)]
 
-rhsUVec :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUVec rows cols nV qV lambdaV gammaV = VS.zipWith rhsuF (VS.generate (rows * cols) id) nDivq
+rhsUV :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV rows cols nV qV lambdaV gammaV = VS.zipWith rhsuF (VS.generate (rows * cols) id) nDivq
   where
     indexes l = l `divMod` cols
     safeDiv x y = if y == 0 then 1 else x / y
@@ -329,16 +347,16 @@ rhsUVec rows cols nV qV lambdaV gammaV = VS.zipWith rhsuF (VS.generate (rows * c
     qSum = VS.sum qV
     rhsuF l x = let (j, k) = indexes l in x - (nSum / qSum) - lambdaV VS.! j - gammaV VS.! k
 
-rhsUVec0 :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUVec0 rows cols nV qV = rhsUVec rows cols nV qV (VS.replicate rows 0) (VS.replicate cols 0)
+rhsUV0 :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV0 rows cols nV qV = rhsUV rows cols nV qV (VS.replicate rows 0) (VS.replicate cols 0)
 
-updateFromGuess :: Int -- rows
-                -> Int -- cols
-                -> LA.Vector LA.R -- desired row sums
-                -> LA.Vector LA.R -- N in row major form
-                -> LA.Vector LA.R -- current guess, row major, then lambda, then gamma
-                -> Either Text (LA.Vector LA.R) -- delta, row major
-updateFromGuess rows cols aV nV gV = do
+newDelta :: Int -- rows
+         -> Int -- cols
+         -> LA.Vector LA.R -- desired row sums
+         -> LA.Vector LA.R -- N in row major form
+         -> LA.Vector LA.R -- current guess, row major, then lambda, then gamma
+         -> Either Text (LA.Vector LA.R) -- delta, row major
+newDelta rows cols aV nV gV = do
   let (qV, lambdaV, gammaV) = subVectors rows cols gV
       nSum = VS.sum nV
       qSum = VS.sum qV
@@ -346,7 +364,6 @@ updateFromGuess rows cols aV nV gV = do
       safeDiv x y = if y == 0 then 1 else x / y
       nDivq = VS.zipWith safeDiv nV qV
       ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
-      indexes l = l `divMod` cols
       ur = lgMatrix rows cols
 
       rowSumMask :: Int -> LA.Vector LA.R
@@ -361,30 +378,23 @@ updateFromGuess rows cols aV nV gV = do
       lr = LA.konst 0 (rows + cols, rows +  cols)
       m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
       (sVals, sVecs) = LA.rightSV m
-      funcDetails = "\nQ=\n" <> show qV <> "\nLambda=" <> show lambdaV <> "\nGamma=" <> show gammaV
+--      funcDetails = "\nQ=\n" <> show qV <> "\nLambda=" <> show lambdaV <> "\nGamma=" <> show gammaV
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
-  case  VS.minimum sVals < 1e-15 of
-    True -> do
-      let solIndex = VS.minIndex sVals
-          singSolM =  sVecs LA.¿ [solIndex] --LA.subMatrix (0, solIndex) (rows * cols + rows + cols - 1, 1) sVecs
-      singSolV <- maybeToRight "No singular vectors??" $ viaNonEmpty head $ LA.toColumns singSolM
---      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (Sing): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr singSolM)
-      pure singSolV
-    False -> do
-      let rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
-          colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
-          qRowSumsV = rowSums qV
---          rhsuV = VS.zipWith rhsuF (VS.generate (rows * cols) id) nDivq
-          rhsV = LA.vjoin [rhsUVec rows cols nV qV lambdaV gammaV
-                          , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
-                          , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
-                          ]
-          rhsM = LA.fromColumns [rhsV]
+
+      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
+      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
+      qRowSumsV = rowSums qV
+      rhsV = LA.vjoin [rhsUV rows cols nV qV lambdaV gammaV
+                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
+                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
+                      ]
+      rhsM = LA.fromColumns [rhsV]
 --          !_ = Unsafe.unsafePerformIO $ Say.say $ "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
-      luSolM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
-      luSolV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns luSolM
---      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr luSolM)
-      pure luSolV
+      solM = LA.linearSolveSVD m rhsM
+--      solM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
+  solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
+--      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr solM)
+  pure solV
 
 
 enrichFrameFromBinaryModel :: forall t count m g ks rs a .
