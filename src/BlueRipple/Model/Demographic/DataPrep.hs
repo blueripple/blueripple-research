@@ -26,7 +26,7 @@ import qualified BlueRipple.Data.BasicRowFolds as BRF
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
-import qualified Frames.Streamly.Transform as FST
+--import qualified Frames.Streamly.Transform as FST
 
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
@@ -91,17 +91,6 @@ cachedACSByState' = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
     K.logLE K.Info $ "Done"
     pure $ fmap F.rcast withSA
 
-{-
-type ACSByCD = PUMS.CDCounts Categoricals
-type ACSByState = PUMS.StateCounts Categoricals
-
-acsByState ∷ F.FrameRec PUMS.PUMS → F.FrameRec ACSByState
-acsByState acsByPUMA = F.rcast <$> FST.mapMaybe simplifyAgeM (FL.fold (PUMS.pumsStateRollupF (reKey .  F.rcast)) filteredACSByPUMA)
- where
-  earliestYear = 2016
-  earliest year = (>= year) . F.rgetField @BRDF.Year
-  filteredACSByPUMA = F.filterFrame (earliest earliestYear) acsByPUMA
--}
 
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
 simplifyAgeM r =
@@ -121,32 +110,6 @@ addRace5 :: (F.ElemOf rs DT.HispC, F.ElemOf rs DT.RaceAlone4C) => F.Record rs ->
 addRace5 r = r5 F.&: r
   where r5 = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
-{-
-cachedACSByState
-  ∷ ∀ r
-   . (K.KnitEffects r, BRK.CacheEffects r)
-  ⇒ K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS)
-  → K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByState))
-cachedACSByState acs_C = do
-  BRK.retrieveOrMakeFrame "model/demographic/acsByState.bin" acs_C $
-    pure . acsByState
-
-reKey :: F.Record '[DT.CitizenC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-        -> F.Record '[DT.CitizenC, DT.Age5FC, DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC]
-reKey = F.rcast . shrinkEducation
--}
-{-
-acsReKey
-  ∷ F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
-  → F.Record '[DT.Age5FC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-acsReKey r =
-  F.rgetField @DT.Age5FC r
-  F.&: F.rgetField @DT.SexC r
-  F.&: (if collegeGrad r || inCollege r then DT.Grad else DT.NonGrad)
-  F.&: F.rgetField @DT.RaceAlone4C r
-  F.&: F.rgetField @DT.HispC r
-  F.&: V.RNil
--}
 forMultinomial :: forall ks as bs rs l. (ks F.⊆ rs, as F.⊆ rs, Ord (F.Record ks), Enum l, Bounded l, Ord l)
                => (F.Record rs -> l) -- label
                -> (F.Record rs -> Int) -- count
@@ -166,7 +129,8 @@ forMultinomial label count extraF =
      (MR.assign (F.rcast @ks) (\r -> (F.rcast @as r, (label r, count r))))
      (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
 
-
+type ACSByStateCitizenMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C, DT.PopPerSqMile]
+type ACSByStateCitizenMN = (F.Record ACSByStateCitizenMNR, VU.Vector Int)
 
 type ACSByStateAgeMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopPerSqMile]
 type ACSByStateAgeMN = (F.Record ACSByStateAgeMNR, VU.Vector Int)
@@ -190,6 +154,14 @@ geomDensityF =
 
 filterZeroes :: [(a, VU.Vector Int)] -> [(a, VU.Vector Int)]
 filterZeroes = filter (\(_, v) -> v VU.! 0 > 0 || v VU.! 1 > 0)
+
+acsByStateCitizenMN :: F.FrameRec ACSByStateR -> [ACSByStateCitizenMN]
+acsByStateCitizenMN = filterZeroes
+                      . FL.fold (forMultinomial @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C]
+                                 (F.rgetField @DT.CitizenC)
+                                 (F.rgetField @DT.PopCount)
+                                 densityF
+                                )
 
 acsByStateAgeMN :: F.FrameRec ACSByStateR -> [ACSByStateAgeMN]
 acsByStateAgeMN = filterZeroes

@@ -296,44 +296,6 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-designMatrixRowEdu :: forall rs . (F.ElemOf rs DT.CitizenC
-                                  ,  F.ElemOf rs DT.Age4C
-                                  ,  F.ElemOf rs DT.SexC
-                                  ,  F.ElemOf rs DT.Race5C
-                                  )
-                   => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [citRP, sexRP, ageRP, raceRP]
-  where
-    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC )
-    ageRP = DM.boundedEnumRowPart (Just DT.A4_25To44) "Age" (F.rgetField @DT.Age4C)
-    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
-
-designMatrixRowEdu7 :: forall rs . (F.ElemOf rs DT.CitizenC
-                                   , F.ElemOf rs DT.Age4C
-                                   , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.Race5C
-                                   )
-                   => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [citRP, sexRP, raceAgeRP]
-  where
-    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    raceAgeRP = DM.boundedEnumRowPart Nothing "RaceAge"
-                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
-
-designMatrixRowEdu2 :: forall rs . (F.ElemOf rs DT.CitizenC
-                                   , F.ElemOf rs DT.Age4C
-                                   , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.Race5C
-                                   )
-                   => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [citRP, sexRP, raceAgeRP]
-  where
-    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
-                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
 
 designMatrixRowAge :: forall rs . (F.ElemOf rs DT.CitizenC
                                   , F.ElemOf rs DT.Education4C
@@ -360,6 +322,18 @@ designMatrixRowAge2 = DM.DesignMatrixRow "DMAge2" [citRP, sexRP, raceEduRP]
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
                 $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
+
+
+designMatrixRowCitizen :: forall rs . (F.ElemOf rs DT.Education4C
+                                      , F.ElemOf rs DT.SexC
+                                      , F.ElemOf rs DT.Race5C
+                                  )
+                       => DM.DesignMatrixRow (F.Record rs)
+designMatrixRowCitizen = DM.DesignMatrixRow "DMCitizen" [sexRP, eduRP, raceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    eduRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Education" (F.rgetField @DT.Education4C)
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
 
 --
 newtype ModelResult2 ks = ModelResult2 { unModelResult :: Map (F.Record ks) Double }
@@ -445,11 +419,74 @@ stateModelResultAction mc dmr = SC.UseSummary f where
     pure $ ModelResult alpha' geoMap (ldSlope, ldIntercept) catMap
 
 --    modelResult <- ModelResult <$> getVector "alpha"
+type CitizenStateModelResult = ModelResult Text [DT.SexC, DT.Education4C, DT.Race5C]
+type AgeStateModelResult = ModelResult Text [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+type EduStateModelResult = ModelResult Text [DT.Age4C, DT.SexC, DT.Race5C]
 
-type EduStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Age4C]
-type AgeStateModelResult = ModelResult Text [DT.SexC, DT.Race5C, DT.Education4C]
 
---addAgeSplits :: F.Record r
+
+
+logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
+logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 DDP.logDensityPredictor
+
+----
+
+categoricalModel :: forall rs . Typeable rs
+                 => Int
+                 -> DM.DesignMatrixRow (F.Record rs)
+                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
+categoricalModel numInCat dmr = do
+  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
+  let nDataE = S.dataSetSizeE acsData
+  nInCatE <- SB.addFixedInt "K" numInCat
+  countsE <- SB.addIntArrayData acsData "counts" nInCatE (Just 0) Nothing snd
+  acsMatE <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
+  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
+  -- parameters
+  -- zero vector for identifiability trick
+  zvP <- DAG.addBuildParameter
+         $ DAG.TransformedDataP
+         $ DAG.TData
+         (TE.NamedDeclSpec "zeroes" $ TE.vectorSpec nPredictorsE [])
+         []
+         TNil
+         (const $ DAG.DeclRHS $ TE.functionE SF.rep_vector (TE.realE 0 :> nPredictorsE :> TNil))
+
+  betaRawP <- DAG.addBuildParameter
+              $ DAG.UntransformedP
+              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nInCatE `TE.minusE` TE.intE 1) [])
+              []
+              TNil
+              (\_ _ -> pure ())
+
+  betaP <- DAG.addBuildParameter
+           $ DAG.TransformedP
+           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nInCatE [])
+           []
+           (DAG.build betaRawP :> DAG.build zvP :> TNil)
+           (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
+           (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
+           (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
+
+  let betaE = DAG.parameterTagExpr betaP
+      betaXD = TE.declareRHSNW
+               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
+               (acsMatE `TE.timesE` betaE)
+      at x n = TE.sliceE TEI.s0 n x
+
+  S.inBlock S.SBModel $ S.addStmtsToCode $ TE.writerL' $ do
+--    let sizeE e = TE.functionE SF.size (e :> TNil)
+    betaX <- betaXD
+    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
+      [TE.target $ TE.densityE SF.multinomial_logit_lupmf (countsE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
+
+  gqBetaX <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter betaXD
+  SB.generateLogLikelihood
+    acsData
+    SD.multinomialLogitDist
+    (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
+    (pure $ \nE -> countsE `at` nE)
+
 
 designMatrixRowEdu3 :: forall rs . (F.ElemOf rs DT.Age4C
                                    , F.ElemOf rs DT.SexC
@@ -519,66 +556,46 @@ designMatrixRowEdu6 = DM.DesignMatrixRow "DMEdu6" [sexRP, ageRP, raceRP, sexRace
     sexRaceAgeRP = DM.boundedEnumRowPart Nothing "SexRaceAge"
                 $ \r -> DM.BEProduct3 (F.rgetField @DT.SexC r, race5Census r, F.rgetField @DT.Age4C r)
 
-logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
-logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 DDP.logDensityPredictor
 
-----
+designMatrixRowEdu :: forall rs . (F.ElemOf rs DT.CitizenC
+                                  ,  F.ElemOf rs DT.Age4C
+                                  ,  F.ElemOf rs DT.SexC
+                                  ,  F.ElemOf rs DT.Race5C
+                                  )
+                   => DM.DesignMatrixRow (F.Record rs)
+designMatrixRowEdu = DM.DesignMatrixRow "DMEdu" [citRP, sexRP, ageRP, raceRP]
+  where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC )
+    ageRP = DM.boundedEnumRowPart (Just DT.A4_25To44) "Age" (F.rgetField @DT.Age4C)
+    raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
 
-categoricalModel :: forall rs . Typeable rs
-                 => Int
-                 -> DM.DesignMatrixRow (F.Record rs)
-                 -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
-categoricalModel numInCat dmr = do
-  acsData <- S.dataSetTag @(F.Record rs, VU.Vector Int) SC.ModelData "ACS"
-  let nDataE = S.dataSetSizeE acsData
-  nInCatE <- SB.addFixedInt "K" numInCat
-  countsE <- SB.addIntArrayData acsData "counts" nInCatE (Just 0) Nothing snd
-  acsMatE <- DM.addDesignMatrix acsData (contramap fst dmr) Nothing
-  let (_, nPredictorsE) = DM.designMatrixColDimBinding dmr Nothing
-  -- parameters
-  -- zero vector for identifiability trick
-  zvP <- DAG.addBuildParameter
-         $ DAG.TransformedDataP
-         $ DAG.TData
-         (TE.NamedDeclSpec "zeroes" $ TE.vectorSpec nPredictorsE [])
-         []
-         TNil
-         (const $ DAG.DeclRHS $ TE.functionE SF.rep_vector (TE.realE 0 :> nPredictorsE :> TNil))
+designMatrixRowEdu7 :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Age4C
+                                   , F.ElemOf rs DT.SexC
+                                   , F.ElemOf rs DT.Race5C
+                                   )
+                   => DM.DesignMatrixRow (F.Record rs)
+designMatrixRowEdu7 = DM.DesignMatrixRow "DMEdu7" [citRP, sexRP, raceAgeRP]
+  where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    raceAgeRP = DM.boundedEnumRowPart Nothing "RaceAge"
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
 
-  betaRawP <- DAG.addBuildParameter
-              $ DAG.UntransformedP
-              (TE.NamedDeclSpec "beta_raw" $ TE.matrixSpec nPredictorsE (nInCatE `TE.minusE` TE.intE 1) [])
-              []
-              TNil
-              (\_ _ -> pure ())
+designMatrixRowEdu2 :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Age4C
+                                   , F.ElemOf rs DT.SexC
+                                   , F.ElemOf rs DT.Race5C
+                                   )
+                   => DM.DesignMatrixRow (F.Record rs)
+designMatrixRowEdu2 = DM.DesignMatrixRow "DMEdu2" [citRP, sexRP, raceAgeRP]
+  where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    raceAgeRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.A4_25To44)) "RaceAge"
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C r, F.rgetField @DT.Age4C r)
 
-  betaP <- DAG.addBuildParameter
-           $ DAG.TransformedP
-           (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nInCatE [])
-           []
-           (DAG.build betaRawP :> DAG.build zvP :> TNil)
-           (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
-           (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
-           (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
-
-  let betaE = DAG.parameterTagExpr betaP
-      betaXD = TE.declareRHSNW
-               (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
-               (acsMatE `TE.timesE` betaE)
-      at x n = TE.sliceE TEI.s0 n x
-
-  S.inBlock S.SBModel $ S.addStmtsToCode $ TE.writerL' $ do
---    let sizeE e = TE.functionE SF.size (e :> TNil)
-    betaX <- betaXD
-    TE.addStmt $ TE.for "n" (TE.SpecificNumbered (TE.intE 1) nDataE) $ \n ->
-      [TE.target $ TE.densityE SF.multinomial_logit_lupmf (countsE `at` n) (TE.transposeE (betaX `at` n) :> TNil)]
-
-  gqBetaX <- S.inBlock S.SBLogLikelihood $ S.addFromCodeWriter betaXD
-  SB.generateLogLikelihood
-    acsData
-    SD.multinomialLogitDist
-    (pure $ \nE -> TE.transposeE (gqBetaX `at` nE) :> TNil)
-    (pure $ \nE -> countsE `at` nE)
 
 
 

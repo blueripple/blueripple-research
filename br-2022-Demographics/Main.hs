@@ -18,7 +18,7 @@ import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Data.Keyed as Keyed
 
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
+--import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -88,16 +88,18 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
-    ageModelResult <- runAgeModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowAge
+    citModelResult <- runCitizenModel False cmdLine (SM.ModelConfig () False SM.HCentered False) SM.designMatrixRowCitizen
+    ageModelResult <- runAgeModel False cmdLine (SM.ModelConfig () False SM.HCentered False) SM.designMatrixRowAge
     -- create test frame
     let onlyYear y r = F.rgetField @BRDF.Year r == y
         onlyState sa r = F.rgetField @GT.StateAbbreviation r == sa
         only sa y r = onlyState sa r && onlyYear y r
         onlyGender g r = F.rgetField @DT.SexC r == g
         onlyRE race eth r = F.rgetField @DT.RaceAlone4C r == race && F.rgetField @DT.HispC r == eth
-        exampleFilter r = onlyState "MA" r
+        exampleFilter r = onlyState "AZ" r
     acsSample <- K.ignoreCacheTimeM DDP.cachedACSByState'
-    let acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
+    let acsSampleNoAgeCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateCitizenMN acsSample
+        acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
     K.logLE K.Info "sample ACS data"
     let allSimpleAge = Keyed.elements @DT.SimpleAge
         allSex = Keyed.elements @DT.Sex
@@ -108,9 +110,11 @@ main = do
         all2 as bs = S.fromList [(a, b) | a <- S.toList as, b <- S.toList bs]
         all3 as bs cs = S.fromList [(a, b, c) | a <- S.toList as, b <- S.toList bs, c <- S.toList cs]
         allCE = all2 allCitizen allEdu
+        allSR = all2 allCitizen allRace
 --        allSexRace = all2 allSex allRace
 --        allEduSex = all2 allEdus allSex --S.fromList $ [(e, s) | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
         allASR = all3 allAge allSex allRace
+        allCSR = all3 allCitizen allSex allRace
 --        allSimpleAgesR = S.map (FT.recordSingleton @DT.SimpleAgeC) allSimpleAges
 --        allAgesR = S.map (FT.recordSingleton @DT.Age4C) allAges
 --        allEdusR = S.map (FT.recordSingleton @DT.Education4C) allEdus
@@ -126,42 +130,102 @@ main = do
           $ F.filterFrame exampleFilter acsSample
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) acsTable)
 
-    K.logLE K.Info "sample ACS data, aggregated by ages, then split by age model"
+    K.logLE K.Info "sample ACS data, aggregated by ages"
+    let aggAgeTable =  FL.fold (fmap DED.totaledTable
+                                 $ DED.rowMajorMapFld
+                                 (F.rgetField @DT.PopCount)
+                                 (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
+                                 (F.rgetField @DT.Education4C)
+                                 allCSR
+                                 allEdu
+                               )
+          $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+          $ F.filterFrame exampleFilter acsSampleNoAge
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) aggAgeTable)
+    K.logLE K.Info "sample ACS data, aggregated by ages, and citizenship, then split by citizen model"
+    enrichedCit <- KS.streamlyToKnit
+                   $ DED.enrichFrameFromBinaryModel @DT.CitizenC @DT.PopCount
+                   citModelResult
+                   (F.rgetField @GT.StateAbbreviation)
+                   DT.Citizen
+                   DT.NonCitizen
+                   acsSampleNoAgeCit
+    let addCitTable =  FL.fold (fmap DED.totaledTable
+                                 $ DED.rowMajorMapFld
+                                 (F.rgetField @DT.PopCount)
+                                 (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
+                                 (F.rgetField @DT.Education4C)
+                                 allCSR
+                                 allEdu
+                               )
+          $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+          $ F.filterFrame exampleFilter enrichedCit
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) addCitTable)
+    let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
+        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
+        eRec :: DT.Education4 -> F.Record '[DT.Education4C]
+        eRec e = e F.&: V.RNil
+        addCitDSFld =  DED.desiredRowSumsFld
+                       (F.rgetField @DT.PopCount)
+                       (F.rcast @'[GT.StateAbbreviation])
+                       (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
+                       (S.map csrRec allCSR)
+        desiredCSRRowSumMap = FL.fold addCitDSFld acsSample
+        desiredCSRRowSumLookup k = maybeToRight (show k <> " not found in desired CSR sum row map") $ M.lookup k desiredCSRRowSumMap
+        nMatchCSRFld = DED.nearestCountsFrameFld @DT.PopCount @'[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.Education4C]
+                       (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredCSRRowSumLookup (S.map eRec allEdu)
+    nMatchCSR <- K.knitEither $ FL.foldM nMatchCSRFld enrichedCit
+    BRK.logFrame $ F.filterFrame exampleFilter enrichedCit
+    BRK.logFrame $ F.filterFrame exampleFilter nMatchCSR
+    let nMatchCSRTable = FL.fold (fmap DED.totaledTable
+                                  $ DED.rowMajorMapFld
+                                   (F.rgetField @DT.PopCount)
+                                   (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
+                                   (F.rgetField @DT.Education4C)
+                                   allCSR
+                                   allEdu
+                                 )
+          $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+          $ F.filterFrame exampleFilter nMatchCSR
+    K.logLE K.Info "sample ACS data, aggregated by ages, and citizenship, then split by citizen model and row matched to actual CSR data"
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) nMatchCSRTable)
+{-
     enrichedAge <- KS.streamlyToKnit
                    $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @DT.PopCount
                    ageModelResult
                    (F.rgetField @GT.StateAbbreviation)
                    DT.EqualOrOver
                    DT.Under
-                   acsSampleNoAge
-    let enrichedTable = FL.fold (fmap DED.totaledTable
-                                  $ DED.rowMajorMapFld
-                                  (F.rgetField @DT.PopCount)
-                                  (\r -> (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                                  (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.Education4C r))
-                                  allASR
-                                  allCE
-                                )
+                   nMatchCSR
+    let enrichedAgeTable = FL.fold (fmap DED.totaledTable
+                                    $ DED.rowMajorMapFld
+                                    (F.rgetField @DT.PopCount)
+                                    (\r -> (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
+                                    (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.Education4C r))
+                                    allASR
+                                    allCE
+                                   )
           $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
           $ F.filterFrame exampleFilter enrichedAge
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) enrichedTable)
+    K.logLE K.Info "previous row-matched, then split by age model"
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) enrichedAgeTable)
 --    BRK.logFrame $ fmap fixRows2 enrichedAge
     let asrRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
         asrRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
         ceRec :: (DT.Citizen, DT.Education4) -> F.Record [DT.CitizenC, DT.Education4C]
         ceRec (c, e) = c F.&: e F.&: V.RNil
-        dsFld = DED.desiredRowSumsFld
-                (F.rgetField @DT.PopCount)
-                (F.rcast @'[GT.StateAbbreviation])
-                (\r -> asrRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
-                (S.map asrRec allASR)
-        desiredRowSumMap = FL.fold dsFld acsSample --NoEdu
-        desiredRowSumLookup k = maybeToRight (show k <> " not found in desired sum row map") $ M.lookup k desiredRowSumMap
+        addAgeDSFld = DED.desiredRowSumsFld
+                      (F.rgetField @DT.PopCount)
+                      (F.rcast @'[GT.StateAbbreviation])
+                      (\r -> asrRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+                      (S.map asrRec allASR)
+        desiredASRRowSumMap = FL.fold addAgeDSFld acsSample --NoEdu
+        desiredASRRowSumLookup k = maybeToRight (show k <> " not found in desired sum row map") $ M.lookup k desiredASRRowSumMap
 --        allEduSexR :: [F.Record '[DT.Education4C, DT.SexC]]= [e F.&: s F.&: V.RNil | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
-        ncFldM = DED.nearestCountsFrameFld @DT.PopCount @'[DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C]
-                 (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup (S.map ceRec allCE)
-    nearestEnrichedAge <- K.knitEither $ FL.foldM ncFldM enrichedAge
-    let nearestTable = FL.fold (fmap DED.totaledTable
+        nMatchASRFldM = DED.nearestCountsFrameFld @DT.PopCount @'[DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C]
+                        (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredASRRowSumLookup (S.map ceRec allCE)
+    nMatchASR <- K.knitEither $ FL.foldM nMatchASRFldM enrichedAge
+    let nMatchASRTable = FL.fold (fmap DED.totaledTable
                                 $ DED.rowMajorMapFld
                                  (F.rgetField @DT.PopCount)
                                  (\r -> (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
@@ -170,10 +234,10 @@ main = do
                                  allCE
                                )
           $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame exampleFilter nearestEnrichedAge
-    K.logLE K.Info "ACS data, aggregated by ages, then split by age model, then age sums across education for given gender/race adjusted to original."
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) nearestTable)
-
+          $ F.filterFrame exampleFilter nMatchASR
+    K.logLE K.Info "previous, row-matched to ASR table."
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) nMatchASRTable)
+-}
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
 --    K.logLE K.Info $ show allEdus
 {-
@@ -249,6 +313,91 @@ postPaths t cmdLine = do
 logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> Text -> K.Sem r ()
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> " has " <> show (FL.fold FL.length x) <> " rows."
 
+runCitizenModel :: (K.KnitEffects r, BRK.CacheEffects r)
+                => Bool
+                -> BR.CommandLine
+                -> SM.ModelConfig ()
+                -> DM.DesignMatrixRow (F.Record [DT.SexC, DT.Education4C, DT.Race5C])
+                -> K.Sem r (SM.ModelResult Text [DT.SexC, DT.Education4C, DT.Race5C])
+runCitizenModel clearCaches cmdLine mc dmr = do
+  let cacheDirE = let k = "model/demographic/citizen/" in if clearCaches then Left k else Right k
+      dataName = "acsCitizen_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
+      runnerInputNames = SC.RunnerInputNames
+                         "br-2022-Demographics/stanCitizen"
+                         ("normalSER_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
+                         (Just $ SC.GQNames "pp" dataName)
+                         dataName
+      only2020 r = F.rgetField @BRDF.Year r == 2020
+      _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  _ageModelPaths <- postPaths "CitizenModel" cmdLine
+  acs_C <- DDP.cachedACSByState'
+--  K.ignoreCacheTime acs_C >>= BRK.logFrame
+  logLengthC acs_C "acsByState"
+  let acsMN_C = fmap DDP.acsByStateCitizenMN acs_C
+      mcWithId = "normal" <$ mc
+--  K.ignoreCacheTime acsMN_C >>= print
+  logLengthC acsMN_C "acsByStateMNCit"
+  states <- FL.fold (FL.premap (view GT.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (SM.groupBuilderState (S.toList states))
+                (SM.normalModel (contramap F.rcast dmr) mc)
+  res <- do
+    K.ignoreCacheTimeM
+      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
+      cacheDirE
+      (Right runnerInputNames)
+      dw
+      code
+      (SM.stateModelResultAction mcWithId dmr)
+      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+      acsMN_C
+      (pure ())
+  K.logLE K.Info "citizenModel run complete."
+  pure res
+
+
+runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r)
+            => Bool
+            -> BR.CommandLine
+            -> SM.ModelConfig ()
+            -> DM.DesignMatrixRow (F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+            -> K.Sem r (SM.ModelResult Text [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+runAgeModel clearCaches cmdLine mc dmr = do
+  let cacheDirE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
+      dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
+      runnerInputNames = SC.RunnerInputNames
+                         "br-2022-Demographics/stanAge"
+                         ("normalSER_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
+                         (Just $ SC.GQNames "pp" dataName)
+                         dataName
+      only2020 r = F.rgetField @BRDF.Year r == 2020
+      _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  _ageModelPaths <- postPaths "AgeModel" cmdLine
+  acs_C <- DDP.cachedACSByState'
+--  K.ignoreCacheTime acs_C >>= BRK.logFrame
+  logLengthC acs_C "acsByState"
+  let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
+      mcWithId = "normal" <$ mc
+--  K.ignoreCacheTime acsMN_C >>= print
+  logLengthC acsMN_C "acsByStateMNAge"
+  states <- FL.fold (FL.premap (view GT.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (SM.groupBuilderState (S.toList states))
+                (SM.normalModel (contramap F.rcast dmr) mc) --(SM.designMatrixRowAge SM.logDensityDMRP))
+  res <- do
+    K.ignoreCacheTimeM
+      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
+      cacheDirE
+      (Right runnerInputNames)
+      dw
+      code
+      (SM.stateModelResultAction mcWithId dmr)
+      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+      acsMN_C
+      (pure ())
+  K.logLE K.Info "ageModel run complete."
+  pure res
+
 runEduModel :: (K.KnitMany r, BRK.CacheEffects r)
             => Bool
             -> BR.CommandLine
@@ -295,47 +444,6 @@ runEduModel clearCaches cmdLine mc dmr = do
 --  K.logLE K.Info $ "result: " <> show res
   pure res
 
-runAgeModel :: (K.KnitEffects r, BRK.CacheEffects r)
-            => Bool
-            -> BR.CommandLine
-            -> SM.ModelConfig ()
-            -> DM.DesignMatrixRow (F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-            -> K.Sem r (SM.ModelResult Text [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-runAgeModel clearCaches cmdLine mc dmr = do
-  let cacheDirE = let k = "model/demographic/age/" in if clearCaches then Left k else Right k
-      dataName = "acsAge_" <> DM.dmName dmr <> SM.modelConfigSuffix mc
-      runnerInputNames = SC.RunnerInputNames
-                         "br-2022-Demographics/stanAge"
-                         ("normalSER_" <> DM.dmName dmr <> SM.modelConfigSuffix mc)
-                         (Just $ SC.GQNames "pp" dataName)
-                         dataName
-      only2020 r = F.rgetField @BRDF.Year r == 2020
-      _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-  _ageModelPaths <- postPaths "AgeModel" cmdLine
-  acs_C <- DDP.cachedACSByState'
---  K.ignoreCacheTime acs_C >>= BRK.logFrame
-  logLengthC acs_C "acsByState"
-  let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
-      mcWithId = "normal" <$ mc
---  K.ignoreCacheTime acsMN_C >>= print
-  logLengthC acsMN_C "acsByStateMNAge"
-  states <- FL.fold (FL.premap (view GT.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
-  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
-                (SM.groupBuilderState (S.toList states))
-                (SM.normalModel (contramap F.rcast dmr) mc) --(SM.designMatrixRowAge SM.logDensityDMRP))
-  res <- do
-    K.ignoreCacheTimeM
-      $ SMR.runModel' @BRK.SerializerC @BRK.CacheData
-      cacheDirE
-      (Right runnerInputNames)
-      dw
-      code
-      (SM.stateModelResultAction mcWithId dmr)
-      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
-      acsMN_C
-      (pure ())
-  K.logLE K.Info "ageModel run complete."
-  pure res
 
 chart :: Foldable f => FV.ViewConfig -> f DDP.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =
