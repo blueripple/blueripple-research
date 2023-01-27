@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -252,8 +253,38 @@ nearestCountsProp dRowSums oCounts = do
 
   pure $ zipWith adjustRow dRowSums oCounts
 
+-- represents various positions in the list of numbers
+newtype Stencil a = Stencil [a]
+  deriving stock Show
+  deriving newtype Functor
 
---data Stencil = Stencil [(Int, Int)] -- represents various rk positions in the table of
+data StencilSum b a = StencilSum { stPositions :: Stencil a, stSum :: b }
+  deriving stock (Show, Functor)
+--  deriving newtype (Functor)
+
+mapStencilSum :: (b -> c) -> StencilSum b a -> StencilSum c a
+mapStencilSum f (StencilSum ps x) = StencilSum ps (f x)
+
+rowStencil :: Int -> Int -> Stencil Int
+rowStencil cols row = Stencil $ (+ (row * cols)) <$> [0..cols - 1]
+
+colStencil :: Int -> Int -> Int -> Stencil Int
+colStencil rows cols col = Stencil $ fmap (\n -> col + cols * n) [0..rows - 1]
+
+transp :: [[a]] -> [[a]]
+transp = go [] where
+  go x [] = fmap reverse x
+  go [] (r : rs) = go (fmap (\y -> [y]) r) rs
+  go x (r :rs) = go (List.zipWith (:) r x) rs
+
+nearestCountsKL_RC :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL_RC rowSums oCountsI = do
+    let rows = length oCountsI
+    cols <- maybeToRight "Empty list of counts given to nearestCountsKL_RC" $ viaNonEmpty (length . head) oCountsI
+    let rowSumStencils = zipWith (\j s -> (StencilSum (rowStencil cols j) s)) [0..(rows - 1)] rowSums
+        colSums = fmap (FL.fold FL.sum) $ transp oCountsI
+        colSumStencils = zipWith (\k s -> (StencilSum (colStencil rows cols k) s)) [0..(cols - 1)] colSums
+    splitAtAll cols <$> nearestCountsKL (rowSumStencils <> colSumStencils) (concat oCountsI)
 
 
 -- Hand rolled solver
@@ -261,63 +292,32 @@ nearestCountsProp dRowSums oCounts = do
 -- of minimizing KL divergence plus lagrange multipliers for
 -- row and column sums
 -- then iterate linearized solution until delta is small.
--- Requires SVD. Why?
-nearestCountsKL :: [Int] -> [[Int]] -> Either Text [[Int]]
-nearestCountsKL dRowSumsI oCountsI = do
+-- Requires SVD because the multipliers sometimes only show up as sums. More in notes.
+nearestCountsKL :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
+nearestCountsKL stencilSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
+      stencilSumsD = fmap (mapStencilSum toDouble) stencilSumsI
+      nSums = length stencilSumsI
+--      nIV :: LA.Vector LA.I = LA.fromList oCountsI
+      nV = LA.fromList $ fmap toDouble oCountsI
+      nProbs = LA.size nV
+      nSum = FL.fold FL.sum oCountsI
+--      curSums = LA.tr (mMatrix nProbs (fmap stPositions stencilSumsI)) LA.#> nV
+--      curRatios =
 
-      transp :: [[a]] -> [[a]]
-      transp = go [] where
-        go x [] = fmap reverse x
-        go [] (r : rs) = go (fmap (\y -> [y]) r) rs
-        go x (r :rs) = go (List.zipWith (:) r x) rs
-
-      -- we need to remove zero rows and columns.
-      remove :: Int -> [Int] -> [[Int]] -> [[Int]]
-      remove _ [] l = l
-      remove n (ix : ixs) l = remove (n + 1) ixs $ let (h, t) = List.splitAt (ix - n) l in h <> List.drop 1 t
-
-      -- But then put them back after solving.
-      restore :: [Int] -> [[Int]] -> [[Int]]
-      restore [] l = l
-      restore (ix : ixs) l = restore ixs $ take ix l <> (replicate cols 0 : drop ix l)
-
-      rsZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..] dRowSumsI
-      csZeroIx = fmap fst $ filter ((== 0) . snd) $ zip [(0 :: Int)..]
-                 $ fmap (FL.fold FL.sum) $ transp oCountsI
-      dRowSumsI' = filter (/= 0) dRowSumsI
-      aV = LA.fromList $ fmap toDouble dRowSumsI'
-      oCountsI' = remove 0 rsZeroIx oCountsI
-      oCountsI'' = transp $ remove 0 csZeroIx $ transp oCountsI'
-
-      nM :: LA.Matrix LA.I = LA.fromRows $ fmap (LA.fromList . fmap fromIntegral) oCountsI''
-      (rows, cols) = LA.size nM
-  case cols of
-    1 -> Right [dRowSumsI] -- if there is only 1 column, the desired row sums are the answer
-    _ -> do
-      let oCountsD = fmap (fmap toDouble) oCountsI''
-          nV = LA.fromList $ mconcat oCountsD
-          nRowSums = VS.fromList $ fmap (FL.fold FL.sum) oCountsD
---          !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV <> "\nRowSums=" <> show nRowSums
-          rowSumRatios = VS.zipWith (/) aV nRowSums
-          firstGuessV = LA.fromList $ mconcat $ zipWith (\l r -> fmap (* r) l) oCountsD (VS.toList rowSumRatios)
-
-          -- This is likely a pretty good guess! It satisfies all the constraints. So step 1 is just to bootstrap the iteration
-          -- by finding a starting value of the Lagrange multipliers, an overdetermined problem
-          rhsM = LA.fromColumns [rhsUV0 rows cols nV firstGuessV]
-          solM = LA.linearSolveSVD (lgMatrix rows cols) rhsM
+--      nRowSums = VS.fromList $ fmap (FL.fold FL.sum) oCountsD
+{-
+                 -- !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV <> "\nRowSums=" <> show nRowSums
+      rhsM = LA.fromColumns [rhsUV0 rows cols nV firstGuessV]
+      solM = LA.linearSolveSVD (lgMatrix rows cols) rhsM
       solV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns solM
 --      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) rhs=" <> toText (LA.dispf 4 rhsM) <> "\nLG=" <> show solM
-      let fullFirstGuessV = VS.concat [firstGuessV, solV]
-      let nMax = 100
-          absTol = 0.0001
---          tolF dV = let tV = VS.take (rows * cols) dV in (VS.sum $ VS.zipWith (*) tV tV) / (realToFrac $ rows * cols)
-      xVsol <- converge (updateGuess rows cols) (newDelta rows cols aV nV) checkNewGuessInf nMax absTol fullFirstGuessV
-      let qVSol = VS.take (rows * cols) xVsol
-      let sol'' = splitAtAll cols (fmap round $ LA.toList qVSol)
-          sol' = transp $ restore csZeroIx $ transp sol''
-          sol = restore rsZeroIx sol'
-      pure sol
+-}
+      fullFirstGuessV = VS.concat [nV, VS.replicate nSums 0]
+      nMax = 5
+      absTol = 0.0001
+  fmap round . take nProbs . VS.toList . VS.map (* realToFrac nSum)
+    <$> converge (updateGuess nProbs) (newDelta stencilSumsD nV) checkNewGuessInf nMax absTol fullFirstGuessV
 
 -- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
 -- So rather than check the smallness of delta, we check the smallness of the actual change in
@@ -329,13 +329,16 @@ checkNewGuess xV yV = sqrt (LA.norm_2 (xV - yV)) / realToFrac (VS.length xV)
 checkNewGuessInf :: LA.Vector LA.R -> LA.Vector LA.R -> Double
 checkNewGuessInf xV yV = VS.maximum $ VS.map abs (xV - yV)
 
-updateGuess :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-updateGuess rows cols g d = VS.concat [qV', lV', gaV']
-  where (qV, lV, gaV) = subVectors rows cols g
-        (dqV, dlV, dgaV) = subVectors rows cols d
-        qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
-        lV' = lV + dlV
-        gaV' = gaV + dgaV
+updateGuess :: Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+updateGuess nProbs g d = VS.concat [qV', mV']
+  where (qV, mV) = VS.splitAt nProbs g
+        (dqV, dmV) = VS.splitAt nProbs d
+        fixdU x
+          | x > 0.25 = 0.25
+          | x < -(0.25) = -(0.25)
+          | otherwise = x
+        qV' = VS.zipWith (\qU dU -> qU * (1 + fixdU dU)) qV dqV
+        mV' = mV + dmV
 
 converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
          -> (LA.Vector LA.R -> Either Text (LA.Vector LA.R))
@@ -344,7 +347,7 @@ converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
 converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
   where
     go n gV deltaVM = do
-      when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ")exceeded in nearestCountsKL"
+      when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ") exceeded in nearestCountsKL"
       let gV' = maybe guessV (updGuess gV) deltaVM
       if n == 0 || (tolF gV gV' >= tol)
         then (do
@@ -353,77 +356,66 @@ converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
              )
         else pure gV'
 
+mMatrix :: Int -> [Stencil Int] -> LA.Matrix LA.R
+mMatrix nProbs stencils = LA.assoc (nProbs, nStencils) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
+  where
+    nStencils = length stencils
+    f (n, Stencil ks) = (\k -> ((k, n), 1)) <$> ks
+
+rhsUV :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV
+  where
+    nProbs = VS.length nV
+    safeDiv x y = if y == 0 then 1 else x / y
+    nDivq = VS.zipWith safeDiv nV qV
+    nSum = VS.sum nV
+    qSum = VS.sum qV
+    mM = mMatrix nProbs stencils
+    mShiftV = mM LA.#> mV
+    rhsuF x y = x - (nSum / qSum) - y
+
+rhsUV0 :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV0 stencils nV qV = rhsUV stencils nV qV (VS.replicate (length stencils) 0)
+
+newDelta :: [StencilSum Double Int] -- desired sums
+         -> LA.Vector LA.R -- N
+         -> LA.Vector LA.R -- current guess, then multipliers
+         -> Either Text (LA.Vector LA.R) -- delta, in same format
+newDelta stencilSums nV gV = do
+  let nProbs = VS.length nV
+      (qV, mV) = VS.splitAt nProbs gV
+      nSum = VS.sum nV
+      qSum = VS.sum qV
+      invnSum = 1 / nSum
+      safeDiv x y = if y == 0 then 1 else x / y
+      nDivq = VS.zipWith safeDiv nV qV
+      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate nProbs qV)
+      multM = mMatrix nProbs $ fmap stPositions stencilSums
+      ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toColumns multM
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ toText $ LA.dispf 4 multM
+      lr = LA.konst 0 (length stencilSums, length stencilSums)
+      m = (ul LA.||| multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
+      funcDetails = "\nQ=\n" <> show qV <> "\nm=" <> show mV
+      !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
+      stencilSumsV = LA.tr multM LA.#> qV
+      stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
+      rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
+                      , LA.scale invnSum stencilSumDiffsV
+                      ]
+      rhsM = LA.fromColumns [rhsV]
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
+      solM = LA.linearSolveSVD m rhsM
+--      solM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
+  solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
+  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|m=\n" <> toText (LA.dispf 4 $ LA.tr solM)
+  pure solV
+
 subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
 subVectors rows cols v = (mV, lambdaV, gammaV) where
   nSize = rows * cols
   mV = LA.subVector 0 nSize v
   lambdaV = LA.subVector nSize rows v
   gammaV = LA.subVector (nSize + rows) cols v
-
-lgMatrix :: Int -> Int -> LA.Matrix LA.R
-lgMatrix rows cols = LA.assoc (rows * cols, rows + cols) 0 $ mconcat $ fmap f [0..(rows * cols - 1)]
-  where
-    indexes l = l `divMod` cols
-    f l = let (j, k) = indexes l in [((l, j), 1), ((l, rows + k), 1)]
-
-rhsUV :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUV rows cols nV qV lambdaV gammaV = VS.zipWith rhsuF (VS.generate (rows * cols) id) nDivq
-  where
-    indexes l = l `divMod` cols
-    safeDiv x y = if y == 0 then 1 else x / y
-    nDivq = VS.zipWith safeDiv nV qV
-    nSum = VS.sum nV
-    qSum = VS.sum qV
-    rhsuF l x = let (j, k) = indexes l in x - (nSum / qSum) - lambdaV VS.! j - gammaV VS.! k
-
-rhsUV0 :: Int -> Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUV0 rows cols nV qV = rhsUV rows cols nV qV (VS.replicate rows 0) (VS.replicate cols 0)
-
-newDelta :: Int -- rows
-         -> Int -- cols
-         -> LA.Vector LA.R -- desired row sums
-         -> LA.Vector LA.R -- N in row major form
-         -> LA.Vector LA.R -- current guess, row major, then lambda, then gamma
-         -> Either Text (LA.Vector LA.R) -- delta, row major
-newDelta rows cols aV nV gV = do
-  let (qV, lambdaV, gammaV) = subVectors rows cols gV
-      nSum = VS.sum nV
-      qSum = VS.sum qV
-      invnSum = 1 / nSum
-      safeDiv x y = if y == 0 then 1 else x / y
-      nDivq = VS.zipWith safeDiv nV qV
-      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate (rows * cols) qV)
-      ur = lgMatrix rows cols
-
-      rowSumMask :: Int -> LA.Vector LA.R
-      rowSumMask j = LA.assoc (rows * cols) 0 $ fmap (\k -> (k + j * cols, 1)) [0..(cols - 1)]
-      rowSumVec j = LA.scale invnSum $ VS.zipWith (*) qV (rowSumMask j)
-
-      colSumMask :: Int -> LA.Vector LA.R
-      colSumMask k = LA.assoc (rows * cols) 0 $ fmap (\j -> (k + j * cols, 1)) [0..(rows - 1)]
-      colSumVec k = LA.scale invnSum $ VS.zipWith (*) qV (colSumMask k)
-
-      ll =  LA.fromRows (fmap rowSumVec [0..(rows - 1)]) LA.=== LA.fromRows (fmap colSumVec [0..(cols - 1)])
-      lr = LA.konst 0 (rows + cols, rows +  cols)
-      m = (ul LA.||| ur ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      (sVals, sVecs) = LA.rightSV m
---      funcDetails = "\nQ=\n" <> show qV <> "\nLambda=" <> show lambdaV <> "\nGamma=" <> show gammaV
---      !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
-
-      rowSums v = LA.fromList $ fmap VS.sum $ LA.toRows $ LA.reshape cols v
-      colSums v = LA.fromList $ fmap VS.sum $ LA.toColumns $ LA.reshape cols v
-      qRowSumsV = rowSums qV
-      rhsV = LA.vjoin [rhsUV rows cols nV qV lambdaV gammaV
-                      , LA.scale invnSum (VS.zipWith (-) aV qRowSumsV)
-                      , LA.scale invnSum (colSums (VS.zipWith (-) nV qV))
-                      ]
-      rhsM = LA.fromColumns [rhsV]
---          !_ = Unsafe.unsafePerformIO $ Say.say $ "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
-      solM = LA.linearSolveSVD m rhsM
---      solM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
-  solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
---      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|lambda|gamma=\n" <> toText (LA.dispf 4 $ LA.tr solM)
-  pure solV
 
 
 enrichFrameFromBinaryModel :: forall t count m g ks rs a .

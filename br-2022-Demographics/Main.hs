@@ -169,7 +169,7 @@ main = do
           $ F.filterFrame exampleFilter enrichedCit
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) addCitTable)
     let ncFrameIFldCSR_E = DED.nearestCountsFrameIFld @[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.Education4C]
-                           DED.nearestCountsKL
+                           DED.nearestCountsKL_RC
                            recToCWD
                            cwdToRec
                            cwdN
@@ -224,7 +224,7 @@ main = do
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) enrichedAgeTable)
 --    BRK.logFrame $ fmap fixRows2 enrichedAge
     let ncFrameIFldASR_CE = DED.nearestCountsFrameIFld @[DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C]
-                            DED.nearestCountsKL
+                            DED.nearestCountsKL_RC
                             recToCWD
                             cwdToRec
                             cwdN
