@@ -300,8 +300,22 @@ nearestCountsKL stencilSumsI oCountsI = do
       nSums = length stencilSumsI
 --      nIV :: LA.Vector LA.I = LA.fromList oCountsI
       nV = LA.fromList $ fmap toDouble oCountsI
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV
       nProbs = LA.size nV
       nSum = FL.fold FL.sum oCountsI
+      stencilM = mMatrix nProbs $ fmap stPositions stencilSumsD
+      sumDiv x y = if x == 0 || y == 0 then 0 else x / y -- if already 0, we can't change
+      sumRatiosV = VS.zipWith sumDiv  (LA.fromList (fmap stSum stencilSumsD)) $ stencilM LA.#> nV
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nerrsumRatios=" <> show sumRatiosV
+      startingMap = M.fromList $ zip [0..(nProbs - 1)] $ repeat (1 :: LA.R)
+      stencilRatioMapF :: LA.R -> Stencil Int -> Map Int LA.R -> Map Int LA.R
+      stencilRatioMapF x (Stencil ks) m = foldl' (\m' k -> M.insertWith (*) k x m') m ks
+      stencilRatioMap = foldl' (\m (sr, s) -> stencilRatioMapF sr s m) startingMap $ zip (VS.toList sumRatiosV) (fmap stPositions stencilSumsD)
+      firstGuessV = VS.zipWith (*) nV $ VS.fromList $ M.elems stencilRatioMap
+--      sumSolM = LA.linearSolveSVD stencilM (LA.fromColumns [errSumsV]) -- find a vector of diffs to satisfy sums as best as possible
+--  sumSolV <- maybeToRight "empty list of solutions to initial sum problem??" $ viaNonEmpty head $ LA.toColumns sumSolM
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nfirstGuessV=" <> show firstGuessV
+
 --      curSums = LA.tr (mMatrix nProbs (fmap stPositions stencilSumsI)) LA.#> nV
 --      curRatios =
 
@@ -313,8 +327,8 @@ nearestCountsKL stencilSumsI oCountsI = do
       solV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns solM
 --      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) rhs=" <> toText (LA.dispf 4 rhsM) <> "\nLG=" <> show solM
 -}
-      fullFirstGuessV = VS.concat [nV, VS.replicate nSums 0]
-      nMax = 5
+      fullFirstGuessV = VS.concat [firstGuessV, VS.replicate nSums 0]
+      nMax = 10
       absTol = 0.0001
   fmap round . take nProbs . VS.toList . VS.map (* realToFrac nSum)
     <$> converge (updateGuess nProbs) (newDelta stencilSumsD nV) checkNewGuessInf nMax absTol fullFirstGuessV
@@ -337,7 +351,7 @@ updateGuess nProbs g d = VS.concat [qV', mV']
           | x > 0.25 = 0.25
           | x < -(0.25) = -(0.25)
           | otherwise = x
-        qV' = VS.zipWith (\qU dU -> qU * (1 + fixdU dU)) qV dqV
+        qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
         mV' = mV + dmV
 
 converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
@@ -357,10 +371,10 @@ converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
         else pure gV'
 
 mMatrix :: Int -> [Stencil Int] -> LA.Matrix LA.R
-mMatrix nProbs stencils = LA.assoc (nProbs, nStencils) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
+mMatrix nProbs stencils = LA.assoc (nStencils, nProbs) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
   where
     nStencils = length stencils
-    f (n, Stencil ks) = (\k -> ((k, n), 1)) <$> ks
+    f (n, Stencil ks) = (\k -> ((n, k), 1)) <$> ks
 
 rhsUV :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV
@@ -371,7 +385,7 @@ rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV
     nSum = VS.sum nV
     qSum = VS.sum qV
     mM = mMatrix nProbs stencils
-    mShiftV = mM LA.#> mV
+    mShiftV = LA.tr mM LA.#> mV
     rhsuF x y = x - (nSum / qSum) - y
 
 rhsUV0 :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
@@ -383,6 +397,7 @@ newDelta :: [StencilSum Double Int] -- desired sums
          -> Either Text (LA.Vector LA.R) -- delta, in same format
 newDelta stencilSums nV gV = do
   let nProbs = VS.length nV
+      nStencils = length stencilSums
       (qV, mV) = VS.splitAt nProbs gV
       nSum = VS.sum nV
       qSum = VS.sum qV
@@ -391,13 +406,13 @@ newDelta stencilSums nV gV = do
       nDivq = VS.zipWith safeDiv nV qV
       ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate nProbs qV)
       multM = mMatrix nProbs $ fmap stPositions stencilSums
-      ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toColumns multM
+      ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toRows multM
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ toText $ LA.dispf 4 multM
-      lr = LA.konst 0 (length stencilSums, length stencilSums)
-      m = (ul LA.||| multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
+      lr = LA.konst 0 (nStencils, nStencils)
+      m = (ul LA.||| LA.tr multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
       funcDetails = "\nQ=\n" <> show qV <> "\nm=" <> show mV
       !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
-      stencilSumsV = LA.tr multM LA.#> qV
+      stencilSumsV = multM LA.#> qV
       stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
       rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
                       , LA.scale invnSum stencilSumDiffsV
