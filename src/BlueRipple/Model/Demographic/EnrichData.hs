@@ -33,6 +33,7 @@ import qualified Streamly.Prelude as Streamly
 
 import qualified Control.Foldl as FL
 import Control.Monad.Catch (throwM, MonadThrow)
+import qualified Data.IntMap as IM
 import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -281,6 +282,21 @@ transp = go [] where
   go [] (r : rs) = go (fmap (\y -> [y]) r) rs
   go x (r :rs) = go (List.zipWith (:) r x) rs
 
+subgroupStencils :: Ord a => (r -> a) -> FL.Fold r (Map a (Stencil Int))
+subgroupStencils key = mapFromList <$> FL.list
+  where
+    mapFromList = fmap Stencil . foldl' (\m (k, r) -> M.insertWith (<>) (key r) [k] m) mempty . zip [0..]
+
+{-
+subgroupStencilUnion :: Map a b -> Map a (Stencil c) -> Either Text [StencilSum c b]
+subgroupStencilUnion sumMap stencilMap =
+
+subgroupStencilSums :: Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum Int b]
+subgroupStencilSums sumLookup key = subGroupStencils key
+  where
+    stencilsFromList = foldl' ()
+-}
+
 nearestCountsKL_RC :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsKL_RC rowSums oCountsI = do
     let rows = length oCountsI
@@ -290,20 +306,21 @@ nearestCountsKL_RC rowSums oCountsI = do
         colSumStencils = zipWith (\k s -> (StencilSum (colStencil rows cols k) s)) [0..(cols - 1)] colSums
     splitAtAll cols <$> nearestCountsKL (rowSumStencils <> colSumStencils) (concat oCountsI)
 
-removeIndexesFromList :: [Int] -> [a] -> [a]
-removeIndexesFromList is ls =
+removeFromListAtIndexes :: [Int] -> [a] -> [a]
+removeFromListAtIndexes is ls =
   snd
   $ foldl'
   (\(numRemoved, curList) ir -> let (h, t) = L.splitAt (ir - numRemoved) curList in (numRemoved + 1, h <> L.drop 1 t))
   (0, ls)
   is
 
-restoreIndexesToList :: a -> [Int] -> [a] -> [a]
-restoreIndexesToList fill is ls = foldl' (\curList ir -> let (h, t) = splitAt ir curList in h <> (fill : t)) ls is
+fillListAtIndexes :: a -> [Int] -> [a] -> [a]
+fillListAtIndexes fill is ls = foldl' (\curList ir -> let (h, t) = splitAt ir curList in h <> (fill : t)) ls is
 
-removeIndexesFromStencil :: [Int] -> Stencil Int -> Stencil Int
-removeIndexesFromStencil is (Stencil ks) = Stencil ms where
--- HERE
+removeFromStencilAtIndexes :: [Int] -> Stencil Int -> Stencil Int
+removeFromStencilAtIndexes is (Stencil ks) = Stencil ms where
+  stencilIM = IM.union (IM.fromList $ fmap (,1 :: Int) ks) (IM.fromList $ zip [0..L.maximum ks] $ repeat 0)
+  ms = fmap fst $ filter ((/= 0) . snd) $ zip [0..] $ removeFromListAtIndexes is $ fmap snd $ IM.toList stencilIM
 
 -- Hand rolled solver
 -- Linearize equations solving for the stationary point
@@ -314,54 +331,28 @@ removeIndexesFromStencil is (Stencil ks) = Stencil ms where
 nearestCountsKL :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
 nearestCountsKL stencilSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
---      nIV :: LA.Vector LA.I = LA.fromList oCountsI
       nV = LA.fromList $ fmap toDouble oCountsI
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV
-      nSum = FL.fold FL.sum oCountsI
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nnSum=" <> show nSum
-      -- first, remove zeroes, both in N and in stencils
+      -- Remove zeroes, both from N and all of any stencils with zero sum
       removedIndexes =
         S.toList
         $ S.fromList $
         fmap fst (filter ((== 0) . snd) (zip [0..] $ VS.toList nV))
         <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
-      nV' = VS.fromList $ removeIndexesFromList removedIndexes $ VS.toList nV
-      stencilSumsI' = mapStencilPositions (removeIndexesFromStencil removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
+      nV' = VS.fromList $ removeFromListAtIndexes removedIndexes $ VS.toList nV
+      stencilSumsI' = mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
       stencilSumsD' = fmap (mapStencilSum toDouble) stencilSumsI'
       nSums' = length stencilSumsI'
       nProbs' = LA.size nV'
 
+      -- we should check here if the constraints have a solution
 
-{-      stencilM = mMatrix nProbs $ fmap stPositions stencilSumsD
-      sumDiv x y = if x == 0 || y == 0 then 0 else x / y -- if already 0, we can't change
-      sumRatiosV = VS.zipWith sumDiv  (LA.fromList (fmap stSum stencilSumsD)) $ stencilM LA.#> nV
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nerrsumRatios=" <> show sumRatiosV
-      startingMap = M.fromList $ zip [0..(nProbs - 1)] $ repeat (1 :: LA.R)
-      stencilRatioMapF :: LA.R -> Stencil Int -> Map Int LA.R -> Map Int LA.R
-      stencilRatioMapF x (Stencil ks) m = foldl' (\m' k -> M.insertWith (*) k x m') m ks
-      stencilRatioMap = foldl' (\m (sr, s) -> stencilRatioMapF sr s m) startingMap $ zip (VS.toList sumRatiosV) (fmap stPositions stencilSumsD)
-      firstGuessV = VS.zipWith (*) nV $ VS.fromList $ M.elems stencilRatioMap
-
---      sumSolM = LA.linearSolveSVD stencilM (LA.fromColumns [errSumsV]) -- find a vector of diffs to satisfy sums as best as possible
---  sumSolV <- maybeToRight "empty list of solutions to initial sum problem??" $ viaNonEmpty head $ LA.toColumns sumSolM
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nfirstGuessV=" <> show firstGuessV
--}
---      curSums = LA.tr (mMatrix nProbs (fmap stPositions stencilSumsI)) LA.#> nV
---      curRatios =
-
---      nRowSums = VS.fromList $ fmap (FL.fold FL.sum) oCountsD
-{-
-                 -- !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV <> "\nRowSums=" <> show nRowSums
-      rhsM = LA.fromColumns [rhsUV0 rows cols nV firstGuessV]
-      solM = LA.linearSolveSVD (lgMatrix rows cols) rhsM
-      solV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns solM
---      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) rhs=" <> toText (LA.dispf 4 rhsM) <> "\nLG=" <> show solM
--}
       fullFirstGuessV = VS.concat [nV', VS.replicate nSums' 0]
-      nMax = 3
+      nMax = 10
       absTol = 0.0001
-  restoreIndexesToList 0 removedIndexes . fmap round . take nProbs' . VS.toList . VS.map (* realToFrac nSum)
+  solL <- fillListAtIndexes 0 removedIndexes . fmap round . take nProbs' . VS.toList
     <$> converge (updateGuess nProbs') (newDelta stencilSumsD' nV') checkNewGuessInf nMax absTol fullFirstGuessV
+--  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) sol=\n" <> show solL
+  pure solL
 
 -- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
 -- So rather than check the smallness of delta, we check the smallness of the actual change in
@@ -437,24 +428,16 @@ newDelta stencilSums nV gV = do
       ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate nProbs qV)
       multM = mMatrix nProbs $ fmap stPositions stencilSums
       ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toRows multM
---      !_ = Unsafe.unsafePerformIO $ Say.say $ toText $ LA.dispf 4 multM
       lr = LA.konst 0 (nStencils, nStencils)
       m = (ul LA.||| LA.tr multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      funcDetails = "\nQ=\n" <> show qV <> "\nm=" <> show mV <> "\nM=\n" <> toText (LA.dispf 4 m)
-      !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
       stencilSumsV = multM LA.#> qV
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nstencilTargets=" <> show (fmap stSum stencilSums)
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nstencilSums=" <> show stencilSumsV
       stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
       rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
                       , LA.scale invnSum stencilSumDiffsV
                       ]
       rhsM = LA.fromColumns [rhsV]
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nrhs=\n" <> toText (LA.dispf 4 $ LA.tr rhsM)
       solM = LA.linearSolveSVD m rhsM
---      solM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
   solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
-  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (SVD): delta|m=\n" <> toText (LA.dispf 4 $ LA.tr solM)
   pure solV
 
 subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
