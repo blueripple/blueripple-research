@@ -33,6 +33,7 @@ import qualified Streamly.Prelude as Streamly
 
 import qualified Control.Foldl as FL
 import Control.Monad.Catch (throwM, MonadThrow)
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
@@ -254,7 +255,7 @@ nearestCountsProp dRowSums oCounts = do
   pure $ zipWith adjustRow dRowSums oCounts
 
 -- represents various positions in the list of numbers
-newtype Stencil a = Stencil [a]
+newtype Stencil a = Stencil { stencilIndexes :: [a] }
   deriving stock Show
   deriving newtype Functor
 
@@ -264,6 +265,9 @@ data StencilSum b a = StencilSum { stPositions :: Stencil a, stSum :: b }
 
 mapStencilSum :: (b -> c) -> StencilSum b a -> StencilSum c a
 mapStencilSum f (StencilSum ps x) = StencilSum ps (f x)
+
+mapStencilPositions :: (Stencil a -> Stencil a) -> StencilSum b a -> StencilSum b a
+mapStencilPositions f (StencilSum sa x) = StencilSum (f sa) x
 
 rowStencil :: Int -> Int -> Stencil Int
 rowStencil cols row = Stencil $ (+ (row * cols)) <$> [0..cols - 1]
@@ -286,6 +290,20 @@ nearestCountsKL_RC rowSums oCountsI = do
         colSumStencils = zipWith (\k s -> (StencilSum (colStencil rows cols k) s)) [0..(cols - 1)] colSums
     splitAtAll cols <$> nearestCountsKL (rowSumStencils <> colSumStencils) (concat oCountsI)
 
+removeIndexesFromList :: [Int] -> [a] -> [a]
+removeIndexesFromList is ls =
+  snd
+  $ foldl'
+  (\(numRemoved, curList) ir -> let (h, t) = L.splitAt (ir - numRemoved) curList in (numRemoved + 1, h <> L.drop 1 t))
+  (0, ls)
+  is
+
+restoreIndexesToList :: a -> [Int] -> [a] -> [a]
+restoreIndexesToList fill is ls = foldl' (\curList ir -> let (h, t) = splitAt ir curList in h <> (fill : t)) ls is
+
+removeIndexesFromStencil :: [Int] -> Stencil Int -> Stencil Int
+removeIndexesFromStencil is (Stencil ks) = Stencil ms where
+-- HERE
 
 -- Hand rolled solver
 -- Linearize equations solving for the stationary point
@@ -296,14 +314,25 @@ nearestCountsKL_RC rowSums oCountsI = do
 nearestCountsKL :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
 nearestCountsKL stencilSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
-      stencilSumsD = fmap (mapStencilSum toDouble) stencilSumsI
-      nSums = length stencilSumsI
 --      nIV :: LA.Vector LA.I = LA.fromList oCountsI
       nV = LA.fromList $ fmap toDouble oCountsI
       !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=" <> show nV
-      nProbs = LA.size nV
       nSum = FL.fold FL.sum oCountsI
-      stencilM = mMatrix nProbs $ fmap stPositions stencilSumsD
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nnSum=" <> show nSum
+      -- first, remove zeroes, both in N and in stencils
+      removedIndexes =
+        S.toList
+        $ S.fromList $
+        fmap fst (filter ((== 0) . snd) (zip [0..] $ VS.toList nV))
+        <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
+      nV' = VS.fromList $ removeIndexesFromList removedIndexes $ VS.toList nV
+      stencilSumsI' = mapStencilPositions (removeIndexesFromStencil removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
+      stencilSumsD' = fmap (mapStencilSum toDouble) stencilSumsI'
+      nSums' = length stencilSumsI'
+      nProbs' = LA.size nV'
+
+
+{-      stencilM = mMatrix nProbs $ fmap stPositions stencilSumsD
       sumDiv x y = if x == 0 || y == 0 then 0 else x / y -- if already 0, we can't change
       sumRatiosV = VS.zipWith sumDiv  (LA.fromList (fmap stSum stencilSumsD)) $ stencilM LA.#> nV
       !_ = Unsafe.unsafePerformIO $ Say.say $ "\nerrsumRatios=" <> show sumRatiosV
@@ -312,10 +341,11 @@ nearestCountsKL stencilSumsI oCountsI = do
       stencilRatioMapF x (Stencil ks) m = foldl' (\m' k -> M.insertWith (*) k x m') m ks
       stencilRatioMap = foldl' (\m (sr, s) -> stencilRatioMapF sr s m) startingMap $ zip (VS.toList sumRatiosV) (fmap stPositions stencilSumsD)
       firstGuessV = VS.zipWith (*) nV $ VS.fromList $ M.elems stencilRatioMap
+
 --      sumSolM = LA.linearSolveSVD stencilM (LA.fromColumns [errSumsV]) -- find a vector of diffs to satisfy sums as best as possible
 --  sumSolV <- maybeToRight "empty list of solutions to initial sum problem??" $ viaNonEmpty head $ LA.toColumns sumSolM
       !_ = Unsafe.unsafePerformIO $ Say.say $ "\nfirstGuessV=" <> show firstGuessV
-
+-}
 --      curSums = LA.tr (mMatrix nProbs (fmap stPositions stencilSumsI)) LA.#> nV
 --      curRatios =
 
@@ -327,11 +357,11 @@ nearestCountsKL stencilSumsI oCountsI = do
       solV <-  maybeToRight "empty list of LS solutions??" $ viaNonEmpty head $ LA.toColumns solM
 --      let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(bootstrap) rhs=" <> toText (LA.dispf 4 rhsM) <> "\nLG=" <> show solM
 -}
-      fullFirstGuessV = VS.concat [firstGuessV, VS.replicate nSums 0]
-      nMax = 10
+      fullFirstGuessV = VS.concat [nV', VS.replicate nSums' 0]
+      nMax = 3
       absTol = 0.0001
-  fmap round . take nProbs . VS.toList . VS.map (* realToFrac nSum)
-    <$> converge (updateGuess nProbs) (newDelta stencilSumsD nV) checkNewGuessInf nMax absTol fullFirstGuessV
+  restoreIndexesToList 0 removedIndexes . fmap round . take nProbs' . VS.toList . VS.map (* realToFrac nSum)
+    <$> converge (updateGuess nProbs') (newDelta stencilSumsD' nV') checkNewGuessInf nMax absTol fullFirstGuessV
 
 -- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
 -- So rather than check the smallness of delta, we check the smallness of the actual change in
@@ -410,9 +440,11 @@ newDelta stencilSums nV gV = do
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ toText $ LA.dispf 4 multM
       lr = LA.konst 0 (nStencils, nStencils)
       m = (ul LA.||| LA.tr multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      funcDetails = "\nQ=\n" <> show qV <> "\nm=" <> show mV
+      funcDetails = "\nQ=\n" <> show qV <> "\nm=" <> show mV <> "\nM=\n" <> toText (LA.dispf 4 m)
       !_ = Unsafe.unsafePerformIO $ Say.say $ funcDetails
       stencilSumsV = multM LA.#> qV
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nstencilTargets=" <> show (fmap stSum stencilSums)
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nstencilSums=" <> show stencilSumsV
       stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
       rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
                       , LA.scale invnSum stencilSumDiffsV
@@ -422,7 +454,7 @@ newDelta stencilSums nV gV = do
       solM = LA.linearSolveSVD m rhsM
 --      solM <- maybeToRight "no LU solution even though SVD says no singular value!" $ LA.linearSolve m rhsM
   solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
-  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (LU): delta|m=\n" <> toText (LA.dispf 4 $ LA.tr solM)
+  let !_ = Unsafe.unsafePerformIO $ Say.say $ "\n (SVD): delta|m=\n" <> toText (LA.dispf 4 $ LA.tr solM)
   pure solV
 
 subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
