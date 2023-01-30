@@ -54,18 +54,24 @@ import qualified Data.Vector.Storable as VS
 
 import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
 import qualified Say as Say
+--import BlueRipple.Data.KeyedTables (keyF)
 
 
 
--- produce rowSums
-desiredRowSumsFld :: forall kOuter rk d .
-                     (Ord kOuter, Ord rk)
+-- produce sums for all given values of a key
+-- With a zero sum for given values with no
+-- rows matching
+-- We do this for each value of kOuter so we can
+-- choose what to fold over (e.g., State)
+-- and what to match on (e.g., CSR)
+desiredSumsFld :: forall kOuter k d .
+                     (Ord kOuter, Ord k)
                   => (d -> Int)
                   -> (d -> kOuter)
-                  -> (d -> rk)
-                  -> Set rk
-                  -> FL.Fold d (Map kOuter (Map rk Int))
-desiredRowSumsFld count outerKey innerKey allBs  =
+                  -> (d -> k)
+                  -> Set k
+                  -> FL.Fold d (Map kOuter (Map k Int))
+desiredSumsFld count outerKey innerKey allBs  =
   fmap M.fromList
   $ MR.mapReduceFold
   MR.noUnpack
@@ -76,7 +82,7 @@ desiredRowSumsFld count outerKey innerKey allBs  =
     innerAndCount r = (innerKey r, count r)
     zeroMap = M.fromList $ (, 0) <$> S.toList allBs
 --    asKeyVal r = (reKey $ F.rgetField @a r, F.rgetField @count r)
-    reduceFld :: FL.Fold (rk, Int) (Map rk Int)
+    reduceFld :: FL.Fold (k, Int) (Map k Int)
     reduceFld = M.unionWith (+) zeroMap <$> FL.foldByKeyMap FL.sum
 
 rowMajorMapFldInt :: forall d rk ck .
@@ -123,25 +129,29 @@ totaledTable m = mList ++ [("Total", totals)] where
   mList = fmap (first show) mAsList
   totals = foldl' (M.unionWith (+)) mempty $ fmap snd mAsList
 
-nearestCountsFrameFld :: forall rks cks outerKs ds rs .
+nearestCountsFrameFld :: forall ks outerKs ds rs .
                          (Ord (F.Record outerKs)
                          , outerKs F.⊆ rs
-                         , FSI.RecVec (outerKs V.++ rks V.++ cks V.++ ds)
-                         , (outerKs V.++ ((rks V.++ cks) V.++ ds) ~ ((outerKs V.++ rks) V.++ cks) V.++ ds)
-                         , ((rks V.++ cks) V.++ ds) F.⊆ rs
+                         , ks F.⊆ (ks V.++ ds)
+                         , FSI.RecVec (outerKs V.++ ks V.++ ds)
+                         , (outerKs V.++ (ks V.++ ds)) ~ ((outerKs V.++ ks) V.++ ds)
+                         , (ks V.++ ds) F.⊆ rs
                          )
-                      => (Map (F.Record rks) Int -> Set (F.Record cks)
-                          ->  FL.FoldM (Either Text) (F.Record (rks V.++ cks V.++ ds)) [F.Record (rks V.++ cks V.++ ds)])
-                      -> (F.Record outerKs -> Either Text (Map (F.Record rks) Int)) -- desired row sums
-                      -> Set (F.Record cks) -- column category in full in case some are missing from the frame
-                      -> FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ rks V.++ cks V.++ ds))
-nearestCountsFrameFld iFldE desiredRowSumsLookup cols =
+                      => ([StencilSum Int Int] -> FL.FoldM (Either Text) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)])
+                      -> FL.FoldM (Either Text) (F.Record ks) [StencilSum Int Int]
+                      -> FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ ds))
+nearestCountsFrameFld iFldE dsFld =
   FMR.concatFoldM $
   FMR.mapReduceFoldM
   (FMR.generalizeUnpack FMR.noUnpack)
-  (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(rks V.++ cks V.++ ds))
-  (MR.ReduceFoldM reduceM)
+  (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ ds))
+  (FMR.ReduceM reduceM)
   where
+    reduceM :: Foldable h => F.Record outerKs -> h (F.Record (ks V.++ ds)) -> Either Text (F.FrameRec (outerKs V.++ ks V.++ ds))
+    reduceM k rows = do
+      stSums <- FL.foldM (FL.premapM (pure . F.rcast) dsFld) rows
+      F.toFrame . fmap (k F.<+>) <$> FL.foldM (iFldE stSums) rows
+{-
     convertFldE :: Either d (FL.FoldM (Either d) e f) -> FL.FoldM (Either d) e f
     convertFldE fldE = case fldE of
       Right fld -> fld
@@ -149,7 +159,7 @@ nearestCountsFrameFld iFldE desiredRowSumsLookup cols =
     reduceM rk =
       let eFld = (\x -> iFldE x cols) <$> desiredRowSumsLookup rk
       in F.toFrame . fmap (rk V.<+>) <$> convertFldE eFld
-
+-}
 --  (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const $ nearestCountsFrameIFld @a @b @count desiredRowSums cols)
 {-
 newtype RowMajorKey a b = RowMajorKey (a, b) deriving newtype Show
@@ -170,70 +180,85 @@ colVal :: RowMajorKey a b -> b
 colVal (RowMajorKey (_, b)) = b
 -}
 
-nearestCountsFrameIFld :: forall rks cks ds b .
-                          ( Ord (F.Record rks)
-                          , Ord (F.Record cks)
-                          , rks F.⊆ ((rks V.++ cks) V.++ ds)
-                          , cks F.⊆ ((rks V.++ cks) V.++ ds)
-                          , ds F.⊆ ((rks V.++ cks) V.++ ds)
-                          , (rks V.++ (cks V.++ ds)) ~  ((rks V.++ cks) V.++ ds)
+nearestCountsFrameIFld :: forall ks ds b .
+                          ( Ord (F.Record ks)
+                          , ds F.⊆ (ks V.++ ds)
+                          , ks F.⊆ (ks V.++ ds)
                           , Monoid b
                           )
-                       =>  ([Int] -> [[Int]] -> Either Text [[Int]])
+                       =>  ([StencilSum Int Int] -> [Int] -> Either Text [Int])
                        -> (F.Record ds -> b)
                        -> (b -> F.Record ds)
                        -> (b -> Int)
                        -> (Int -> b -> b)
-                       -> Map (F.Record rks) Int
-                       -> Set (F.Record cks)
-                       ->  FL.FoldM (Either Text) (F.Record (rks V.++ cks V.++ ds)) [F.Record (rks V.++ cks V.++ ds)]
-nearestCountsFrameIFld innerComp toMonoid fromMonoid toInt updateInt rowSums allColumns =
+                       -> [StencilSum Int Int]
+                       -> FL.FoldM (Either Text) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)]
+nearestCountsFrameIFld innerComp toMonoid fromMonoid toInt updateInt sums =
   fmap (fmap toRecord)
-  $ nearestCountsIFld innerComp (toMonoid . F.rcast) toInt updateInt (F.rcast @rks) (F.rcast @cks) rowSums allColumns
+  $ nearestCountsIFld innerComp (toMonoid . F.rcast) toInt updateInt (F.rcast @ks) sums
   where
-    toRecord :: (F.Record rks, F.Record cks, b) -> F.Record (rks V.++ cks V.++ ds)
-    toRecord (rkr, ckr, b) = rkr F.<+> ckr F.<+> fromMonoid b
+    toRecord :: (F.Record ks, b) -> F.Record (ks V.++ ds)
+    toRecord (kr, b) = kr F.<+> fromMonoid b
 
-
-nearestCountsIFld :: forall d rk ck b .
+{-
+nearestCountsIFld_RC :: forall d rk ck b .
                      (Ord rk, Ord ck, Monoid b)
-                  => ([Int] -> [[Int]] -> Either Text [[Int]])
+                     => ([Int] -> [[Int]] -> Either Text [[Int]])
+                     -> (d -> b)
+                     -> (b -> Int)
+                     -> (Int -> b -> b)
+                     -> (d -> rk)
+                     -> (d -> ck)
+                     -> Map rk Int
+                     -> Set ck
+                     -> FL.FoldM (Either Text) d [(rk, ck, b)]
+nearestCountsIFld_RC innerComp toData dataCount updateCount rowKey colKey desiredRowSums colLabels =
+  nearestCountsIFld
+-}
+
+nearestCountsIFld :: forall d k b .
+                     (Ord k, Monoid b)
+                  => ([StencilSum Int Int] -> [Int] -> Either Text [Int])
                   -> (d -> b)
                   -> (b -> Int)
                   -> (Int -> b -> b)
-                  -> (d -> rk)
-                  -> (d -> ck)
-                  -> Map rk Int
-                  -> Set ck
-                  -> FL.FoldM (Either Text) d [(rk, ck, b)]
-nearestCountsIFld innerComp toData dataCount updateCount rowKey colKey desiredRowSums colLabels =
-  fmap (concat . makeTuples . uncurry mergeInts)
-  $ mapMFold (liftTupleFst . first (innerComp  (M.elems desiredRowSums)))
-  $ fmap (splitInts . toRows)
-  $ rowMajorMapFld toData rowKey colKey rowLabels colLabels
+                  -> (d -> k)
+                  -> [StencilSum Int Int]
+                  -> FL.FoldM (Either Text) d [(k, b)]
+nearestCountsIFld innerComp toData dataCount updateCount key desiredSums =
+  fmap (uncurry zip . second (uncurry mergeInts))
+  <$> mapMFold (liftTuple . applyInnerComp)
+  $ fmap (second splitInts . L.unzip . M.toList)
+  $ FL.premap (\d -> (key d, toData d)) (FL.foldByKeyMap FL.mconcat)
   where
-    splitInts :: [[b]] -> ([[Int]], [[b]])
-    splitInts bs = (dataCount <<$>> bs, bs)
+    splitInts :: [b] -> ([Int], [b])
+    splitInts bs = (dataCount <$> bs, bs)
 
-    mergeInts :: [[Int]] -> [[b]] -> [[b]]
-    mergeInts = zipWith (zipWith updateCount)
+    mergeInts :: [Int] -> [b] -> [b]
+    mergeInts = zipWith updateCount
 
-    liftTupleFst :: Applicative t => (t x, y) -> t (x, y)
-    liftTupleFst (tx, y) = (,) <$> tx <*> pure y
+--    liftTupleFst :: Applicative t => (t x, y) -> t (x, y)
+--    liftTupleFst (tx, y) = (,) <$> tx <*> pure y
 
-    rowLabels = M.keysSet desiredRowSums
+    liftTuple :: Applicative t => (x, (t y, z)) -> t (x, (y, z))
+    liftTuple (x, (ty, z)) = (\y z -> (x, (y, z))) <$> ty <*> pure z
 
-    toRows :: Map k x -> [[x]]
-    toRows = splitAtAll (S.size colLabels) . M.elems
+    applyInnerComp :: ([k], ([Int], [b])) -> ([k], (Either Text [Int], [b]))
+    applyInnerComp (ks, (ns, bs)) = (ks, (innerComp desiredSums ns, bs))
+
+--    rowLabels = M.keysSet desiredSums
+
+--    toRows :: Map k x -> [x]
+--    toRows = splitAtAll (S.size colLabels) . M.elems
 
     mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
     mapMFold f (FL.Fold step init' extract) = FL.FoldM (\x h -> pure $ step x h) (pure init') (f . extract)
 
-    makeTuple :: rk -> (ck, b) -> (rk, ck, b)
-    makeTuple r (c, b) =  (r, c, b)
+--    makeTuple :: rk -> (ck, b) -> (rk, ck, b)
+--    makeTuple r (c, b) =  (r, c, b)
 
-    makeTuples :: [[b]] -> [[(rk, ck, b)]]
-    makeTuples = zipWith (fmap . makeTuple) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
+--    makeTuples :: [[b]] -> [[(rk, ck, b)]]
+--    makeTuples = zipWith (fmap . makeTuple) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
 
  -- splitAt but keeps going until entire list is split into things of given length and whatever is left
 splitAtAll :: Int -> [c] -> [[c]]
@@ -280,7 +305,7 @@ colStencil rows cols col = Stencil $ fmap (\n -> col + cols * n) [0..rows - 1]
 transp :: [[a]] -> [[a]]
 transp = go [] where
   go x [] = fmap reverse x
-  go [] (r : rs) = go (fmap (\y -> [y]) r) rs
+  go [] (r : rs) = go (fmap (: []) r) rs
   go x (r :rs) = go (List.zipWith (:) r x) rs
 
 subgroupStencils :: Ord a => (r -> a) -> FL.Fold r (Map a (Stencil Int))
