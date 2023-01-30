@@ -35,7 +35,8 @@ import qualified Control.Foldl as FL
 import Control.Monad.Catch (throwM, MonadThrow)
 import qualified Data.IntMap as IM
 import qualified Data.List as L
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
 import qualified Control.Monad.Primitive as Prim
@@ -287,15 +288,19 @@ subgroupStencils key = mapFromList <$> FL.list
   where
     mapFromList = fmap Stencil . foldl' (\m (k, r) -> M.insertWith (<>) (key r) [k] m) mempty . zip [0..]
 
-{-
-subgroupStencilUnion :: Map a b -> Map a (Stencil c) -> Either Text [StencilSum c b]
-subgroupStencilUnion sumMap stencilMap =
 
-subgroupStencilSums :: Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum Int b]
-subgroupStencilSums sumLookup key = subGroupStencils key
+subgroupStencilUnion :: Ord a => Show a => Map a b -> Map a (Stencil c) -> Either Text [StencilSum b c]
+subgroupStencilUnion sumMap = fmap M.elems . MM.mergeA whenMissingSum whenMissingStencil whenMatched sumMap
   where
-    stencilsFromList = foldl' ()
--}
+    whenMatchedF _ sum stencil = Right $ StencilSum stencil sum
+    whenMatched = MM.zipWithAMatched whenMatchedF
+    whenMissingSumF k _ = Left $ "Missing sum for group present in stencil map (key=" <> show k <> ")"
+    whenMissingSum = MM.traverseMissing whenMissingSumF
+    whenMissingStencilF k _ = Left $ "Missing stencil for group present in sum map (key=" <> show k <> ")"
+    whenMissingStencil = MM.traverseMissing whenMissingStencilF
+
+subgroupStencilSums :: (Show a, Ord a) => Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum b Int]
+subgroupStencilSums sumMap key = FMR.postMapM (subgroupStencilUnion sumMap) $ FL.generalize (subgroupStencils key)
 
 nearestCountsKL_RC :: [Int] -> [[Int]] -> Either Text [[Int]]
 nearestCountsKL_RC rowSums oCountsI = do
