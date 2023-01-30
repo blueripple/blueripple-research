@@ -116,7 +116,7 @@ main = do
         onlyGender g r = F.rgetField @DT.SexC r == g
         onlyRE race eth r = F.rgetField @DT.RaceAlone4C r == race && F.rgetField @DT.HispC r == eth
         exampleFilter r = onlyState "AZ" r
-    acsSample <- K.ignoreCacheTimeM DDP.cachedACSByState'
+    acsSample <- F.filterFrame exampleFilter <$> K.ignoreCacheTimeM DDP.cachedACSByState'
     let acsSampleNoAgeCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateCitizenMN acsSample
         acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
     K.logLE K.Info "sample ACS data"
@@ -126,17 +126,51 @@ main = do
         allAge = Keyed.elements @DT.SimpleAge
         allEdu = Keyed.elements @DT.Education4
         allRace = Keyed.elements @DT.Race5
-        all2 as bs = S.fromList [(a, b) | a <- S.toList as, b <- S.toList bs]
+--        all2 as bs = S.fromList [(a, b) | a <- S.toList as, b <- S.toList bs]
         all3 as bs cs = S.fromList [(a, b, c) | a <- S.toList as, b <- S.toList bs, c <- S.toList cs]
-        allCE = all2 allCitizen allEdu
-        allSR = all2 allCitizen allRace
+--        allCE = all2 allCitizen allEdu
+--        allSR = all2 allCitizen allRace
 --        allSexRace = all2 allSex allRace
 --        allEduSex = all2 allEdus allSex --S.fromList $ [(e, s) | e <- S.toList allEdus, s <- [DT.Female, DT.Male]]
         allASR = all3 allAge allSex allRace
         allCSR = all3 allCitizen allSex allRace
+        allESR = all3 allEdu allSex allRace
 --        allSimpleAgesR = S.map (FT.recordSingleton @DT.SimpleAgeC) allSimpleAges
 --        allAgesR = S.map (FT.recordSingleton @DT.Age4C) allAges
 --        allEdusR = S.map (FT.recordSingleton @DT.Education4C) allEdus
+    -- target tables
+    let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
+        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
+    let csrDSFld =  DED.desiredSumsFld
+                    (F.rgetField @DT.PopCount)
+                    (F.rcast @'[GT.StateAbbreviation])
+                    (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
+                    (S.map csrRec allCSR)
+        csrDS = FL.fold csrDSFld acsSample
+        esrRec :: (DT.Education4, DT.Sex, DT.Race5) -> F.Record [DT.Education4C, DT.SexC, DT.Race5C]
+        esrRec (e, s, r) = e F.&: s F.&: r F.&: V.RNil
+        esrDSFld =  DED.desiredSumsFld
+                    (F.rgetField @DT.PopCount)
+                    (F.rcast @'[GT.StateAbbreviation])
+                    (\r -> esrRec (r ^. DT.education4C, r ^. DT.sexC, r ^. DT.race5C))
+                    (S.map esrRec allESR)
+        esrDS = FL.fold esrDSFld acsSample
+        asrRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
+        asrRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
+        asrDSFld =  DED.desiredSumsFld
+                    (F.rgetField @DT.PopCount)
+                    (F.rcast @'[GT.StateAbbreviation])
+                    (\r -> asrRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+                    (S.map asrRec allASR)
+        asrDS = FL.fold asrDSFld acsSample
+        eRec :: DT.Education4 -> F.Record '[DT.Education4C]
+        eRec e = e F.&: V.RNil
+        eDSFld = DED.desiredSumsFld
+                 (F.rgetField @DT.PopCount)
+                 (F.rcast @'[GT.StateAbbreviation])
+                 (\r -> eRec $ r ^. DT.education4C)
+                 (S.map eRec allEdu)
+        eDS = FL.fold eDSFld acsSample
     K.logLE K.Info "sample ACS data, aggregated by ages"
     let aggAgeTable =  FL.fold (fmap DED.totaledTable
                                  $ DED.rowMajorMapFldInt
@@ -168,25 +202,15 @@ main = do
           $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
           $ F.filterFrame exampleFilter enrichedCit
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) addCitTable)
-    let ncFrameIFldCSR_E = DED.nearestCountsFrameIFld @[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.Education4C]
-                           DED.nearestCountsKL_RC
-                           recToCWD
-                           cwdToRec
-                           cwdN
-                           updateCWDCount
-        csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
-        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
-        eRec :: DT.Education4 -> F.Record '[DT.Education4C]
-        eRec e = e F.&: V.RNil
-        addCitDSFld =  DED.desiredRowSumsFld
-                       (F.rgetField @DT.PopCount)
-                       (F.rcast @'[GT.StateAbbreviation])
-                       (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
-                       (S.map csrRec allCSR)
-        desiredCSRRowSumMap = FL.fold addCitDSFld acsSample
-        desiredCSRRowSumLookup k = maybeToRight (show k <> " not found in desired CSR sum row map") $ M.lookup k desiredCSRRowSumMap
-        nMatchCSRFld = DED.nearestCountsFrameFld @'[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.Education4C]
-                       ncFrameIFldCSR_E desiredCSRRowSumLookup (S.map eRec allEdu)
+    let ncFrameIFldCSER = DED.nearestCountsFrameIFld @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+                          DED.nearestCountsKL
+                          recToCWD
+                          cwdToRec
+                          cwdN
+                          updateCWDCount
+        nMatchCSRFld = DED.nearestCountsFrameFld ncFrameIFldCSER
+                       ({- DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS
+                       <> -} DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] eDS)
     nMatchCSR <- K.knitEither $ FL.foldM nMatchCSRFld enrichedCit
 --    BRK.logFrame $ F.filterFrame exampleFilter enrichedCit
 --    BRK.logFrame $ F.filterFrame exampleFilter nMatchCSR
@@ -202,7 +226,7 @@ main = do
           $ F.filterFrame exampleFilter nMatchCSR
     K.logLE K.Info "sample ACS data, aggregated by ages, and citizenship, then split by citizen model and row matched to actual CSR data"
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) nMatchCSRTable)
-
+{-
     enrichedAge <- KS.streamlyToKnit
                    $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @DT.PopCount
                    ageModelResult
@@ -268,7 +292,7 @@ main = do
           $ F.filterFrame exampleFilter acsSample
     K.logLE K.Info "Original ACS data."
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) acsTable)
-
+-}
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
 --    K.logLE K.Info $ show allEdus
 {-
