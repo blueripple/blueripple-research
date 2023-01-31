@@ -148,6 +148,7 @@ desiredSumMapToLookup :: forall qs outerKs ks .
                          , Show (F.Record ks)
                          , Show (F.Record outerKs)
                          , Ord (F.Record ks)
+                         , Ord (F.Record qs)
                          , Ord (F.Record outerKs)
 
                          )
@@ -228,22 +229,6 @@ nearestCountsFrameIFld innerComp toMonoid fromMonoid toInt updateInt sums =
     toRecord :: (F.Record ks, b) -> F.Record (ks V.++ ds)
     toRecord (kr, b) = kr F.<+> fromMonoid b
 
-{-
-nearestCountsIFld_RC :: forall d rk ck b .
-                     (Ord rk, Ord ck, Monoid b)
-                     => ([Int] -> [[Int]] -> Either Text [[Int]])
-                     -> (d -> b)
-                     -> (b -> Int)
-                     -> (Int -> b -> b)
-                     -> (d -> rk)
-                     -> (d -> ck)
-                     -> Map rk Int
-                     -> Set ck
-                     -> FL.FoldM (Either Text) d [(rk, ck, b)]
-nearestCountsIFld_RC innerComp toData dataCount updateCount rowKey colKey desiredRowSums colLabels =
-  nearestCountsIFld
--}
-
 nearestCountsIFld :: forall d k b .
                      (Ord k, Monoid b)
                   => ([StencilSum Int Int] -> [Int] -> Either Text [Int])
@@ -265,28 +250,14 @@ nearestCountsIFld innerComp toData dataCount updateCount key desiredSums =
     mergeInts :: [Int] -> [b] -> [b]
     mergeInts = zipWith updateCount
 
---    liftTupleFst :: Applicative t => (t x, y) -> t (x, y)
---    liftTupleFst (tx, y) = (,) <$> tx <*> pure y
-
     liftTuple :: Applicative t => (x, (t y, z)) -> t (x, (y, z))
     liftTuple (x, (ty, z)) = (\yy zz -> (x, (yy, zz))) <$> ty <*> pure z
 
     applyInnerComp :: ([k], ([Int], [b])) -> ([k], (Either Text [Int], [b]))
     applyInnerComp (ks, (ns, bs)) = (ks, (innerComp desiredSums ns, bs))
 
---    rowLabels = M.keysSet desiredSums
-
---    toRows :: Map k x -> [x]
---    toRows = splitAtAll (S.size colLabels) . M.elems
-
     mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
     mapMFold f (FL.Fold step init' extract) = FL.FoldM (\x h -> pure $ step x h) (pure init') (f . extract)
-
---    makeTuple :: rk -> (ck, b) -> (rk, ck, b)
---    makeTuple r (c, b) =  (r, c, b)
-
---    makeTuples :: [[b]] -> [[(rk, ck, b)]]
---    makeTuples = zipWith (fmap . makeTuple) (S.toList rowLabels) . fmap (zip (S.toList colLabels))
 
  -- splitAt but keeps going until entire list is split into things of given length and whatever is left
 splitAtAll :: Int -> [c] -> [[c]]
@@ -336,8 +307,10 @@ transp = go [] where
   go [] (r : rs) = go (fmap (: []) r) rs
   go x (r :rs) = go (List.zipWith (:) r x) rs
 
-subgroupStencils :: Ord a => (r -> a) -> FL.Fold r (Map a (Stencil Int))
-subgroupStencils key = mapFromList <$> FL.list
+-- We use FL.set to make sure it's in the order imposed by the Ord instance
+-- so it will match up with the stencils
+subgroupStencils :: (Ord a, Ord r) => (r -> a) -> FL.Fold r (Map a (Stencil Int))
+subgroupStencils key = mapFromList . S.toList <$> FL.set
   where
     mapFromList = fmap Stencil . foldl' (\m (k, r) -> M.insertWith (<>) (key r) [k] m) mempty . zip [0..]
 
@@ -347,14 +320,17 @@ subgroupStencilUnion sumMap = fmap M.elems . MM.mergeA whenMissingStencil whenMi
     whenMatchedF :: a -> b -> Stencil c -> Either Text (StencilSum b c)
     whenMatchedF _ desiredSum stencil = Right $ StencilSum stencil desiredSum
     whenMatched = MM.zipWithAMatched whenMatchedF
+    -- assume a missing sum means zero
     whenMissingSumF :: a -> Stencil c -> Either Text (StencilSum b c)
     whenMissingSumF _ stencil = Right $ StencilSum stencil (mempty :: b)
     whenMissingSum = MM.traverseMissing whenMissingSumF
+    -- This case is weird. No stencil means the data we are trying to match has zeroes in all these
+    -- positions. So we cannot satisfy this constraint.
     whenMissingStencilF :: a -> b -> Either Text (StencilSum b c)
     whenMissingStencilF k _ = Left $ "Missing stencil for  group present in sum map (key=" <> show k <> ")"
     whenMissingStencil = MM.traverseMissing whenMissingStencilF
 
-subgroupStencilSums :: (Show a, Ord a, Monoid b) => Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum b Int]
+subgroupStencilSums :: (Show a, Ord a, Ord r, Monoid b) => Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum b Int]
 subgroupStencilSums sumMap key = FMR.postMapM (subgroupStencilUnion sumMap) $ FL.generalize (subgroupStencils key)
 
 
@@ -393,8 +369,11 @@ nearestCountsKL :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
 nearestCountsKL stencilSumsI oCountsI = do
   let toDouble = realToFrac @Int @LA.R
       nV = LA.fromList $ fmap toDouble oCountsI
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=\n" <> show nV
+{-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nN=\n" <> show nV
       !_ = Unsafe.unsafePerformIO $ Say.say $ "\nStencils=\n" <> show stencilSumsI
+      mnV = mMatrix (VS.length nV) (stPositions <$> stencilSumsI) LA.#> nV
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nM N=\n" <> show mnV
+-}
       -- Remove zeroes, both from N and all of any stencils with zero sum
       removedIndexes =
         S.toList
