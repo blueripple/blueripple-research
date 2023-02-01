@@ -241,6 +241,7 @@ library
                , hashtables >= 1.2.3.4 && < 1.4
                , haskell-stan >= 0.1.0.0
                , hmatrix
+               , hmatrix-glpk
 --               , math-functions
                , mtl
                , hmatrix-nlopt

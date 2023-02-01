@@ -4,6 +4,9 @@ with-compiler: ghc
 -- ghc-9.4.4
 allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
 
+package hmatrix-glpk
+  extra-include-dirs: /opt/homebrew/include
+
 -- ghc 9.X
 --source-repository-package
 --  type: git
