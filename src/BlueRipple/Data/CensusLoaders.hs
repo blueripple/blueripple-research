@@ -226,13 +226,13 @@ checkAllCongressionalAndConvert :: forall r a b.
                                    , FI.RecVec (a V.++ b V.++ '[DT.PopCount])
                                    )
                                 => F.FrameRec (CensusRow BRC.LDLocationR a b)
-                                -> K.Sem r (F.FrameRec (CensusRow '[BR.StateFips, GT.CongressionalDistrict] a b))
+                                -> K.Sem r (F.FrameRec (CensusRow '[GT.StateFIPS, GT.CongressionalDistrict] a b))
 checkAllCongressionalAndConvert rs = do
   let isCongressional r = F.rgetField @GT.DistrictTypeC r == GT.Congressional
       asInteger t = first (("checkAllCongressionalAndConvert.isInteger: " <>) . toText)
                     $ TR.decimal t >>= (\x -> if T.null (snd x) then Right (fst x) else Left "Text remaining after parsing integer")
       cdE r = FT.recordSingleton @GT.CongressionalDistrict <$> (asInteger $ F.rgetField @GT.DistrictName r)
-      convertedE ::  Either Text (F.FrameRec (CensusRow '[BR.StateFips, GT.CongressionalDistrict] a b))
+      convertedE ::  Either Text (F.FrameRec (CensusRow '[GT.StateFIPS, GT.CongressionalDistrict] a b))
       convertedE = F.toFrame <$> (traverse (fmap F.rcast . FT.mutateM cdE) $ FL.fold FL.list $ F.filterFrame isCongressional rs)
       frameLength x = FL.fold FL.length x
   converted <- K.knitEither $ convertedE
@@ -299,7 +299,7 @@ censusDemographicsRecode rows =
                  , makeRec DT.RA4_Other DT.NonHispanic onh
                  ]
         in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
-      addDensity r = FT.recordSingleton @DT.PopPerSqMile $ F.rgetField @BRC.PWPopPerSqMile r
+      addDensity r = FT.recordSingleton @DT.PopPerSqMile $ F.rgetField @DT.PWPopPerSqMile r
   in fmap (F.rcast . FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 ---
 

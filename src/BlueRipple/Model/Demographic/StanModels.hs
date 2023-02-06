@@ -19,15 +19,19 @@ module BlueRipple.Model.Demographic.StanModels
 where
 
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
-
+import qualified BlueRipple.Configuration as BR
+import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Keyed as BRK
+import qualified BlueRipple.Utilities.KnitUtils as BRKU
 
 import qualified Stan.ModelBuilder as S
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.BuildingBlocks as SB
 import qualified Stan.ModelConfig as SC
+import qualified Stan.RScriptBuilder as SR
+import qualified Stan.ModelRunner as SMR
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
@@ -39,11 +43,12 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 --import qualified Frames.Streamly.InCore as FS
 import qualified Frames.Serialize as FS
 import qualified Flat
-
+import Control.Lens (view, (^.))
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
@@ -53,6 +58,64 @@ import qualified Numeric
 import qualified CmdStan as CS
 import qualified Stan.Parameters as SP
 import qualified Data.IntMap.Strict as IM
+
+logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> Text -> K.Sem r ()
+logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> " has " <> show (FL.fold FL.length x) <> " rows."
+
+runModel :: forall l ks r .
+            (K.KnitEffects r, BRKU.CacheEffects r
+            , Ord (F.Record ks)
+            , Enum l, Bounded l, Ord l
+            , ks F.⊆ DDP.ACSByStateR
+            , Typeable (ks V.++ '[DT.PWPopPerSqMile])
+            , F.ElemOf  (ks V.++ '[DT.PWPopPerSqMile]) DT.PWPopPerSqMile
+            , ks F.⊆ ([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS] V.++ (ks V.++ '[DT.PWPopPerSqMile]))
+            , V.RMap ks
+            , FS.RecFlat ks
+            , Ord (F.Rec FS.SElField ks)
+            , BRK.FiniteSet (F.Record ks)
+            )
+         => Bool
+         -> BR.CommandLine
+         -> ModelConfig ()
+         -> (Text, F.Record DDP.ACSByStateR -> l)
+         -> (Text, DM.DesignMatrixRow (F.Record ks))
+         -> K.Sem r (ModelResult Text ks)
+runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, dmr) = do
+  let cacheDirE = let k = ("model/demographic/" <> modeledT <> "/") in if clearCaches then Left k else Right k
+      dataName = "acs" <> modeledT <> "_" <> DM.dmName dmr <> modelConfigSuffix mc
+      runnerInputNames = SC.RunnerInputNames
+                         ("br-2022-Demographics/stan" <> modeledT)
+                         ("normal" <> fromT <> "_" <> DM.dmName dmr <> modelConfigSuffix mc)
+                         (Just $ SC.GQNames "pp" dataName)
+                         dataName
+      only2020 r = F.rgetField @BRDF.Year r == 2020
+      _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+--  _ageModelPaths <- postPaths ("Model" cmdLine
+  acs_C <- DDP.cachedACSByState'
+--  K.ignoreCacheTime acs_C >>= BRK.logFrame
+  logLengthC acs_C "acsByState"
+  let acsMN_C = fmap (DDP.acsByStateMN @ks modeledK) acs_C
+      mcWithId = "normal" <$ mc
+--  K.ignoreCacheTime acsMN_C >>= print
+  logLengthC acsMN_C ("acsByState Counted for " <> modeledT)
+  states <- FL.fold (FL.premap (view GT.stateAbbreviation . fst) FL.set) <$> K.ignoreCacheTime acsMN_C
+  (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
+                (groupBuilderState (S.toList states))
+                (normalModel (contramap F.rcast dmr) mc)
+  res <- do
+    K.ignoreCacheTimeM
+      $ SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
+      cacheDirE
+      (Right runnerInputNames)
+      dw
+      code
+      (stateModelResultAction mcWithId dmr)
+      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+      acsMN_C
+      (pure ())
+  K.logLE K.Info "citizenModel run complete."
+  pure res
 
 data HierarchicalType = HCentered | HNonCentered deriving stock (Show, Eq, Ord)
 
@@ -94,7 +157,7 @@ data BasicParameters = BasicParameters { mAlpha0 :: Maybe TE.RealE
 --                                       , mBetaDensity :: Maybe TE.RealE
                                        }
 
-modelData :: forall rs . (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+modelData :: forall rs . (Typeable rs, F.ElemOf rs DT.PWPopPerSqMile)
           => DM.DesignMatrixRow (F.Record rs)
           -> ModelConfig ()
           -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () (ModelData rs)
@@ -112,7 +175,7 @@ modelData dmr mc = do
   mDensity' <- case includeDensity mc of
     False -> pure Nothing
     True -> do
-      rawDensity <- SB.addRealData acsData "rawLogDensity" Nothing Nothing (DDP.safeLog . F.rgetField @DT.PopPerSqMile . fst)
+      rawDensity <- SB.addRealData acsData "rawLogDensity" Nothing Nothing (DDP.safeLog . F.rgetField @DT.PWPopPerSqMile . fst)
       stdDensity <- S.inBlock S.SBTransformedData $ S.addFromCodeWriter $ do
         let m = TE.functionE SF.mean (rawDensity :> TNil)
             sd = TE.functionE SF.sqrt (TE.functionE SF.variance (rawDensity :> TNil) :> TNil)
@@ -167,7 +230,7 @@ basicParameters mc md = do
   pure $ BasicParameters (f <$> mAlpha0P) (f alphaP) (f betaP) logitMu'
 
 
-normalModel :: forall rs . (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+normalModel :: forall rs . (Typeable rs, F.ElemOf rs DT.PWPopPerSqMile)
             => DM.DesignMatrixRow (F.Record rs)
             -> ModelConfig ()
             -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
@@ -227,7 +290,7 @@ normalModel dmr mc = do
   pure ()
 
 
-betaBinomialModel :: forall rs. (Typeable rs, F.ElemOf rs DT.PopPerSqMile)
+betaBinomialModel :: forall rs. (Typeable rs, F.ElemOf rs DT.PWPopPerSqMile)
             => DM.DesignMatrixRow (F.Record rs)
             -> ModelConfig ()
             -> S.StanBuilderM [(F.Record rs, VU.Vector Int)] () ()
@@ -296,6 +359,92 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
+dmrCFromSER :: forall rs . (F.ElemOf rs DT.Education4C
+                           , F.ElemOf rs DT.SexC
+                           , F.ElemOf rs DT.Race5C
+                           )
+                        => DM.DesignMatrixRow (F.Record rs)
+dmrCFromSER = DM.DesignMatrixRow "C_S+ER" [sexRP, raceEduRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
+dmrAFromCSER :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.Education4C
+                                   , F.ElemOf rs DT.SexC
+                                   , F.ElemOf rs DT.Race5C
+                                   )
+                   => DM.DesignMatrixRow (F.Record rs)
+dmrAFromCSER = DM.DesignMatrixRow "A_C+S+ER" [citRP, sexRP, raceEduRP]
+  where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
+
+dmrAFromCSR :: forall rs . (F.ElemOf rs DT.CitizenC
+                           , F.ElemOf rs DT.SexC
+                           , F.ElemOf rs DT.Race5C
+                           )
+                   => DM.DesignMatrixRow (F.Record rs)
+dmrAFromCSR = DM.DesignMatrixRow "A_S+CR" [sexRP, citRaceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    citRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.Citizen,  DT.R5_WhiteNonHispanic)) "CttRace"
+                $ \r -> DM.BEProduct2 (r ^. DT.citizenC, r ^. DT.race5C)
+
+dmrCFromCASR :: forall rs . (F.ElemOf rs DT.CitizenC
+                                   , F.ElemOf rs DT.SimpleAgeC
+                                   , F.ElemOf rs DT.SexC
+                                   , F.ElemOf rs DT.Race5C
+                                   )
+                   => DM.DesignMatrixRow (F.Record rs)
+dmrCFromCASR = DM.DesignMatrixRow "A_C+S+AR" [citRP, sexRP, ageRaceRP]
+  where
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    ageRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.Under, DT.R5_WhiteNonHispanic)) "RaceEdu"
+                $ \r -> DM.BEProduct2 (r ^. DT.simpleAgeC, r ^. DT.race5C)
+
+
+
+dmrAFromSER :: forall rs . (F.ElemOf rs DT.Education4C
+                           , F.ElemOf rs DT.SexC
+                           , F.ElemOf rs DT.Race5C
+                           )
+                   => DM.DesignMatrixRow (F.Record rs)
+dmrAFromSER = DM.DesignMatrixRow "A_S+ER" [sexRP, raceEduRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
+                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
+
+dmrCFromASER :: forall rs . (F.ElemOf rs DT.Education4C
+                            , F.ElemOf rs DT.SexC
+                            , F.ElemOf rs DT.Race5C
+                            , F.ElemOf rs DT.SimpleAgeC
+                            )
+                        => DM.DesignMatrixRow (F.Record rs)
+dmrCFromASER = DM.DesignMatrixRow "C_S+AER" [sexRP, ageRaceEduRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    ageRaceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Under, DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "AgeRaceEdu"
+                   $ \r -> DM.BEProduct3 (r ^. DT.simpleAgeC, r ^. DT.race5C, r ^. DT.education4C)
+
+
+dmrEFromCASR :: forall rs . (F.ElemOf rs DT.CitizenC
+                            , F.ElemOf rs DT.SexC
+                            , F.ElemOf rs DT.Race5C
+                            , F.ElemOf rs DT.SimpleAgeC
+                            )
+                        => DM.DesignMatrixRow (F.Record rs)
+dmrEFromCASR = DM.DesignMatrixRow "E_S+CAR" [sexRP, citAgeRaceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    citAgeRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Citizen, DT.Under, DT.R5_WhiteNonHispanic)) "AgeRaceEdu"
+                   $ \r -> DM.BEProduct3 (r ^. DT.citizenC, r ^. DT.simpleAgeC, r ^. DT.race5C)
+
+
 
 designMatrixRowAge :: forall rs . (F.ElemOf rs DT.CitizenC
                                   , F.ElemOf rs DT.Education4C
@@ -310,30 +459,20 @@ designMatrixRowAge = DM.DesignMatrixRow "DMAge" [citRP, sexRP, eduRP, raceRP]
     eduRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Education" (F.rgetField @DT.Education4C)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
 
-designMatrixRowAge2 :: forall rs . (F.ElemOf rs DT.CitizenC
-                                   , F.ElemOf rs DT.Education4C
-                                   , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.Race5C
-                                   )
-                   => DM.DesignMatrixRow (F.Record rs)
-designMatrixRowAge2 = DM.DesignMatrixRow "DMAge2" [citRP, sexRP, raceEduRP]
-  where
-    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
-                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
 
 
 designMatrixRowCitizen :: forall rs . (F.ElemOf rs DT.Education4C
                                       , F.ElemOf rs DT.SexC
                                       , F.ElemOf rs DT.Race5C
-                                  )
+                                      )
                        => DM.DesignMatrixRow (F.Record rs)
 designMatrixRowCitizen = DM.DesignMatrixRow "DMCitizen" [sexRP, eduRP, raceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     eduRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Education" (F.rgetField @DT.Education4C)
     raceRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (F.rgetField @DT.Race5C)
+
+
 
 --
 newtype ModelResult2 ks = ModelResult2 { unModelResult :: Map (F.Record ks) Double }
@@ -384,7 +523,7 @@ stateModelResultAction :: forall rs ks a r gq.
                           (K.KnitEffects r
                           , Typeable rs
                           , Typeable a
-                          , F.ElemOf rs DT.PopPerSqMile
+                          , F.ElemOf rs DT.PWPopPerSqMile
 --                          , ks F.⊆ rs
                           , Ord (F.Record ks)
                           , BRK.FiniteSet (F.Record ks)
@@ -397,7 +536,7 @@ stateModelResultAction mc dmr = SC.UseSummary f where
 --    let resultCacheKey = modelID mc <> "_" <> DM.dmName dmr <> modelConfigSuffix mc
     (modelData', resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
     -- we need to rescale the density component to work
-    let premap = DDP.safeLog . F.rgetField @DT.PopPerSqMile . fst
+    let premap = DDP.safeLog . F.rgetField @DT.PWPopPerSqMile . fst
         msFld = (,) <$> FL.mean <*> FL.std
         (ldMean, ldSigma) = FL.fold (FL.premap premap msFld) modelData'
     stateIM <- K.knitEither

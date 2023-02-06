@@ -103,6 +103,7 @@ FTH.declareColumn "PopCount" ''Int
 
 --type PopPerSqMile = "PopPerSqMile" F.:-> Double
 FTH.declareColumn "PopPerSqMile" ''Double
+FTH.declareColumn "PWPopPerSqMile" ''Double
 
 data Sex = Female | Male deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 deriving anyclass instance Hashable Sex

@@ -48,16 +48,57 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
 import qualified Numeric.LinearAlgebra as LA
-import qualified Numeric.LinearProgramming as LP
-import qualified Numeric.LinearProgramming.L1 as LP1
+--import qualified Numeric.LinearProgramming as LP
+--import qualified Numeric.LinearProgramming.L1 as LP1
 import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
-import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
-import qualified Say as Say
---import BlueRipple.Data.KeyedTables (keyF)
+--import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
+--import qualified Say as Say
 
+data TableMatchingDataFunctions d b where
+  TableMatchingDataFunctions :: Monoid b => d -> (d -> b) -> (b -> d) -> (b -> Int) -> (Int -> b -> b) -> TableMatchingDataFunctions d b
+
+
+pipelineStep :: forall ks cks outerKs ds b count rs m .
+                (MonadThrow m
+                , Prim.PrimMonad m
+                , outerKs V.++ ((cks V.++ ks) V.++ ds) ~ ((outerKs V.++ cks) V.++ ks) V.++ ds
+                , (((outerKs V.++ cks) V.++ ks) V.++ ds) ~ ((outerKs V.++ (cks V.++ ks)) V.++ ds)
+                , V.KnownField count
+                , F.ElemOf rs count
+                , FSI.RecVec rs
+                , FSI.RecVec (cks V.++ rs)
+                , ks F.⊆ rs
+                , Ord (F.Record (cks V.++ ks))
+                , ds F.⊆ ((cks V.++ ks) V.++ ds)
+                , (cks V.++ ks) F.⊆ ((cks V.++ ks) V.++ ds)
+                , Ord (F.Record outerKs)
+                , BRK.FiniteSet (F.Record (cks V.++ ks))
+                , FSI.RecVec ((outerKs V.++ (cks V.++ ks)) V.++ ds)
+                , outerKs F.⊆ rs
+                , ((cks V.++ ks) V.++ ds) F.⊆ rs
+                , rs F.⊆ (cks V.++ rs)
+                )
+             => TableMatchingDataFunctions (F.Record ds) b
+             -> ([StencilSum Int Int] -> [Int] -> Either Text [Int]) -- ^ table matching algo
+             -> (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
+             -> StencilSumLookupFld (F.Record outerKs) (F.Record (cks V.++ ks)) -- ^ produce tables to match
+             -> F.FrameRec rs
+             -> m (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
+pipelineStep tableMatchingDFs matchingAlgo enrichModel matchTablesFld rows = do
+  case tableMatchingDFs of
+    TableMatchingDataFunctions dflt toMon fromMon toInt updateMon -> do
+      enrichedRows <- enrichFrameFromModel @count enrichModel rows
+      let matchingIFld :: [StencilSum Int Int] -> FL.FoldM (Either Text) (F.Record (cks V.++ ks V.++ ds)) [F.Record (cks V.++ ks V.++ ds)]
+          matchingIFld = (nearestCountsFrameIFld @(cks V.++ ks) @ds @b) matchingAlgo toMon fromMon toInt updateMon
+          matchingFld :: FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
+          matchingFld = nearestCountsFrameFld @(cks V.++ ks) @outerKs @ds dflt matchingIFld matchTablesFld
+          eRes = FL.foldM (FL.premapM (pure . F.rcast) matchingFld) enrichedRows
+      case eRes of
+        Left err -> throwM $ TableMatchingException err
+        Right x -> pure x
 
 
 -- produce sums for all given values of a key
@@ -79,7 +120,6 @@ desiredSumsFld count outerKey innerKey allKeys  =
   MR.noUnpack
   (MR.assign outerKey innerAndCount)
   (MR.foldAndLabel reduceFld (,))
-
   where
     innerAndCount r = (innerKey r, count r)
     zeroMap = M.fromList $ (, mempty) <$> S.toList allKeys
@@ -95,9 +135,8 @@ rowMajorMapFldInt :: forall d rk ck .
                -> Set rk
                -> Set ck
                -> FL.Fold d (Map (rk, ck) Int)
-rowMajorMapFldInt toData rowKey colKey allRowKeysS allColKeysS = fmap (fmap getSum)
-                                                                 $ rowMajorMapFld (Sum . toData) rowKey colKey allRowKeysS allColKeysS
-
+rowMajorMapFldInt toData rowKey colKey allRowKeysS allColKeysS =
+  getSum <<$>> rowMajorMapFld (Sum . toData) rowKey colKey allRowKeysS allColKeysS
 
 rowMajorMapFld :: forall d rk ck b .
                   (Ord rk, Ord ck, Monoid b)
@@ -195,26 +234,6 @@ nearestCountsFrameFld zeroData iFldE (StencilSumLookupFld stencilSumsLookupF) =
       stSums <- FL.foldM (FL.premapM (pure . F.rcast) $ stencilSumsLookupF ok) rowsWithZeroes
       F.toFrame . fmap (ok F.<+>) <$> FL.foldM (iFldE stSums) rowsWithZeroes
 
---  (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const $ nearestCountsFrameIFld @a @b @count desiredRowSums cols)
-{-
-newtype RowMajorKey a b = RowMajorKey (a, b) deriving newtype Show
-
-instance (Eq a, Eq b) => Eq (RowMajorKey a b) where
-  (RowMajorKey (a1, b1)) == (RowMajorKey (a2, b2)) = a1 == a2 && b1 == b2
-
--- compare b first so the ordering will be row major
-instance (Ord a, Ord b) => Ord (RowMajorKey a b) where
-  compare (RowMajorKey (a1, b1)) (RowMajorKey (a2, b2)) = case compare a1 a2 of
-    EQ -> compare b1 b2
-    x -> x
-
-rowVal :: RowMajorKey a b -> a
-rowVal (RowMajorKey (a, _)) = a
-
-colVal :: RowMajorKey a b -> b
-colVal (RowMajorKey (_, b)) = b
--}
-
 nearestCountsFrameIFld :: forall ks ds b .
                           ( Ord (F.Record ks)
                           , ds F.⊆ (ks V.++ ds)
@@ -229,8 +248,7 @@ nearestCountsFrameIFld :: forall ks ds b .
                        -> [StencilSum Int Int]
                        -> FL.FoldM (Either Text) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)]
 nearestCountsFrameIFld innerComp toMonoid fromMonoid toInt updateInt sums =
-  fmap (fmap toRecord)
-  $ nearestCountsIFld innerComp (toMonoid . F.rcast) toInt updateInt (F.rcast @ks) sums
+  toRecord <<$>> nearestCountsIFld innerComp (toMonoid . F.rcast) toInt updateInt (F.rcast @ks) sums
   where
     toRecord :: (F.Record ks, b) -> F.Record (ks V.++ ds)
     toRecord (kr, b) = kr F.<+> fromMonoid b
@@ -283,7 +301,6 @@ nearestCountsProp dRowSums oCounts = do
               totalDiff = desiredSum - rowSum
               mult :: Double = realToFrac totalDiff /  realToFrac rowSum
               adjustCell n = n + round (mult * realToFrac n)
-
   pure $ zipWith adjustRow dRowSums oCounts
 
 -- represents various positions in the list of numbers
@@ -300,18 +317,6 @@ mapStencilSum f (StencilSum ps x) = StencilSum ps (f x)
 
 mapStencilPositions :: (Stencil a -> Stencil a) -> StencilSum b a -> StencilSum b a
 mapStencilPositions f (StencilSum sa x) = StencilSum (f sa) x
-
-rowStencil :: Int -> Int -> Stencil Int
-rowStencil cols row = Stencil $ (+ (row * cols)) <$> [0..cols - 1]
-
-colStencil :: Int -> Int -> Int -> Stencil Int
-colStencil rows cols col = Stencil $ fmap (\n -> col + cols * n) [0..rows - 1]
-
-transp :: [[a]] -> [[a]]
-transp = go [] where
-  go x [] = fmap reverse x
-  go [] (r : rs) = go (fmap (: []) r) rs
-  go x (r :rs) = go (List.zipWith (:) r x) rs
 
 -- We use FL.set to make sure it's in the order imposed by the Ord instance
 -- so it will match up with the stencils
@@ -342,16 +347,6 @@ subgroupStencilUnion sumMap = fmap M.elems . MM.mergeA whenMissingStencil whenMi
 subgroupStencilSums :: (Show a, Ord a, Ord r, Monoid b, Eq b) => Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum b Int]
 subgroupStencilSums sumMap key = FMR.postMapM (subgroupStencilUnion sumMap) $ FL.generalize (subgroupStencils key)
 
-
-nearestCountsKL_RC :: [Int] -> [[Int]] -> Either Text [[Int]]
-nearestCountsKL_RC rowSums oCountsI = do
-    let rows = length oCountsI
-    cols <- maybeToRight "Empty list of counts given to nearestCountsKL_RC" $ viaNonEmpty (length . head) oCountsI
-    let rowSumStencils = zipWith (\j s -> (StencilSum (rowStencil cols j) s)) [0..(rows - 1)] rowSums
-        colSums = fmap (FL.fold FL.sum) $ transp oCountsI
-        colSumStencils = zipWith (\k s -> (StencilSum (colStencil rows cols k) s)) [0..(cols - 1)] colSums
-    splitAtAll cols <$> nearestCountsKL (rowSumStencils <> colSumStencils) (concat oCountsI)
-
 removeFromListAtIndexes :: [Int] -> [a] -> [a]
 removeFromListAtIndexes is ls =
   snd
@@ -365,9 +360,415 @@ fillListAtIndexes fill is ls = foldl' (\curList ir -> let (h, t) = splitAt ir cu
 
 removeFromStencilAtIndexes :: [Int] -> Stencil Int -> Stencil Int
 removeFromStencilAtIndexes is (Stencil ks) = Stencil ms where
-  stencilIM = IM.union (IM.fromList $ fmap (,1 :: Int) ks) (IM.fromList $ zip [0..L.maximum ks] $ repeat 0)
+  stencilIM = IM.union (IM.fromList $ fmap (,1 :: Int) ks) (IM.fromList $ fmap (,0) [0..L.maximum ks])
   ms = fmap fst $ filter ((/= 0) . snd) $ zip [0..] $ removeFromListAtIndexes is $ fmap snd $ IM.toList stencilIM
 
+mMatrix :: Int -> [Stencil Int] -> LA.Matrix LA.R
+mMatrix nProbs stencils = LA.assoc (nStencils, nProbs) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
+  where
+    nStencils = length stencils
+    f (n, Stencil ks) = (\k -> ((n, k), 1)) <$> ks
+
+-- Remove redundant constraints.
+-- We are going to need to solve Ax = b where A might have redundancy
+-- So do SVD: A = U S V' (U, V orthogonal, S diagonal)
+-- compact SVD truncates all to non-zero singular values
+-- which removes the null-space (redundancy in constraints)
+-- now: (U S V')x = b
+-- so: V' b = (1/S) U' b is our new problem
+-- Where 1/S is diagonal like S (and, recall, S had dropped the zero singular values)
+stencilSumsToConstraintSystem :: Int -> [StencilSum Int Int] -> (LA.Matrix LA.R, LA.Vector LA.R)
+stencilSumsToConstraintSystem n stencilSumsI =
+  let cM = mMatrix n (stPositions <$> stencilSumsI)
+      y = VS.fromList $ realToFrac . stSum <$> stencilSumsI
+      -- the undertermined and redundant system is just cM and y
+      (u, s, v) = LA.compactSVD cM
+      invS = VS.map (1 /) s
+  in (LA.tr v, LA.diag invS LA.#> (LA.tr u LA.#> y))
+
+-- This gives fairly different answers if y == 0 => klF x y = 0
+klDiv :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+klDiv nV mV = res
+  where
+    res = (1 / nSum) * VS.sum (VS.zipWith klF nV mV) - Numeric.log nSum + Numeric.log mSum
+--    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
+    nSum = VS.sum nV
+    mSum = VS.sum mV
+    klF x y = {- if x == 0 then 0 else-} x * Numeric.log (x / y)
+
+klGrad :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+klGrad nV mV = res
+  where
+    res = VS.zipWith f nV mV
+--    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res
+    c = 1 / VS.sum mV
+    f n m = c - {- if m == 0 then 1 else -} n / m
+
+klObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
+klObjF nV mV = (klDiv nV mV, klGrad nV mV)
+
+lsObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
+lsObjF nV mV = (LA.norm_2 $ nV - mV, 2 * (mV - nV))
+
+-- this one works. But
+-- 1. Requires removal of redundant constraints (see stencilSumsToConstraintSystem)
+-- 2. Is sensitive to stopping criteria. An absolute tolerance did not work
+minConstrained :: (LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R))
+               -> [StencilSum Int Int] -> [Int] -> Either Text [Int]
+minConstrained objF stencilSumsI oCountsI = do
+  let !removedIndexes =
+        sortNub
+        $ fmap fst (filter ((== 0) . snd) (zip [0..] oCountsI))
+        <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
+{-      !_ = Unsafe.unsafePerformIO $ Say.say $ "removedIndexes=" <> show removedIndexes
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "n before=" <> show oCountsI
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
+-}
+      givenV' = VS.fromList $ (realToFrac @_ @Double) <$> removeFromListAtIndexes removedIndexes oCountsI
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums before=" <> show stencilSumsI
+      stencilSumsI' = if null removedIndexes
+                      then stencilSumsI
+                      else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums after=" <> show stencilSumsI'
+      nNums = VS.length givenV'
+      (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
+
+{-      !_ =  let cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+            in Unsafe.unsafePerformIO $ Say.say $ "cM was " <> show (LA.size cM)
+               <> " and cM' is " <> show (LA.size cM')
+               <> " with new rhs=" <> show s'
+-}
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList s)
+        where
+          s = realToFrac . stSum <$> stencilSumsI
+          givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
+          cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+      cErrD (sV, c) v = (LA.dot v sV - c, sV)
+      constraintsD = cErrD <$> zip (LA.toRows cM') (VS.toList s')
+      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
+      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
+      relativeTol = 0.001
+      maxIters = 50
+      nlStop = NLOPT.ParameterRelativeTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
+      nlAlgo = NLOPT.SLSQP (objF givenV') nlBounds [] nlConstraintsD
+      nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem givenV'
+  case nlSol of
+    Left result -> Left $ "minConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
+    Right solution -> case NLOPT.solutionResult solution of
+      NLOPT.MAXEVAL_REACHED -> Left $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
+      NLOPT.MAXTIME_REACHED -> Left $ "minConstrained: NLOPT Solver hit max time."
+      _ -> Right
+           $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution
+{-            cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+            !_ = Unsafe.unsafePerformIO $ Say.say
+                 $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+                 <> (show $ fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
+                 <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
+-}
+             in fullSol
+--      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+--      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
+--      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
+
+enrichFrameFromBinaryModel :: forall t count m g ks rs a .
+                              (rs F.⊆ rs
+                              , ks F.⊆ rs
+                              , FSI.RecVec rs
+                              , FSI.RecVec (t ': rs)
+                              , V.KnownField t
+                              , V.Snd t ~ a
+                              , V.KnownField count
+                              , F.ElemOf rs count
+                              , Integral (V.Snd count)
+                              , MonadThrow m
+                              , Prim.PrimMonad m
+                              , F.ElemOf rs DT.PopPerSqMile
+                              , Ord g
+                              , Show g
+                              , Ord (F.Record ks)
+                              , Show (F.Record rs)
+                              , Ord a
+                              )
+                           => DM.ModelResult g ks
+                           -> (F.Record rs -> g)
+                           -> a
+                           -> a
+                           -> F.FrameRec rs
+                           -> m (F.FrameRec (t ': rs))
+enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count $ enrichFrameFromBinaryModelF @t @count mr getGeo aTrue aFalse
+
+enrichFrameFromBinaryModelF :: forall t count m g ks rs a .
+                              (rs F.⊆ rs
+                              , ks F.⊆ rs
+                              , FSI.RecVec rs
+                              , FSI.RecVec (t ': rs)
+                              , V.KnownField t
+                              , V.Snd t ~ a
+                              , V.KnownField count
+                              , F.ElemOf rs count
+                              , Integral (V.Snd count)
+                              , F.ElemOf rs DT.PopPerSqMile
+                              , Ord g
+                              , Show g
+                              , Ord (F.Record ks)
+                              , Show (F.Record rs)
+                              , Ord a
+                              )
+                           => DM.ModelResult g ks
+                           -> (F.Record rs -> g)
+                           -> a
+                           -> a
+                           -> (F.Record rs -> Either Text (SplitModelF (V.Snd count) (F.Record '[t])))
+enrichFrameFromBinaryModelF mr getGeo aTrue aFalse = smf where
+  smf r = do
+    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x)
+                                      in M.fromList [(FT.recordSingleton @t aTrue, nTrue)
+                                                    , (FT.recordSingleton @t aFalse, n - nTrue)
+                                                    ]
+    pTrue <- DM.applyModelResult mr (getGeo r) r
+    pure $ smf' pTrue
+
+
+
+
+-- | produce a map of splits across type a. Doubles must sum to 1.
+newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
+
+splitRec :: forall count rs cks . (V.KnownField count
+                                  , F.ElemOf rs count
+                                  )
+         => SplitModelF (V.Snd count) (F.Record cks) -> F.Record rs -> [F.Record (cks V.++ rs)]
+splitRec (SplitModelF f) r =
+  let makeOne (colRec, n) = colRec F.<+> F.rputField @count n r
+      splits = M.toList $ f $ F.rgetField @count r
+  in makeOne <$> splits
+
+enrichFromModel :: forall count ks rs cks . (ks F.⊆ rs
+                                            , V.KnownField count
+                                            , F.ElemOf rs count
+                                            )
+                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
+                      -> F.Record rs -- ^ record to enrich
+                      -> Either Text [F.Record (cks V.++ rs)]
+enrichFromModel modelResultF recordToEnrich = flip (splitRec @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
+
+data EnrichDataException = ModelLookupException Text | TableMatchingException Text deriving stock (Show)
+instance Exception EnrichDataException
+
+
+-- this should build the new frame in-core and in a streaming manner,
+-- not needing to build the entire list before placing in-core
+enrichFrameFromModel :: forall count ks rs cks m . (ks F.⊆ rs
+                                                   , FSI.RecVec rs
+                                                   , FSI.RecVec (cks V.++ rs)
+                                                   , V.KnownField count
+                                                   , F.ElemOf rs count
+                                                   , MonadThrow m
+                                                   , Prim.PrimMonad m
+                                                   )
+                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
+                     -> F.FrameRec rs -- ^ record to enrich
+                     -> m (F.FrameRec (cks V.++ rs))
+enrichFrameFromModel modelResultF =  FST.transform f where
+  f = Streamly.concatMapM g
+  g r = do
+    case enrichFromModel @count modelResultF r of
+      Left err -> throwM $ ModelLookupException err
+      Right rs -> pure $ Streamly.fromList rs
+
+{-
+rhsUV :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV
+  where
+    nProbs = VS.length nV
+    safeDiv x y = if y == 0 then 1 else x / y
+    nDivq = VS.zipWith safeDiv nV qV
+    nSum = VS.sum nV
+    qSum = VS.sum qV
+    mM = mMatrix nProbs stencils
+    mShiftV = LA.tr mM LA.#> mV
+    rhsuF x y = x - (nSum / qSum) - y
+
+rhsUV0 :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+rhsUV0 stencils nV qV = rhsUV stencils nV qV (VS.replicate (length stencils) 0)
+
+newDelta :: [StencilSum Double Int] -- desired sums
+         -> LA.Vector LA.R -- N
+         -> LA.Vector LA.R -- current guess, then multipliers
+         -> Either Text (LA.Vector LA.R) -- delta, in same format
+newDelta stencilSums nV gV = do
+  let nProbs = VS.length nV
+      nStencils = length stencilSums
+      (qV, mV) = VS.splitAt nProbs gV
+      nSum = VS.sum nV
+      qSum = VS.sum qV
+      invnSum = 1 / nSum
+      safeDiv x y = if y == 0 then 1 else x / y
+      nDivq = VS.zipWith safeDiv nV qV
+      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate nProbs qV)
+      multM = mMatrix nProbs $ fmap stPositions stencilSums
+      ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toRows multM
+      lr = LA.konst 0 (nStencils, nStencils)
+      m = (ul LA.||| LA.tr multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
+      stencilSumsV = multM LA.#> qV
+      stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
+      rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
+                      , LA.scale invnSum stencilSumDiffsV
+                      ]
+      rhsM = LA.fromColumns [rhsV]
+      solM = LA.linearSolveSVD m rhsM
+  solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
+  pure solV
+
+subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
+subVectors rows cols v = (mV, lambdaV, gammaV) where
+  nSize = rows * cols
+  mV = LA.subVector 0 nSize v
+  lambdaV = LA.subVector nSize rows v
+  gammaV = LA.subVector (nSize + rows) cols v
+
+
+-- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
+-- So rather than check the smallness of delta, we check the smallness of the actual change in
+-- probabilities, lambda & gamma
+checkNewGuess :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+checkNewGuess xV yV = sqrt (LA.norm_2 (xV - yV)) / realToFrac (VS.length xV)
+
+-- maximum of the absolute differences
+checkNewGuessInf :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+checkNewGuessInf xV yV = VS.maximum $ VS.map abs (xV - yV)
+
+updateGuess :: Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+updateGuess nProbs g d = VS.concat [qV', mV']
+  where (qV, mV) = VS.splitAt nProbs g
+        (dqV, dmV) = VS.splitAt nProbs d
+        fixdU x
+          | x > 0.25 = 0.25
+          | x < -(0.25) = -(0.25)
+          | otherwise = x
+        qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
+        mV' = mV + dmV
+
+converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
+         -> (LA.Vector LA.R -> Either Text (LA.Vector LA.R))
+         -> (LA.Vector LA.R -> LA.Vector LA.R -> Double)
+         -> Int -> Double -> LA.Vector LA.R -> Either Text (LA.Vector LA.R)
+converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
+  where
+    go n gV deltaVM = do
+      when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ") exceeded in nearestCountsKL"
+      let gV' = maybe guessV (updGuess gV) deltaVM
+      if n == 0 || (tolF gV gV' >= tol)
+        then (do
+                 deltaV <- deltaF gV'
+                 go (n + 1) gV' (Just deltaV)
+             )
+        else pure gV'
+
+
+rowStencil :: Int -> Int -> Stencil Int
+rowStencil cols row = Stencil $ (+ (row * cols)) <$> [0..cols - 1]
+
+colStencil :: Int -> Int -> Int -> Stencil Int
+colStencil rows cols col = Stencil $ fmap (\n -> col + cols * n) [0..rows - 1]
+
+transp :: [[a]] -> [[a]]
+transp = go [] where
+  go x [] = fmap reverse x
+  go [] (r : rs) = go (fmap (: []) r) rs
+  go x (r :rs) = go (List.zipWith (:) r x) rs
+
+minKLConstrained :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
+minKLConstrained stencilSumsI oCountsI = do
+  let nNums = length oCountsI
+      cM = mMatrix nNums (stPositions <$> stencilSumsI)
+      givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
+      costF v = klDiv givenV v
+      desiredSums = realToFrac . stSum <$> stencilSumsI
+      cErr (sV, c) v = LA.dot v sV - c
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList desiredSums)
+--      cErrD (sV, c) v = (LA.dot v sV - c, sV)
+      constraints = cErr <$> zip (LA.toRows cM) desiredSums
+--      constraintsD = cErrD <$> zip (LA.toRows cM) desiredSums
+      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c)  1) <$> constraints
+--      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
+      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
+      nlStop = NLOPT.ParameterAbsoluteTolerance (VS.replicate nNums 10) :| [NLOPT.MaximumEvaluations 5000]
+      nlAlgo = NLOPT.COBYLA costF nlBounds [] nlConstraints Nothing
+      nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem givenV
+  case nlSol of
+    Left result -> Left $ "minKLConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
+    Right solution ->
+      Right
+      $ let m = fmap round $ VS.toList $ NLOPT.solutionParams solution
+            !_ = Unsafe.unsafePerformIO $ Say.say
+                 $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+                 <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
+                 <> "\n(post) cs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
+        in m
+--      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+--      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
+--      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
+
+
+-- find smallest (in the LS sense) delta to given such that given + delta
+-- satisfies all the given constraints
+minNormConstrained :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
+minNormConstrained stencilSumsI oCountsI = do
+  let nNums = length oCountsI
+      cM = mMatrix nNums (stPositions <$> stencilSumsI)
+      givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
+--      errV = VS.fromList (realToFrac . stSum <$> stencilSumsI) - cM LA.#> givenV
+--      sF v = cM LA.#> v
+      desiredSums = realToFrac . stSum <$> stencilSumsI
+      errSums = VS.fromList desiredSums - cM LA.#> givenV
+      cErr (sV, c) v = LA.dot v sV - c
+      constraints = cErr <$> zip (LA.toRows cM) (VS.toList errSums)
+
+      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nSums=\n" <> show desiredSums <> "\nSumDelta=\n" <> show (fmap ($ givenV) constraints)
+      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 100) <$> constraints
+      cErrD (sV, c) v =
+        let cv = LA.dot v sV - c
+            cd = sV
+            !_ = Unsafe.unsafePerformIO $ Say.say $ "\nc(v)=\n" <> show cv
+        in (cv, cd)
+      constraintsD = cErrD <$> zip (LA.toRows cM) (VS.toList errSums)
+      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
+      costF v =
+        let  c = LA.norm_2 v
+--             !_ = Unsafe.unsafePerformIO $ Say.say $ "\nv=\n" <> show v <> "\ncost(v)=" <> show c
+        in c
+      gradF v =
+        let g = LA.scale 2 v
+            !_ = Unsafe.unsafePerformIO $ Say.say $ "\ngrad(v)=\n" <> show g
+        in g
+      nlObjective v = (costF v, gradF v)
+      -- we are bounded below by the current numbers so the sum cannot be smaller than 0
+--      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
+      nlBounds = [NLOPT.LowerBounds $ VS.map negate givenV]
+      nlStop = NLOPT.ParameterAbsoluteTolerance (VS.replicate nNums 100) :| [NLOPT.MaximumEvaluations 5000]
+--      nlAlgo = NLOPT.SLSQP nlObjective nlBounds [] nlConstraintsD
+      nlAlgo = NLOPT.COBYLA costF nlBounds [] nlConstraints Nothing
+      nlProblem = NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem (VS.replicate nNums 0)
+  case nlSol of
+    Left result -> Left $ "minNormConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
+    Right solution -> --Right $ NLOPT.solutionParams solution
+      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
+      <> "\nmV=" <> show (givenV +  NLOPT.solutionParams solution)
+      <> "\ncs=" <> show (cM LA.#> (givenV +  NLOPT.solutionParams solution) - VS.fromList desiredSums)
+
+nearestCountsKL_RC :: [Int] -> [[Int]] -> Either Text [[Int]]
+nearestCountsKL_RC rowSums oCountsI = do
+    let rows = length oCountsI
+    cols <- maybeToRight "Empty list of counts given to nearestCountsKL_RC" $ viaNonEmpty (length . head) oCountsI
+    let rowSumStencils = zipWith (\j s -> (StencilSum (rowStencil cols j) s)) [0..(rows - 1)] rowSums
+        colSums = fmap (FL.fold FL.sum) $ transp oCountsI
+        colSumStencils = zipWith (\k s -> (StencilSum (colStencil rows cols k) s)) [0..(cols - 1)] colSums
+    splitAtAll cols <$> nearestCountsKL (rowSumStencils <> colSumStencils) (concat oCountsI)
 
 -- Hand rolled solver
 -- first, find minimum LS diff which satisfied constraints
@@ -494,348 +895,7 @@ minSumLP stencilSumsI oCountsI = do
     LP.Optimal (c, sol) -> Right $ (round <$> sol)
       --Left $ "LP problem has optimal solution with cost=" <> show c <> " and sol=" <> show sol
     LP.Unbounded -> Left "LP problem is Unbounded"
-
-
-stencilSumsToConstraintSystem :: Int -> [StencilSum Int Int] -> (LA.Matrix LA.R, LA.Vector LA.R)
-stencilSumsToConstraintSystem n stencilSumsI =
-  let cM = mMatrix n (stPositions <$> stencilSumsI)
-      y = VS.fromList $ realToFrac . stSum <$> stencilSumsI
-      -- the undertermined and redundant system is just cM and y
-      (u, s, v) = LA.compactSVD cM
-      invS = VS.map (1 /) s
-  in (LA.tr v, LA.diag invS LA.#> (LA.tr u LA.#> y))
-
-klDiv :: LA.Vector LA.R -> LA.Vector LA.R -> Double
-klDiv nV mV = res
-  where
-    res = (1 / nSum) * VS.sum (VS.zipWith klF nV mV) - Numeric.log nSum + Numeric.log mSum
---    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
-    nSum = VS.sum nV
-    mSum = VS.sum mV
-    klF x y = if x == 0 then 0 else x * Numeric.log (x / y)
-
-
-klGrad :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-klGrad nV mV = res
-  where
-    res = VS.zipWith f nV mV
---    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res
-    c = 1 / VS.sum mV
-    f n m = c - if m == 0 then 1 else n / m
-
-minKLConstrainedSVD :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
-minKLConstrainedSVD stencilSumsI oCountsI = do
-  let !removedIndexes =
-        S.toList
-        $ S.fromList $
-        fmap fst (filter ((== 0) . snd) (zip [0..] $ oCountsI))
-        <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
-{-      !_ = Unsafe.unsafePerformIO $ Say.say $ "removedIndexes=" <> show removedIndexes
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "n before=" <> show oCountsI
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
 -}
-      givenV' = VS.fromList $ fmap (realToFrac @_ @Double) $ removeFromListAtIndexes removedIndexes $ oCountsI
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums before=" <> show stencilSumsI
-      stencilSumsI' = if null removedIndexes
-                      then stencilSumsI
-                      else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums after=" <> show stencilSumsI'
-      nNums = VS.length givenV'
-      (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
-
-{-      !_ =  let cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-            in Unsafe.unsafePerformIO $ Say.say $ "cM was " <> show (LA.size cM)
-               <> " and cM' is " <> show (LA.size cM')
-               <> " with new rhs=" <> show s'
--}
-      objF v = (klDiv givenV' v, klGrad givenV' v)
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList s)
-        where
-          s = realToFrac . stSum <$> stencilSumsI
-          givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
-          cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-      cErrD (sV, c) v = (LA.dot v sV - c, sV)
-      constraintsD = cErrD <$> zip (LA.toRows cM') (VS.toList s')
-      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
-      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
-      nlStop = NLOPT.ParameterRelativeTolerance 0.001 {- VS.replicate nNums 1) -} :| [NLOPT.MaximumEvaluations 50]
-      nlAlgo = NLOPT.SLSQP objF nlBounds [] nlConstraintsD
-      nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem givenV'
-  case nlSol of
-    Left result -> Left $ "minKLConstrainedSVD: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
-    Right solution ->
-      Right
-      $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution
-{-            cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-            !_ = Unsafe.unsafePerformIO $ Say.say
-                 $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
-                 <> (show $ fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
-                 <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
--}
-        in fullSol
---      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
---      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
---      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
-
-
-
-minKLConstrained :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
-minKLConstrained stencilSumsI oCountsI = do
-  let nNums = length oCountsI
-      cM = mMatrix nNums (stPositions <$> stencilSumsI)
-      givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
-      costF v = klDiv givenV v
-      desiredSums = realToFrac . stSum <$> stencilSumsI
-      cErr (sV, c) v = LA.dot v sV - c
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList desiredSums)
---      cErrD (sV, c) v = (LA.dot v sV - c, sV)
-      constraints = cErr <$> zip (LA.toRows cM) desiredSums
---      constraintsD = cErrD <$> zip (LA.toRows cM) desiredSums
-      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c)  1) <$> constraints
---      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
-      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
-      nlStop = NLOPT.ParameterAbsoluteTolerance (VS.replicate nNums 10) :| [NLOPT.MaximumEvaluations 5000]
-      nlAlgo = NLOPT.COBYLA costF nlBounds [] nlConstraints Nothing
-      nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem givenV
-  case nlSol of
-    Left result -> Left $ "minKLConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
-    Right solution ->
-      Right
-      $ let m = fmap round $ VS.toList $ NLOPT.solutionParams solution
-            !_ = Unsafe.unsafePerformIO $ Say.say
-                 $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
-                 <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
-                 <> "\n(post) cs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
-        in m
---      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
---      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
---      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
-
-
--- find smallest (in the LS sense) delta to given such that given + delta
--- satisfies all the given constraints
-minNormConstrained :: [StencilSum Int Int] -> [Int] -> Either Text [Int]
-minNormConstrained stencilSumsI oCountsI = do
-  let nNums = length oCountsI
-      cM = mMatrix nNums (stPositions <$> stencilSumsI)
-      givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
---      errV = VS.fromList (realToFrac . stSum <$> stencilSumsI) - cM LA.#> givenV
---      sF v = cM LA.#> v
-      desiredSums = realToFrac . stSum <$> stencilSumsI
-      errSums = VS.fromList desiredSums - cM LA.#> givenV
-      cErr (sV, c) v = LA.dot v sV - c
-      constraints = cErr <$> zip (LA.toRows cM) (VS.toList errSums)
-
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "\nSums=\n" <> show desiredSums <> "\nSumDelta=\n" <> show (fmap ($ givenV) constraints)
-      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 100) <$> constraints
-      cErrD (sV, c) v =
-        let cv = LA.dot v sV - c
-            cd = sV
-            !_ = Unsafe.unsafePerformIO $ Say.say $ "\nc(v)=\n" <> show cv
-        in (cv, cd)
-      constraintsD = cErrD <$> zip (LA.toRows cM) (VS.toList errSums)
-      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
-      costF v =
-        let  c = LA.norm_2 v
---             !_ = Unsafe.unsafePerformIO $ Say.say $ "\nv=\n" <> show v <> "\ncost(v)=" <> show c
-        in c
-      gradF v =
-        let g = LA.scale 2 v
-            !_ = Unsafe.unsafePerformIO $ Say.say $ "\ngrad(v)=\n" <> show g
-        in g
-      nlObjective v = (costF v, gradF v)
-      -- we are bounded below by the current numbers so the sum cannot be smaller than 0
---      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
-      nlBounds = [NLOPT.LowerBounds $ VS.map negate givenV]
-      nlStop = NLOPT.ParameterAbsoluteTolerance (VS.replicate nNums 100) :| [NLOPT.MaximumEvaluations 5000]
---      nlAlgo = NLOPT.SLSQP nlObjective nlBounds [] nlConstraintsD
-      nlAlgo = NLOPT.COBYLA costF nlBounds [] nlConstraints Nothing
-      nlProblem = NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem (VS.replicate nNums 0)
-  case nlSol of
-    Left result -> Left $ "minNormConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
-    Right solution -> --Right $ NLOPT.solutionParams solution
-      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
-      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
-      <> "\nmV=" <> show (givenV +  NLOPT.solutionParams solution)
-      <> "\ncs=" <> show (cM LA.#> (givenV +  NLOPT.solutionParams solution) - VS.fromList desiredSums)
-
-
--- NB: delta itself will not be 0 because it can be anything in places where N and Q are 0.
--- So rather than check the smallness of delta, we check the smallness of the actual change in
--- probabilities, lambda & gamma
-checkNewGuess :: LA.Vector LA.R -> LA.Vector LA.R -> Double
-checkNewGuess xV yV = sqrt (LA.norm_2 (xV - yV)) / realToFrac (VS.length xV)
-
--- maximum of the absolute differences
-checkNewGuessInf :: LA.Vector LA.R -> LA.Vector LA.R -> Double
-checkNewGuessInf xV yV = VS.maximum $ VS.map abs (xV - yV)
-
-updateGuess :: Int -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-updateGuess nProbs g d = VS.concat [qV', mV']
-  where (qV, mV) = VS.splitAt nProbs g
-        (dqV, dmV) = VS.splitAt nProbs d
-        fixdU x
-          | x > 0.25 = 0.25
-          | x < -(0.25) = -(0.25)
-          | otherwise = x
-        qV' = VS.zipWith (\qU dU -> qU * (1 + dU)) qV dqV
-        mV' = mV + dmV
-
-converge :: (LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R)
-         -> (LA.Vector LA.R -> Either Text (LA.Vector LA.R))
-         -> (LA.Vector LA.R -> LA.Vector LA.R -> Double)
-         -> Int -> Double -> LA.Vector LA.R -> Either Text (LA.Vector LA.R)
-converge updGuess deltaF tolF maxN tol guessV = go 0 guessV Nothing
-  where
-    go n gV deltaVM = do
-      when ((n :: Int) >= maxN) $ Left $ "Max iterations (" <> show maxN <> ") exceeded in nearestCountsKL"
-      let gV' = maybe guessV (updGuess gV) deltaVM
-      if n == 0 || (tolF gV gV' >= tol)
-        then (do
-                 deltaV <- deltaF gV'
-                 go (n + 1) gV' (Just deltaV)
-             )
-        else pure gV'
-
-mMatrix :: Int -> [Stencil Int] -> LA.Matrix LA.R
-mMatrix nProbs stencils = LA.assoc (nStencils, nProbs) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
-  where
-    nStencils = length stencils
-    f (n, Stencil ks) = (\k -> ((n, k), 1)) <$> ks
-
-rhsUV :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV
-  where
-    nProbs = VS.length nV
-    safeDiv x y = if y == 0 then 1 else x / y
-    nDivq = VS.zipWith safeDiv nV qV
-    nSum = VS.sum nV
-    qSum = VS.sum qV
-    mM = mMatrix nProbs stencils
-    mShiftV = LA.tr mM LA.#> mV
-    rhsuF x y = x - (nSum / qSum) - y
-
-rhsUV0 :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-rhsUV0 stencils nV qV = rhsUV stencils nV qV (VS.replicate (length stencils) 0)
-
-newDelta :: [StencilSum Double Int] -- desired sums
-         -> LA.Vector LA.R -- N
-         -> LA.Vector LA.R -- current guess, then multipliers
-         -> Either Text (LA.Vector LA.R) -- delta, in same format
-newDelta stencilSums nV gV = do
-  let nProbs = VS.length nV
-      nStencils = length stencilSums
-      (qV, mV) = VS.splitAt nProbs gV
-      nSum = VS.sum nV
-      qSum = VS.sum qV
-      invnSum = 1 / nSum
-      safeDiv x y = if y == 0 then 1 else x / y
-      nDivq = VS.zipWith safeDiv nV qV
-      ul = LA.diag nDivq - (LA.scale (nSum / (qSum * qSum)) $ LA.fromRows $ replicate nProbs qV)
-      multM = mMatrix nProbs $ fmap stPositions stencilSums
-      ll = LA.scale invnSum $ LA.fromRows $ fmap (* qV) $ LA.toRows multM
-      lr = LA.konst 0 (nStencils, nStencils)
-      m = (ul LA.||| LA.tr multM ) LA.=== (ll LA.||| lr) -- LA.fromBlocks [[ul, ur],[ll, 0]]
-      stencilSumsV = multM LA.#> qV
-      stencilSumDiffsV = LA.fromList (fmap stSum stencilSums) - stencilSumsV
-      rhsV = LA.vjoin [rhsUV (fmap stPositions stencilSums) nV qV mV
-                      , LA.scale invnSum stencilSumDiffsV
-                      ]
-      rhsM = LA.fromColumns [rhsV]
-      solM = LA.linearSolveSVD m rhsM
-  solV :: LA.Vector LA.R <- maybeToRight "empty list of solutions??" $ viaNonEmpty head $ LA.toColumns solM
-  pure solV
-
-subVectors :: Int -> Int -> LA.Vector LA.R -> (LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)
-subVectors rows cols v = (mV, lambdaV, gammaV) where
-  nSize = rows * cols
-  mV = LA.subVector 0 nSize v
-  lambdaV = LA.subVector nSize rows v
-  gammaV = LA.subVector (nSize + rows) cols v
-
-
-enrichFrameFromBinaryModel :: forall t count m g ks rs a .
-                              (rs F.⊆ rs
-                              , ks F.⊆ rs
-                              , FSI.RecVec rs
-                              , FSI.RecVec (t ': rs)
-                              , V.KnownField t
-                              , V.Snd t ~ a
-                              , V.KnownField count
-                              , F.ElemOf rs count
-                              , Integral (V.Snd count)
-                              , MonadThrow m
-                              , Prim.PrimMonad m
-                              , F.ElemOf rs DT.PopPerSqMile
-                              , Ord g
-                              , Show g
-                              , Ord (F.Record ks)
-                              , Show (F.Record rs)
-                              , Ord a
-                              )
-                           => DM.ModelResult g ks
-                           -> (F.Record rs -> g)
-                           -> a
-                           -> a
-                           -> F.FrameRec rs
-                           -> m (F.FrameRec (t ': rs))
-enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count smf where
-  smf r = do
-    let smf' x = SplitModelF $ \n ->  let nTrue = round (realToFrac n * x)
-                                      in M.fromList [(FT.recordSingleton @t aTrue, nTrue)
-                                                    , (FT.recordSingleton @t aFalse, n - nTrue)
-                                                    ]
-    pTrue <- DM.applyModelResult mr (getGeo r) r
-    pure $ smf' pTrue
-
--- | produce a map of splits across type a. Doubles must sum to 1.
-newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
-
-splitRec :: forall count rs cks . (V.KnownField count
-                                  , F.ElemOf rs count
-                                  )
-         => SplitModelF (V.Snd count) (F.Record cks) -> F.Record rs -> [F.Record (cks V.++ rs)]
-splitRec (SplitModelF f) r =
-  let makeOne (colRec, n) = colRec F.<+> F.rputField @count n r
-      splits = M.toList $ f $ F.rgetField @count r
-  in makeOne <$> splits
-
-enrichFromModel :: forall count ks rs cks . (ks F.⊆ rs
-                                            , V.KnownField count
-                                            , F.ElemOf rs count
-                                            )
-                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
-                      -> F.Record rs -- ^ record to enrich
-                      -> Either Text [F.Record (cks V.++ rs)]
-enrichFromModel modelResultF recordToEnrich = flip (splitRec @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
-
-data ModelLookupException = ModelLookupException Text deriving stock (Show)
-instance Exception ModelLookupException
-
-
--- this should build the new frame in-core and in a streaming manner,
--- not needing to build the entire list before placing in-core
-enrichFrameFromModel :: forall count ks rs cks m . (ks F.⊆ rs
-                                                   , FSI.RecVec rs
-                                                   , FSI.RecVec (cks V.++  rs)
-                                                   , V.KnownField count
-                                                   , F.ElemOf rs count
-                                                   , MonadThrow m
-                                                   , Prim.PrimMonad m
-                                                   )
-                     => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
-                     -> F.FrameRec rs -- ^ record to enrich
-                     -> m (F.FrameRec (cks V.++ rs))
-enrichFrameFromModel modelResultF =  FST.transform f where
-  f = Streamly.concatMapM g
-  g r = do
-    case enrichFromModel @count modelResultF r of
-      Left err -> throwM $ ModelLookupException err
-      Right rs -> pure $ Streamly.fromList rs
-
 
 
 {-

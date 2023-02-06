@@ -230,7 +230,7 @@ sumPUMSCountedF wgtM flds =
 -}
   in  FF.sequenceRecFold
       $ FF.toFoldRecord (pplWgtdF (F.rgetField @GT.PctInMetro))
-      V.:& FF.toFoldRecord (pplWgtdLogF (F.rgetField @DT.PopPerSqMile))
+      V.:& FF.toFoldRecord (pplWgtdLogF (F.rgetField @DT.PWPopPerSqMile))
       V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctNativeEnglish))
       V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctNoEnglish))
       V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PctUnemployed))
@@ -282,7 +282,7 @@ pumsCDRollup
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctUnder2xPovertyLine
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctUnderPovertyLine
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PctUnemployed
-   , F.ElemOf (ks ++ PUMSCountToFields) DT.PopPerSqMile
+   , F.ElemOf (ks ++ PUMSCountToFields) DT.PWPopPerSqMile
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PopCount
    , ks ⊆ (ks ++ PUMSCountToFields)
    , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgIncome
@@ -296,7 +296,7 @@ pumsCDRollup
    , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnderPovertyLine
    , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnder2xPovertyLine
    , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnemployed
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopPerSqMile
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PWPopPerSqMile
    , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.CongressionalDistrict
    , F.ElemOf ('[BR.Year] ++ CDDescWA ++ ks) GT.CongressionalDistrict
    , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
@@ -476,7 +476,7 @@ type PUMS_Counted = '[BR.Year
                      , DT.RaceAlone4C
                      , DT.HispC
                      , GT.PctInMetro
-                     , DT.PopPerSqMile
+                     , DT.PWPopPerSqMile
                      , DT.PctNativeEnglish
                      , DT.PctNoEnglish
                      , DT.PctUnemployed
@@ -494,7 +494,7 @@ type PUMS = '[BR.Year
              , GT.CensusDivisionC
              , BR.PUMA
              , GT.PctInMetro
-             , DT.PopPerSqMile
+             , DT.PWPopPerSqMile
              , DT.CitizenC
              , DT.Age5FC
              , DT.SexC
@@ -533,19 +533,19 @@ metroF =
   in asPct <$> wgtInCityF <*> wgtF
 {-# INLINE metroF #-}
 
-densityF :: FL.Fold (Double, Double) Double
-densityF =
+wgtdDensityF :: FL.Fold (Double, Double) Double
+wgtdDensityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = FL.premap (uncurry (*)) FL.sum
   in (/) <$> wgtSumF <*> wgtF
-{-# INLINE densityF #-}
+{-# INLINE wgtdDensityF #-}
 
-geomDensityF :: FL.Fold (Double, Double) Double
-geomDensityF =
+geomWgtdDensityF :: FL.Fold (Double, Double) Double
+geomWgtdDensityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * Numeric.log d) FL.sum
   in (/) <$> wgtSumF <*> wgtF
-{-# INLINE geomDensityF #-}
+{-# INLINE geomWgtdDensityF #-}
 
 pctNativeEnglishF :: FL.Fold (Double, DT.Language) Double
 pctNativeEnglishF =
@@ -613,7 +613,7 @@ type PUMSCountFromFields = [PUMSWeight
                            ]
 
 type PUMSCountToFields = [GT.PctInMetro
-                         , DT.PopPerSqMile
+                         , DT.PWPopPerSqMile
                          , DT.PctNativeEnglish
                          , DT.PctNoEnglish
                          , DT.PctUnemployed
@@ -636,7 +636,7 @@ pumsRowCount2F =
 --      nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
 
       pctInMetroF = FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF
-      popPerSqMileF = FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) densityF
+      popPerSqMileF = FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) wgtdDensityF
       nativeEnglishF = FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF
       noEnglishF = FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF
       unemploymentF = FL.premap (wgtAnd (F.rgetField @DT.EmploymentStatusC)) pctUnemploymentF
@@ -669,7 +669,7 @@ pumsRowCountF =
       pplF = FL.premap wgt FL.sum
   in FF.sequenceRecFold
      $ FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF)
-     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) densityF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) wgtdDensityF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.EmploymentStatusC)) pctUnemploymentF)

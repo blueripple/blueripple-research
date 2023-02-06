@@ -17,7 +17,7 @@ module BlueRipple.Data.CensusTables
 where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.ElectionTypes as ET
+--import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Keyed as K
@@ -39,14 +39,13 @@ import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 
 F.declareColumn "SqMiles" ''Double
 F.declareColumn "SqKm" ''Double
-F.declareColumn "PWPopPerSqMile" ''Double
 F.declareColumn "PWLogPopPerSqMile" ''Double
 F.declareColumn "PerCapitaIncome" ''Double
 F.declareColumn "TotalIncome" ''Double
 
-type LDLocationR = [BR.StateFips, GT.DistrictTypeC, GT.DistrictName]
-type LDPrefixR = [BR.StateFips, GT.DistrictTypeC, GT.DistrictName, BR.Population, PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
-type ExtensiveDataR = [BR.Population, SqMiles, TotalIncome, PWPopPerSqMile]
+type LDLocationR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
+type LDPrefixR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.PopCount, DT.PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type ExtensiveDataR = [DT.PopCount, SqMiles, TotalIncome, DT.PWPopPerSqMile]
 
 {-
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }

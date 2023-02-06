@@ -189,7 +189,7 @@ dmSubset' dmType m allCompMap = case dmType of
 designMatrixRowPS' :: forall rs k.(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.Race5C
---                                  , F.ElemOf rs DT.PopPerSqMile
+--                                  , F.ElemOf rs DT.PWPopPerSqMile
                                   )
                    => Model k
                    -> DM.DesignMatrixRowPart (F.Record rs)
@@ -208,7 +208,7 @@ designMatrixRowPS' m densRP dmType incF = DM.DesignMatrixRow (dmName dmType) (dm
 designMatrixRowPS :: forall rs k .(F.ElemOf rs DT.CollegeGradC
                                   , F.ElemOf rs DT.SexC
                                   , F.ElemOf rs DT.Race5C
---                                  , F.ElemOf rs DT.PopPerSqMile
+--                                  , F.ElemOf rs DT.PWPopPerSqMile
                                   )
                    => Model k
                    -> DM.DesignMatrixRowPart (F.Record rs)
@@ -1128,7 +1128,7 @@ electionModelDM :: forall rs ks r mk.
                    , F.ElemOf rs DT.CollegeGradC
                    , F.ElemOf rs DT.SexC
                    , F.ElemOf rs DT.Race5C
-                   , F.ElemOf rs DT.PopPerSqMile
+                   , F.ElemOf rs DT.PWPopPerSqMile
                    , F.ElemOf rs DT.PopCount
                    , FI.RecVec rs
                    , ks F.⊆ rs
@@ -1148,7 +1148,7 @@ electionModelDM :: forall rs ks r mk.
 electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear (psGroup, psDataSetName) dat_C psDat_C = K.wrapPrefix "stateLegModel" $ do
   K.logLE K.Info $ "(Re-)running DM turnout/pref model if necessary."
   ccesDataRows <- K.ignoreCacheTime $ fmap ccesEMRows dat_C
-  let densityMatrixRowPart :: forall x. F.ElemOf x DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record x)
+  let densityMatrixRowPart :: forall x. F.ElemOf x DT.PWPopPerSqMile => DM.DesignMatrixRowPart (F.Record x)
       densityMatrixRowPart = densityMatrixRowPartFromData (densityTransform model) ccesDataRows
   let reportZeroRows :: K.Sem r ()
       reportZeroRows = do
@@ -1777,17 +1777,17 @@ wnhCCES r = (F.rgetField @DT.Race5C r == DT.R5_WhiteNonHispanic)
 wnhNonGradCCES :: (F.ElemOf rs DT.Race5C, F.ElemOf rs DT.CollegeGradC) => F.Record rs -> Bool
 wnhNonGradCCES r = wnhCCES r && (F.rgetField @DT.CollegeGradC r == DT.NonGrad)
 
-densityMatrixRowPartFromData :: forall rs rs'.(F.ElemOf rs DT.PopPerSqMile, F.ElemOf rs' DT.PopPerSqMile)
+densityMatrixRowPartFromData :: forall rs rs'.(F.ElemOf rs DT.PWPopPerSqMile, F.ElemOf rs' DT.PWPopPerSqMile)
                          => DensityTransform
                          -> F.FrameRec rs'
                          -> DM.DesignMatrixRowPart (F.Record rs)
 densityMatrixRowPartFromData RawDensity _ = DM.DesignMatrixRowPart "Density" 1 f
   where
-   f = VU.fromList . pure . F.rgetField @DT.PopPerSqMile
+   f = VU.fromList . pure . F.rgetField @DT.PWPopPerSqMile
 densityMatrixRowPartFromData LogDensity _ =
   DM.DesignMatrixRowPart "Density" 1 logDensityPredictor
 densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPart "Density" 1 f where
-  sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PopPerSqMile) FL.list) dat
+  sortedData = List.sort $ FL.fold (FL.premap (F.rgetField @DT.PWPopPerSqMile) FL.list) dat
   quantileSize = List.length sortedData `div` bins
   quantilesExtra = List.length sortedData `rem` bins
   quantileMaxIndex k = quantilesExtra + k * quantileSize - 1 -- puts extra in 1st bucket
@@ -1797,17 +1797,17 @@ densityMatrixRowPartFromData (BinDensity bins range) dat = DM.DesignMatrixRowPar
   go x ((y, k): xs) = if x < y then k else go x xs
   quantileF x = go x indexedBreaks
   g x = VU.fromList [quantileF x]
-  f = g . F.rgetField @DT.PopPerSqMile
+  f = g . F.rgetField @DT.PWPopPerSqMile
 densityMatrixRowPartFromData (SigmoidDensity c s range) _ = DM.DesignMatrixRowPart "Density" 1 f  where
-  d = F.rgetField @DT.PopPerSqMile
+  d = F.rgetField @DT.PWPopPerSqMile
   y r = realToFrac c / (d r)
   yk r = (y r) ** realToFrac s
   f r = VU.singleton $ (realToFrac range / 2) * (1 - yk r) / (1 + yk r)
 
 
 --densityRowFromData = SB.MatrixRowFromData "Density" 1 densityPredictor
-logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
-logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
+logDensityPredictor :: F.ElemOf rs DT.PWPopPerSqMile => F.Record rs -> VU.Vector Double
+logDensityPredictor = safeLogV . F.rgetField @DT.PWPopPerSqMile
 
 safeLogV :: (FS.Unbox a, Ord a, Floating a) => a -> K.Vector a
 safeLogV x =  VU.singleton $ if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here

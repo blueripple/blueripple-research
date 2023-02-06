@@ -118,7 +118,7 @@ type DemographicsR =
   , FracOther
   , FracWhiteGrad
   , DT.AvgIncome
-  , DT.PopPerSqMile
+  , DT.PWPopPerSqMile
   , PUMS.Citizens
   ]
 
@@ -135,7 +135,7 @@ type ElectionPredictorR =
   , FracOther
   , FracWhiteGrad
   , DT.AvgIncome
-  , DT.PopPerSqMile
+  , DT.PWPopPerSqMile
   ]
 type HouseElectionDataR = CDKeyR V.++ DemographicsR V.++ ElectionR
 type HouseElectionData = F.FrameRec HouseElectionDataR
@@ -154,9 +154,9 @@ type CCESVotingDataR = [Surveyed, Voted, HouseVotes, HouseDVotes, HouseRVotes, P
 type CCESByCDR = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR
 
 -- type CCESByCDAH = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR V.++ CCESAH
-type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PopPerSqMile]
-type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PopPerSqMile]
-type CCESPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PopPerSqMile]
+type CCESDataR = CCESByCDR V.++ [Incumbency, DT.AvgIncome, DT.PWPopPerSqMile]
+type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PWPopPerSqMile]
+type CCESPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PWPopPerSqMile]
 type CCESByCDEMR = CDKeyR V.++ [DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR -- V.++ CCESAH
 type CCESData = F.FrameRec CCESDataR
 
@@ -193,7 +193,7 @@ instance Flat.Flat HouseModelData where
   encode (HouseModelData h s p c) = Flat.encode (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
   decode = (\(h, s, p, c) → HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> Flat.decode
 
-type PUMSDataR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PopPerSqMile, DT.PopCount]
+type PUMSDataR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PWPopPerSqMile, DT.PopCount]
 type PUMSDataEMR = [DT.CitizenC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount]
 
 type PUMSByCDR = CDKeyR V.++ PUMSDataR
@@ -214,9 +214,9 @@ type CPSVByStateAH = CPSVByStateR -- V.++ '[AHSuccesses]
 
 -- type CPSVByCDR = CDKeyR V.++ CPSVDataR
 
-type DistrictDataR = CDKeyR V.++ [DT.PopPerSqMile, DT.AvgIncome] V.++ ElectionR
-type DistrictDemDataR = CDKeyR V.++ [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome]
-type StateDemDataR = StateKeyR V.++ [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome]
+type DistrictDataR = CDKeyR V.++ [DT.PWPopPerSqMile, DT.AvgIncome] V.++ ElectionR
+type DistrictDemDataR = CDKeyR V.++ [DT.PopCount, DT.PWPopPerSqMile, DT.AvgIncome]
+type StateDemDataR = StateKeyR V.++ [DT.PopCount, DT.PWPopPerSqMile, DT.AvgIncome]
 type AllCatR = '[BR.Year] V.++ CensusPredictorR
 data CCESAndPUMS = CCESAndPUMS
   { ccesRows ∷ F.FrameRec CCESWithDensity
@@ -313,7 +313,7 @@ pumsMR
      , F.ElemOf (ks V.++ PUMSDataR) DT.CitizenC
      , F.ElemOf (ks V.++ PUMSDataR) DT.CollegeGradC
      , F.ElemOf (ks V.++ PUMSDataR) DT.HispC
-     , F.ElemOf (ks V.++ PUMSDataR) DT.PopPerSqMile
+     , F.ElemOf (ks V.++ PUMSDataR) DT.PWPopPerSqMile
      , F.ElemOf (ks V.++ PUMSDataR) DT.RaceAlone4C
      , F.ElemOf (ks V.++ PUMSDataR) DT.SexC
      , F.ElemOf (ks V.++ PUMSDataR) DT.SimpleAgeC
@@ -360,7 +360,7 @@ pumsDataF =
           V.:& FF.toFoldRecord (fracF other)
           V.:& FF.toFoldRecord (fracF whiteNonHispanicGrad)
           V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.AvgIncome))
-          V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PopPerSqMile))
+          V.:& FF.toFoldRecord (pplWgtdF (F.rgetField @DT.PWPopPerSqMile))
           V.:& FF.toFoldRecord pplF
           V.:& V.RNil
 
@@ -767,7 +767,7 @@ prepCCESAndPums clearCache = do
   BR.retrieveOrMakeD allCacheKey deps $ \(ccesByCD, cpsVByState, acsByCD) → do
     -- get Density and avg income from PUMS and combine with election data for the district level data
     let acsCDFixed = fmap fixDC_CD acsByCD
-        diInnerFold ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.AvgIncome, DT.PopCount]) (F.Record [DT.PopCount, DT.PopPerSqMile, DT.AvgIncome])
+        diInnerFold ∷ FL.Fold (F.Record [DT.PWPopPerSqMile, DT.AvgIncome, DT.PopCount]) (F.Record [DT.PopCount, DT.PWPopPerSqMile, DT.AvgIncome])
         diInnerFold =
           let ppl = F.rgetField @DT.PopCount -- Weight by voters. If voters/non-voters live in different places, we get voters experience.
           --              ppl r = cit r + F.rgetField @PUMS.NonCitizens r
@@ -779,7 +779,7 @@ prepCCESAndPums clearCache = do
               --              pplWgtdAMeanF = wgtdAMeanF (realToFrac . ppl)
               --              pplF = FL.premap ppl FL.sum
               --              pplWeightedSumF f = (/) <$> FL.premap (\r -> realToFrac (ppl r) * f r) FL.sum <*> fmap realToFrac pplF
-           in (\c d i → c F.&: d F.&: i F.&: V.RNil) <$> pplF <*> pplWeightedGMeanF (F.rgetField @DT.PopPerSqMile) <*> pplWeightedAMeanF (F.rgetField @DT.AvgIncome)
+           in (\c d i → c F.&: d F.&: i F.&: V.RNil) <$> pplF <*> pplWeightedGMeanF (F.rgetField @DT.PWPopPerSqMile) <*> pplWeightedAMeanF (F.rgetField @DT.AvgIncome)
         diByCDFold ∷ FL.Fold (F.Record PUMSByCDR) (F.FrameRec DistrictDemDataR)
         diByCDFold =
           FMR.concatFold $
@@ -801,30 +801,30 @@ prepCCESAndPums clearCache = do
     --    acsWD <- K.knitEither $ addPopDensByDistrict diByCD acsCDFixed
     return $ CCESAndPUMS (fmap F.rcast ccesWD) cpsVWD acsCDFixed diByCD -- (F.toFrame $ fmap F.rcast $ cats)
 
-type CCESWithDensity = CCESByCDR V.++ '[DT.PopPerSqMile]
-type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PopPerSqMile]
+type CCESWithDensity = CCESByCDR V.++ '[DT.PWPopPerSqMile]
+type CCESWithDensityEM = CCESByCDEMR V.++ '[DT.PWPopPerSqMile]
 
 addPopDensByDistrict
   ∷ ∀ rs
    . ( FJ.CanLeftJoinM
         [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
         rs
-        [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
+        [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PWPopPerSqMile]
 --     , [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] F.⊆ [BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.CongressionalDistrict
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.StateAbbreviation
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
+     , F.ElemOf (rs V.++ '[DT.PWPopPerSqMile]) GT.CongressionalDistrict
+     , F.ElemOf (rs V.++ '[DT.PWPopPerSqMile]) GT.StateAbbreviation
+     , F.ElemOf (rs V.++ '[DT.PWPopPerSqMile]) BR.Year
      )
   ⇒ F.FrameRec DistrictDemDataR
   → F.FrameRec rs
-  → Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
+  → Either Text (F.FrameRec (rs V.++ '[DT.PWPopPerSqMile]))
 addPopDensByDistrict ddd rs = do
-  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile] <$> ddd
+  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PWPopPerSqMile] <$> ddd
       (joined, missing) =
         FJ.leftJoinWithMissing
           @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
           @rs
-          @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PopPerSqMile]
+          @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.PWPopPerSqMile]
           rs
           ddd'
   when (not $ null missing) $ Left $ "missing keys in join of density data by district: " <> show missing
@@ -835,21 +835,21 @@ addPopDensByState
    . ( FJ.CanLeftJoinM
         [BR.Year, GT.StateAbbreviation]
         rs
-        [BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
+        [BR.Year, GT.StateAbbreviation, DT.PWPopPerSqMile]
 --     , [BR.Year, GT.StateAbbreviation] F.⊆ [BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) GT.StateAbbreviation
-     , F.ElemOf (rs V.++ '[DT.PopPerSqMile]) BR.Year
+     , F.ElemOf (rs V.++ '[DT.PWPopPerSqMile]) GT.StateAbbreviation
+     , F.ElemOf (rs V.++ '[DT.PWPopPerSqMile]) BR.Year
      )
   ⇒ F.FrameRec StateDemDataR
   → F.FrameRec rs
-  → Either Text (F.FrameRec (rs V.++ '[DT.PopPerSqMile]))
+  → Either Text (F.FrameRec (rs V.++ '[DT.PWPopPerSqMile]))
 addPopDensByState ddd rs = do
-  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, DT.PopPerSqMile] <$> ddd
+  let ddd' = F.rcast @[BR.Year, GT.StateAbbreviation, DT.PWPopPerSqMile] <$> ddd
       (joined, missing) =
         FJ.leftJoinWithMissing
           @[BR.Year, GT.StateAbbreviation]
           @rs
-          @[BR.Year, GT.StateAbbreviation, DT.PopPerSqMile]
+          @[BR.Year, GT.StateAbbreviation, DT.PWPopPerSqMile]
           rs
           ddd'
   when (not $ null missing) $ Left $ "missing keys in join of density data by state: " <> show missing
@@ -863,15 +863,15 @@ wgtdGMeanF w f = Numeric.exp <$> wgtdAMeanF w (Numeric.log . f)
 
 sumButLeaveDensity
   ∷ ∀ as
-   . ( as F.⊆ (as V.++ '[DT.PopPerSqMile])
-     , F.ElemOf (as V.++ '[DT.PopPerSqMile]) DT.PopPerSqMile
+   . ( as F.⊆ (as V.++ '[DT.PWPopPerSqMile])
+     , F.ElemOf (as V.++ '[DT.PWPopPerSqMile]) DT.PWPopPerSqMile
      , FF.ConstrainedFoldable Num as
      )
-  ⇒ (F.Record (as V.++ '[DT.PopPerSqMile]) → Double)
-  → FL.Fold (F.Record (as V.++ '[DT.PopPerSqMile])) (F.Record (as V.++ '[DT.PopPerSqMile]))
+  ⇒ (F.Record (as V.++ '[DT.PWPopPerSqMile]) → Double)
+  → FL.Fold (F.Record (as V.++ '[DT.PWPopPerSqMile])) (F.Record (as V.++ '[DT.PWPopPerSqMile]))
 sumButLeaveDensity w =
   let sumF = FL.premap (F.rcast @as) $ FF.foldAllConstrained @Num FL.sum
-      densF = fmap (FT.recordSingleton @DT.PopPerSqMile) $ wgtdGMeanF w (F.rgetField @DT.PopPerSqMile)
+      densF = fmap (FT.recordSingleton @DT.PWPopPerSqMile) $ wgtdGMeanF w (F.rgetField @DT.PWPopPerSqMile)
    in (F.<+>) <$> sumF <*> densF
 
 fldAgeInCPS ∷ FL.Fold (F.Record CPSVWithDensity) (F.FrameRec CPSVWithDensityEM)
@@ -890,10 +890,10 @@ fldAgeInACS =
       (FMR.assignKeysAndData @(CDKeyR V.++ CensusPredictorEMR))
       (FMR.foldAndAddKey $ sumButLeaveDensity @'[DT.PopCount] (realToFrac . F.rgetField @DT.PopCount))
 
-sumButLeaveDensityCCES ∷ FL.Fold (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile]))) (F.Record ((CCESVotingDataR V.++ '[DT.PopPerSqMile])))
+sumButLeaveDensityCCES ∷ FL.Fold (F.Record ((CCESVotingDataR V.++ '[DT.PWPopPerSqMile]))) (F.Record ((CCESVotingDataR V.++ '[DT.PWPopPerSqMile])))
 sumButLeaveDensityCCES =
   let sumF f = FL.premap f FL.sum
-      densF = wgtdGMeanF (realToFrac . F.rgetField @Surveyed) (F.rgetField @DT.PopPerSqMile)
+      densF = wgtdGMeanF (realToFrac . F.rgetField @Surveyed) (F.rgetField @DT.PWPopPerSqMile)
    in (\f1 f2 f3 f4 f5 f6 f7 f8 f9 → f1 F.&: f2 F.&: f3 F.&: f4 F.&: f5 F.&: f6 F.&: f7 F.&: f8 F.&: f9 F.&: V.RNil)
         <$> sumF (F.rgetField @Surveyed)
         <*> sumF (F.rgetField @Voted)
@@ -914,21 +914,21 @@ fldAgeInCCES =
       (FMR.assignKeysAndData @(CDKeyR V.++ CCESPredictorEMR))
       (FMR.foldAndAddKey sumButLeaveDensityCCES)
 
-type PUMSWithDensity = PUMSByCDR -- V.++ '[DT.PopPerSqMile]
-type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PopPerSqMile]
-type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PopPerSqMile, DT.PopCount]
+type PUMSWithDensity = PUMSByCDR -- V.++ '[DT.PWPopPerSqMile]
+type PUMSWithDensityEM = PUMSByCDEMR V.++ '[DT.PWPopPerSqMile]
+type ACSWithDensityEM = CDKeyR V.++ CCESPredictorEMR V.++ [DT.PWPopPerSqMile, DT.PopCount]
 
-type CPSVWithDensity = CPSVByStateR V.++ '[DT.PopPerSqMile]
-type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PopPerSqMile]
+type CPSVWithDensity = CPSVByStateR V.++ '[DT.PWPopPerSqMile]
+type CPSVWithDensityEM = CPSVByStateEMR V.++ '[DT.PWPopPerSqMile]
 
 fixACSFld ∷ FL.Fold (F.Record PUMSWithDensity) (F.FrameRec ACSWithDensityEM)
 fixACSFld =
   let --safeLog x = if x < 1e-12 then 0 else Numeric.log x
-      density = F.rgetField @DT.PopPerSqMile
+      density = F.rgetField @DT.PWPopPerSqMile
       ppl = F.rgetField @DT.PopCount
       pplFld = FL.premap ppl FL.sum
       pplWgtdDensityFld = wgtdGMeanF (realToFrac . ppl) density -- fmap Numeric.exp ((/) <$> FL.premap (\r -> realToFrac (cit r) * safeLog (density r)) FL.sum <*> fmap realToFrac citFld)
-      dataFld ∷ FL.Fold (F.Record [DT.PopPerSqMile, DT.PopCount]) (F.Record [DT.PopPerSqMile, DT.PopCount])
+      dataFld ∷ FL.Fold (F.Record [DT.PWPopPerSqMile, DT.PopCount]) (F.Record [DT.PWPopPerSqMile, DT.PopCount])
       dataFld = (\d c → d F.&: c F.&: V.RNil) <$> pplWgtdDensityFld <*> pplFld
    in FMR.concatFold $
         FMR.mapReduceFold

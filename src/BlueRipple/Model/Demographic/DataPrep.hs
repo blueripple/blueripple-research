@@ -29,6 +29,8 @@ import qualified Frames.SimpleJoins as FJ
 --import qualified Frames.Streamly.Transform as FST
 
 import qualified Control.Foldl as FL
+import qualified Control.Lens as Lens
+import Control.Lens (view , (^.))
 import qualified Data.Map as M
 
 import qualified Data.Vinyl as V
@@ -44,7 +46,7 @@ import qualified Numeric
 
 type Categoricals = [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
 type DatFieldsFrom = [PUMS.PUMSWeight, DT.PopPerSqMile]
-type DatFieldsTo = [DT.PopCount, DT.PopPerSqMile]
+type DatFieldsTo = [DT.PopCount, DT.PWPopPerSqMile]
 
 type ACSByStateGeoRF = [BRDF.Year, GT.StateFIPS]
 type ACSByStateGeoR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS]
@@ -70,7 +72,7 @@ datFromToFld =
   let wgt = F.rgetField @PUMS.PUMSWeight
       density = F.rgetField @DT.PopPerSqMile
       countFld = FL.premap wgt FL.sum
-      densityFld = FL.premap (\r -> (realToFrac (wgt r), density r)) PUMS.densityF
+      densityFld = FL.premap (\r -> (realToFrac (wgt r), density r)) PUMS.wgtdDensityF
   in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
 
 acsByStateRF :: F.FrameRec PUMS.PUMS_Typed -> K.StreamlyM (F.FrameRec ACSByStateRF)
@@ -90,7 +92,6 @@ cachedACSByState' = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
     when (not $ null missing) $ K.knitError $ "Missing abbreviations in acsByState' left join: " <> show missing
     K.logLE K.Info $ "Done"
     pure $ fmap F.rcast withSA
-
 
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
 simplifyAgeM r =
@@ -129,54 +130,60 @@ forMultinomial label count extraF =
      (MR.assign (F.rcast @ks) (\r -> (F.rcast @as r, (label r, count r))))
      (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
 
-type ACSByStateCitizenMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C, DT.PopPerSqMile]
+type ACSByStateCitizenMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]
 type ACSByStateCitizenMN = (F.Record ACSByStateCitizenMNR, VU.Vector Int)
 
-type ACSByStateAgeMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopPerSqMile]
+type ACSByStateAgeMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]
 type ACSByStateAgeMN = (F.Record ACSByStateAgeMNR, VU.Vector Int)
 
-type ACSByStateEduMNR = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C, DT.PopPerSqMile]
+type ACSByStateEduMNR = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C, DT.PWPopPerSqMile]
 type ACSByStateEduMN = (F.Record ACSByStateEduMNR, VU.Vector Int)
 
-densityF :: FL.Fold (F.Record [DT.PopCount, DT.PopPerSqMile]) (F.Record '[DT.PopPerSqMile])
-densityF =
+wgtdDensityF :: FL.Fold (F.Record [DT.PopCount, DT.PWPopPerSqMile]) (F.Record '[DT.PWPopPerSqMile])
+wgtdDensityF =
   let nPeople r = F.rgetField @DT.PopCount r
-      density r = F.rgetField @DT.PopPerSqMile r
+      density r = F.rgetField @DT.PWPopPerSqMile r
       f r = (realToFrac $ nPeople r, density r)
-  in FT.recordSingleton @DT.PopPerSqMile <$> FL.premap f PUMS.densityF
+  in FT.recordSingleton @DT.PWPopPerSqMile <$> FL.premap f PUMS.wgtdDensityF
+{-# INLINE wgtdDensityF #-}
 
-geomDensityF :: FL.Fold (Double, Double) Double
-geomDensityF =
+geomWgtdDensityF :: FL.Fold (Double, Double) Double
+geomWgtdDensityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * safeLog d) FL.sum
   in (/) <$> wgtSumF <*> wgtF
-{-# INLINE geomDensityF #-}
+{-# INLINE geomWgtdDensityF #-}
 
 filterZeroes :: [(a, VU.Vector Int)] -> [(a, VU.Vector Int)]
 filterZeroes = filter (\(_, v) -> v VU.! 0 > 0 || v VU.! 1 > 0)
 
+type ACSByStateMNR ks = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ ks V.++ '[DT.PWPopPerSqMile]
+type ACSByStateMNT ks = (F.Record (ACSByStateMNR ks), VU.Vector Int)
+
+acsByStateMN :: forall ks l . (Ord (F.Record ks), Enum l, Bounded l, Ord l
+                              , ks F.⊆ ACSByStateR
+                              )
+             =>  (F.Record ACSByStateR -> l) -> F.FrameRec ACSByStateR -> [ACSByStateMNT ks]
+acsByStateMN label = filterZeroes .
+                     FL.fold (forMultinomial @([BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ ks)
+                               label
+                               (view DT.popCount)
+                               wgtdDensityF
+                             )
+
 acsByStateCitizenMN :: F.FrameRec ACSByStateR -> [ACSByStateCitizenMN]
-acsByStateCitizenMN = filterZeroes
-                      . FL.fold (forMultinomial @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C]
-                                 (F.rgetField @DT.CitizenC)
-                                 (F.rgetField @DT.PopCount)
-                                 densityF
-                                )
+acsByStateCitizenMN = acsByStateMN @[DT.SexC, DT.Education4C, DT.Race5C] (view DT.citizenC)
 
 acsByStateAgeMN :: F.FrameRec ACSByStateR -> [ACSByStateAgeMN]
-acsByStateAgeMN = filterZeroes
-                  . FL.fold (forMultinomial @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-                             (DT.age4ToSimple . F.rgetField @DT.Age4C)
-                             (F.rgetField @DT.PopCount)
-                             densityF
-                            )
+acsByStateAgeMN = acsByStateMN @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] (view DT.age4C)
+
 
 acsByStateEduMN :: F.FrameRec ACSByStateR -> [ACSByStateEduMN]
 acsByStateEduMN = filterZeroes
                   .  FL.fold (forMultinomial @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C]
                               (\r -> DT.education4ToCollegeGrad (F.rgetField @DT.Education4C r) == DT.Grad)
                               (F.rgetField @DT.PopCount)
-                              densityF
+                              wgtdDensityF
                              )
 
 collegeGrad :: (F.ElemOf rs DT.EducationC, F.ElemOf rs DT.InCollege) => F.Record rs -> Bool
