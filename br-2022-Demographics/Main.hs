@@ -128,9 +128,20 @@ main = do
                  ("Age", DT.age4ToSimple . view DT.age4C)
                  ("CSER", F.rcast  @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C], SM.dmrC_S_ER)
 
+    cFromASR <- SM.runModel
+                False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                ("Cit", view DT.citizenC)
+                ("ASR", F.rcast @[DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_AR)
+
+    gFromCASR <- SM.runModel
+                 False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                 ("Grad", DT.education4ToCollegeGrad . view DT.education4C)
+                 ("CASR", F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_C_AR)
+
     let allSex = Keyed.elements @DT.Sex
         allCitizen = Keyed.elements @DT.Citizen
         allAge2 = Keyed.elements @DT.SimpleAge
+        allAge = Keyed.elements @DT.Age4
         allEdu = Keyed.elements @DT.Education4
         allCollegeGrad = Keyed.elements @DT.CollegeGrad
         allRace = Keyed.elements @DT.Race5
@@ -139,6 +150,7 @@ main = do
         allCE = all2 allCitizen allEdu
         allCG = all2 allCitizen allCollegeGrad
         allA2SR = all3 allAge2 allSex allRace
+        allASR = all3 allAge allSex allRace
         allCSR = all3 allCitizen allSex allRace
         allSER = all3 allSex allEdu allRace
         allSGR = all3 allSex allCollegeGrad allRace
@@ -161,14 +173,24 @@ main = do
                     (\r -> serRec (r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C))
                     (S.map serRec allSER)
         serDS = getSum <<$>> FL.fold serDSFld acsSample
-        asrRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
+        a2srRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
+        a2srRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
+        a2srDSFld =  DED.desiredSumsFld
+                    (Sum . F.rgetField @DT.PopCount)
+                    (F.rcast @'[GT.StateAbbreviation])
+                    (\r -> a2srRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+                    (S.map a2srRec allA2SR)
+        a2srDS = getSum <<$>> FL.fold a2srDSFld acsSample
+
+        asrRec :: (DT.Age4, DT.Sex, DT.Race5) -> F.Record [DT.Age4C, DT.SexC, DT.Race5C]
         asrRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
         asrDSFld =  DED.desiredSumsFld
                     (Sum . F.rgetField @DT.PopCount)
                     (F.rcast @'[GT.StateAbbreviation])
-                    (\r -> asrRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
-                    (S.map asrRec allA2SR)
+                    (\r -> asrRec (r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+                    (S.map asrRec allASR)
         asrDS = getSum <<$>> FL.fold asrDSFld acsSample
+
 
         sgrRec :: (DT.Sex, DT.CollegeGrad, DT.Race5) -> F.Record [DT.SexC, DT.CollegeGradC, DT.Race5C]
         sgrRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
@@ -194,77 +216,39 @@ main = do
                       (DED.enrichFrameFromBinaryModelF @DT.SimpleAgeC @DT.PopCount aFromCSER (view GT.stateAbbreviation) DT.EqualOrOver DT.Under)
                       (DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
                        <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS
-                       <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] asrDS)
+                       <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] a2srDS)
 
-        csrToCASR =  DED.pipelineStep @[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
+        asrToCASR =  DED.pipelineStep @[DT.Age4C, DT.SexC, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
+                     tableMatchingDataFunctions
+                     (DED.minConstrained DED.klObjF)
+                     (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount cFromASR (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
+                     (DED.desiredSumMapToLookup @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] asrDS
+                       <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] csrDS)
+
+        casrToCASGR =  DED.pipelineStep @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] @'[DT.CollegeGradC] @_ @_ @_ @DT.PopCount
+                       tableMatchingDataFunctions
+                       (DED.minConstrained DED.klObjF)
+                       (DED.enrichFrameFromBinaryModelF @DT.CollegeGradC @DT.PopCount gFromCASR (view GT.stateAbbreviation) DT.Grad DT.NonGrad)
+                       (DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] csrDS
+                        <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] asrDS
+                        <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] sgrDS)
+
+        csrToCA2SR =  DED.pipelineStep @[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
                      tableMatchingDataFunctions
                      (DED.minConstrained DED.klObjF)
                      (DED.enrichFrameFromBinaryModelF @DT.SimpleAgeC @DT.PopCount aFromCSR (view GT.stateAbbreviation) DT.EqualOrOver DT.Under)
                      (DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Race5C] csrDS
-                       <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Race5C] asrDS)
+                       <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Race5C] a2srDS)
 
-        casrToCASER =  DED.pipelineStep @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CollegeGradC] @_ @_ @_ @DT.PopCount
-                       tableMatchingDataFunctions
-                       (DED.minConstrained DED.klObjF)
-                       (DED.enrichFrameFromBinaryModelF @DT.CollegeGradC @DT.PopCount eFromCA2SR (view GT.stateAbbreviation) DT.Grad DT.NonGrad)
-                       (DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] csrDS
-                        <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] asrDS
-                        <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] sgrDS)
-
-
-    let acsSampleNoAgeCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateCitizenMN acsSample
-    let acsSampleNoEduAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
-                            <$> DDP.acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C]) (view DT.age4C) acsSample
---        acsSampleNoAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateAgeMN acsSample
-    K.logLE K.Info "Running SER -> CSER -> CASER pipeline."
-    serToCASER <- KS.streamlyToKnit $ (serToCSER  >=> cserToCASER) acsSampleNoAgeCit
-
-    K.logLE K.Info "Ruilding & running SER -> CSER -> CASER pipeline."
-    csrToCASER <- KS.streamlyToKnit $ (csrToCASR  >=> casrToCASER) acsSampleNoEduAge
+        ca2srToCA2SGR =  DED.pipelineStep @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CollegeGradC] @_ @_ @_ @DT.PopCount
+                         tableMatchingDataFunctions
+                         (DED.minConstrained DED.klObjF)
+                         (DED.enrichFrameFromBinaryModelF @DT.CollegeGradC @DT.PopCount eFromCA2SR (view GT.stateAbbreviation) DT.Grad DT.NonGrad)
+                         (DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] csrDS
+                          <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] a2srDS
+                          <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] sgrDS)
 
 
---    citModelResult <- runCitizenModel False cmdLine (SM.ModelConfig () False SM.HCentered True) SM.designMatrixRowCitizen2
---    ageModelResult <- runAgeModel False cmdLine (SM.ModelConfig () False SM.HCentered True) SM.designMatrixRowAge2
-    -- create test frame
-    let onlyState sa = (== sa) . view GT.stateAbbreviation
-        exampleState = "NY"
-        exampleFilter r = onlyState exampleState r
-{-
-
-    let eRec :: DT.Education4 -> F.Record '[DT.Education4C]
-        eRec e = e F.&: V.RNil
-        eDSFld = DED.desiredSumsFld
-                 (Sum . F.rgetField @DT.PopCount)
-                 (F.rcast @'[GT.StateAbbreviation])
-                 (\r -> eRec $ r ^. DT.education4C)
-                 (S.map eRec allEdu)
-        eDS = getSum <<$>> FL.fold eDSFld acsSample
-{-        csrTable= FL.fold (fmap DED.totaledTable
-                            $ DED.rowMajorMapFldInt
-                            (F.rgetField @DT.PopCount)
-                            (\r -> (r ^. DT.sexC, r ^. DT.race5C, r ^. DT.education4C))
-                            (F.rgetField @DT.CitizenC)
-                            allSRE
-                            allCitizen
-                          )
-          $  fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame exampleFilter acsSample
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCitizen) csrTable)
-
-    let serTable= FL.fold (fmap DED.totaledTable
-                            $ DED.rowMajorMapFldInt
-                            (F.rgetField @DT.PopCount)
-                            (\r -> (r ^. DT.sexC, r ^. DT.race5C, r ^. DT.citizenC))
-                            (F.rgetField @DT.Education4C)
-                            allSRC
-                            allEdu
-                          )
-          $  fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame exampleFilter acsSample
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) serTable)
--}
-    K.logLE K.Info "sample ACS data"
--}
     K.logLE K.Info "sample ACS data, ages simplified"
     let table af ef sa dat = FL.fold (fmap DED.totaledTable
                                       $ DED.rowMajorMapFldInt
@@ -290,10 +274,36 @@ main = do
                                     )
 
 --                                      $ table (DT.age4ToSimple . view DT.age4C) (view DT.education4C) "NY "acsSample)
-    K.logLE K.Info $ "\n Now SER -> CSER -> CASER"
+
+    let acsSampleNoAgeCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateCitizenMN acsSample
+    K.logLE K.Info "Running SER -> CSER -> CASER pipeline."
+    serToCASER <- KS.streamlyToKnit $ (serToCSER  >=> cserToCASER) acsSampleNoAgeCit
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
                                       $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) "NY" serToCASER)
-    K.logLE K.Info $ "\n Now CSR -> CASR -> CASER"
+
+
+    let acsSampleNoEduCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
+                            <$> DDP.acsByStateMN (F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]) (view DT.citizenC) acsSample
+
+    K.logLE K.Info "Running ASR -> CASR -> CASGR pipeline."
+    asrToCASER <- KS.streamlyToKnit $ (asrToCASR  >=> casrToCASGR) acsSampleNoEduCit
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
+                                      $ FL.fold (fmap DED.totaledTable
+                                                  $ DED.rowMajorMapFldInt
+                                                  (view DT.popCount)
+                                                  (\r -> (DT.age4ToSimple (r ^. DT.age4C), r ^. DT.sexC, r ^. DT.race5C))
+                                                  (\r -> (r ^. DT.citizenC, r ^. DT.collegeGradC))
+                                                  allA2SR
+                                                  allCG
+                                                 )
+                                      $ fmap (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount])
+                                      $ F.filterFrame ((== "NY") . (^. GT.stateAbbreviation)) asrToCASER
+                                    )
+
+    let acsSampleNoEduAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
+                            <$> DDP.acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C]) (view DT.age4C) acsSample
+    K.logLE K.Info "Running CSR -> CA2SR -> CA2SGR pipeline."
+    csrToCASER <- KS.streamlyToKnit $ (csrToCA2SR  >=> ca2srToCA2SGR) acsSampleNoEduAge
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
                                       $ FL.fold (fmap DED.totaledTable
                                                   $ DED.rowMajorMapFldInt
@@ -306,110 +316,7 @@ main = do
                                       $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount])
                                       $ F.filterFrame ((== "NY") . (^. GT.stateAbbreviation)) csrToCASER
                                     )
-{-
-    K.logLE K.Info "sample ACS data, aggregated by ages, and citizenship, then split by citizen model"
-    enrichedCit <- KS.streamlyToKnit
-                   $ DED.enrichFrameFromBinaryModel @DT.CitizenC @DT.PopCount
-                   citModelResult
-                   (F.rgetField @GT.StateAbbreviation)
-                   DT.Citizen
-                   DT.NonCitizen
-                   acsSampleNoAgeCit
-    let addCitTable sa =  FL.fold (fmap DED.totaledTable
-                                   $ DED.rowMajorMapFldInt
-                                   (F.rgetField @DT.PopCount)
-                                   (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                                   (F.rgetField @DT.Education4C)
-                                   allCSR
-                                   allEdu
-                                  )
-          $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame ((== sa) . (^. GT.stateAbbreviation)) enrichedCit
-    K.logLE K.Info $ "\n" <> exampleState <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) $ addCitTable exampleState)
---    traverse_ (\sa -> K.logLE K.Info $ "\n" <> sa <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) $ addCitTable sa)) allSAs
---    K.logLE K.Info $ "\neDS=" <> show eDS
 
-    let ncFrameIFldCSER = DED.nearestCountsFrameIFld @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-                          (DED.minConstrained DED.klObjF)
-                          recToCWD
-                          cwdToRec
-                          cwdN
-                          updateCWDCount
-        nMatchCSRFld = DED.nearestCountsFrameFld zeroPopAndDens ncFrameIFldCSER
-                       (DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS
-                        <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS)
-    nMatchCSR <- K.knitEither $ FL.foldM nMatchCSRFld enrichedCit
-    let nMatchCSRTable sa = FL.fold (fmap DED.totaledTable
-                                     $ DED.rowMajorMapFldInt
-                                     (F.rgetField @DT.PopCount)
-                                     (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                                     (F.rgetField @DT.Education4C)
-                                     allCSR
-                                     allEdu
-                                    )
-                            $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                            $ F.filterFrame (\r -> r ^. GT.stateAbbreviation == sa) nMatchCSR
-    K.logLE K.Info "sample ACS data, aggregated by ages, and citizenship, then split by citizen model and row matched to actual CSR data"
-    K.logLE K.Info $ "\n" <> exampleState <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) $ nMatchCSRTable exampleState)
---    traverse_ (\sa ->  K.logLE K.Info $ "\n" <> sa <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allEdu) $ nMatchCSRTable sa)) allSAs
-    enrichedAge <- KS.streamlyToKnit
-                   $ DED.enrichFrameFromBinaryModel @DT.SimpleAgeC @DT.PopCount
-                   ageModelResult
-                   (F.rgetField @GT.StateAbbreviation)
-                   DT.EqualOrOver
-                   DT.Under
-                   nMatchCSR
-    let enrichedAgeTable sa = FL.fold (fmap DED.totaledTable
-                                       $ DED.rowMajorMapFldInt
-                                       (F.rgetField @DT.PopCount)
-                                       (\r -> (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                                       (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.Education4C r))
-                                       allASR
-                                       allCE
-                                      )
-                              $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                              $ F.filterFrame ((== sa) . (^. GT.stateAbbreviation)) enrichedAge
-    K.logLE K.Info "previous row-matched, then split by age model"
-    K.logLE K.Info $ "\n" <> exampleState <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) $ enrichedAgeTable exampleState)
---    traverse_ (\sa -> K.logLE K.Info $ "\n" <> sa <> "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) $ enrichedAgeTable sa)) allSAs
---    BRK.logFrame $ fmap fixRows2 enrichedAge
-    let ncFrameIFldCASER = DED.nearestCountsFrameIFld @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
-                           (DED.minConstrained DED.klObjF)
-                           recToCWD
-                           cwdToRec
-                           cwdN
-                           updateCWDCount
-        nMatchASRFldM = DED.nearestCountsFrameFld zeroPopAndDens ncFrameIFldCASER
-                        (DED.desiredSumMapToLookup @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C] csrDS
-                        <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C] serDS
-                        <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C] asrDS
-                        )
-    nMatchASR <- K.knitEither $ FL.foldM nMatchASRFldM enrichedAge
-    let nMatchASRTable = FL.fold (fmap DED.totaledTable
-                                $ DED.rowMajorMapFldInt
-                                 (F.rgetField @DT.PopCount)
-                                 (\r -> (F.rgetField @DT.SimpleAgeC r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                                 (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.Education4C r))
-                                 allASR
-                                 allCE
-                               )
-          $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame exampleFilter nMatchASR
-    K.logLE K.Info "previous, row-matched to ASR table."
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) nMatchASRTable)
-    let acsTable = FL.fold (fmap DED.totaledTable
-                             $ DED.rowMajorMapFldInt
-                             (F.rgetField @DT.PopCount)
-                             (\r -> (DT.age4ToSimple $ F.rgetField @DT.Age4C r, F.rgetField @DT.SexC r, F.rgetField @DT.Race5C r))
-                             (\r -> (F.rgetField @DT.CitizenC r, F.rgetField @DT.Education4C r))
-                             allASR
-                             allCE
-                           )
-          $ fmap (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-          $ F.filterFrame exampleFilter acsSample
-    K.logLE K.Info "Original ACS data."
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCE) acsTable)
--}
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
 --    K.logLE K.Info $ show allEdus
 {-

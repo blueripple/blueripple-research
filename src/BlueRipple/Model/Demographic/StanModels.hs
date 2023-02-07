@@ -428,9 +428,47 @@ dmrS_A2CR :: forall rs . (F.ElemOf rs DT.CitizenC
 dmrS_A2CR = DM.DesignMatrixRow "S_A2CR" [sexRP, citAgeRaceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    citAgeRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Citizen, DT.Under, DT.R5_WhiteNonHispanic)) "AgeRaceEdu"
+    citAgeRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Citizen, DT.Under, DT.R5_WhiteNonHispanic)) "CitAgeRace"
                    $ \r -> DM.BEProduct3 (r ^. DT.citizenC, DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.race5C)
 
+
+dmrS_AR :: forall rs . (F.ElemOf rs DT.SexC
+                       , F.ElemOf rs DT.Race5C
+                       , F.ElemOf rs DT.Age4C
+                       )
+              => DM.DesignMatrixRow (F.Record rs)
+dmrS_AR = DM.DesignMatrixRow "S_AR" [sexRP, ageRaceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    ageRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.A4_25To44, DT.R5_WhiteNonHispanic)) "AgeRace"
+                $ \r -> DM.BEProduct2 (r ^. DT.age4C, r ^. DT.race5C)
+
+
+dmrS_CAR :: forall rs . (F.ElemOf rs DT.CitizenC
+                        , F.ElemOf rs DT.SexC
+                        , F.ElemOf rs DT.Race5C
+                        , F.ElemOf rs DT.Age4C
+                        )
+              => DM.DesignMatrixRow (F.Record rs)
+dmrS_CAR = DM.DesignMatrixRow "S_CAR" [sexRP, citAgeRaceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    citAgeRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Citizen, DT.A4_25To44, DT.R5_WhiteNonHispanic)) "CitAgeRace"
+                   $ \r -> DM.BEProduct3 (r ^. DT.citizenC, r ^. DT.age4C, r ^. DT.race5C)
+
+
+dmrS_C_AR :: forall rs . (F.ElemOf rs DT.CitizenC
+                        , F.ElemOf rs DT.SexC
+                        , F.ElemOf rs DT.Race5C
+                        , F.ElemOf rs DT.Age4C
+                        )
+              => DM.DesignMatrixRow (F.Record rs)
+dmrS_C_AR = DM.DesignMatrixRow "S_C_AR" [sexRP, citRP, ageRaceRP]
+  where
+    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
+    citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
+    ageRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.A4_25To44, DT.R5_WhiteNonHispanic)) "AgeRace"
+                $ \r -> DM.BEProduct2 (r ^. DT.age4C, r ^. DT.race5C)
 
 
 designMatrixRowAge :: forall rs . (F.ElemOf rs DT.CitizenC
