@@ -161,6 +161,26 @@ rowMajorMapFld toData rowKey colKey allRowKeysS allColKeysS = givenMapFld where
   givenMapFld :: FL.Fold d (Map (rk, ck) b)
   givenMapFld = M.unionWith (<>) dfltMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.mconcat)
 
+
+vecFld :: forall d k b . (Ord k, Monoid b, BRK.FiniteSet k)
+       => (b -> LA.R)
+       -> (d -> b)
+       -> (d -> k)
+       -> FL.Fold d (LA.Vector LA.R)
+vecFld toDbl toData key = VS.fromList . fmap toDbl . M.elems <$> givenMapFld where
+  allKeysL = S.elems $ BRK.elements @k
+
+  dfltMap :: Map k b
+  dfltMap = M.fromList $ (, mempty) <$> allKeysL
+
+  asKeyVal :: d -> (k, b)
+  asKeyVal d = (key d, toData d)
+
+  -- fold the input records to a map keyed by categories and add 0s when things are missing
+  givenMapFld :: FL.Fold d (Map k b)
+  givenMapFld = M.unionWith (<>) dfltMap <$> FL.premap asKeyVal (FL.foldByKeyMap FL.mconcat)
+
+
 rowMajorMapTable :: (Ord a, Ord b) => Map (a, b) Int -> Map a (Map b Int)
 rowMajorMapTable = M.fromListWith (M.unionWith (+)) .  fmap (\(k, n) -> (fst k, M.singleton (snd k) n)) .  M.toList
 
@@ -394,7 +414,7 @@ klDiv nV mV = res
 --    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
     nSum = VS.sum nV
     mSum = VS.sum mV
-    klF x y = {- if x == 0 then 0 else-} x * Numeric.log (x / y)
+    klF x y = if x == 0 then 0 else x * Numeric.log (x / y)
 
 klGrad :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 klGrad nV mV = res
