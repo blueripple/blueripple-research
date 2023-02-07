@@ -56,7 +56,7 @@ type CensusASERRecodedR = BRC.LDLocationR
                           V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount, DT.PopPerSqMile]
 -}
 
-
+{-
 -- Step 1
 -- NB all this data is without a year field. So this step needs to be done for each year
 enrichCensusData :: SM.AgeStateModelResult -> BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusCASERR)
@@ -70,3 +70,4 @@ enrichCensusData amr censusTables = do
                       (BRC.sexEducationRace censusTables)
   let rowSumFld = DED.desiredRowSumsFld @DT.Age4C @BRC.Count @[BRDF.StateAbbreviation, DT.SexC, DT.RaceAlone4C, DT.HispC] allSimpleAges DT.age4ToSimple
   let ncFld = DED.nearestCountsFrameFld @BRC.Count @DT.SimpleAgeC @DT.Education4C (DED.nearestCountsFrameIFld DED.nearestCountsKL) desiredRowSumLookup allEdus
+-}

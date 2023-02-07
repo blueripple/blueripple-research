@@ -111,12 +111,17 @@ addRace5 :: (F.ElemOf rs DT.HispC, F.ElemOf rs DT.RaceAlone4C) => F.Record rs ->
 addRace5 r = r5 F.&: r
   where r5 = DT.race5FromRaceAlone4AndHisp True (F.rgetField @DT.RaceAlone4C r) (F.rgetField @DT.HispC r)
 
-forMultinomial :: forall ks as bs rs l. (ks F.⊆ rs, as F.⊆ rs, Ord (F.Record ks), Enum l, Bounded l, Ord l)
-               => (F.Record rs -> l) -- label
+forMultinomial :: forall ks as bs rs l.
+                  (as F.⊆ rs
+                  , Ord (F.Record ks)
+                  , Enum l, Bounded l, Ord l
+                  )
+               => (F.Record rs -> F.Record ks) -- category keys
+               -> (F.Record rs -> l) -- label
                -> (F.Record rs -> Int) -- count
                -> FL.Fold (F.Record as) (F.Record bs)
                -> FL.Fold (F.Record rs) [(F.Record (ks V.++ bs), VU.Vector Int)]
-forMultinomial label count extraF =
+forMultinomial cKeys label count extraF =
   let vecF :: FL.Fold (l, Int) (VU.Vector Int)
       vecF = let zeroMap = M.fromList $ zip [(minBound :: l)..] $ repeat 0
              in VU.fromList . fmap snd . M.toList . M.unionWith (+) zeroMap <$> FL.foldByKeyMap FL.sum
@@ -127,7 +132,7 @@ forMultinomial label count extraF =
   in MR.concatFold
      $ MR.mapReduceFold
      MR.noUnpack
-     (MR.assign (F.rcast @ks) (\r -> (F.rcast @as r, (label r, count r))))
+     (MR.assign cKeys (\r -> (F.rcast @as r, (label r, count r))))
      (MR.foldAndLabel datF (\ks (bs, v) -> [(ks F.<+> bs, v)]))
 
 type ACSByStateCitizenMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]
@@ -161,30 +166,27 @@ type ACSByStateMNR ks = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ k
 type ACSByStateMNT ks = (F.Record (ACSByStateMNR ks), VU.Vector Int)
 
 acsByStateMN :: forall ks l . (Ord (F.Record ks), Enum l, Bounded l, Ord l
-                              , ks F.⊆ ACSByStateR
+--                              , ks F.⊆ ACSByStateR
                               )
-             =>  (F.Record ACSByStateR -> l) -> F.FrameRec ACSByStateR -> [ACSByStateMNT ks]
-acsByStateMN label = filterZeroes .
-                     FL.fold (forMultinomial @([BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ ks)
-                               label
-                               (view DT.popCount)
-                               wgtdDensityF
-                             )
+             =>  (F.Record ACSByStateR -> F.Record ks) -> (F.Record ACSByStateR -> l) -> F.FrameRec ACSByStateR -> [ACSByStateMNT ks]
+acsByStateMN cKey label = filterZeroes .
+                          FL.fold (forMultinomial @([BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ ks)
+                                   (\r -> F.rcast @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] r F.<+> cKey r)
+                                   label
+                                   (view DT.popCount)
+                                   wgtdDensityF
+                                  )
 
 acsByStateCitizenMN :: F.FrameRec ACSByStateR -> [ACSByStateCitizenMN]
-acsByStateCitizenMN = acsByStateMN @[DT.SexC, DT.Education4C, DT.Race5C] (view DT.citizenC)
+acsByStateCitizenMN = acsByStateMN (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (view DT.citizenC)
 
 acsByStateAgeMN :: F.FrameRec ACSByStateR -> [ACSByStateAgeMN]
-acsByStateAgeMN = acsByStateMN @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] (view DT.age4C)
+acsByStateAgeMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) (view DT.age4C)
 
 
 acsByStateEduMN :: F.FrameRec ACSByStateR -> [ACSByStateEduMN]
-acsByStateEduMN = filterZeroes
-                  .  FL.fold (forMultinomial @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C]
-                              (\r -> DT.education4ToCollegeGrad (F.rgetField @DT.Education4C r) == DT.Grad)
-                              (F.rgetField @DT.PopCount)
-                              wgtdDensityF
-                             )
+acsByStateEduMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C]) ((== DT.Grad) . DT.education4ToCollegeGrad . view DT.education4C)
+
 
 collegeGrad :: (F.ElemOf rs DT.EducationC, F.ElemOf rs DT.InCollege) => F.Record rs -> Bool
 collegeGrad r = F.rgetField @DT.InCollege r || F.rgetField @DT.EducationC r `elem` [DT.BA, DT.AD]
@@ -209,8 +211,8 @@ educationWithInCollege r = case inCollege r of
 districtKey :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict) => F.Record rs -> Text
 districtKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @GT.CongressionalDistrict r)
 
-logDensityPredictor :: F.ElemOf rs DT.PopPerSqMile => F.Record rs -> VU.Vector Double
-logDensityPredictor = safeLogV . F.rgetField @DT.PopPerSqMile
+logDensityPredictor :: F.ElemOf rs DT.PWPopPerSqMile => F.Record rs -> VU.Vector Double
+logDensityPredictor = safeLogV . F.rgetField @DT.PWPopPerSqMile
 
 safeLog :: Double -> Double
 safeLog x =  if x < 1e-12 then 0 else Numeric.log x -- won't matter because Pop will be 0 here

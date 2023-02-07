@@ -70,20 +70,20 @@ pipelineStep :: forall ks cks outerKs ds b count rs m .
                 , F.ElemOf rs count
                 , FSI.RecVec rs
                 , FSI.RecVec (cks V.++ rs)
-                , ks F.⊆ rs
+                , (cks V.++ rs) F.⊆ (cks V.++ rs)
+                , rs F.⊆ rs
                 , Ord (F.Record (cks V.++ ks))
                 , ds F.⊆ ((cks V.++ ks) V.++ ds)
                 , (cks V.++ ks) F.⊆ ((cks V.++ ks) V.++ ds)
                 , Ord (F.Record outerKs)
                 , BRK.FiniteSet (F.Record (cks V.++ ks))
                 , FSI.RecVec ((outerKs V.++ (cks V.++ ks)) V.++ ds)
-                , outerKs F.⊆ rs
-                , ((cks V.++ ks) V.++ ds) F.⊆ rs
-                , rs F.⊆ (cks V.++ rs)
+                , outerKs F.⊆ (cks V.++ rs)
+                , ((cks V.++ ks) V.++ ds) F.⊆ (cks V.++ rs)
                 )
              => TableMatchingDataFunctions (F.Record ds) b
              -> ([StencilSum Int Int] -> [Int] -> Either Text [Int]) -- ^ table matching algo
-             -> (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
+             -> (F.Record rs -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
              -> StencilSumLookupFld (F.Record outerKs) (F.Record (cks V.++ ks)) -- ^ produce tables to match
              -> F.FrameRec rs
              -> m (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
@@ -93,7 +93,7 @@ pipelineStep tableMatchingDFs matchingAlgo enrichModel matchTablesFld rows = do
       enrichedRows <- enrichFrameFromModel @count enrichModel rows
       let matchingIFld :: [StencilSum Int Int] -> FL.FoldM (Either Text) (F.Record (cks V.++ ks V.++ ds)) [F.Record (cks V.++ ks V.++ ds)]
           matchingIFld = (nearestCountsFrameIFld @(cks V.++ ks) @ds @b) matchingAlgo toMon fromMon toInt updateMon
-          matchingFld :: FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
+          matchingFld :: FL.FoldM (Either Text) (F.Record (cks V.++ rs)) (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
           matchingFld = nearestCountsFrameFld @(cks V.++ ks) @outerKs @ds dflt matchingIFld matchTablesFld
           eRes = FL.foldM (FL.premapM (pure . F.rcast) matchingFld) enrichedRows
       case eRes of
@@ -483,7 +483,7 @@ enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                               , Integral (V.Snd count)
                               , MonadThrow m
                               , Prim.PrimMonad m
-                              , F.ElemOf rs DT.PopPerSqMile
+                              , F.ElemOf rs DT.PWPopPerSqMile
                               , Ord g
                               , Show g
                               , Ord (F.Record ks)
@@ -498,17 +498,13 @@ enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                            -> m (F.FrameRec (t ': rs))
 enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count $ enrichFrameFromBinaryModelF @t @count mr getGeo aTrue aFalse
 
-enrichFrameFromBinaryModelF :: forall t count m g ks rs a .
-                              (rs F.⊆ rs
-                              , ks F.⊆ rs
-                              , FSI.RecVec rs
-                              , FSI.RecVec (t ': rs)
+enrichFrameFromBinaryModelF :: forall t count g ks rs a .
+                              (ks F.⊆ rs
                               , V.KnownField t
                               , V.Snd t ~ a
                               , V.KnownField count
-                              , F.ElemOf rs count
                               , Integral (V.Snd count)
-                              , F.ElemOf rs DT.PopPerSqMile
+                              , F.ElemOf rs DT.PWPopPerSqMile
                               , Ord g
                               , Show g
                               , Ord (F.Record ks)

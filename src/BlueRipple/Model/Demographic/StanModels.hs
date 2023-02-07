@@ -62,11 +62,10 @@ import qualified Data.IntMap.Strict as IM
 logLengthC :: (K.KnitEffects r, Foldable f) => K.ActionWithCacheTime r (f a) -> Text -> K.Sem r ()
 logLengthC xC t = K.ignoreCacheTime xC >>= \x -> K.logLE K.Info $ t <> " has " <> show (FL.fold FL.length x) <> " rows."
 
-runModel :: forall l ks r .
+runModel :: forall ks l r .
             (K.KnitEffects r, BRKU.CacheEffects r
             , Ord (F.Record ks)
             , Enum l, Bounded l, Ord l
-            , ks F.⊆ DDP.ACSByStateR
             , Typeable (ks V.++ '[DT.PWPopPerSqMile])
             , F.ElemOf  (ks V.++ '[DT.PWPopPerSqMile]) DT.PWPopPerSqMile
             , ks F.⊆ ([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS] V.++ (ks V.++ '[DT.PWPopPerSqMile]))
@@ -79,9 +78,9 @@ runModel :: forall l ks r .
          -> BR.CommandLine
          -> ModelConfig ()
          -> (Text, F.Record DDP.ACSByStateR -> l)
-         -> (Text, DM.DesignMatrixRow (F.Record ks))
+         -> (Text, F.Record DDP.ACSByStateR -> F.Record ks, DM.DesignMatrixRow (F.Record ks))
          -> K.Sem r (ModelResult Text ks)
-runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, dmr) = do
+runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
   let cacheDirE = let k = ("model/demographic/" <> modeledT <> "/") in if clearCaches then Left k else Right k
       dataName = "acs" <> modeledT <> "_" <> DM.dmName dmr <> modelConfigSuffix mc
       runnerInputNames = SC.RunnerInputNames
@@ -89,13 +88,12 @@ runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, dmr) = do
                          ("normal" <> fromT <> "_" <> DM.dmName dmr <> modelConfigSuffix mc)
                          (Just $ SC.GQNames "pp" dataName)
                          dataName
-      only2020 r = F.rgetField @BRDF.Year r == 2020
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --  _ageModelPaths <- postPaths ("Model" cmdLine
   acs_C <- DDP.cachedACSByState'
 --  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
-  let acsMN_C = fmap (DDP.acsByStateMN @ks modeledK) acs_C
+  let acsMN_C = fmap (DDP.acsByStateMN cKey modeledK) acs_C
       mcWithId = "normal" <$ mc
 --  K.ignoreCacheTime acsMN_C >>= print
   logLengthC acsMN_C ("acsByState Counted for " <> modeledT)
@@ -359,90 +357,79 @@ cdGroup = S.GroupTypeTag "CD"
 stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
-dmrCFromSER :: forall rs . (F.ElemOf rs DT.Education4C
+dmrS_ER :: forall rs . (F.ElemOf rs DT.Education4C
                            , F.ElemOf rs DT.SexC
                            , F.ElemOf rs DT.Race5C
                            )
                         => DM.DesignMatrixRow (F.Record rs)
-dmrCFromSER = DM.DesignMatrixRow "C_S+ER" [sexRP, raceEduRP]
+dmrS_ER = DM.DesignMatrixRow "S_ER" [sexRP, raceEduRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
                 $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
-dmrAFromCSER :: forall rs . (F.ElemOf rs DT.CitizenC
+
+dmrC_S_ER :: forall rs . (F.ElemOf rs DT.CitizenC
                                    , F.ElemOf rs DT.Education4C
                                    , F.ElemOf rs DT.SexC
                                    , F.ElemOf rs DT.Race5C
                                    )
                    => DM.DesignMatrixRow (F.Record rs)
-dmrAFromCSER = DM.DesignMatrixRow "A_C+S+ER" [citRP, sexRP, raceEduRP]
+dmrC_S_ER = DM.DesignMatrixRow "C_S_ER" [citRP, sexRP, raceEduRP]
   where
     citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
                 $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
 
-dmrAFromCSR :: forall rs . (F.ElemOf rs DT.CitizenC
+dmrS_CR :: forall rs . (F.ElemOf rs DT.CitizenC
                            , F.ElemOf rs DT.SexC
                            , F.ElemOf rs DT.Race5C
                            )
                    => DM.DesignMatrixRow (F.Record rs)
-dmrAFromCSR = DM.DesignMatrixRow "A_S+CR" [sexRP, citRaceRP]
+dmrS_CR = DM.DesignMatrixRow "S_CR" [sexRP, citRaceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     citRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.Citizen,  DT.R5_WhiteNonHispanic)) "CttRace"
                 $ \r -> DM.BEProduct2 (r ^. DT.citizenC, r ^. DT.race5C)
 
-dmrCFromCASR :: forall rs . (F.ElemOf rs DT.CitizenC
-                                   , F.ElemOf rs DT.SimpleAgeC
-                                   , F.ElemOf rs DT.SexC
-                                   , F.ElemOf rs DT.Race5C
-                                   )
+dmrC_S_A2R :: forall rs . (F.ElemOf rs DT.CitizenC
+                         , F.ElemOf rs DT.SimpleAgeC
+                         , F.ElemOf rs DT.SexC
+                         , F.ElemOf rs DT.Race5C
+                         )
                    => DM.DesignMatrixRow (F.Record rs)
-dmrCFromCASR = DM.DesignMatrixRow "A_C+S+AR" [citRP, sexRP, ageRaceRP]
+dmrC_S_A2R = DM.DesignMatrixRow "C_S_A2R" [citRP, sexRP, ageRaceRP]
   where
     citRP = DM.boundedEnumRowPart Nothing "Citizen" (F.rgetField @DT.CitizenC )
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    ageRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.Under, DT.R5_WhiteNonHispanic)) "RaceEdu"
+    ageRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.Under, DT.R5_WhiteNonHispanic)) "Age2Race"
                 $ \r -> DM.BEProduct2 (r ^. DT.simpleAgeC, r ^. DT.race5C)
 
 
-
-dmrAFromSER :: forall rs . (F.ElemOf rs DT.Education4C
-                           , F.ElemOf rs DT.SexC
-                           , F.ElemOf rs DT.Race5C
-                           )
-                   => DM.DesignMatrixRow (F.Record rs)
-dmrAFromSER = DM.DesignMatrixRow "A_S+ER" [sexRP, raceEduRP]
-  where
-    sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    raceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "RaceEdu"
-                $ \r -> DM.BEProduct2 (F.rgetField @DT.Race5C  r, F.rgetField @DT.Education4C r)
-
-dmrCFromASER :: forall rs . (F.ElemOf rs DT.Education4C
+dmrS_A2ER :: forall rs . (F.ElemOf rs DT.Education4C
                             , F.ElemOf rs DT.SexC
                             , F.ElemOf rs DT.Race5C
                             , F.ElemOf rs DT.SimpleAgeC
                             )
                         => DM.DesignMatrixRow (F.Record rs)
-dmrCFromASER = DM.DesignMatrixRow "C_S+AER" [sexRP, ageRaceEduRP]
+dmrS_A2ER = DM.DesignMatrixRow "S_A2ER" [sexRP, ageRaceEduRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
-    ageRaceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Under, DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "AgeRaceEdu"
+    ageRaceEduRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Under, DT.R5_WhiteNonHispanic, DT.E4_HSGrad)) "Age2RaceEdu"
                    $ \r -> DM.BEProduct3 (r ^. DT.simpleAgeC, r ^. DT.race5C, r ^. DT.education4C)
 
 
-dmrEFromCASR :: forall rs . (F.ElemOf rs DT.CitizenC
-                            , F.ElemOf rs DT.SexC
-                            , F.ElemOf rs DT.Race5C
-                            , F.ElemOf rs DT.SimpleAgeC
-                            )
-                        => DM.DesignMatrixRow (F.Record rs)
-dmrEFromCASR = DM.DesignMatrixRow "E_S+CAR" [sexRP, citAgeRaceRP]
+dmrS_A2CR :: forall rs . (F.ElemOf rs DT.CitizenC
+                        , F.ElemOf rs DT.SexC
+                        , F.ElemOf rs DT.Race5C
+                        , F.ElemOf rs DT.Age4C
+                        )
+              => DM.DesignMatrixRow (F.Record rs)
+dmrS_A2CR = DM.DesignMatrixRow "S_A2CR" [sexRP, citAgeRaceRP]
   where
     sexRP = DM.boundedEnumRowPart Nothing "Sex" (F.rgetField @DT.SexC)
     citAgeRaceRP = DM.boundedEnumRowPart (Just $ DM.BEProduct3 (DT.Citizen, DT.Under, DT.R5_WhiteNonHispanic)) "AgeRaceEdu"
-                   $ \r -> DM.BEProduct3 (r ^. DT.citizenC, r ^. DT.simpleAgeC, r ^. DT.race5C)
+                   $ \r -> DM.BEProduct3 (r ^. DT.citizenC, DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.race5C)
 
 
 
@@ -510,12 +497,12 @@ instance (V.RMap ks, FS.RecFlat ks, Flat.Flat g, Ord g, Ord (F.Rec FS.SElField k
   decode = fmap modelResultFromFTuple Flat.decode
 
 
-applyModelResult :: (F.ElemOf rs DT.PopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
+applyModelResult :: (F.ElemOf rs DT.PWPopPerSqMile, ks F.⊆ rs, Ord g, Show g, Ord (F.Record ks), Show (F.Record rs))
                  => ModelResult g ks -> g -> F.Record rs -> Either Text Double
 applyModelResult (ModelResult a ga (ldS, ldI) ca) g r = invLogit <$> xE where
   invLogit y = 1 / (1 + Numeric.exp (negate y))
   geoXE = maybe (Left $ "applyModelResult: " <> show g <> " missing from geography alpha map") Right $ M.lookup g ga
-  densX = ldI + ldS * (DDP.safeLog $ F.rgetField @DT.PopPerSqMile r)
+  densX = ldI + ldS * (DDP.safeLog $ F.rgetField @DT.PWPopPerSqMile r)
   catXE = maybe (Left $ "applyModelResult: " <> show r <> " missing from category alpha map") Right $ M.lookup (F.rcast r) ca
   xE = (\a' d g' c -> a' + d + g' + c) <$> pure a <*> pure densX <*> geoXE <*> catXE
 
@@ -565,7 +552,7 @@ type EduStateModelResult = ModelResult Text [DT.Age4C, DT.SexC, DT.Race5C]
 
 
 
-logDensityDMRP :: F.ElemOf rs DT.PopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
+logDensityDMRP :: F.ElemOf rs DT.PWPopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
 logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 DDP.logDensityPredictor
 
 ----
