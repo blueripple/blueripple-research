@@ -36,6 +36,7 @@ import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
+import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
@@ -156,7 +157,8 @@ main = do
         allSGR = all3 allSex allCollegeGrad allRace
 
     -- target tables
-    acsSample <- {- F.filterFrame ((== "GA") .(^. GT.stateAbbreviation)) <$>  -} K.ignoreCacheTimeM DDP.cachedACSByState'
+    acsSample <- K.ignoreCacheTimeM DDP.cachedACSByState'
+    let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
     let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
         csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
     let csrDSFld =  DED.desiredSumsFld
@@ -260,7 +262,7 @@ main = do
                              <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] sgrDS
                             )
 
-    let exampleState = "NY"
+    let exampleState = "AL"
     K.logLE K.Info "sample ACS data, ages simplified"
     let acsSampleKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
         acsSampleKey r = r ^. DT.citizenC
@@ -291,14 +293,18 @@ main = do
                                                   allCG
                                                  )
                                       $ fmap (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                                      $ F.filterFrame ((== "NY") . (^. GT.stateAbbreviation)) acsSample
+                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) acsSample
                                     )
 
---                                      $ table (DT.age4ToSimple . view DT.age4C) (view DT.education4C) "NY "acsSample)
+--                                      $ table (DT.age4ToSimple . view DT.age4C) (view DT.education4C) exampleState acsSample)
 
+    let computeKL f d sa = DED.klDiv acsV dV where
+          acsV = acsSampleVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) acsSample
+          dV = f $ fmap F.rcast $ F.filterFrame ((== sa) . view GT.stateAbbreviation) d
     let acsSampleNoAgeCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) <$> DDP.acsByStateCitizenMN acsSample
-    K.logLE K.Info "Running SER -> CSER -> CASER pipeline."
-    serToCASER <- KS.streamlyToKnit $ (serToCSER False >=> cserToCASER False) acsSampleNoAgeCit
+    K.logLE K.Info "Running SER -> CSER -> CASER pipeline. Model Only."
+    serToCASER_MO <- KS.streamlyToKnit $ (serToCSER False >=> cserToCASER False) acsSampleNoAgeCit
+    serToCASER <- KS.streamlyToKnit $ (serToCSER True >=> cserToCASER True) acsSampleNoAgeCit
     let serToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
                       -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
         serToCASERKey r = r ^. DT.citizenC
@@ -310,28 +316,34 @@ main = do
         serToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) serToCASERKey) t
         serToCASERVec = serToCASERVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) serToCASER
         serToCASERKL = DED.klDiv acsSampleVec serToCASERVec
+        serToCASER_MO_KLs = computeKL serToCASERVecF serToCASER_MO <$> allStates
+        serToCASER_KLs = computeKL serToCASERVecF serToCASER <$> allStates
+--    K.logLE K.Info $ "KL divergences (SER -> CASER, model only)" <> show (zip allStates serToCASER_MO_KLs)
     K.logLE K.Info $ "KL divergence =" <> show serToCASERKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
-                                      $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) "NY" serToCASER)
+                                      $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) exampleState serToCASER)
 
 
     let acsSampleNoEduCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
                             <$> DDP.acsByStateMN (F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]) (view DT.citizenC) acsSample
 
     K.logLE K.Info "Running ASR -> CASR -> CASGR pipeline."
-    asrToCASER <- KS.streamlyToKnit $ (asrToCASR  True >=> casrToCASGR True ) acsSampleNoEduCit
-    let asrToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
+    asrToCASGR_MO <- KS.streamlyToKnit $ (asrToCASR  False >=> casrToCASGR False ) acsSampleNoEduCit
+    asrToCASGR <- KS.streamlyToKnit $ (asrToCASR  True >=> casrToCASGR True ) acsSampleNoEduCit
+    let asrToCASGRKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
                       -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
-        asrToCASERKey r = r ^. DT.citizenC
+        asrToCASGRKey r = r ^. DT.citizenC
                          F.&: DT.age4ToSimple (r ^. DT.age4C)
                          F.&: r ^. DT.sexC
                          F.&: r ^. DT.collegeGradC
                          F.&: r ^. DT.race5C
                          F.&: V.RNil
-        asrToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) asrToCASERKey) t
-        asrToCASERVec = asrToCASERVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) asrToCASER
-        asrToCASERKL = DED.klDiv acsSampleVec asrToCASERVec
-    K.logLE K.Info $ "KL divergence =" <> show asrToCASERKL
+        asrToCASGRVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) asrToCASGRKey) t
+        asrToCASGRVec = asrToCASGRVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) asrToCASGR
+        asrToCASGRKL = DED.klDiv acsSampleVec asrToCASGRVec
+        asrToCASGR_MO_KLs = computeKL asrToCASGRVecF asrToCASGR_MO <$> allStates
+        asrToCASGR_KLs = computeKL asrToCASGRVecF asrToCASGR <$> allStates
+    K.logLE K.Info $ "KL divergence =" <> show asrToCASGRKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
                                       $ FL.fold (fmap DED.totaledTable
                                                   $ DED.rowMajorMapFldInt
@@ -342,12 +354,13 @@ main = do
                                                   allCG
                                                  )
                                       $ fmap (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount])
-                                      $ F.filterFrame ((== "NY") . (^. GT.stateAbbreviation)) asrToCASER
+                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) asrToCASGR
                                     )
 
     let acsSampleNoEduAge = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
                             <$> DDP.acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C]) (view DT.age4C) acsSample
     K.logLE K.Info "Running CSR -> CA2SR -> CA2SGR pipeline."
+    csrToCASER_MO <- KS.streamlyToKnit $ (csrToCA2SR False >=> ca2srToCA2SGR False) acsSampleNoEduAge
     csrToCASER <- KS.streamlyToKnit $ (csrToCA2SR True >=> ca2srToCA2SGR True) acsSampleNoEduAge
     let csrToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
                       -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
@@ -360,6 +373,8 @@ main = do
         csrToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) csrToCASERKey) t
         csrToCASERVec = csrToCASERVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) csrToCASER
         csrToCASERKL = DED.klDiv acsSampleVec csrToCASERVec
+        csrToCASER_MO_KLs = computeKL csrToCASERVecF csrToCASER_MO <$> allStates
+        csrToCASER_KLs = computeKL csrToCASERVecF csrToCASER <$> allStates
     K.logLE K.Info $ "KL divergence =" <> show csrToCASERKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade allCG)
                                       $ FL.fold (fmap DED.totaledTable
@@ -371,8 +386,13 @@ main = do
                                                   allCG
                                                  )
                                       $ fmap (F.rcast @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C, DT.PopCount])
-                                      $ F.filterFrame ((== "NY") . (^. GT.stateAbbreviation)) csrToCASER
+                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) csrToCASER
                                     )
+
+
+    let allKLs = L.zip7 allStates serToCASER_MO_KLs serToCASER_KLs asrToCASGR_MO_KLs asrToCASGR_KLs csrToCASER_MO_KLs csrToCASER_KLs
+    K.logLE K.Info "Divergence Table:"
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) allKLs)
 
 --    BRK.logFrame $ fmap (F.rcast @[BRDF.StateAbbreviation,  DT.SexC, DT.Education4C, DT.RaceAlone4C, DT.HispC, DT.SimpleAgeC, PUMS.Citizens]) nearestEnrichedAge
 --    K.logLE K.Info $ show allEdus
@@ -398,6 +418,24 @@ main = do
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+klColonnade :: C.Colonnade C.Headed (Text, Double, Double, Double, Double, Double, Double) Text
+klColonnade =
+  let sa (x, _, _, _, _, _, _) = x
+      serMO (_, x, _, _, _, _, _) = x
+      ser (_, _, x, _, _, _, _) = x
+      asrMO (_, _, _, x, _, _, _) = x
+      asr (_, _, _, _, x, _, _) = x
+      csrMO (_, _, _, _, _, x, _) = x
+      csr (_, _, _, _, _, _, x) = x
+  in C.headed "State" sa
+     <> C.headed "SER -> CASER (Model Only)" (show . serMO)
+     <> C.headed "SER -> CASER" (show . ser)
+     <> C.headed "ASR -> CASER (Model Only)" (show . asrMO)
+     <> C.headed "ASR -> CASER" (show . asr)
+     <> C.headed "CSR -> CASER (Model Only)" (show . csrMO)
+     <> C.headed "CSR -> CASER" (show . csr)
+
 
 
 mapColonnade :: (Show a, Show b, Ord b) => Set b -> C.Colonnade C.Headed (a, Map b Int) Text
