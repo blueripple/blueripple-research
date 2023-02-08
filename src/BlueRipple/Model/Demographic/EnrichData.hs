@@ -451,22 +451,27 @@ minConstrained objF stencilSumsI oCountsI = do
                       else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums after=" <> show stencilSumsI'
       nNums = VS.length givenV'
-      (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
-
 {-      !_ =  let cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
             in Unsafe.unsafePerformIO $ Say.say $ "cM was " <> show (LA.size cM)
                <> " and cM' is " <> show (LA.size cM')
                <> " with new rhs=" <> show s'
--}
+
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList s)
         where
           s = realToFrac . stSum <$> stencilSumsI
           givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
           cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+-}
       cErrD (sV, c) v = (LA.dot v sV - c, sV)
-      constraintsD = cErrD <$> zip (LA.toRows cM') (VS.toList s')
+      constraintsD = if length stencilSumsI' > 0
+                     then
+                       let (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
+                       in cErrD <$> zip (LA.toRows cM') (VS.toList s')
+                     else []
+
       nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
-      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 0]
+      -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1
+      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 1]
       relativeTol = 0.001
       maxIters = 500
       nlStop = NLOPT.ParameterRelativeTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
