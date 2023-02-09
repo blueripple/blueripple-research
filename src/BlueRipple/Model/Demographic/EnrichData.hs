@@ -108,13 +108,12 @@ pipelineStep tableMatchingDFs matchingAlgo enrichModel matchTablesFld rows = do
 -- choose what to fold over (e.g., State)
 -- and what to match on (e.g., CSR)
 desiredSumsFld :: forall kOuter k d b.
-                     (Ord kOuter, Ord k, Monoid b)
+                     (Ord kOuter, Ord k, Monoid b, BRK.FiniteSet k)
                   => (d -> b)
                   -> (d -> kOuter)
                   -> (d -> k)
-                  -> Set k
                   -> FL.Fold d (Map kOuter (Map k b))
-desiredSumsFld count outerKey innerKey allKeys  =
+desiredSumsFld count outerKey innerKey =
   fmap M.fromList
   $ MR.mapReduceFold
   MR.noUnpack
@@ -122,33 +121,28 @@ desiredSumsFld count outerKey innerKey allKeys  =
   (MR.foldAndLabel reduceFld (,))
   where
     innerAndCount r = (innerKey r, count r)
-    zeroMap = M.fromList $ (, mempty) <$> S.toList allKeys
---    asKeyVal r = (reKey $ F.rgetField @a r, F.rgetField @count r)
+    zeroMap = M.fromList $ (, mempty) <$> S.toList BRK.elements
     reduceFld :: FL.Fold (k, b) (Map k b)
     reduceFld = M.unionWith (<>) zeroMap <$> FL.foldByKeyMap FL.mconcat
 
 rowMajorMapFldInt :: forall d rk ck .
-                  (Ord rk, Ord ck)
+                  (Ord rk, Ord ck, BRK.FiniteSet ck, BRK.FiniteSet rk)
                => (d -> Int)
                -> (d -> rk)
                -> (d -> ck)
-               -> Set rk
-               -> Set ck
                -> FL.Fold d (Map (rk, ck) Int)
-rowMajorMapFldInt toData rowKey colKey allRowKeysS allColKeysS =
-  getSum <<$>> rowMajorMapFld (Sum . toData) rowKey colKey allRowKeysS allColKeysS
+rowMajorMapFldInt toData rowKey colKey =
+  getSum <<$>> rowMajorMapFld (Sum . toData) rowKey colKey
 
 rowMajorMapFld :: forall d rk ck b .
-                  (Ord rk, Ord ck, Monoid b)
+                  (Ord rk, Ord ck, Monoid b, BRK.FiniteSet ck, BRK.FiniteSet rk)
                => (d -> b)
                -> (d -> rk)
                -> (d -> ck)
-               -> Set rk
-               -> Set ck
                -> FL.Fold d (Map (rk, ck) b)
-rowMajorMapFld toData rowKey colKey allRowKeysS allColKeysS = givenMapFld where
-  allRowKeysL = S.elems allRowKeysS
-  allColKeysL = S.elems allColKeysS
+rowMajorMapFld toData rowKey colKey  = givenMapFld where
+  allRowKeysL = S.elems $ BRK.elements @rk
+  allColKeysL = S.elems $ BRK.elements @ck
   allRowColKeysL = [(rk, ck) | rk <- allRowKeysL, ck <- allColKeysL]
 
   dfltMap :: Map (rk, ck) b
@@ -410,7 +404,7 @@ stencilSumsToConstraintSystem n stencilSumsI =
 klDiv :: LA.Vector LA.R -> LA.Vector LA.R -> Double
 klDiv nV mV = res
   where
-    res = (1 / nSum) * VS.sum (VS.zipWith klF nV mV) - Numeric.log nSum + Numeric.log mSum
+    res = (1 / nSum) * VS.sum (VS.zipWith klF nV mV) + Numeric.log (mSum / nSum)
 --    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
     nSum = VS.sum nV
     mSum = VS.sum mV
@@ -421,8 +415,9 @@ klGrad nV mV = res
   where
     res = VS.zipWith f nV mV
 --    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res
-    c = 1 / VS.sum mV
-    f n m = c - {- if m == 0 then 1 else -} n / m
+    invMSum = 1 / VS.sum mV
+    invNSum = 1 / VS.sum nV
+    f n m = invMSum - {- if m == 0 then 1 else -} invNSum * n / m
 
 klObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
 klObjF nV mV = (klDiv nV mV, klGrad nV mV)
@@ -462,20 +457,32 @@ minConstrained objF stencilSumsI oCountsI = do
           givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
           cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
 -}
-      cErrD (sV, c) v = (LA.dot v sV - c, sV)
       constraintsD = if length stencilSumsI' > 0
                      then
                        let (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
+                           cErrD (sV, c) v = (LA.dot v sV - c, sV)
                        in cErrD <$> zip (LA.toRows cM') (VS.toList s')
                      else []
 
-      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1) <$> constraintsD
+      constraints = if length stencilSumsI' > 0
+                    then
+                      let (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
+                          cErr (sV, c) v = LA.dot v sV - c
+                      in cErr <$> zip (LA.toRows cM') (VS.toList s')
+                    else []
+
+
+
+      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 10) <$> constraintsD
+      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 10) <$> constraints
       -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1
       nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 1]
-      relativeTol = 0.001
+      relativeTol = 1e-4
       maxIters = 500
-      nlStop = NLOPT.ParameterRelativeTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
-      nlAlgo = NLOPT.SLSQP (objF givenV') nlBounds [] nlConstraintsD
+--      nlStop = NLOPT.ParameterRelativeTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
+      nlStop = NLOPT.ObjectiveAbsoluteTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
+--      nlAlgo = NLOPT.SLSQP (objF givenV') nlBounds [] nlConstraintsD
+      nlAlgo = NLOPT.COBYLA (fst . objF givenV') nlBounds [] nlConstraints Nothing
       nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
       nlSol = NLOPT.minimizeLocal nlProblem givenV'
   case nlSol of
