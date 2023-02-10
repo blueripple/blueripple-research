@@ -452,6 +452,8 @@ klColonnade =
   in C.headed "State" sa
      <> C.headed "Model Only" (fmtX . serMO)
      <> C.headed "Model + Matching" (fmtX . ser)
+     <> C.headed "Improvement" (toText @String . PF.printf "%1.1g" . \x -> serMO x / ser x)
+     <> C.headed "Approx Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . ser)
 --     <> C.headed "AxGXRE -> CxAxGxExRE (Model Only)" (show . asrMO)
 --     <> C.headed "AxGxRE -> CxAxGxExRE" (show . asr)
 --     <> C.headed "CxGxRE -> CxGxExRE (Model Only)" (show . csrMO)
