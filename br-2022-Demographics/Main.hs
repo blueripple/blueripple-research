@@ -52,6 +52,7 @@ import Path (Dir, Rel)
 import qualified Path
 
 --import qualified Frames.Visualization.VegaLite.Data as FVD
+import qualified Text.Printf as PF
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
@@ -140,7 +141,8 @@ main = do
                  ("CASR", F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_C_AR)
 
     -- target tables
-    acsSample <- K.ignoreCacheTimeM DDP.cachedACSByState'
+    let exampleState = "NV"
+    acsSample <- {- F.filterFrame ((== exampleState) . view GT.stateAbbreviation) <$> -} K.ignoreCacheTimeM DDP.cachedACSByState'
     let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
     let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
         csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
@@ -186,7 +188,7 @@ main = do
         tableMatchingDataFunctions = DED.TableMatchingDataFunctions zeroPopAndDens recToCWD cwdToRec cwdN updateCWDCount
         serToCSER_P eu = DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
                        tableMatchingDataFunctions
-                       (DED.minConstrained DED.klObjF)
+                       (DED.minConstrained DED.klPObjF)
                        (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount cFromSER (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
                        (emptyUnless eu
                          $ DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
@@ -194,7 +196,7 @@ main = do
 
         cserToCASER_P eu = DED.pipelineStep @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
                          tableMatchingDataFunctions
-                         (DED.minConstrained DED.klObjF)
+                         (DED.minConstrained DED.klPObjF)
                          (DED.enrichFrameFromBinaryModelF @DT.SimpleAgeC @DT.PopCount aFromCSER (view GT.stateAbbreviation) DT.EqualOrOver DT.Under)
                          (emptyUnless eu
                            $ {- DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
@@ -204,7 +206,7 @@ main = do
 
         asrToCASR_P eu =  DED.pipelineStep @[DT.Age4C, DT.SexC, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
                         tableMatchingDataFunctions
-                        (DED.minConstrained DED.klObjF)
+                        (DED.minConstrained DED.klPObjF)
                         (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount cFromASR (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
                         (emptyUnless eu
                           $ DED.desiredSumMapToLookup @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] asrDS
@@ -213,7 +215,7 @@ main = do
 
         casrToCASGR_P eu =  DED.pipelineStep @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] @'[DT.CollegeGradC] @_ @_ @_ @DT.PopCount
                           tableMatchingDataFunctions
-                          (DED.minConstrained DED.klObjF)
+                          (DED.minConstrained DED.klPObjF)
                           (DED.enrichFrameFromBinaryModelF @DT.CollegeGradC @DT.PopCount gFromCASR (view GT.stateAbbreviation) DT.Grad DT.NonGrad)
                           (emptyUnless eu
                             $ DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C] csrDS
@@ -223,7 +225,7 @@ main = do
 
         csrToCA2SR_P eu =  DED.pipelineStep @[DT.CitizenC, DT.SexC, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
                          tableMatchingDataFunctions
-                         (DED.minConstrained DED.klObjF)
+                         (DED.minConstrained DED.klPObjF)
                          (DED.enrichFrameFromBinaryModelF @DT.SimpleAgeC @DT.PopCount aFromCSR (view GT.stateAbbreviation) DT.EqualOrOver DT.Under)
                          (emptyUnless eu
                            $ DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Race5C] csrDS
@@ -232,7 +234,7 @@ main = do
 
         ca2srToCA2SGR_P eu =  DED.pipelineStep @[DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] @'[DT.CollegeGradC] @_ @_ @_ @DT.PopCount
                             tableMatchingDataFunctions
-                            (DED.minConstrained DED.klObjF)
+                            (DED.minConstrained DED.klPObjF)
                             (DED.enrichFrameFromBinaryModelF @DT.CollegeGradC @DT.PopCount eFromCA2SR (view GT.stateAbbreviation) DT.Grad DT.NonGrad)
                             (emptyUnless eu
                              $ DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] csrDS
@@ -240,7 +242,6 @@ main = do
                              <> DED.desiredSumMapToLookup @[DT.CollegeGradC, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C] sgrDS
                             )
 
-    let exampleState = "CT"
     K.logLE K.Info "sample ACS data, ages simplified"
     let acsSampleKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
         acsSampleKey r = r ^. DT.citizenC
@@ -323,9 +324,7 @@ main = do
                                       $ fmap (F.rcast @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
                                       $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCSER'
                                     )
-    K.logLE K.Info $ show $ filter ((== exampleState) . view GT.stateAbbreviation . fst) $ M.toList a2srDS
-    K.logLE K.Info "Running SER -> CSER -> CASER pipeline."
-    serToCASER_MO <- KS.streamlyToKnit $ (serToCSER_P False >=> cserToCASER_P False) acsSampleNoAgeCit
+    K.logLE K.Info "SER -> CSER -> CASER pipeline."
     serToCASER <- KS.streamlyToKnit $ (serToCSER_P True >=> cserToCASER_P True) acsSampleNoAgeCit
     let serToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
                       -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
@@ -337,14 +336,16 @@ main = do
                          F.&: V.RNil
         serToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) serToCASERKey) t
         serToCASERKL = computeKL serToCASERVecF serToCASER exampleState
-        serToCASER_MO_KLs = computeKL serToCASERVecF serToCASER_MO <$> allStates
         serToCASER_KLs = computeKL serToCASERVecF serToCASER <$> allStates
 --    K.logLE K.Info $ "KL divergences (SER -> CASER, model only)" <> show (zip allStates serToCASER_MO_KLs)
     K.logLE K.Info $ "KL divergence =" <> show serToCASERKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
                                       $ table (view DT.simpleAgeC) (view DT.education4C) exampleState serToCASER)
+    serToCASER_MO <- KS.streamlyToKnit $ (serToCSER_P False >=> cserToCASER_P False) acsSampleNoAgeCit
+    let serToCASER_MO_KLs = computeKL serToCASERVecF serToCASER_MO <$> allStates
     K.logLE K.Info $ "Model only\n" <> toText (C.ascii (fmap toString $ mapColonnade)
                                       $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) exampleState serToCASER_MO)
+
 
     let acsSampleNoEduCit = F.toFrame $ (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
                             <$> DDP.acsByStateMN (F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]) (view DT.citizenC) acsSample
@@ -446,13 +447,15 @@ klColonnade =
       asr (_, _, _, _, x, _, _) = x
       csrMO (_, _, _, _, _, x, _) = x
       csr (_, _, _, _, _, _, x) = x
+      fmtX :: Double -> Text
+      fmtX x = toText @String $ PF.printf "%2.2e" x
   in C.headed "State" sa
-     <> C.headed "SER -> CASER (Model Only)" (show . serMO)
-     <> C.headed "SER -> CASER" (show . ser)
-     <> C.headed "ASR -> CASER (Model Only)" (show . asrMO)
-     <> C.headed "ASR -> CASER" (show . asr)
-     <> C.headed "CSR -> CASER (Model Only)" (show . csrMO)
-     <> C.headed "CSR -> CASER" (show . csr)
+     <> C.headed "Model Only" (fmtX . serMO)
+     <> C.headed "Model + Matching" (fmtX . ser)
+--     <> C.headed "AxGXRE -> CxAxGxExRE (Model Only)" (show . asrMO)
+--     <> C.headed "AxGxRE -> CxAxGxExRE" (show . asr)
+--     <> C.headed "CxGxRE -> CxGxExRE (Model Only)" (show . csrMO)
+--     <> C.headed "CxGxRE -> CxAxGxExRE" (show . csr)
 
 
 

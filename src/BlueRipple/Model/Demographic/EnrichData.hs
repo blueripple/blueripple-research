@@ -54,8 +54,8 @@ import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
---import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
---import qualified Say as Say
+import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
+import qualified Say as Say
 
 data TableMatchingDataFunctions d b where
   TableMatchingDataFunctions :: Monoid b => d -> (d -> b) -> (b -> d) -> (b -> Int) -> (Int -> b -> b) -> TableMatchingDataFunctions d b
@@ -391,14 +391,20 @@ mMatrix nProbs stencils = LA.assoc (nStencils, nProbs) 0 $ mconcat $ fmap f $ zi
 -- now: (U S V')x = b
 -- so: V' b = (1/S) U' b is our new problem
 -- Where 1/S is diagonal like S (and, recall, S had dropped the zero singular values)
-stencilSumsToConstraintSystem :: Int -> [StencilSum Int Int] -> (LA.Matrix LA.R, LA.Vector LA.R)
+stencilSumsToConstraintSystem :: Real a => Int -> [StencilSum a Int] -> (LA.Matrix LA.R, LA.Vector LA.R)
 stencilSumsToConstraintSystem n stencilSumsI =
   let cM = mMatrix n (stPositions <$> stencilSumsI)
       y = VS.fromList $ realToFrac . stSum <$> stencilSumsI
       -- the undertermined and redundant system is just cM and y
       (u, s, v) = LA.compactSVD cM
       invS = VS.map (1 /) s
-  in (LA.tr v, LA.diag invS LA.#> (LA.tr u LA.#> y))
+      vt = LA.tr v
+      rhs = LA.diag invS LA.#> (LA.tr u LA.#> y)
+{-      !_ = Unsafe.unsafePerformIO $ Say.say $ "cM was " <> show (LA.size cM)
+           <> " and V' is " <> show (LA.size vt)
+           <> " with new rhs=" <> show rhs
+-}
+  in (vt, rhs)
 
 -- This gives fairly different answers if y == 0 => klF x y = 0
 klDiv :: LA.Vector LA.R -> LA.Vector LA.R -> Double
@@ -410,6 +416,14 @@ klDiv nV mV = res
     mSum = VS.sum mV
     klF x y = if x == 0 || y == 0 then 0 else x * Numeric.log (x / y)
 
+klDivP :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+klDivP nV mV = res
+  where
+    res = VS.sum (VS.zipWith klF nV mV)
+--    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
+    klF x y = if x == 0 || y == 0 then 0 else x * Numeric.log (x / y)
+
+
 klGrad :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 klGrad nV mV = res
   where
@@ -419,8 +433,17 @@ klGrad nV mV = res
     invNSum = 1 / VS.sum nV
     f n m = invMSum - {- if m == 0 then 1 else -} invNSum * n / m
 
-klObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
-klObjF nV mV = (klDiv nV mV, klGrad nV mV)
+klGradP :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+klGradP nV mV = res
+  where
+    invSum = 1 / VS.sum nV
+    res = VS.zipWith (\x y -> invSum - (x / y)) nV mV
+--    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res <> "\nn=" <> show nV
+
+--    f n m = n / m
+
+klPObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
+klPObjF nV mV = (klDivP nV mV, klGradP nV mV)
 
 lsObjF :: LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R)
 lsObjF nV mV = (LA.norm_2 $ nV - mV, 2 * (mV - nV))
@@ -431,58 +454,52 @@ lsObjF nV mV = (LA.norm_2 $ nV - mV, 2 * (mV - nV))
 minConstrained :: (LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R))
                -> [StencilSum Int Int] -> [Int] -> Either Text [Int]
 minConstrained objF stencilSumsI oCountsI = do
+  let (n, nSum) = FL.fold ((,) <$> FL.length <*> FL.sum) oCountsI
+      nSumD = realToFrac @_ @Double nSum
+      stencilSumProb :: StencilSum Double Int  = StencilSum (Stencil [0..(n - 1)]) 1
+      stencilSumsD = stencilSumProb : (mapStencilSum ((/ nSumD) . realToFrac @Int @Double) <$> stencilSumsI)
   let !removedIndexes =
         sortNub
         $ fmap fst (filter ((== 0) . snd) (zip [0..] oCountsI))
         <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
-{-      !_ = Unsafe.unsafePerformIO $ Say.say $ "removedIndexes=" <> show removedIndexes
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "n before=" <> show oCountsI
-      !_ = Unsafe.unsafePerformIO $ Say.say $ "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
--}
-      givenV' = VS.fromList $ (realToFrac @_ @Double) <$> removeFromListAtIndexes removedIndexes oCountsI
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "removedIndexes=" <> show removedIndexes
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "n before=" <> show oCountsI
+--      !_ = Unsafe.unsafePerformIO $ Say.say $ "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
+
+      oCountsI' = removeFromListAtIndexes removedIndexes oCountsI
+      givenV' = VS.fromList $ (( / nSumD) . realToFrac @_ @Double) <$> oCountsI'
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums before=" <> show stencilSumsI
-      stencilSumsI' = if null removedIndexes
-                      then stencilSumsI
-                      else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsI
+      stencilSumsD' = if null removedIndexes
+                      then stencilSumsD
+                      else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsD
 --      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums after=" <> show stencilSumsI'
       nNums = VS.length givenV'
-{-      !_ =  let cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-            in Unsafe.unsafePerformIO $ Say.say $ "cM was " <> show (LA.size cM)
-               <> " and cM' is " <> show (LA.size cM')
-               <> " with new rhs=" <> show s'
 
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "\n(pre) cs=" <> show (cM LA.#> givenV - VS.fromList s)
+      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1e-4) <$> constraintsD
         where
-          s = realToFrac . stSum <$> stencilSumsI
-          givenV = VS.fromList $ fmap (realToFrac @_ @Double) oCountsI
-          cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
--}
-      constraintsD = if length stencilSumsI' > 0
-                     then
-                       let (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
-                           cErrD (sV, c) v = (LA.dot v sV - c, sV)
-                       in cErrD <$> zip (LA.toRows cM') (VS.toList s')
-                     else []
+          constraintsD = if null stencilSumsD' then [] else cErrD <$> zip (LA.toRows cM') (VS.toList s')
+          (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsD'
+          cErrD (sV, c) v = (cv, sV) where
+            cv = LA.dot v sV - c
+            -- !_ = Unsafe.unsafePerformIO $ Say.say $ "cv=" <> show cv -- <> "; cg=" <> show sV
 
-      constraints = if length stencilSumsI' > 0
-                    then
-                      let (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsI'
-                          cErr (sV, c) v = LA.dot v sV - c
-                      in cErr <$> zip (LA.toRows cM') (VS.toList s')
-                    else []
+      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1e-4) <$> constraints
+        where
+          constraints = if null stencilSumsD' then [] else cErr <$> zip (LA.toRows cM') (VS.toList s')
+          (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsD'
+          cErr (sV, c) v = LA.dot v sV - c
 
-
-
-      nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 10) <$> constraintsD
-      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 10) <$> constraints
-      -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1
-      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums 1]
-      relativeTol = 1e-4
-      maxIters = 500
---      nlStop = NLOPT.ParameterRelativeTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
-      nlStop = NLOPT.ObjectiveAbsoluteTolerance relativeTol :| [NLOPT.MaximumEvaluations maxIters]
---      nlAlgo = NLOPT.SLSQP (objF givenV') nlBounds [] nlConstraintsD
-      nlAlgo = NLOPT.COBYLA (fst . objF givenV') nlBounds [] nlConstraints Nothing
+      -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1 person worth of probability
+      nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums (1.0 / nSumD)]
+      absTol = 1e-4
+      relTol = 1e-4
+      maxIters = 5000
+      paramTolsV = VS.map (/nSumD) $ VS.fromList $ fmap (max 2 . (/ 100000) . realToFrac) oCountsI' -- minimum of 1 and 0.001% of input guess
+      nlStop = NLOPT.ParameterAbsoluteTolerance paramTolsV :| [NLOPT.MaximumEvaluations maxIters]
+--      nlStop = NLOPT.ObjectiveAbsoluteTolerance absTol :| [NLOPT.MaximumEvaluations maxIters]
+--      nlStop = NLOPT.MinimumValue 1e-6 :| [NLOPT.MaximumEvaluations maxIters]
+      nlAlgo = NLOPT.SLSQP (objF givenV') nlBounds [] nlConstraintsD
+--      nlAlgo = NLOPT.COBYLA (fst . objF givenV') nlBounds [] nlConstraints Nothing
       nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
       nlSol = NLOPT.minimizeLocal nlProblem givenV'
   case nlSol of
@@ -491,12 +508,13 @@ minConstrained objF stencilSumsI oCountsI = do
       NLOPT.MAXEVAL_REACHED -> Left $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
       NLOPT.MAXTIME_REACHED -> Left $ "minConstrained: NLOPT Solver hit max time."
       _ -> Right
-           $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution
-{-            cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-            !_ = Unsafe.unsafePerformIO $ Say.say
-                 $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
-                 <> (show $ fillListAtIndexes 0 removedIndexes $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
-                 <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
+           $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap (round . (nSumD *)) $ VS.toList $ NLOPT.solutionParams solution
+{-                 cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+                 !_ = Unsafe.unsafePerformIO $ Say.say
+                   $ "solution found! KL=" <> show (NLOPT.solutionCost solution) <> "\nResult=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+                   <> (show $ NLOPT.solutionParams solution)
+                   <> "\nconstraints="
+                   <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
 -}
              in fullSol
 --      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
