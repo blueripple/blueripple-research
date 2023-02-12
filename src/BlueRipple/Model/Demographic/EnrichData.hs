@@ -22,17 +22,27 @@ where
 
 import qualified BlueRipple.Model.Demographic.StanModels as DM
 import qualified BlueRipple.Data.Keyed as BRK
---import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
+
+import qualified Knit.Report as K
+import qualified Knit.Effect.Logger as K
+import qualified Knit.Utilities.Streamly as KS
+import qualified Knit.Effect.PandocMonad as KPM
+import qualified Text.Pandoc.Error as PA
+import qualified Polysemy as P
+import qualified Polysemy.Error as PE
+import qualified Polysemy.ConstraintAbsorber.MonadCatch as PMC
 
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
 import qualified Streamly.Prelude as Streamly
+import qualified Streamly.Internal.Data.Stream.IsStream.Lift as StreamlyI
 
 import qualified Control.Foldl as FL
 import Control.Monad.Catch (throwM, MonadThrow)
+import qualified Control.Monad.Catch as MC
 import qualified Data.IntMap as IM
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
@@ -48,22 +58,35 @@ import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
 import qualified Numeric.LinearAlgebra as LA
---import qualified Numeric.LinearProgramming as LP
---import qualified Numeric.LinearProgramming.L1 as LP1
 import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
 import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
 import qualified Say as Say
+import Control.Monad.Except (throwError)
+
+data EnrichDataException = ModelLookupException Text
+                         | TableMatchingException Text
+                         | StreamlyException Text
+                         deriving stock (Show)
+
+instance Exception EnrichDataException
+
+type EnrichDataEffects r = (K.LogWithPrefixesLE r, P.Member (PE.Error EnrichDataException) r,  P.Member (P.Embed IO) r)
+
 
 data TableMatchingDataFunctions d b where
   TableMatchingDataFunctions :: Monoid b => d -> (d -> b) -> (b -> d) -> (b -> Int) -> (Int -> b -> b) -> TableMatchingDataFunctions d b
 
+enrichDataExceptionToPandocError :: EnrichDataException -> KPM.PandocError
+enrichDataExceptionToPandocError = PA.PandocSomeError . KPM.textToPandocText . show
 
-pipelineStep :: forall ks cks outerKs ds b count rs m .
-                (MonadThrow m
-                , Prim.PrimMonad m
+mapPE :: P.Member (PE.Error PA.PandocError) r => K.Sem (PE.Error EnrichDataException  ': r) a -> K.Sem r a
+mapPE = PE.mapError enrichDataExceptionToPandocError
+
+pipelineStep :: forall ks cks outerKs ds b count rs r .
+                (EnrichDataEffects r
                 , outerKs V.++ ((cks V.++ ks) V.++ ds) ~ ((outerKs V.++ cks) V.++ ks) V.++ ds
                 , (((outerKs V.++ cks) V.++ ks) V.++ ds) ~ ((outerKs V.++ (cks V.++ ks)) V.++ ds)
                 , V.KnownField count
@@ -82,23 +105,21 @@ pipelineStep :: forall ks cks outerKs ds b count rs m .
                 , ((cks V.++ ks) V.++ ds) F.⊆ (cks V.++ rs)
                 )
              => TableMatchingDataFunctions (F.Record ds) b
-             -> ([StencilSum Int Int] -> [Int] -> Either Text [Int]) -- ^ table matching algo
+             -> ([StencilSum Int Int] -> [Int] -> K.Sem r [Int]) -- ^ table matching algo
              -> (F.Record rs -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
-             -> StencilSumLookupFld (F.Record outerKs) (F.Record (cks V.++ ks)) -- ^ produce tables to match
+             -> (F.Record outerKs -> Maybe Text) -- log each outer key?
+             -> StencilSumLookupFld r (F.Record outerKs) (F.Record (cks V.++ ks)) -- ^ produce tables to match
              -> F.FrameRec rs
-             -> m (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
-pipelineStep tableMatchingDFs matchingAlgo enrichModel matchTablesFld rows = do
+             -> K.Sem r (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
+pipelineStep tableMatchingDFs matchingAlgo enrichModel logM matchTablesFld rows = do
   case tableMatchingDFs of
     TableMatchingDataFunctions dflt toMon fromMon toInt updateMon -> do
       enrichedRows <- enrichFrameFromModel @count enrichModel rows
-      let matchingIFld :: [StencilSum Int Int] -> FL.FoldM (Either Text) (F.Record (cks V.++ ks V.++ ds)) [F.Record (cks V.++ ks V.++ ds)]
+      let matchingIFld :: [StencilSum Int Int] -> FL.FoldM (K.Sem r) (F.Record (cks V.++ ks V.++ ds)) [F.Record (cks V.++ ks V.++ ds)]
           matchingIFld = (nearestCountsFrameIFld @(cks V.++ ks) @ds @b) matchingAlgo toMon fromMon toInt updateMon
-          matchingFld :: FL.FoldM (Either Text) (F.Record (cks V.++ rs)) (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
-          matchingFld = nearestCountsFrameFld @(cks V.++ ks) @outerKs @ds dflt matchingIFld matchTablesFld
-          eRes = FL.foldM (FL.premapM (pure . F.rcast) matchingFld) enrichedRows
-      case eRes of
-        Left err -> throwM $ TableMatchingException err
-        Right x -> pure x
+          matchingFld :: FL.FoldM (K.Sem r) (F.Record (cks V.++ rs)) (F.FrameRec (outerKs V.++ cks V.++ ks V.++ ds))
+          matchingFld = nearestCountsFrameFld @(cks V.++ ks) @outerKs @ds logM dflt matchingIFld matchTablesFld
+      FL.foldM (FL.premapM (pure . F.rcast) matchingFld) enrichedRows
 
 
 -- produce sums for all given values of a key
@@ -184,22 +205,23 @@ totaledTable m = mList ++ [("Total", totals)] where
   mList = fmap (first show) mAsList
   totals = foldl' (M.unionWith (+)) mempty $ fmap snd mAsList
 
-newtype StencilSumLookupFld as bs
-  = StencilSumLookupFld { stencilSumSLookupFold :: as -> FL.FoldM (Either Text) bs [StencilSum Int Int] }
+newtype StencilSumLookupFld r as bs
+  = StencilSumLookupFld { stencilSumSLookupFold :: as -> FL.FoldM (K.Sem r) bs [StencilSum Int Int] }
 
-instance Contravariant (StencilSumLookupFld as) where
+instance Contravariant (StencilSumLookupFld r as) where
   contramap f (StencilSumLookupFld g) = StencilSumLookupFld h where
     h a = FL.premapM (pure . f) $ g a
 
-instance Semigroup (StencilSumLookupFld as bs) where
+instance Semigroup (StencilSumLookupFld r as bs) where
   (StencilSumLookupFld g1) <> (StencilSumLookupFld g2) = StencilSumLookupFld $ \a -> g1 a <> g2 a
 
-instance Monoid (StencilSumLookupFld as bs) where
+instance Monoid (StencilSumLookupFld r as bs) where
   mempty = StencilSumLookupFld $ const mempty
   mappend = (<>)
 
-desiredSumMapToLookup :: forall qs outerKs ks .
-                         ( ks F.⊆ qs
+desiredSumMapToLookup :: forall qs outerKs ks r .
+                         ( EnrichDataEffects r
+                         , ks F.⊆ qs
                          , Show (F.Record ks)
                          , Show (F.Record outerKs)
                          , Ord (F.Record ks)
@@ -208,21 +230,22 @@ desiredSumMapToLookup :: forall qs outerKs ks .
 
                          )
                       => Map (F.Record outerKs) (Map (F.Record ks) Int)
-                      -> StencilSumLookupFld (F.Record outerKs) (F.Record qs)
+                      -> StencilSumLookupFld r (F.Record outerKs) (F.Record qs)
 desiredSumMapToLookup desiredSumsMaps = StencilSumLookupFld dsFldF
   where
     ssFld :: Map (F.Record ks) Int ->  FL.FoldM (Either Text) (F.Record qs) [StencilSum Int Int]
     ssFld m = mapStencilSum getSum <<$>> subgroupStencilSums (Sum <$> m) F.rcast
     errTxt ok = "nearestCountFrameFld: Lookup of desired sums failed for outer key=" <> show ok
-    convertFldE :: Either d (FL.FoldM (Either d) e f) -> FL.FoldM (Either d) e f
-    convertFldE fldE = case fldE of
-      Right fld -> fld
-      Left a -> FL.FoldM (\_ _ -> Left a) (Left a) (const $ Left a) -- we prolly only need one of these "Left a". But which?
-    dsFldF :: F.Record outerKs -> FL.FoldM (Either Text) (F.Record qs) [StencilSum Int Int]
-    dsFldF ok = convertFldE $ maybeToRight (errTxt ok) . fmap ssFld $ M.lookup ok desiredSumsMaps
+    convertFld :: Either Text (FL.FoldM (Either Text) e f) -> FL.FoldM (K.Sem r) e f
+    convertFld fldE = case fldE of
+      Right fldE -> FL.hoists (either (PE.throw . ModelLookupException) pure) fldE
+      Left msg -> let x = PE.throw (ModelLookupException msg) in FL.FoldM (\_ _ -> x) x (const x) -- we prolly only need one of these "Left a". But which?
+    dsFldF :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record qs) [StencilSum Int Int]
+    dsFldF ok = convertFld $ maybeToRight (errTxt ok) . fmap ssFld $ M.lookup ok desiredSumsMaps
 
-nearestCountsFrameFld :: forall ks outerKs ds rs .
-                         (Ord (F.Record outerKs)
+nearestCountsFrameFld :: forall ks outerKs ds rs r .
+                         (EnrichDataEffects r
+                         , Ord (F.Record outerKs)
                          , BRK.FiniteSet (F.Record ks)
                          , outerKs F.⊆ rs
                          , ks F.⊆ (ks V.++ ds)
@@ -231,51 +254,56 @@ nearestCountsFrameFld :: forall ks outerKs ds rs .
                          , (outerKs V.++ (ks V.++ ds)) ~ ((outerKs V.++ ks) V.++ ds)
                          , (ks V.++ ds) F.⊆ rs
                          )
-                      => F.Record ds
-                      -> ([StencilSum Int Int] -> FL.FoldM (Either Text) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)])
-                      -> StencilSumLookupFld (F.Record outerKs) (F.Record ks)
-                      -> FL.FoldM (Either Text) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ ds))
-nearestCountsFrameFld zeroData iFldE (StencilSumLookupFld stencilSumsLookupF) =
+                      => (F.Record outerKs -> Maybe Text) -- log each outer key as it finishes?
+                      -> F.Record ds
+                      -> ([StencilSum Int Int] -> FL.FoldM (K.Sem r) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)])
+                      -> StencilSumLookupFld r (F.Record outerKs) (F.Record ks)
+                      -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ ds))
+nearestCountsFrameFld logM zeroData iFldE (StencilSumLookupFld stencilSumsLookupF) =
   FMR.concatFoldM $
   FMR.mapReduceFoldM
   (FMR.generalizeUnpack FMR.noUnpack)
   (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ ds))
   (FMR.ReduceM reduceM)
   where
-    reduceM :: Foldable h => F.Record outerKs -> h (F.Record (ks V.++ ds)) -> Either Text (F.FrameRec (outerKs V.++ ks V.++ ds))
+    reduceM :: Foldable h => F.Record outerKs -> h (F.Record (ks V.++ ds))
+            -> K.Sem r (F.FrameRec (outerKs V.++ ks V.++ ds))
     reduceM ok rows = do
       let rowsWithZeroes = FL.fold (BRK.addDefaultRec @ks zeroData) rows
       stSums <- FL.foldM (FL.premapM (pure . F.rcast) $ stencilSumsLookupF ok) rowsWithZeroes
-      F.toFrame . fmap (ok F.<+>) <$> FL.foldM (iFldE stSums) rowsWithZeroes
+      fr <- F.toFrame . fmap (ok F.<+>) <$> FL.foldM (iFldE stSums) rowsWithZeroes
+      maybe (pure ()) (K.logLE K.Info) $ logM ok
+      return fr
 
-nearestCountsFrameIFld :: forall ks ds b .
-                          ( Ord (F.Record ks)
+nearestCountsFrameIFld :: forall ks ds b r .
+                          ( EnrichDataEffects r
+                          , Ord (F.Record ks)
                           , ds F.⊆ (ks V.++ ds)
                           , ks F.⊆ (ks V.++ ds)
                           , Monoid b
                           )
-                       => ([StencilSum Int Int] -> [Int] -> Either Text [Int])
+                       => ([StencilSum Int Int] -> [Int] -> K.Sem r [Int])
                        -> (F.Record ds -> b)
                        -> (b -> F.Record ds)
                        -> (b -> Int)
                        -> (Int -> b -> b)
                        -> [StencilSum Int Int]
-                       -> FL.FoldM (Either Text) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)]
+                       -> FL.FoldM (K.Sem r) (F.Record (ks V.++ ds)) [F.Record (ks V.++ ds)]
 nearestCountsFrameIFld innerComp toMonoid fromMonoid toInt updateInt sums =
   toRecord <<$>> nearestCountsIFld innerComp (toMonoid . F.rcast) toInt updateInt (F.rcast @ks) sums
   where
     toRecord :: (F.Record ks, b) -> F.Record (ks V.++ ds)
     toRecord (kr, b) = kr F.<+> fromMonoid b
 
-nearestCountsIFld :: forall d k b .
+nearestCountsIFld :: forall d k b r .
                      (Ord k, Monoid b)
-                  => ([StencilSum Int Int] -> [Int] -> Either Text [Int])
+                  => ([StencilSum Int Int] -> [Int] -> K.Sem r [Int])
                   -> (d -> b)
                   -> (b -> Int)
                   -> (Int -> b -> b)
                   -> (d -> k)
                   -> [StencilSum Int Int]
-                  -> FL.FoldM (Either Text) d [(k, b)]
+                  -> FL.FoldM (K.Sem r) d [(k, b)]
 nearestCountsIFld innerComp toData dataCount updateCount key desiredSums =
   fmap (uncurry zip . second (uncurry mergeInts))
   <$> mapMFold (liftTuple . applyInnerComp)
@@ -291,7 +319,7 @@ nearestCountsIFld innerComp toData dataCount updateCount key desiredSums =
     liftTuple :: Applicative t => (x, (t y, z)) -> t (x, (y, z))
     liftTuple (x, (ty, z)) = (\yy zz -> (x, (yy, zz))) <$> ty <*> pure z
 
-    applyInnerComp :: ([k], ([Int], [b])) -> ([k], (Either Text [Int], [b]))
+    applyInnerComp :: ([k], ([Int], [b])) -> ([k], (K.Sem r [Int], [b]))
     applyInnerComp (ks, (ns, bs)) = (ks, (innerComp desiredSums ns, bs))
 
     mapMFold :: Monad m => (y -> m z) -> FL.Fold x y -> FL.FoldM m x z
@@ -451,8 +479,9 @@ lsObjF nV mV = (LA.norm_2 $ nV - mV, 2 * (mV - nV))
 -- this one works. But
 -- 1. Requires removal of redundant constraints (see stencilSumsToConstraintSystem)
 -- 2. Is sensitive to stopping criteria. An absolute tolerance did not work
-minConstrained :: (LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R))
-               -> [StencilSum Int Int] -> [Int] -> Either Text [Int]
+minConstrained :: EnrichDataEffects r
+               => (LA.Vector LA.R -> LA.Vector LA.R -> (Double, LA.Vector LA.R))
+               -> [StencilSum Int Int] -> [Int] -> K.Sem r [Int]
 minConstrained objF stencilSumsI oCountsI = do
   let (n, nSum) = FL.fold ((,) <$> FL.length <*> FL.sum) oCountsI
       nSumD = realToFrac @_ @Double nSum
@@ -503,11 +532,11 @@ minConstrained objF stencilSumsI oCountsI = do
       nlProblem =  NLOPT.LocalProblem (fromIntegral nNums) nlStop nlAlgo
       nlSol = NLOPT.minimizeLocal nlProblem givenV'
   case nlSol of
-    Left result -> Left $ "minConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
+    Left result -> PE.throw $ TableMatchingException  $ "minConstrained: NLOPT solver failed: " <> show result <> "\n" <> "stencilSums=\n" <> show stencilSumsI <> "\nN=\n" <> show oCountsI
     Right solution -> case NLOPT.solutionResult solution of
-      NLOPT.MAXEVAL_REACHED -> Left $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
-      NLOPT.MAXTIME_REACHED -> Left $ "minConstrained: NLOPT Solver hit max time."
-      _ -> Right
+      NLOPT.MAXEVAL_REACHED -> PE.throw $ TableMatchingException $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
+      NLOPT.MAXTIME_REACHED -> PE.throw $ TableMatchingException $ "minConstrained: NLOPT Solver hit max time."
+      _ -> pure
            $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap (round . (nSumD *)) $ VS.toList $ NLOPT.solutionParams solution
 {-                 cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
                  !_ = Unsafe.unsafePerformIO $ Say.say
@@ -521,7 +550,7 @@ minConstrained objF stencilSumsI oCountsI = do
 --      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
 --      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
 
-enrichFrameFromBinaryModel :: forall t count m g ks rs a .
+enrichFrameFromBinaryModel :: forall t count g ks rs a r .
                               (rs F.⊆ rs
                               , ks F.⊆ rs
                               , FSI.RecVec rs
@@ -531,8 +560,7 @@ enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                               , V.KnownField count
                               , F.ElemOf rs count
                               , Integral (V.Snd count)
-                              , MonadThrow m
-                              , Prim.PrimMonad m
+                              , EnrichDataEffects r
                               , F.ElemOf rs DT.PWPopPerSqMile
                               , Ord g
                               , Show g
@@ -545,8 +573,9 @@ enrichFrameFromBinaryModel :: forall t count m g ks rs a .
                            -> a
                            -> a
                            -> F.FrameRec rs
-                           -> m (F.FrameRec (t ': rs))
-enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count $ enrichFrameFromBinaryModelF @t @count mr getGeo aTrue aFalse
+                           -> K.Sem r (F.FrameRec (t ': rs))
+enrichFrameFromBinaryModel mr getGeo aTrue aFalse = enrichFrameFromModel @count
+                                                    $ enrichFrameFromBinaryModelF @t @count mr getGeo aTrue aFalse
 
 enrichFrameFromBinaryModelF :: forall t count g ks rs a .
                               (ks F.⊆ rs
@@ -599,28 +628,30 @@ enrichFromModel :: forall count ks rs cks . (ks F.⊆ rs
                       -> Either Text [F.Record (cks V.++ rs)]
 enrichFromModel modelResultF recordToEnrich = flip (splitRec @count) recordToEnrich <$> modelResultF (F.rcast recordToEnrich)
 
-data EnrichDataException = ModelLookupException Text | TableMatchingException Text deriving stock (Show)
-instance Exception EnrichDataException
-
-
 -- this should build the new frame in-core and in a streaming manner,
 -- not needing to build the entire list before placing in-core
-enrichFrameFromModel :: forall count ks rs cks m . (ks F.⊆ rs
+enrichFrameFromModel :: forall count ks rs cks r . (ks F.⊆ rs
                                                    , FSI.RecVec rs
                                                    , FSI.RecVec (cks V.++ rs)
                                                    , V.KnownField count
                                                    , F.ElemOf rs count
-                                                   , MonadThrow m
-                                                   , Prim.PrimMonad m
+                                                   , EnrichDataEffects r
                                                    )
                      => (F.Record ks -> Either Text (SplitModelF (V.Snd count) (F.Record cks))) -- ^ model results to apply
                      -> F.FrameRec rs -- ^ record to enrich
-                     -> m (F.FrameRec (cks V.++ rs))
-enrichFrameFromModel modelResultF =  FST.transform f where
+                     -> K.Sem r (F.FrameRec (cks V.++ rs))
+enrichFrameFromModel modelResultF =  toSem . FST.transform f where
+  toSem :: ExceptT EnrichDataException IO a -> K.Sem r a
+  toSem x = do
+    rE <- P.embed @IO $ runExceptT x
+    either PE.throw pure rE
+
+  f :: Streamly.IsStream t => t (ExceptT EnrichDataException IO) (F.Record rs) -> t (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs))
   f = Streamly.concatMapM g
+  g :: Streamly.IsStream t => F.Record rs -> ExceptT EnrichDataException IO (t (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs)))
   g r = do
     case enrichFromModel @count modelResultF r of
-      Left err -> throwM $ ModelLookupException err
+      Left err -> throwError $ ModelLookupException err
       Right rs -> pure $ Streamly.fromList rs
 
 {-
