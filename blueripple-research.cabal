@@ -250,7 +250,7 @@ library
                , nonlinear-optimization-ad >= 0.2 && < 0.3
                , path-io >= 1.6
                , pandoc
-               , polysemy-zoo
+--               , polysemy-zoo
 --               , parallel
                , random >= 1.1 && < 1.3
 --               , template-haskell

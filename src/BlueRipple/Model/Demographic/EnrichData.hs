@@ -25,31 +25,25 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
 
 import qualified Knit.Report as K
-import qualified Knit.Effect.Logger as K
-import qualified Knit.Utilities.Streamly as KS
+--import qualified Knit.Effect.Logger as K
 import qualified Knit.Effect.PandocMonad as KPM
 import qualified Text.Pandoc.Error as PA
 import qualified Polysemy as P
 import qualified Polysemy.Error as PE
-import qualified Polysemy.ConstraintAbsorber.MonadCatch as PMC
 
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
 import qualified Streamly.Prelude as Streamly
-import qualified Streamly.Internal.Data.Stream.IsStream.Lift as StreamlyI
 
 import qualified Control.Foldl as FL
-import Control.Monad.Catch (throwM, MonadThrow)
-import qualified Control.Monad.Catch as MC
 import qualified Data.IntMap as IM
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
-import qualified Control.Monad.Primitive as Prim
 
 import qualified Data.List as List
 import qualified Data.Vinyl as V
@@ -62,8 +56,6 @@ import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
-import qualified System.IO.Unsafe as Unsafe ( unsafePerformIO )
-import qualified Say as Say
 import Control.Monad.Except (throwError)
 
 data EnrichDataException = ModelLookupException Text
@@ -73,7 +65,15 @@ data EnrichDataException = ModelLookupException Text
 
 instance Exception EnrichDataException
 
+-- IO here because we need to be able to execute things requiring a PrimMonad environment
+-- for Frames inCore
 type EnrichDataEffects r = (K.LogWithPrefixesLE r, P.Member (PE.Error EnrichDataException) r,  P.Member (P.Embed IO) r)
+
+logDebug :: EnrichDataEffects r => Text -> P.Sem r ()
+logDebug = K.logLE (K.Debug 3)
+
+logDebugVerbose :: EnrichDataEffects r => Text -> P.Sem r ()
+logDebugVerbose = K.logLE (K.Debug 5)
 
 
 data TableMatchingDataFunctions d b where
@@ -238,7 +238,7 @@ desiredSumMapToLookup desiredSumsMaps = StencilSumLookupFld dsFldF
     errTxt ok = "nearestCountFrameFld: Lookup of desired sums failed for outer key=" <> show ok
     convertFld :: Either Text (FL.FoldM (Either Text) e f) -> FL.FoldM (K.Sem r) e f
     convertFld fldE = case fldE of
-      Right fldE -> FL.hoists (either (PE.throw . ModelLookupException) pure) fldE
+      Right fld -> FL.hoists (either (PE.throw . ModelLookupException) pure) fld
       Left msg -> let x = PE.throw (ModelLookupException msg) in FL.FoldM (\_ _ -> x) x (const x) -- we prolly only need one of these "Left a". But which?
     dsFldF :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record qs) [StencilSum Int Int]
     dsFldF ok = convertFld $ maybeToRight (errTxt ok) . fmap ssFld $ M.lookup ok desiredSumsMaps
@@ -491,19 +491,17 @@ minConstrained objF stencilSumsI oCountsI = do
         sortNub
         $ fmap fst (filter ((== 0) . snd) (zip [0..] oCountsI))
         <> concatMap (stencilIndexes . stPositions) (filter ((== 0). stSum) stencilSumsI)
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "removedIndexes=" <> show removedIndexes
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "n before=" <> show oCountsI
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
+  logDebug $ "removedIndexes=" <> show removedIndexes
+    <> "n before=" <> show oCountsI
+    <> "n after=" <> show (removeFromListAtIndexes removedIndexes oCountsI)
 
-      oCountsI' = removeFromListAtIndexes removedIndexes oCountsI
+  let oCountsI' = removeFromListAtIndexes removedIndexes oCountsI
       givenV' = VS.fromList $ (( / nSumD) . realToFrac @_ @Double) <$> oCountsI'
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums before=" <> show stencilSumsI
       stencilSumsD' = if null removedIndexes
                       then stencilSumsD
                       else mapStencilPositions (removeFromStencilAtIndexes removedIndexes) <$> filter ((/= 0) . stSum) stencilSumsD
---      !_ = Unsafe.unsafePerformIO $ Say.say $ "stencilSums after=" <> show stencilSumsI'
-      nNums = VS.length givenV'
-
+  logDebug $  "stencilSums (scaled to probabilities) before=" <> show stencilSumsD <> "\nstencilSums after=" <> show stencilSumsD'
+  let nNums = VS.length givenV'
       nlConstraintsD = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1e-4) <$> constraintsD
         where
           constraintsD = if null stencilSumsD' then [] else cErrD <$> zip (LA.toRows cM') (VS.toList s')
@@ -511,19 +509,10 @@ minConstrained objF stencilSumsI oCountsI = do
           cErrD (sV, c) v = (cv, sV) where
             cv = LA.dot v sV - c
             -- !_ = Unsafe.unsafePerformIO $ Say.say $ "cv=" <> show cv -- <> "; cg=" <> show sV
-
-      nlConstraints = (\c -> NLOPT.EqualityConstraint (NLOPT.Scalar c) 1e-4) <$> constraints
-        where
-          constraints = if null stencilSumsD' then [] else cErr <$> zip (LA.toRows cM') (VS.toList s')
-          (cM', s') = stencilSumsToConstraintSystem nNums stencilSumsD'
-          cErr (sV, c) v = LA.dot v sV - c
-
       -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1 person worth of probability
       nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums (1.0 / nSumD)]
-      absTol = 1e-4
-      relTol = 1e-4
       maxIters = 5000
-      paramTolsV = VS.map (/nSumD) $ VS.fromList $ fmap (max 2 . (/ 100000) . realToFrac) oCountsI' -- minimum of 1 and 0.001% of input guess
+      paramTolsV = VS.map (/ nSumD) $ VS.fromList $ fmap (max 2 . (/ 100000) . realToFrac) oCountsI' -- minimum of 1 and 0.001% of input guess
       nlStop = NLOPT.ParameterAbsoluteTolerance paramTolsV :| [NLOPT.MaximumEvaluations maxIters]
 --      nlStop = NLOPT.ObjectiveAbsoluteTolerance absTol :| [NLOPT.MaximumEvaluations maxIters]
 --      nlStop = NLOPT.MinimumValue 1e-6 :| [NLOPT.MaximumEvaluations maxIters]
@@ -536,16 +525,15 @@ minConstrained objF stencilSumsI oCountsI = do
     Right solution -> case NLOPT.solutionResult solution of
       NLOPT.MAXEVAL_REACHED -> PE.throw $ TableMatchingException $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
       NLOPT.MAXTIME_REACHED -> PE.throw $ TableMatchingException $ "minConstrained: NLOPT Solver hit max time."
-      _ -> pure
-           $ let fullSol = fillListAtIndexes 0 removedIndexes $ fmap (round . (nSumD *)) $ VS.toList $ NLOPT.solutionParams solution
-{-                 cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
-                 !_ = Unsafe.unsafePerformIO $ Say.say
-                   $ "solution found! KL=" <> show (NLOPT.solutionCost solution) <> "\nResult=" <> show (NLOPT.solutionResult solution) <> "\nsol="
-                   <> (show $ NLOPT.solutionParams solution)
-                   <> "\nconstraints="
-                   <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
--}
-             in fullSol
+      _ -> do
+        let fullSol = fillListAtIndexes 0 removedIndexes $ fmap (round . (nSumD *)) $ VS.toList $ NLOPT.solutionParams solution
+            cM = mMatrix (length oCountsI) (stPositions <$> stencilSumsI)
+        logDebug $ "solution found! KL=" <> show (NLOPT.solutionCost solution) <> "\nResult=" <> show (NLOPT.solutionResult solution) <> "\nsol="
+                      <> (show $ NLOPT.solutionParams solution)
+                      <> "\nconstraints="
+                      <> "\n(post) cs=" <> show (cM LA.#> (VS.fromList $ fmap realToFrac fullSol) - (VS.fromList $ realToFrac . stSum <$> stencilSumsI))
+
+        pure fullSol
 --      Left $ "solution found! Result=" <> show (NLOPT.solutionResult solution) <> "\nsol="
 --      <> (show $ fmap round $ VS.toList $ NLOPT.solutionParams solution)
 --      <> "\ncs=" <> show (cM LA.#> NLOPT.solutionParams solution - VS.fromList desiredSums)
