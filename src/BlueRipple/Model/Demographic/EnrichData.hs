@@ -33,6 +33,7 @@ import qualified Polysemy.Error as PE
 
 import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Folds as FF
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
 import qualified Streamly.Prelude as Streamly
@@ -121,6 +122,16 @@ pipelineStep tableMatchingDFs matchingAlgo enrichModel logM matchTablesFld rows 
           matchingFld = nearestCountsFrameFld @(cks V.++ ks) @outerKs @ds logM dflt matchingIFld matchTablesFld
       FL.foldM (FL.premapM (pure . F.rcast) matchingFld) enrichedRows
 
+
+simplifyFieldFld :: forall a b c .
+                    (Num (V.Snd c), V.KnownField a, V.KnownField b, V.KnownField c, Ord (V.Snd b)
+                    , F.ElemOf [a, c] c
+                    )
+                 => (V.Snd a -> V.Snd b) -> FL.Fold (F.Record [a, c]) [F.Record [b, c]]
+simplifyFieldFld f = FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assign (FT.recordSingleton @b . f . F.rgetField @a) (F.rcast @'[c]))
+                     (FMR.ReduceFold $ \k -> fmap (k F.<+>) $ FF.foldAllConstrained @Num FL.sum)
 
 -- produce sums for all given values of a key
 -- With a zero sum for given values with no
@@ -512,7 +523,7 @@ minConstrained objF stencilSumsI oCountsI = do
       -- we've removed the 0s and, because KL is not defined for N_k /= 0, M_k = 0, we bound these below by 1 person worth of probability
       nlBounds = [NLOPT.LowerBounds $ VS.replicate nNums (1.0 / nSumD)]
       maxIters = 5000
-      paramTolsV = VS.map (/ nSumD) $ VS.fromList $ fmap (max 2 . (/ 100000) . realToFrac) oCountsI' -- minimum of 1 and 0.001% of input guess
+      paramTolsV = VS.map (/ nSumD) $ VS.fromList $ fmap (max 1 . (/ 100000) . realToFrac) oCountsI' -- minimum of 1 and 0.001% of input guess
       nlStop = NLOPT.ParameterAbsoluteTolerance paramTolsV :| [NLOPT.MaximumEvaluations maxIters]
 --      nlStop = NLOPT.ObjectiveAbsoluteTolerance absTol :| [NLOPT.MaximumEvaluations maxIters]
 --      nlStop = NLOPT.MinimumValue 1e-6 :| [NLOPT.MaximumEvaluations maxIters]
@@ -595,8 +606,53 @@ enrichFrameFromBinaryModelF mr getGeo aTrue aFalse = smf where
 
 
 
--- | produce a map of splits across type a. Doubles must sum to 1.
+-- | produce a map of splits across type a. Must satisfy `fold sum (splitModelF m) = m`
 newtype  SplitModelF n a = SplitModelF { splitModelF :: n -> Map a n }
+
+mapSplitModel :: (n -> x) -> (x -> n) -> SplitModelF n a -> SplitModelF x a
+mapSplitModel toX fromX (SplitModelF f) = SplitModelF $ fmap toX . f . fromX
+
+splitFFld :: (BRK.FiniteSet a, Ord a, Fractional b)
+          => (row -> a) -> (row -> b) -> FL.Fold row (SplitModelF b a)
+splitFFld cat count = fmap (\smf -> SplitModelF $ \n -> fmap (* n) (smf <> zeroMap)) $ splitMapFld
+  where
+    zeroMap = M.fromList $ fmap (, 0) (S.toList BRK.elements)
+    splitMapFld = (\tot m -> fmap (( / tot)) m)
+                  <$> FL.premap count FL.sum
+                  <*> FL.premap (\r -> (cat r, count r)) FL.map
+
+
+splitFLookupFld :: (Show outerK, Ord outerK, BRK.FiniteSet a, Ord a, Fractional b)
+                => (row -> outerK) -> (row -> a) -> (row -> b) -> FL.Fold row (outerK -> Either Text (SplitModelF b a))
+splitFLookupFld outerK cat count = fmap (\m k -> maybe (err k) Right $ M.lookup k m) $ toMapFld
+  where
+    err k = Left $ "splitFLookupFld: key=" <> show k <> " not found in split table lookup."
+    toMapFld = FL.premap (\r -> (outerK r, r))  $ FL.foldByKeyMap (splitFFld cat count)
+
+
+frameTableProduct :: forall outerK as bs count r .
+                     (V.KnownField count
+                     , EnrichDataEffects r
+                     , (bs V.++ (outerK V.++ as V.++ '[count])) ~ (((bs V.++ outerK) V.++ as) V.++ '[count])
+                     , outerK F.⊆ (outerK V.++ as V.++ '[count])
+                     , outerK F.⊆ (outerK V.++ bs V.++ '[count])
+                     , bs F.⊆ (outerK V.++ bs V.++ '[count])
+                     , FSI.RecVec (outerK V.++ as V.++ '[count])
+                     , FSI.RecVec (bs V.++ (outerK V.++ as V.++ '[count]))
+                     , F.ElemOf (outerK V.++ as V.++ '[count]) count
+                     , F.ElemOf (outerK V.++ bs V.++ '[count]) count
+                     , Show (F.Record outerK)
+                     , BRK.FiniteSet (F.Record bs)
+                     , Ord (F.Record bs)
+                     , Ord (F.Record outerK)
+                     , V.Snd count ~ Int
+                     )
+                  => F.FrameRec (outerK V.++ as V.++ '[count])
+                  -> F.FrameRec (outerK V.++ bs V.++ '[count])
+                  -> K.Sem r (F.FrameRec (bs V.++ outerK V.++ as V.++ '[count]))
+frameTableProduct base splitUsing = enrichFrameFromModel @count (fmap (mapSplitModel round realToFrac) . splitFLookup) base
+  where
+    splitFLookup = FL.fold (splitFLookupFld (F.rcast @outerK) (F.rcast @bs) (realToFrac @Int @Double . F.rgetField @count)) splitUsing
 
 splitRec :: forall count rs cks . (V.KnownField count
                                   , F.ElemOf rs count

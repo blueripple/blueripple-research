@@ -159,6 +159,9 @@ geomWgtdDensityF =
   in (/) <$> wgtSumF <*> wgtF
 {-# INLINE geomWgtdDensityF #-}
 
+aggregatePeopleAndDensityF :: FL.Fold (F.Record [DT.PopCount, DT.PWPopPerSqMile]) (F.Record [DT.PopCount, DT.PWPopPerSqMile])
+aggregatePeopleAndDensityF = (\pc pwd -> FT.recordSingleton @DT.PopCount pc F.<+> pwd) <$> FL.premap (view DT.popCount) FL.sum <*> wgtdDensityF
+
 filterZeroes :: [(a, VU.Vector Int)] -> [(a, VU.Vector Int)]
 filterZeroes = filter (\(_, v) -> v VU.! 0 > 0 || v VU.! 1 > 0)
 

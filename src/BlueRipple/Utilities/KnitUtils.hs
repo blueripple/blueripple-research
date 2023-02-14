@@ -373,10 +373,19 @@ retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")") $
     K.retrieveOrMakeTransformed  @SerializerC @CacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
 
-clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
-clearIfPresentD k = do
+clearIfPresentD' :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r Text
+clearIfPresentD' k = do
   K.logLE K.Diagnostic $ "Clearing cached item with key=" <> show k
   K.clearIfPresent @T.Text @CacheData k
+  pure k
+
+clearIf' :: (K.KnitEffects r, CacheEffects r) => Bool -> Text -> K.Sem r Text
+clearIf' flag k = if flag then clearIfPresentD' k else pure k
+
+clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
+clearIfPresentD k = void $ clearIfPresentD' k
+
+
 
 type SerializerC = Flat.Flat
 type RecSerializerC rs = FS.RecFlat rs
