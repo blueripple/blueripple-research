@@ -79,7 +79,7 @@ runModel :: forall ks l r .
          -> ModelConfig ()
          -> (Text, F.Record DDP.ACSByStateR -> l)
          -> (Text, F.Record DDP.ACSByStateR -> F.Record ks, DM.DesignMatrixRow (F.Record ks))
-         -> K.Sem r (ModelResult Text ks)
+         -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text ks))
 runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
   let cacheDirE = let k = ("model/demographic/" <> modeledT <> "/") in if clearCaches then Left k else Right k
       dataName = "acs" <> modeledT <> "_" <> DM.dmName dmr <> modelConfigSuffix mc
@@ -101,19 +101,17 @@ runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
   (dw, code) <- SMR.dataWranglerAndCode acsMN_C (pure ())
                 (groupBuilderState (S.toList states))
                 (normalModel (contramap F.rcast dmr) mc)
-  res <- do
-    K.ignoreCacheTimeM
-      $ SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
-      cacheDirE
-      (Right runnerInputNames)
-      dw
-      code
-      (stateModelResultAction mcWithId dmr)
-      (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
-      acsMN_C
-      (pure ())
+  res_C <-SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
+          cacheDirE
+          (Right runnerInputNames)
+          dw
+          code
+          (stateModelResultAction mcWithId dmr)
+          (SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+          acsMN_C
+          (pure ())
   K.logLE K.Info "citizenModel run complete."
-  pure res
+  pure res_C
 
 data HierarchicalType = HCentered | HNonCentered deriving stock (Show, Eq, Ord)
 
