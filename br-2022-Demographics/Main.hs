@@ -16,6 +16,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
+import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Data.Keyed as Keyed
 
 --import qualified BlueRipple.Data.ACS_PUMS as PUMS
@@ -118,70 +119,96 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
-    K.logLE K.Info $ "Building/rebuilding necessary models " <> show cmdLine
-    a2FromCSR_C <- SM.runModel
-                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                   ("Age", DT.age4ToSimple . view DT.age4C)
-                   ("CSR", F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C], SM.dmrS_CR)
-    let ca2srKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C]
-        ca2srKey r = r ^. DT.citizenC F.&: DT.age4ToSimple (r ^. DT.age4C) F.&: r ^. DT.sexC F.&: r ^. DT.race5C F.&: V.RNil
-    e2FromCA2SR_C <- SM.runModel
-                    False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                    ("Edu", DT.education4ToCollegeGrad . view DT.education4C)
-                    ("CASR", ca2srKey, SM.dmrC_S_A2R)
-    cFromSER_C <- SM.runModel
-                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                  ("Cit", view DT.citizenC)
-                  ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
-    a2FromCSER_C <- SM.runModel
-                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                   ("Age", DT.age4ToSimple . view DT.age4C)
-                   ("CSER", F.rcast  @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C], SM.dmrC_S_ER)
-
-    cFromASR_C <- SM.runModel
-                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                  ("Cit", view DT.citizenC)
-                  ("ASR", F.rcast @[DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_AR)
-
-    e2FromCASR_C <- SM.runModel
-                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                   ("Grad", DT.education4ToCollegeGrad . view DT.education4C)
-                   ("CASR", F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_C_AR)
-
-    -- target tables
-    let exampleState = "NY"
-        rerunMatches = False
+    K.logLE K.Info $ "Loading ACS data and building marginal distributions (SER, ASR, CSR) for each state" <> show cmdLine
     acsSample_C <- DDP.cachedACSByState'
     acsSample <-  K.ignoreCacheTime acsSample_C
-    let zc :: F.Record '[DT.PopCount] = 0 F.&: V.RNil
-        acsSampleWZ = FL.fold
-                      (FMR.concatFold
-                        $ FMR.mapReduceFold
-                        (FMR.noUnpack)
-                        (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation] @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                        (FMR.foldAndLabel
-                         (Keyed.addDefaultRec @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C] zc)
-                         (\k r -> fmap (k F.<+>) r)
-                        )
-                      )
-                      $ acsSample
-    let toCA2SER :: F.Record [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
-                 -> F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
-        toCA2SER  r = r ^. GT.stateAbbreviation
-                      F.&: r ^. DT.citizenC
-                      F.&: DT.age4ToSimple (r ^. DT.age4C)
-                      F.&: r ^. DT.sexC
-                      F.&: r ^. DT.education4C
-                      F.&: r ^. DT.race5C
-                      F.&: V.RNil
-        acsCA2SER = FL.fold (FMR.concatFold
-                    $ FMR.mapReduceFold
-                             (FMR.noUnpack)
-                             (FMR.assign toCA2SER (F.rcast @'[DT.PopCount]))
-                             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-                            )
-                    acsSampleWZ
     let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
+    let exampleState = "NY"
+        rerunMatches = False
+    let acsSampleSER_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSample_C
+    acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
+    let acsSampleSE2R = F.toFrame
+                        $ FL.fold
+                        (FMR.concatFold
+                         $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @[DT.Education4C, DT.PopCount])
+                          (FMR.ReduceFold $ \k -> fmap (k F.<+>) <$> DED.simplifyFieldFld @DT.Education4C @DT.CollegeGradC DT.education4ToCollegeGrad)
+                        )
+                        acsSampleSER
+    let acsSampleASR_C =  F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.Age4C, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSample_C
+    acsSampleASR <- K.ignoreCacheTime acsSampleASR_C
+    let acsSampleA2SR = F.toFrame
+                        $ FL.fold
+                        (FMR.concatFold
+                         $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @[DT.Age4C, DT.PopCount])
+                          (FMR.ReduceFold $ \k -> fmap (k F.<+>) <$> DED.simplifyFieldFld @DT.Age4C @DT.SimpleAgeC DT.age4ToSimple)
+                        )
+                        acsSampleASR
+
+    let acsSampleCSR_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSample_C
+    acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
+
+    serToCSER_Prod <- DED.mapPE
+                      $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
+                      (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
+    serToCASER_Prod <- DED.mapPE
+                       $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C] @'[DT.Age4C] @DT.PopCount
+                       (fmap F.rcast serToCSER_Prod) (fmap F.rcast acsSampleASR)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
+                                      $ FL.fold (fmap DED.totaledTable
+                                                  $ DED.rowMajorMapFldInt
+                                                  (view DT.popCount)
+                                                  (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+                                                  (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
+                                                )
+                                      $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCSER_Prod
+                                    )
+    K.logLE K.Info $ "SER -> CASER (Table Product)"
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
+                                      $ FL.fold (fmap DED.totaledTable
+                                                  $ DED.rowMajorMapFldInt
+                                                  (view DT.popCount)
+                                                  (\r -> ( r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+                                                  (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
+                                                )
+                                      $ fmap (F.rcast @[DT.Age4C, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCASER_Prod
+                                    )
+
+
+    -- create stencils
+    let serInCSERStencil :: [DED.Stencil Int]
+        serInCSERStencil = DTP.stencils @[DT.SexC, DT.Education4C, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+    K.logLE K.Info $ "serInCSER stencils" <> show serInCSERStencil
+
+
+    K.knitEither $ Left "Stopping before models, etc."
+
     let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
         csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
     let csrDSFld =  DED.desiredSumsFld
@@ -220,6 +247,68 @@ main = do
                     (F.rcast @'[GT.StateAbbreviation])
                     (\r -> sgrRec (r ^. DT.sexC, DT.education4ToCollegeGrad $ r ^. DT.education4C, r ^. DT.race5C))
         sgrDS = getSum <<$>> FL.fold sgrDSFld acsSample
+
+
+
+    K.logLE K.Info $ "Building/rebuilding necessary models " <> show cmdLine
+    a2FromCSR_C <- SM.runModel
+                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                   ("Age", DT.age4ToSimple . view DT.age4C)
+                   ("CSR", F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C], SM.dmrS_CR)
+    let ca2srKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Race5C]
+        ca2srKey r = r ^. DT.citizenC F.&: DT.age4ToSimple (r ^. DT.age4C) F.&: r ^. DT.sexC F.&: r ^. DT.race5C F.&: V.RNil
+    e2FromCA2SR_C <- SM.runModel
+                    False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                    ("Edu", DT.education4ToCollegeGrad . view DT.education4C)
+                    ("CASR", ca2srKey, SM.dmrC_S_A2R)
+    cFromSER_C <- SM.runModel
+                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                  ("Cit", view DT.citizenC)
+                  ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
+    a2FromCSER_C <- SM.runModel
+                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                   ("Age", DT.age4ToSimple . view DT.age4C)
+                   ("CSER", F.rcast  @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C], SM.dmrC_S_ER)
+
+    cFromASR_C <- SM.runModel
+                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                  ("Cit", view DT.citizenC)
+                  ("ASR", F.rcast @[DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_AR)
+
+    e2FromCASR_C <- SM.runModel
+                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                   ("Grad", DT.education4ToCollegeGrad . view DT.education4C)
+                   ("CASR", F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_C_AR)
+
+    -- target tables
+    let zc :: F.Record '[DT.PopCount] = 0 F.&: V.RNil
+        acsSampleWZ = FL.fold
+                      (FMR.concatFold
+                        $ FMR.mapReduceFold
+                        (FMR.noUnpack)
+                        (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation] @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
+                        (FMR.foldAndLabel
+                         (Keyed.addDefaultRec @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C] zc)
+                         (\k r -> fmap (k F.<+>) r)
+                        )
+                      )
+                      $ acsSample
+    let toCA2SER :: F.Record [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+                 -> F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
+        toCA2SER  r = r ^. GT.stateAbbreviation
+                      F.&: r ^. DT.citizenC
+                      F.&: DT.age4ToSimple (r ^. DT.age4C)
+                      F.&: r ^. DT.sexC
+                      F.&: r ^. DT.education4C
+                      F.&: r ^. DT.race5C
+                      F.&: V.RNil
+        acsCA2SER = FL.fold (FMR.concatFold
+                    $ FMR.mapReduceFold
+                             (FMR.noUnpack)
+                             (FMR.assign toCA2SER (F.rcast @'[DT.PopCount]))
+                             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+                            )
+                    acsSampleWZ
 
     let zeroPopAndDens :: F.Record [DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
         emptyUnless x y = if x then y else mempty
@@ -306,15 +395,19 @@ main = do
           e2FromCA2SR_C
 
     K.logLE K.Info "sample ACS data, ages simplified"
-    let acsSampleKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
-        acsSampleKey r = r ^. DT.citizenC
+    let acsCA2SE2RSampleKey :: F.Record DDP.ACSByStateR -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
+        acsCA2SE2RSampleKey r = r ^. DT.citizenC
                          F.&: DT.age4ToSimple (r ^. DT.age4C)
                          F.&: r ^. DT.sexC
                          F.&: DT.education4ToCollegeGrad (r ^. DT.education4C)
                          F.&: r ^. DT.race5C
                          F.&: V.RNil
-        acsSampleVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) acsSampleKey) t
-        acsSampleVec = acsSampleVecF $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) acsSample
+        acsCA2SE2RSampleVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) acsCA2SE2RSampleKey) t
+        acsCA2SE2RSampleVec = acsCA2SE2RSampleVecF $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) acsSample
+        acsCASERSampleVecF t = FL.fold
+                               (DED.vecFld (realToFrac . getSum)
+                                 (Sum . view DT.popCount) (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])) t
+        acsCASERSampleVec = acsCASERSampleVecF $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) acsSample
     let table af ef sa dat = FL.fold (fmap DED.totaledTable
                                       $ DED.rowMajorMapFldInt
                                       (F.rgetField @DT.PopCount)
@@ -334,62 +427,12 @@ main = do
                                       $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) acsSample
                                     )
 
---                                      $ table (DT.age4ToSimple . view DT.age4C) (view DT.education4C) exampleState acsSample)
 
-    let computeKL f d sa = DED.klDiv acsV dV where
-          acsV = acsSampleVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) acsSample
+    let computeKL acsV f d sa = DED.klDiv acsV dV where
+--          acsV = acsSampleVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) acsSample
           dV = f $ fmap F.rcast $ F.filterFrame ((== sa) . view GT.stateAbbreviation) d
-    let acsSampleSER_C = F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSample_C
 
---    let acsSampleSER_C = F.toFrame . fmap (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r) . DDP.acsByStateCitizenMN <$> acsSample_C
-    acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
-    let acsSampleSE2R = F.toFrame
-                        $ FL.fold
-                        (FMR.concatFold
-                         $ FMR.mapReduceFold
-                          FMR.noUnpack
-                          (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @[DT.Education4C, DT.PopCount])
-                          (FMR.ReduceFold $ \k -> fmap (k F.<+>) <$> DED.simplifyFieldFld @DT.Education4C @DT.CollegeGradC DT.education4ToCollegeGrad)
-                        )
-                        acsSampleSER
-    let acsSampleASR_C =  F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.Age4C, DT.SexC, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSample_C
-{-    let acsSampleASR_C = F.toFrame
-                              . fmap (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
-                              . DDP.acsByStateMN (F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]) (view DT.age4C)
-                              <$> acsSample_C
--}
-    acsSampleASR <- K.ignoreCacheTime acsSampleASR_C
-    BRK.logFrame acsSample
 
-    let acsSampleA2SR = F.toFrame
-                        $ FL.fold
-                        (FMR.concatFold
-                         $ FMR.mapReduceFold
-                          FMR.noUnpack
-                          (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @[DT.Age4C, DT.PopCount])
-                          (FMR.ReduceFold $ \k -> fmap (k F.<+>) <$> DED.simplifyFieldFld @DT.Age4C @DT.SimpleAgeC DT.age4ToSimple)
-                        )
-                        acsSampleASR
-    BRK.logFrame acsSampleA2SR
-    let acsSampleCSR_C = F.toFrame
-                              . fmap (\(r, v) ->  FT.recordSingleton @DT.PopCount (VU.sum v) F.<+> r)
-                              . DDP.acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Race5C]) (view DT.citizenC)
-                              <$> acsSample_C
-    acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
     K.logLE K.Info $ "ACS Input to SER -> CASER"
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
                                       $ FL.fold (fmap DED.totaledTable
@@ -417,22 +460,7 @@ main = do
                                       $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCSER_MO
                                     )
     K.logLE K.Info $ "SER -> CSER (Table Product)"
-    serToCSER_Prod <- DED.mapPE
-                      $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
-                      (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
-    serToCA2SER_Prod <- DED.mapPE
-                        $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Education4C] @'[DT.SimpleAgeC] @DT.PopCount
-                        (fmap F.rcast serToCSER_Prod) (fmap F.rcast acsSampleA2SR)
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
-                                      $ FL.fold (fmap DED.totaledTable
-                                                  $ DED.rowMajorMapFldInt
-                                                  (view DT.popCount)
-                                                  (\r -> (r ^. DT.sexC, r ^. DT.race5C))
-                                                  (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
-                                                )
-                                      $ fmap (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCSER_Prod
-                                    )
+
     K.logLE K.Info $ "SER -> CSER"
     serToCSER <-  BRK.clearIf' rerunMatches  "model/synthJoint/serToCSER.bin" >>=
                   \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
@@ -465,48 +493,43 @@ main = do
                                       $ fmap (F.rcast @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
                                       $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCA2SER_M1
                                     )
-    K.logLE K.Info $ "SER -> CA2SER (Table Product)"
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
-                                      $ FL.fold (fmap DED.totaledTable
-                                                  $ DED.rowMajorMapFldInt
-                                                  (view DT.popCount)
-                                                  (\r -> ( r ^. DT.simpleAgeC, r ^. DT.sexC, r ^. DT.race5C))
-                                                  (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
-                                                )
-                                      $ fmap (F.rcast @[DT.SimpleAgeC, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                                      $ F.filterFrame ((== exampleState) . (^. GT.stateAbbreviation)) serToCA2SER_Prod
-                                    )
+
     K.logLE K.Info "SER -> CSER -> CASER pipeline."
-    serToCASER <-  BRK.clearIf' rerunMatches  "model/synthJoint/serToCASER.bin" >>=
+    serToCA2SE2R <-  BRK.clearIf' rerunMatches  "model/synthJoint/serToCASER.bin" >>=
                    \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
                           ((,,) <$> serToCSER_PC True <*> cserToCA2SER_PC True <*> acsSampleSER_C)
                           $ \(p1, p2, d) -> DED.mapPE $ (p1 >=> p2) d
 
-    let serToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+    let serToCA2SE2RKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
                       -> F.Record [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C]
-        serToCASERKey r = r ^. DT.citizenC
+        serToCA2SE2RKey r = r ^. DT.citizenC
                          F.&: r ^. DT.simpleAgeC
                          F.&: r ^. DT.sexC
                          F.&: DT.education4ToCollegeGrad (r ^. DT.education4C)
                          F.&: r ^. DT.race5C
                          F.&: V.RNil
+        serToCA2SE2RVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) serToCA2SE2RKey) t
+        serToCASERKey :: F.Record [GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+                      -> F.Record [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
+        serToCASERKey = F.rcast
         serToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) serToCASERKey) t
-        serToCASERKL = computeKL serToCASERVecF serToCASER exampleState
-        serToCASER_KLs = computeKL serToCASERVecF serToCASER <$> allStates
---    K.logLE K.Info $ "KL divergences (SER -> CASER, model only)" <> show (zip allStates serToCASER_MO_KLs)
-    K.logLE K.Info $ "KL divergence =" <> show serToCASERKL
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
-                                      $ table (view DT.simpleAgeC) (view DT.education4C) exampleState serToCASER)
 
-    serToCASER_MO <- BRK.clearIf' rerunMatches  "model/synthJoint/serToCASER_MO.bin" >>=
+        serToCA2SE2RKL = computeKL acsCA2SE2RSampleVec serToCA2SE2RVecF serToCA2SE2R exampleState
+        serToCA2SE2R_KLs = computeKL acsCA2SE2RSampleVec serToCA2SE2RVecF serToCA2SE2R <$> allStates
+--    K.logLE K.Info $ "KL divergences (SER -> CASER, model only)" <> show (zip allStates serToCASER_MO_KLs)
+    K.logLE K.Info $ "KL divergence =" <> show serToCA2SE2RKL
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
+                                      $ table (view DT.simpleAgeC) (view DT.education4C) exampleState serToCA2SE2R)
+
+    serToCA2SE2R_MO <- BRK.clearIf' rerunMatches  "model/synthJoint/serToCASER_MO.bin" >>=
                      \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
                             ((,,) <$> serToCSER_PC False <*> cserToCA2SER_PC False <*> acsSampleSER_C)
                             $ \(p1, p2, d) -> DED.mapPE $ (p1 >=> p2) d
 
-    let serToCASER_MO_KLs = computeKL serToCASERVecF serToCASER_MO <$> allStates
-        serToCASER_Prod_KLs = computeKL serToCASERVecF serToCA2SER_Prod <$> allStates
+    let serToCA2SE2R_MO_KLs = computeKL acsCA2SE2RSampleVec serToCA2SE2RVecF serToCA2SE2R_MO <$> allStates
+        serToCASER_Prod_KLs = computeKL acsCASERSampleVec serToCASERVecF serToCASER_Prod <$> allStates
     K.logLE K.Info $ "Model only\n" <> toText (C.ascii (fmap toString $ mapColonnade)
-                                      $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) exampleState serToCASER_MO)
+                                      $ table (view DT.simpleAgeC) (DT.education4ToCollegeGrad . view DT.education4C) exampleState serToCA2SE2R_MO)
 
     K.logLE K.Info "Running ASR -> CASR -> CASE2R pipeline (Model Only)"
     asrToCASGR_MO <-  BRK.clearIf' rerunMatches  "model/synthJoint/asrToCASE2R_MO.bin" >>=
@@ -514,10 +537,10 @@ main = do
                       ((,,) <$> asrToCASR_PC False <*> casrToCASE2R_PC False <*> acsSampleASR_C)
                       $ \(p1, p2, d) -> DED.mapPE $ (p1 >=> p2) d
     asrToCASR_Prod <- DED.mapPE
-                      $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Age4C] @'[DT.CitizenC] @DT.PopCount
+                      $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Age4C] @'[DT.CitizenC] @DT.PopCount
                       (fmap F.rcast acsSampleASR) (fmap F.rcast acsSampleCSR)
     asrToCASE2R_Prod <- DED.mapPE
-                        $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Age4C] @'[DT.CollegeGradC] @DT.PopCount
+                        $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.Age4C] @'[DT.CollegeGradC] @DT.PopCount
                         (fmap F.rcast asrToCASR_Prod) (fmap F.rcast acsSampleSE2R)
     K.logLE K.Info "Running ASR -> CASR -> CASE2R pipeline"
     when rerunMatches $ BRK.clearIfPresentD  "model/synthJoint/asrToCASE2R.bin"
@@ -535,10 +558,10 @@ main = do
                          F.&: V.RNil
         asrToCASGRVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) asrToCASGRKey) t
         asrToCASGRVec = asrToCASGRVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) asrToCASGR
-        asrToCASGRKL = DED.klDiv acsSampleVec asrToCASGRVec
-        asrToCASGR_MO_KLs = computeKL asrToCASGRVecF asrToCASGR_MO <$> allStates
-        asrToCASGR_KLs = computeKL asrToCASGRVecF asrToCASGR <$> allStates
-        asrToCASGR_Prod_KLs = computeKL asrToCASGRVecF asrToCASE2R_Prod <$> allStates
+        asrToCASGRKL = DED.klDiv acsCA2SE2RSampleVec asrToCASGRVec
+        asrToCASGR_MO_KLs = computeKL acsCA2SE2RSampleVec asrToCASGRVecF asrToCASGR_MO <$> allStates
+        asrToCASGR_KLs = computeKL acsCA2SE2RSampleVec asrToCASGRVecF asrToCASGR <$> allStates
+        asrToCASGR_Prod_KLs = computeKL acsCA2SE2RSampleVec asrToCASGRVecF asrToCASE2R_Prod <$> allStates
     K.logLE K.Info $ "KL divergence =" <> show asrToCASGRKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
                                       $ FL.fold (fmap DED.totaledTable
@@ -558,10 +581,10 @@ main = do
                       ((,,) <$> csrToCA2SR_PC False <*> ca2srToCA2SE2R_PC False <*> acsSampleCSR_C)
                       $ \(p1, p2, d) -> DED.mapPE $ (p1 >=> p2) d
     csrToCA2SR_Prod <- DED.mapPE
-                      $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC] @'[DT.SimpleAgeC] @DT.PopCount
+                      $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC] @'[DT.SimpleAgeC] @DT.PopCount
                       (fmap F.rcast acsSampleCSR) (fmap F.rcast acsSampleA2SR)
     csrToCA2SE2R_Prod <- DED.mapPE
-                        $ DED.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.SimpleAgeC] @'[DT.CollegeGradC] @DT.PopCount
+                        $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.CitizenC, DT.SimpleAgeC] @'[DT.CollegeGradC] @DT.PopCount
                         (fmap F.rcast csrToCA2SR_Prod) (fmap F.rcast acsSampleSE2R)
     K.logLE K.Info "Running CSR -> CA2SR -> CA2SE2R pipeline."
     csrToCASER <- BRK.clearIf' rerunMatches "model/synthJoint/csrToCA2SE2R.bin" >>=
@@ -578,10 +601,10 @@ main = do
                          F.&: V.RNil
         csrToCASERVecF t = FL.fold (DED.vecFld (realToFrac . getSum) (Sum . view DT.popCount) csrToCASERKey) t
         csrToCASERVec = csrToCASERVecF $ fmap F.rcast $ F.filterFrame ((== exampleState) . view GT.stateAbbreviation) csrToCASER
-        csrToCASERKL = DED.klDiv acsSampleVec csrToCASERVec
-        csrToCASER_MO_KLs = computeKL csrToCASERVecF csrToCASER_MO <$> allStates
-        csrToCASER_KLs = computeKL csrToCASERVecF csrToCASER <$> allStates
-        csrToCASER_Prod_KLs = computeKL csrToCASERVecF csrToCA2SE2R_Prod <$> allStates
+        csrToCASERKL = DED.klDiv acsCA2SE2RSampleVec csrToCASERVec
+        csrToCASER_MO_KLs = computeKL acsCA2SE2RSampleVec csrToCASERVecF csrToCASER_MO <$> allStates
+        csrToCASER_KLs = computeKL acsCA2SE2RSampleVec csrToCASERVecF csrToCASER <$> allStates
+        csrToCASER_Prod_KLs = computeKL acsCA2SE2RSampleVec csrToCASERVecF csrToCA2SE2R_Prod <$> allStates
     K.logLE K.Info $ "KL divergence =" <> show csrToCASERKL
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ mapColonnade)
                                       $ FL.fold (fmap DED.totaledTable
@@ -595,7 +618,7 @@ main = do
                                     )
 
 
-    let allKLs = L.zip4 allStates serToCASER_MO_KLs serToCASER_KLs serToCASER_Prod_KLs --asrToCASGR_MO_KLs asrToCASGR_KLs csrToCASER_MO_KLs csrToCASER_KLs
+    let allKLs = L.zip4 allStates serToCA2SE2R_MO_KLs serToCA2SE2R_KLs serToCASER_Prod_KLs --asrToCASGR_MO_KLs asrToCASGR_KLs csrToCASER_MO_KLs csrToCASER_KLs
     K.logLE K.Info "Divergence Table:"
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) allKLs)
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
@@ -612,7 +635,7 @@ main = do
                  (Just ("2-way Age 45", show . view DT.simpleAgeC))
                  (realToFrac . view DT.popCount)
                  ("Actual ACS", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> acsCA2SER)
-                 ("SER -> CASER (Model Only)", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCASER_MO)
+                 ("SER -> CASER (Model Only)", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCA2SE2R_MO)
       _ <- K.addHvega Nothing Nothing modelVL
       modelAndMatchVL <- K.knitEither
                  $ distCompareChart
@@ -624,7 +647,7 @@ main = do
                  (Just ("2-Way Age 45", show . view DT.simpleAgeC))
                  (realToFrac . view DT.popCount)
                  ("Actual ACS", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> acsCA2SER)
-                 ("SER -> CASER", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCASER)
+                 ("SER -> CASER", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCA2SE2R)
       _ <- K.addHvega Nothing Nothing modelAndMatchVL
       let log10 = Numeric.logBase 10
       logModelVL <- K.knitEither
@@ -637,7 +660,7 @@ main = do
                  (Just ("2-Way Age 45", show . view DT.simpleAgeC))
                  (log10 . realToFrac . view DT.popCount)
                  ("Actual ACS", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> acsCA2SER)
-                 ("SER -> CASER (Model Only)", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCASER_MO)
+                 ("SER -> CASER (Model Only)", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCA2SE2R_MO)
       _ <- K.addHvega Nothing Nothing logModelVL
       logModelAndMatchVL <- K.knitEither
                  $ distCompareChart
@@ -649,7 +672,7 @@ main = do
                  (Just ("2-Way Age 45", show . view DT.simpleAgeC))
                  (log10 . realToFrac . view DT.popCount)
                  ("Actual ACS", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> acsCA2SER)
-                 ("SER -> CASER", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCASER)
+                 ("SER -> CASER", (F.rcast @[GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]) <$> serToCA2SE2R)
       _ <- K.addHvega Nothing Nothing logModelAndMatchVL
 
 

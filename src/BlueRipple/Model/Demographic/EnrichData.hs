@@ -630,30 +630,6 @@ splitFLookupFld outerK cat count = fmap (\m k -> maybe (err k) Right $ M.lookup 
     toMapFld = FL.premap (\r -> (outerK r, r))  $ FL.foldByKeyMap (splitFFld cat count)
 
 
-frameTableProduct :: forall outerK as bs count r .
-                     (V.KnownField count
-                     , EnrichDataEffects r
-                     , (bs V.++ (outerK V.++ as V.++ '[count])) ~ (((bs V.++ outerK) V.++ as) V.++ '[count])
-                     , outerK F.⊆ (outerK V.++ as V.++ '[count])
-                     , outerK F.⊆ (outerK V.++ bs V.++ '[count])
-                     , bs F.⊆ (outerK V.++ bs V.++ '[count])
-                     , FSI.RecVec (outerK V.++ as V.++ '[count])
-                     , FSI.RecVec (bs V.++ (outerK V.++ as V.++ '[count]))
-                     , F.ElemOf (outerK V.++ as V.++ '[count]) count
-                     , F.ElemOf (outerK V.++ bs V.++ '[count]) count
-                     , Show (F.Record outerK)
-                     , BRK.FiniteSet (F.Record bs)
-                     , Ord (F.Record bs)
-                     , Ord (F.Record outerK)
-                     , V.Snd count ~ Int
-                     )
-                  => F.FrameRec (outerK V.++ as V.++ '[count])
-                  -> F.FrameRec (outerK V.++ bs V.++ '[count])
-                  -> K.Sem r (F.FrameRec (bs V.++ outerK V.++ as V.++ '[count]))
-frameTableProduct base splitUsing = enrichFrameFromModel @count (fmap (mapSplitModel round realToFrac) . splitFLookup) base
-  where
-    splitFLookup = FL.fold (splitFLookupFld (F.rcast @outerK) (F.rcast @bs) (realToFrac @Int @Double . F.rgetField @count)) splitUsing
-
 splitRec :: forall count rs cks . (V.KnownField count
                                   , F.ElemOf rs count
                                   )
