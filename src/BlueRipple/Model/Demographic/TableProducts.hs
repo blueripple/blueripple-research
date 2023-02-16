@@ -112,7 +112,7 @@ averageNullSpaceProjections nullVs outerKey key count actuals products = do
       whenMissingAF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing actuals for outerKey=" <> show outerK
       whenMissingPF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing product for outerKey=" <> show outerK
   computedM <- MM.mergeA (MM.traverseMissing whenMissingAF) (MM.traverseMissing whenMissingPF) (MM.zipWithAMatched whenMatchedF) actualM prodM
-  pure $ FL.fold FL.mean $ M.elems computedM
+  pure $ VS.fromList $ fmap (FL.fold FL.mean . VS.toList) $ LA.toColumns $ LA.fromRows $ M.elems computedM
 
 
 stencils :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
@@ -123,8 +123,6 @@ stencils :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
             )
          => [DED.Stencil Int]
 stencils = M.elems $ FL.fold (DED.subgroupStencils (F.rcast @as)) $ S.toList $ BRK.elements @(F.Record bs)
-
-
 
 {-
 data TableProductException = TableProductException Text

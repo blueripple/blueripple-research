@@ -134,6 +134,15 @@ main = do
                                    )
                          <$> acsSample_C
     acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
+    let acsSampleCSER_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSample_C
+    acsSampleCSER <- K.ignoreCacheTime acsSampleCSER_C
     let acsSampleSE2R = F.toFrame
                         $ FL.fold
                         (FMR.concatFold
@@ -206,6 +215,22 @@ main = do
         serInCSERStencil = DTP.stencils @[DT.SexC, DT.Education4C, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
     K.logLE K.Info $ "serInCSER stencils" <> show serInCSERStencil
 
+    let csrInCSERStencil = DTP.stencils @[DT.CitizenC, DT.SexC, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+        nullSpaceVectors = DTP.nullSpaceVectors
+                           (S.size $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))
+                           (serInCSERStencil <> csrInCSERStencil)
+
+    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
+    avgNSP <- DED.mapPE
+              $ DTP.averageNullSpaceProjections nullSpaceVectors
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation])
+              (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+              (view DT.popCount)
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> serToCSER_Prod)
+
+
+    K.logLE K.Info $ "avg null space projections=" <> show avgNSP
 
     K.knitEither $ Left "Stopping before models, etc."
 
