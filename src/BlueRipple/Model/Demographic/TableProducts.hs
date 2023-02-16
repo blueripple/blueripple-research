@@ -91,6 +91,44 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
     splitFLookup = FL.fold (DED.splitFLookupFld (F.rcast @outerK) (F.rcast @bs) (realToFrac @Int @Double . F.rgetField @count)) splitUsing
 
 
+-- to get a set of counts from the product counts and null-space weights
+-- take the weights and left-multiply them with the vectors
+-- to get the weighted sum of those vectors and then add it to the
+-- product counts
+
+applyNSPWeights :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+applyNSPWeights nsVs nsWs pV = pV + nsWs LA.<# nsVs
+
+applyNSPWeightsFld :: forall outerKs ks count rs .
+                      (V.KnownField count
+                      , outerKs V.++ (ks V.++ '[count]) ~ (outerKs V.++ ks) V.++ '[count]
+                      , ks F.⊆ (ks V.++ '[count])
+                      , Real (V.Snd count)
+                      , Integral (V.Snd count)
+                      , F.ElemOf (ks V.++ '[count]) count
+                      , Ord (F.Record ks)
+                      , Ord (F.Record outerKs)
+                      , outerKs F.⊆ rs
+                      , (ks V.++ '[count]) F.⊆ rs
+                      , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
+                      )
+                   => LA.Matrix LA.R
+                   -> LA.Vector LA.R
+                   -> FL.Fold (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
+applyNSPWeightsFld nsVs nsWs =
+  let pm d = (F.rcast @ks d, realToFrac $ F.rgetField @count d)
+      compute :: Map (F.Record ks) Double -> Double -> [F.Record (ks V.++ '[count])]
+      compute m s = fmap (\(ks, c) -> ks F.<+> FT.recordSingleton @count c)
+                    $ (uncurry zip)
+                    $ second (fmap round . VS.toList . VS.map (* s) . applyNSPWeights nsVs nsWs . VS.map (/ s) . VS.fromList)
+                    $ unzip
+                    $ M.toList m
+  in  FMR.concatFold
+        $ FMR.mapReduceFold
+        FMR.noUnpack
+        (FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
+        (FMR.ReduceFold $ \k -> F.toFrame . fmap (k F.<+>) <$> FL.premap pm (compute <$> FL.map <*> FL.premap snd FL.sum))
+
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
 nullSpaceVectors n stencilSumsI = LA.tr $ LA.nullspace $ DED.mMatrix n stencilSumsI
 
@@ -108,12 +146,12 @@ averageNullSpaceProjections nullVs outerKey key count actuals products = do
       toMapFld = FL.premap (\r -> (outerKey r, (key r, realToFrac (count r)))) $ FL.foldByKeyMap toVecFld
       actualM = FL.fold toMapFld actuals
       prodM = FL.fold toMapFld products
-      whenMatchedF _ aV pV = pure $ nullVs LA.#> (aV - pV)
+      whenMatchedF k aV pV = pure $ nullVs LA.#> (aV - pV)
       whenMissingAF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing actuals for outerKey=" <> show outerK
       whenMissingPF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing product for outerKey=" <> show outerK
   computedM <- MM.mergeA (MM.traverseMissing whenMissingAF) (MM.traverseMissing whenMissingPF) (MM.zipWithAMatched whenMatchedF) actualM prodM
-  pure $ VS.fromList $ fmap (FL.fold FL.mean . VS.toList) $ LA.toColumns $ LA.fromRows $ M.elems computedM
-
+  let avgNSP = VS.fromList $ fmap (FL.fold FL.mean . VS.toList) $ LA.toColumns $ LA.fromRows $ M.elems computedM
+  pure avgNSP
 
 stencils :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
             (Ord (F.Record as)

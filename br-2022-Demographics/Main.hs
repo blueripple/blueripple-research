@@ -62,6 +62,7 @@ import qualified Text.Printf as PF
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified BlueRipple.Model.Demographic.DataPrep as DED
 --import Data.Monoid (Sum(getSum))
 
 templateVars ∷ M.Map String String
@@ -122,6 +123,20 @@ main = do
     K.logLE K.Info $ "Loading ACS data and building marginal distributions (SER, ASR, CSR) for each state" <> show cmdLine
     acsSample_C <- DDP.cachedACSByState'
     acsSample <-  K.ignoreCacheTime acsSample_C
+    let zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
+        acsSampleWZ_C = fmap (FL.fold
+                              (FMR.concatFold
+                               $ FMR.mapReduceFold
+                               (FMR.noUnpack)
+                               (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation] @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile])
+                               (FMR.foldAndLabel
+                                (Keyed.addDefaultRec @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C] zc)
+                                (\k r -> fmap (k F.<+>) r)
+                               )
+                              )
+                             )
+                      $ acsSample_C
+    acsSampleWZ <- K.ignoreCacheTime acsSampleWZ_C
     let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
     let exampleState = "NY"
         rerunMatches = False
@@ -132,7 +147,7 @@ main = do
                                     (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
-                         <$> acsSample_C
+                         <$> acsSampleWZ_C
     acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
     let acsSampleCSER_C = F.toFrame
                          . FL.fold (FMR.concatFold
@@ -141,7 +156,7 @@ main = do
                                     (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
-                         <$> acsSample_C
+                         <$> acsSampleWZ_C
     acsSampleCSER <- K.ignoreCacheTime acsSampleCSER_C
     let acsSampleSE2R = F.toFrame
                         $ FL.fold
@@ -159,7 +174,7 @@ main = do
                                     (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.Age4C, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
-                         <$> acsSample_C
+                         <$> acsSampleWZ_C
     acsSampleASR <- K.ignoreCacheTime acsSampleASR_C
     let acsSampleA2SR = F.toFrame
                         $ FL.fold
@@ -178,7 +193,7 @@ main = do
                                     (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
-                         <$> acsSample_C
+                         <$> acsSampleWZ_C
     acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
 
     serToCSER_Prod <- DED.mapPE
@@ -220,17 +235,18 @@ main = do
                            (S.size $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))
                            (serInCSERStencil <> csrInCSERStencil)
 
-    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
+--    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
     avgNSP <- DED.mapPE
-              $ DTP.averageNullSpaceProjections nullSpaceVectors
+              $ DTP.averageNullSpaceProjections
+              nullSpaceVectors
               (F.rcast @[BRDF.Year, GT.StateAbbreviation])
               (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
               (view DT.popCount)
               (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
               (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> serToCSER_Prod)
+    K.logLE K.Info $ "Average NSPs=" <> DED.prettyVector avgNSP
 
 
-    K.logLE K.Info $ "avg null space projections=" <> show avgNSP
 
     K.knitEither $ Left "Stopping before models, etc."
 
@@ -306,19 +322,8 @@ main = do
                    ("CASR", F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C], SM.dmrS_C_AR)
 
     -- target tables
-    let zc :: F.Record '[DT.PopCount] = 0 F.&: V.RNil
-        acsSampleWZ = FL.fold
-                      (FMR.concatFold
-                        $ FMR.mapReduceFold
-                        (FMR.noUnpack)
-                        (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation] @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount])
-                        (FMR.foldAndLabel
-                         (Keyed.addDefaultRec @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C] zc)
-                         (\k r -> fmap (k F.<+>) r)
-                        )
-                      )
-                      $ acsSample
-    let toCA2SER :: F.Record [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+
+    let toCA2SER :: F.Record [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
                  -> F.Record [GT.StateAbbreviation, DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
         toCA2SER  r = r ^. GT.stateAbbreviation
                       F.&: r ^. DT.citizenC
@@ -330,8 +335,8 @@ main = do
         acsCA2SER = FL.fold (FMR.concatFold
                     $ FMR.mapReduceFold
                              (FMR.noUnpack)
-                             (FMR.assign toCA2SER (F.rcast @'[DT.PopCount]))
-                             (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+                             (FMR.assign toCA2SER (F.rcast @'[DT.PopCount, DT.PWPopPerSqMile]))
+                             (FMR.foldAndAddKey $ DED.aggregatePeopleAndDensityF)
                             )
                     acsSampleWZ
 
