@@ -99,35 +99,69 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 applyNSPWeights :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nsVs nsWs pV = pV + nsWs LA.<# nsVs
 
-applyNSPWeightsFld :: forall outerKs ks count rs .
-                      (V.KnownField count
+applyNSPWeightsO :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO  nsVs nsWs pV = do
+  let n = VS.length nsWs
+--      nP = VS.length pV
+      objD v = (LA.norm_2 (v - nsWs), 2 * (v - nsWs))
+      constraintData =  L.zip (VS.toList pV) (LA.toColumns nsVs)
+      constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
+      constraintF (p, nullC) v = (negate $ p + (v `LA.dot` nullC), negate nullC)
+      constraintFs = fmap constraintF $ constraintData
+      nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-5) constraintFs
+--      constraintV v =  VS.map negate $ pV + v LA.<# nsVs
+--      constraintH _ = (n LA.>< nP) $ repeat (2 :: Double)
+--      constraintF v _ = (constraintV v, constraintH v)
+--      nlConstraintsD = NLOPT.InequalityConstraint (NLOPT.Vector (fromIntegral nP) constraintF) 1e-5
+      maxIters = 50
+      absTolV = VS.fromList $ L.replicate n 1e-6
+      nlStop = NLOPT.ParameterAbsoluteTolerance absTolV :| [NLOPT.MaximumEvaluations maxIters]
+      nlAlgo = NLOPT.MMA objD nlConstraintsD
+      nlProblem =  NLOPT.LocalProblem (fromIntegral n) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem nsWs
+  case nlSol of
+    Left result -> PE.throw $ DED.TableMatchingException  $ "minConstrained: NLOPT solver failed: " <> show result
+    Right solution -> case NLOPT.solutionResult solution of
+      NLOPT.MAXEVAL_REACHED -> PE.throw $ DED.TableMatchingException $ "minConstrained: NLOPT Solver hit max evaluations (" <> show maxIters <> ")."
+      NLOPT.MAXTIME_REACHED -> PE.throw $ DED.TableMatchingException $ "minConstrained: NLOPT Solver hit max time."
+      _ -> pure $ NLOPT.solutionParams solution
+
+applyNSPWeightsFld :: forall outerKs ks count rs r .
+                      ( DED.EnrichDataEffects r
+                      , V.KnownField count
                       , outerKs V.++ (ks V.++ '[count]) ~ (outerKs V.++ ks) V.++ '[count]
                       , ks F.⊆ (ks V.++ '[count])
                       , Real (V.Snd count)
                       , Integral (V.Snd count)
                       , F.ElemOf (ks V.++ '[count]) count
+                      , F.ElemOf rs count
                       , Ord (F.Record ks)
                       , Ord (F.Record outerKs)
                       , outerKs F.⊆ rs
+                      , ks F.⊆ rs
                       , (ks V.++ '[count]) F.⊆ rs
                       , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
                       )
                    => LA.Matrix LA.R
                    -> LA.Vector LA.R
-                   -> FL.Fold (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
+                   -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
 applyNSPWeightsFld nsVs nsWs =
-  let pm d = (F.rcast @ks d, realToFrac $ F.rgetField @count d)
-      compute :: Map (F.Record ks) Double -> Double -> [F.Record (ks V.++ '[count])]
-      compute m s = fmap (\(ks, c) -> ks F.<+> FT.recordSingleton @count c)
-                    $ (uncurry zip)
-                    $ second (fmap round . VS.toList . VS.map (* s) . applyNSPWeights nsVs nsWs . VS.map (/ s) . VS.fromList)
+  let pm :: F.Record (ks V.++ '[count]) -> (F.Record ks, Double)
+      pm d = (F.rcast @ks d, realToFrac $ F.rgetField @count d)
+      computeM :: Map (F.Record ks) Double -> Double -> K.Sem r [F.Record (ks V.++ '[count])]
+      computeM m s = (\(ks, mcs) -> fmap (\cs -> L.zipWith (\ks c -> ks F.<+> FT.recordSingleton @count c) ks cs) mcs)
+                    $ second (fmap (fmap round . VS.toList . VS.map (* s)) . applyNSPWeightsO nsVs nsWs . VS.map (/ s) . VS.fromList)
                     $ unzip
                     $ M.toList m
-  in  FMR.concatFold
-        $ FMR.mapReduceFold
-        FMR.noUnpack
-        (FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
-        (FMR.ReduceFold $ \k -> F.toFrame . fmap (k F.<+>) <$> FL.premap pm (compute <$> FL.map <*> FL.premap snd FL.sum))
+--      fld1M :: FL.FoldM (K.Sem r) (F.Record ks, Double) [F.Record (ks V.++ '[count])]
+      fld1M = FMR.postMapM (uncurry computeM) $ (,) <$> FL.generalize FL.map <*> FL.generalize (FL.premap snd FL.sum)
+--      fldM :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) [F.Record (outerKs V.++ ks V.++ '[count])]
+      fldM k = fmap (fmap (k F.<+>)) $ FL.premapM (pure . pm) fld1M
+  in  FMR.concatFoldM
+        $ FMR.mapReduceFoldM
+        (FMR.generalizeUnpack $ FMR.noUnpack)
+        (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
+        (FMR.ReduceFoldM $ \k -> F.toFrame <$> fldM k)
 
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
 nullSpaceVectors n stencilSumsI = LA.tr $ LA.nullspace $ DED.mMatrix n stencilSumsI

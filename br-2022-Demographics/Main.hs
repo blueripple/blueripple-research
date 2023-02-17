@@ -42,11 +42,14 @@ import qualified Data.Map as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
 import qualified Numeric
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Control.Foldl as FL
 import qualified Frames as F
+import qualified Frames.Melt as F
+import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Transform as FT
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
@@ -98,6 +101,72 @@ updateCWDCount :: Int -> CountWithDensity -> CountWithDensity
 updateCWDCount n (CountWithDensity _ d) = CountWithDensity n d
 
 
+--type InputFrame ks = F.FrameRec (ks V.++ '[DT.PopCount, DT.PWPopPerSqMile])
+type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
+
+
+data MethodResults ks =
+  MethodResults
+  { mrActual :: ResultFrame ks
+  , mrProduct :: ResultFrame ks
+  , mrProductWithNS :: ResultFrame ks
+  , mrModel :: ResultFrame ks
+  , mrModelWithCO :: ResultFrame ks
+  }
+
+
+compareResults :: (K.KnitEffects r
+--                  , K.KnitOne r
+                  , Keyed.FiniteSet colKey
+                  , Show colKey
+                  , Ord colKey
+                  , Keyed.FiniteSet rowKey
+                  , Show rowKey
+                  , Ord rowKey
+                  , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
+                  , FSI.RecVec (ks V.++ '[DT.PopCount])
+                  , Ord key
+                  , F.ElemOf (ks V.++ '[DT.PopCount]) GT.StateAbbreviation
+                  )
+               => [Text] -- state abbreviations
+               -> Maybe Text
+               -> (F.Record (ks V.++ '[DT.PopCount]) -> key)
+               -> (F.Record (ks V.++ '[DT.PopCount]) -> rowKey)
+               -> (F.Record (ks V.++ '[DT.PopCount]) -> colKey)
+               -> MethodResults ks
+               -> K.Sem r ()
+compareResults allStates exampleStateM catKey rowKey colKey results = do
+  let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
+                             $ FL.fold (fmap DED.totaledTable
+                                         $ DED.rowMajorMapFldInt
+                                         (view DT.popCount)
+                                         rowKey
+                                         colKey
+                                       )
+                             d
+                           )
+  case exampleStateM of
+    Nothing -> pure ()
+    Just sa -> do
+      let ff = F.filterFrame ((== sa) . view GT.stateAbbreviation)
+      K.logLE K.Info $ "Actual" <> "\n" <> tableText (ff $ mrActual results)
+      K.logLE K.Info $ "Product" <> "\n" <> tableText (ff $ mrProduct results)
+      K.logLE K.Info $ "Product + NS" <> "\n" <> tableText (ff $ mrProductWithNS results)
+      K.logLE K.Info $ "Model" <> "\n" <> tableText (ff $ mrModel results)
+      K.logLE K.Info $ "Model + CO" <> "\n" <> tableText (ff $ mrModelWithCO results)
+  -- compute KL divergences
+  let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
+      computeKL d sa = DED.klDiv acsV dV where
+        acsV = toVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) (mrActual results)
+        dV = toVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) d
+  let prodKLs = computeKL (mrProduct results) <$> allStates
+      prodNSKLs = computeKL (mrProductWithNS results) <$> allStates
+      modelKLs = computeKL (mrModel results) <$> allStates
+      modelCOKLs = computeKL (mrModelWithCO results) <$> allStates
+      forKLsTable = L.zip5 allStates prodKLs prodNSKLs modelKLs modelCOKLs
+  K.logLE K.Info "Divergence Table:"
+  K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) forKLsTable)
+
 
 
 main :: IO ()
@@ -138,17 +207,17 @@ main = do
                       $ acsSample_C
     acsSampleWZ <- K.ignoreCacheTime acsSampleWZ_C
     let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
-    let exampleState = "NY"
+        emptyUnless x y = if x then y else mempty
+        logText t k = Just $ t <> ": Joint distribution matching for " <> show k
+        zeroPopAndDens :: F.Record [DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
+        tableMatchingDataFunctions = DED.TableMatchingDataFunctions zeroPopAndDens recToCWD cwdToRec cwdN updateCWDCount
+        exampleState = "NY"
         rerunMatches = False
-    let acsSampleSER_C = F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSampleWZ_C
-    acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
+    -- SER to CSER
+    let toOutputRow :: ([BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]  F.⊆ rs)
+                    => F.Record rs -> F.Record [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+        toOutputRow = F.rcast
+    -- actual
     let acsSampleCSER_C = F.toFrame
                          . FL.fold (FMR.concatFold
                                     $ FMR.mapReduceFold
@@ -158,6 +227,112 @@ main = do
                                    )
                          <$> acsSampleWZ_C
     acsSampleCSER <- K.ignoreCacheTime acsSampleCSER_C
+    -- marginals, SER and CSR
+    let acsSampleSER_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSampleWZ_C
+    acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
+    let acsSampleCSR_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSampleWZ_C
+    acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
+    -- product
+    product_SER_CSR <- DED.mapPE
+                       $ fmap toOutputRow
+                       <$> DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
+                       (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
+
+  -- create stencils
+    let serInCSERStencil = DTP.stencils @[DT.SexC, DT.Education4C, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+        csrInCSERStencil = DTP.stencils @[DT.CitizenC, DT.SexC, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+        nullSpaceVectors = DTP.nullSpaceVectors
+                           (S.size $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))
+                           (serInCSERStencil <> csrInCSERStencil)
+
+--    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
+    avgNSP <- DED.mapPE
+              $ DTP.averageNullSpaceProjections
+              nullSpaceVectors
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation])
+              (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+              (view DT.popCount)
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
+              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> product_SER_CSR)
+
+    -- product with null-space adjustments
+    productNS_SER_CSR <- DED.mapPE
+                         $ FL.foldM (DTP.applyNSPWeightsFld
+                                   @[BRDF.Year, GT.StateAbbreviation]
+                                   @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+                                   @DT.PopCount
+                                   nullSpaceVectors
+                                   avgNSP)
+                         product_SER_CSR
+
+    -- model & match pipeline
+    cFromSER_C <- SM.runModel
+                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                  ("Cit", view DT.citizenC)
+                  ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
+
+    let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
+        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
+        csrDSFld =  DED.desiredSumsFld
+                    (Sum . F.rgetField @DT.PopCount)
+                    (F.rcast @'[BRDF.Year, GT.StateAbbreviation])
+                    (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
+        csrDS = getSum <<$>> FL.fold csrDSFld acsSample
+        serRec :: (DT.Sex, DT.Education4, DT.Race5) -> F.Record [DT.SexC, DT.Education4C, DT.Race5C]
+        serRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
+        serDSFld =  DED.desiredSumsFld
+                    (Sum . F.rgetField @DT.PopCount)
+                    (F.rcast @'[BRDF.Year, GT.StateAbbreviation])
+                    (\r -> serRec (r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C))
+        serDS = getSum <<$>> FL.fold serDSFld acsSample
+
+    let serToCSER_PC eu = fmap
+          (\m -> DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
+                 tableMatchingDataFunctions
+                 (DED.minConstrained DED.klPObjF)
+                 (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount m (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
+                 (logText "SER -> CSER")
+                 (emptyUnless eu
+                   $ DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
+                   <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS)
+          )
+          cFromSER_C
+
+    modelCSERFromCSR <- fmap (fmap toOutputRow)
+                        $ BRK.clearIf' rerunMatches  "model/synthJoint/serToCSER_MO.bin" >>=
+                        \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
+                               ((,) <$> serToCSER_PC False <*> acsSampleSER_C)
+                               $ \(p, d) -> DED.mapPE $ p d
+
+    modelCO_CSERFromCSR <- fmap (fmap toOutputRow)
+                           $ BRK.clearIf' rerunMatches  "model/synthJoint/serToCSER.bin" >>=
+                           \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
+                                  ((,) <$> serToCSER_PC True <*> acsSampleSER_C)
+                                  $ \(p, d) -> DED.mapPE $ p d
+
+    let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+        mResults = (MethodResults (fmap toOutputRow acsSampleCSER) product_SER_CSR productNS_SER_CSR modelCSERFromCSR modelCO_CSERFromCSR)
+    compareResults allStates (Just "AK")
+      (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+      (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+      (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
+      mResults
+
+{-
     let acsSampleSE2R = F.toFrame
                         $ FL.fold
                         (FMR.concatFold
@@ -186,15 +361,6 @@ main = do
                         )
                         acsSampleASR
 
-    let acsSampleCSR_C = F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Race5C] @[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSampleWZ_C
-    acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
 
     serToCSER_Prod <- DED.mapPE
                       $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
@@ -247,47 +413,34 @@ main = do
     K.logLE K.Info $ "Average NSPs=" <> DED.prettyVector avgNSP
 
 
+-}
 
     K.knitEither $ Left "Stopping before models, etc."
-
-    let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
-        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
-    let csrDSFld =  DED.desiredSumsFld
-                    (Sum . F.rgetField @DT.PopCount)
-                    (F.rcast @'[GT.StateAbbreviation])
-                    (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
-        csrDS = getSum <<$>> FL.fold csrDSFld acsSample
-        serRec :: (DT.Sex, DT.Education4, DT.Race5) -> F.Record [DT.SexC, DT.Education4C, DT.Race5C]
-        serRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
-        serDSFld =  DED.desiredSumsFld
-                    (Sum . F.rgetField @DT.PopCount)
-                    (F.rcast @'[GT.StateAbbreviation])
-                    (\r -> serRec (r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C))
-        serDS = getSum <<$>> FL.fold serDSFld acsSample
-        a2srRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
-        a2srRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
-        a2srDSFld =  DED.desiredSumsFld
+{-
+  let  a2srRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
+       a2srRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
+       a2srDSFld =  DED.desiredSumsFld
                     (Sum . F.rgetField @DT.PopCount)
                     (F.rcast @'[GT.StateAbbreviation])
                     (\r -> a2srRec (DT.age4ToSimple $ r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
-        a2srDS = getSum <<$>> FL.fold a2srDSFld acsSample
+       a2srDS = getSum <<$>> FL.fold a2srDSFld acsSample
 
-        asrRec :: (DT.Age4, DT.Sex, DT.Race5) -> F.Record [DT.Age4C, DT.SexC, DT.Race5C]
-        asrRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
-        asrDSFld =  DED.desiredSumsFld
-                    (Sum . F.rgetField @DT.PopCount)
-                    (F.rcast @'[GT.StateAbbreviation])
-                    (\r -> asrRec (r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
-        asrDS = getSum <<$>> FL.fold asrDSFld acsSample
+       asrRec :: (DT.Age4, DT.Sex, DT.Race5) -> F.Record [DT.Age4C, DT.SexC, DT.Race5C]
+       asrRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
+       asrDSFld =  DED.desiredSumsFld
+                   (Sum . F.rgetField @DT.PopCount)
+                   (F.rcast @'[GT.StateAbbreviation])
+                   (\r -> asrRec (r ^. DT.age4C, r ^. DT.sexC, r ^. DT.race5C))
+       asrDS = getSum <<$>> FL.fold asrDSFld acsSample
 
 
-        sgrRec :: (DT.Sex, DT.CollegeGrad, DT.Race5) -> F.Record [DT.SexC, DT.CollegeGradC, DT.Race5C]
-        sgrRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
-        sgrDSFld =  DED.desiredSumsFld
-                    (Sum . F.rgetField @DT.PopCount)
-                    (F.rcast @'[GT.StateAbbreviation])
-                    (\r -> sgrRec (r ^. DT.sexC, DT.education4ToCollegeGrad $ r ^. DT.education4C, r ^. DT.race5C))
-        sgrDS = getSum <<$>> FL.fold sgrDSFld acsSample
+       sgrRec :: (DT.Sex, DT.CollegeGrad, DT.Race5) -> F.Record [DT.SexC, DT.CollegeGradC, DT.Race5C]
+       sgrRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
+       sgrDSFld =  DED.desiredSumsFld
+                   (Sum . F.rgetField @DT.PopCount)
+                   (F.rcast @'[GT.StateAbbreviation])
+                   (\r -> sgrRec (r ^. DT.sexC, DT.education4ToCollegeGrad $ r ^. DT.education4C, r ^. DT.race5C))
+       sgrDS = getSum <<$>> FL.fold sgrDSFld acsSample
 
 
 
@@ -302,10 +455,7 @@ main = do
                     False cmdLine (SM.ModelConfig () False SM.HCentered True)
                     ("Edu", DT.education4ToCollegeGrad . view DT.education4C)
                     ("CASR", ca2srKey, SM.dmrC_S_A2R)
-    cFromSER_C <- SM.runModel
-                  False cmdLine (SM.ModelConfig () False SM.HCentered True)
-                  ("Cit", view DT.citizenC)
-                  ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
+
     a2FromCSER_C <- SM.runModel
                    False cmdLine (SM.ModelConfig () False SM.HCentered True)
                    ("Age", DT.age4ToSimple . view DT.age4C)
@@ -340,21 +490,8 @@ main = do
                             )
                     acsSampleWZ
 
-    let zeroPopAndDens :: F.Record [DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
-        emptyUnless x y = if x then y else mempty
-        logText t k = Just $ t <> ": Joint distribution matching for " <> show k
-        tableMatchingDataFunctions = DED.TableMatchingDataFunctions zeroPopAndDens recToCWD cwdToRec cwdN updateCWDCount
-        serToCSER_PC eu = fmap
-          (\m -> DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
-                 tableMatchingDataFunctions
-                 (DED.minConstrained DED.klPObjF)
-                 (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount m (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
-                 (logText "SER -> CSER")
-                 (emptyUnless eu
-                   $ DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
-                   <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS)
-          )
-          cFromSER_C
+    let
+
 
         cserToCA2SER_PC eu = fmap
           (\m -> DED.pipelineStep @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
@@ -649,8 +786,8 @@ main = do
 
 
     let allKLs = L.zip4 allStates serToCA2SE2R_MO_KLs serToCA2SE2R_KLs serToCASER_Prod_KLs --asrToCASGR_MO_KLs asrToCASGR_KLs csrToCASER_MO_KLs csrToCASER_KLs
-    K.logLE K.Info "Divergence Table:"
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) allKLs)
+--    K.logLE K.Info "Divergence Table:"
+--    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) allKLs)
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
     synthModelPaths <- postPaths "SynthModel" cmdLine
     BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
@@ -725,34 +862,31 @@ main = do
     _ <- traverse (showExs "TX") exRs
     _ <- traverse (showExs "CT") exRs
 -}
-
+-}
     pure ()
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
-klColonnade :: C.Colonnade C.Headed (Text, Double, Double, Double) Text
+klColonnade :: C.Colonnade C.Headed (Text, Double, Double, Double, Double) Text
 klColonnade =
-  let sa (x, _, _,_) = x
-      serMO (_, x, _, _) = x
-      ser (_, _, x, _) = x
-      serProd (_, _, _, x) = x
+  let sa (x, _, _, _, _) = x
+      serProd (_, x, _, _, _) = x
+      serProdNS (_, _, x, _, _) = x
+      serModel (_, _, _, x, _) = x
+      serModelCO (_, _, _, _, x) = x
       fmtX :: Double -> Text
       fmtX x = toText @String $ PF.printf "%2.2e" x
   in C.headed "State" sa
      <> C.headed "Product" (fmtX . serProd)
      <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . serProd)
-     <> C.headed "Model Only" (fmtX . serMO)
-     <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . serMO)
-     <> C.headed "Model + Matching" (fmtX . ser)
-     <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . ser)
-     <> C.headed "Improvement" (toText @String . PF.printf "%1.1g" . \x -> sqrt (serMO x / ser x))
---     <> C.headed "AxGXRE -> CxAxGxExRE (Model Only)" (show . asrMO)
---     <> C.headed "AxGxRE -> CxAxGxExRE" (show . asr)
---     <> C.headed "CxGxRE -> CxGxExRE (Model Only)" (show . csrMO)
---     <> C.headed "CxGxRE -> CxAxGxExRE" (show . csr)
-
+     <> C.headed "Product + NS" (fmtX . serProdNS)
+     <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . serProdNS)
+     <> C.headed "Model Only" (fmtX . serModel)
+     <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . serModel)
+     <> C.headed "Model + Matching" (fmtX . serModelCO)
+     <> C.headed "Error (%)" (toText @String . PF.printf "%2.0g" . (100 *) . sqrt . (2 *) . serModelCO)
 
 
 mapColonnade :: (Show a, Show b, Ord b, Keyed.FiniteSet b) => C.Colonnade C.Headed (a, Map b Int) Text
@@ -1004,3 +1138,44 @@ distCompareChart vc title key keyText colorM shapeM count (xLabel, xRows) (yLabe
       mark = GV.mark GV.Point []
       enc = (GV.encoding . encX . encY . encColor . encShape . encTooltips)
   pure $ FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
+
+{-
+applyMethods :: forall outerKs startKs addKs r .
+                  (K.KnitEffects r
+                  )
+             -> Either Text Text
+             -> (Bool -> K.ActionWithCacheTime r
+                 (InputFrame (outerKs V.++ startKs) -> K.Sem r (ResultFrame (outerKs V.++ startKs V.++ addKs))) -- model/model+match pipeline
+             -> K.ActionWithCacheTime r (InputFrame outerKs startKs addKs)
+             -> K.Sem r (MethodResults outerKs startKs addKs)
+applyMethods cacheKeyE mmPipelineF_C actual_C = do
+  -- make sure we have zeroes
+  let zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
+      actualWZ_C =  fmap (FL.fold
+                           (FMR.concatFold
+                            $ FMR.mapReduceFold
+                            (FMR.noUnpack)
+                            (FMR.assignKeysAndData @outerKs @(startKs V.++ addKs V.++ [DT.PopCount, DT.PWPerSqMile])
+                              (FMR.foldAndLabel
+                                (Keyed.addDefaultRec @(startKs V.++ addKs) zc)
+                                (\k r -> fmap (k F.<+>) r)
+                              )
+                            )
+                           )
+                         )
+                    actual_C
+  (rerun, cKey) <- case cacheKeyE of
+    Left k -> (True, k)
+    Right k -> (False, k)
+  let modelOnlyDeps = (,) <$> mmPipelineF_C False, <*> actualWZ_C
+      modelMatchDeps = (,) <$> mmPipelineF_C True, <*> actualWZ_C
+
+  modelOnly_C <- BRK.clearIf' rerun cKey >>=
+                 \ck -> BRK.retrieveOrMakeFrame ck modelOnlyDeps $ \(pF, inputData) -> DED.mapPE $ pF inputData
+  modelMatch_C <- BRK.clearIf' rerun cKey >>=
+                  \ck -> BRK.retrieveOrMakeFrame ck modelMatchDeps $ \(pF, inputData) -> DED.mapPE $ pF inputData
+  product <-  DED.mapPE
+              $ DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
+              (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
+
+-}

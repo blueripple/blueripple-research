@@ -456,7 +456,7 @@ klDiv nV mV = res
 --    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
     nSum = VS.sum nV
     mSum = VS.sum mV
-    klF x y = if x == 0 || y == 0 then 0 else x * Numeric.log (x / y)
+    klF x y = if x < 1 || y < 1 then 0 else x * Numeric.log (x / y)
 
 klDivP :: LA.Vector LA.R -> LA.Vector LA.R -> Double
 klDivP nV mV = res
