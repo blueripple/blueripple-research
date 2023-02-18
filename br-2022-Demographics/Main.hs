@@ -156,7 +156,7 @@ compareResults allStates exampleStateM catKey rowKey colKey results = do
       K.logLE K.Info $ "Model + CO" <> "\n" <> tableText (ff $ mrModelWithCO results)
   -- compute KL divergences
   let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
-      computeKL d sa = DED.klDiv acsV dV where
+      computeKL d sa = DED.klDiv' acsV dV where
         acsV = toVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) (mrActual results)
         dV = toVecF $ F.filterFrame ((== sa) . view GT.stateAbbreviation) d
   let prodKLs = computeKL (mrProduct results) <$> allStates
@@ -211,7 +211,7 @@ main = do
         logText t k = Just $ t <> ": Joint distribution matching for " <> show k
         zeroPopAndDens :: F.Record [DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
         tableMatchingDataFunctions = DED.TableMatchingDataFunctions zeroPopAndDens recToCWD cwdToRec cwdN updateCWDCount
-        exampleState = "NY"
+        exampleState = "KY"
         rerunMatches = False
     -- SER to CSER
     let toOutputRow :: ([BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]  F.⊆ rs)
@@ -260,23 +260,30 @@ main = do
                            (serInCSERStencil <> csrInCSERStencil)
 
 --    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
-    avgNSP <- DED.mapPE
-              $ DTP.averageNullSpaceProjections
-              nullSpaceVectors
-              (F.rcast @[BRDF.Year, GT.StateAbbreviation])
-              (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-              (view DT.popCount)
-              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
-              (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> product_SER_CSR)
+    nullSpaceProjections <- DED.mapPE
+                            $ DTP.nullSpaceProjections
+                            nullSpaceVectors
+                            (F.rcast @[BRDF.Year, GT.StateAbbreviation])
+                            (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+                            (view DT.popCount)
+                            (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
+                            (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> product_SER_CSR)
+
+    let avgNSPUW = DTP.avgNullSpaceProjections (const 1) nullSpaceProjections
+        avgNSPW = DTP.avgNullSpaceProjections (id) nullSpaceProjections
+
+    K.logLE K.Info $ "uw nsvs=" <> DED.prettyVector avgNSPUW <> "\nw nsvs=" <> DED.prettyVector avgNSPW
 
     -- product with null-space adjustments
     productNS_SER_CSR <- DED.mapPE
                          $ FL.foldM (DTP.applyNSPWeightsFld
-                                   @[BRDF.Year, GT.StateAbbreviation]
-                                   @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-                                   @DT.PopCount
-                                   nullSpaceVectors
-                                   avgNSP)
+                                     @[BRDF.Year, GT.StateAbbreviation]
+                                     @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+                                     @DT.PopCount
+                                     (Just . show)
+                                     nullSpaceVectors
+                                     (const $ pure avgNSPW)
+                                    )
                          product_SER_CSR
 
     -- model & match pipeline

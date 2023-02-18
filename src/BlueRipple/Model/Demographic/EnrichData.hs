@@ -458,6 +458,20 @@ klDiv nV mV = res
     mSum = VS.sum mV
     klF x y = if x < 1 || y < 1 then 0 else x * Numeric.log (x / y)
 
+klDiv' :: LA.Vector LA.R -> LA.Vector LA.R -> Double
+klDiv' nV mV = res
+  where
+    res = (1 / nSum) * VS.sum (VS.zipWith klF nV mV) +  Numeric.log (mSum / nSum)
+--    !_ = Unsafe.unsafePerformIO $ Say.say $ "klDiv=" <> show res
+    nSum = VS.sum nV
+    mSum = VS.sum mV
+    -- I don't love this. But we do get non-zero from zero and the opposite which, while surprising, is not infinite surprise.
+    klF x y = x' * Numeric.log (x' / y')
+      where
+        x' = max 1 x
+        y' = max 1 y
+
+
 klDivP :: LA.Vector LA.R -> LA.Vector LA.R -> Double
 klDivP nV mV = res
   where
