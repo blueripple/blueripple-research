@@ -196,7 +196,7 @@ nullSpaceProjections nullVs outerKey key count actuals products = do
       toMapFld = FL.premap (\r -> (outerKey r, (key r, realToFrac (count r)))) $ FL.foldByKeyMap toDatFld
       actualM = FL.fold toMapFld actuals
       prodM = FL.fold toMapFld products
-      whenMatchedF k (na, aV) (np, pV) = pure $ (na, nullVs LA.#> (aV - pV))
+      whenMatchedF _ (na, aV) (np, pV) = pure (na, nullVs LA.#> (aV - pV))
       whenMissingAF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing actuals for outerKey=" <> show outerK
       whenMissingPF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing product for outerKey=" <> show outerK
   MM.mergeA (MM.traverseMissing whenMissingAF) (MM.traverseMissing whenMissingPF) (MM.zipWithAMatched whenMatchedF) actualM prodM

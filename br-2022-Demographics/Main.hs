@@ -269,8 +269,15 @@ main = do
                             (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
                             (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> product_SER_CSR)
 
+
     let avgNSPUW = DTP.avgNullSpaceProjections (const 1) nullSpaceProjections
         avgNSPW = DTP.avgNullSpaceProjections (id) nullSpaceProjections
+
+        fixedProjections ps = const $ pure ps
+        pureM :: Monad m => m b -> FL.FoldM m a b
+        pureM x = FL.FoldM (\_ _ -> x) x (const x)
+
+        stateProjections ok = pureM $ K.knitMaybe ("NS projections for ok=" <> show ok <> " not found!") $ fmap snd $ M.lookup ok nullSpaceProjections
 
     K.logLE K.Info $ "uw nsvs=" <> DED.prettyVector avgNSPUW <> "\nw nsvs=" <> DED.prettyVector avgNSPW
 
@@ -282,7 +289,7 @@ main = do
                                      @DT.PopCount
                                      (Just . show)
                                      nullSpaceVectors
-                                     (const $ pure avgNSPW)
+                                     stateProjections
                                     )
                          product_SER_CSR
 
