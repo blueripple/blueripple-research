@@ -44,8 +44,9 @@ import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
-import qualified Numeric
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Numeric
+import qualified Numeric.LinearAlgebra as LA
 import qualified Control.Foldl as FL
 import qualified Frames as F
 import qualified Frames.Melt as F
@@ -189,6 +190,26 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
+    K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
+    acsByPUMA_C <- DDP.cachedACSByPUMA
+    acsByPUMA <-  K.ignoreCacheTime acsByPUMA_C
+    let seInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
+        srInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Race5C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
+        testStencils = seInSERStencil <> srInSERStencil
+
+        projCovariancesFld =
+          DTP.diffCovarianceFld
+          (F.rcast @[GT.StateAbbreviation, GT.PUMA])
+          (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
+          (realToFrac . view DT.popCount)
+          testStencils
+    K.logLE K.Info $ "Computing covariance matrix of projected differences."
+    let projCovariances = FL.fold projCovariancesFld acsByPUMA
+    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 projCovariances)
+
+
+    K.knitEither $ Left "Stopping before products, etc."
+
     K.logLE K.Info $ "Loading ACS data and building marginal distributions (SER, ASR, CSR) for each state" <> show cmdLine
     acsSample_C <- DDP.cachedACSByState'
     acsSample <-  K.ignoreCacheTime acsSample_C
@@ -253,8 +274,8 @@ main = do
                        (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
 
   -- create stencils
-    let serInCSERStencil = DTP.stencils @[DT.SexC, DT.Education4C, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-        csrInCSERStencil = DTP.stencils @[DT.CitizenC, DT.SexC, DT.Race5C] @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+    let serInCSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
+        csrInCSERStencil = DTP.stencils @(F.Record [DT.CitizenC, DT.SexC, DT.Race5C]) @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         nullSpaceVectors = DTP.nullSpaceVectors
                            (S.size $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))
                            (serInCSERStencil <> csrInCSERStencil)
@@ -277,6 +298,7 @@ main = do
         pureM :: Monad m => m b -> FL.FoldM m a b
         pureM x = FL.FoldM (\_ _ -> x) x (const x)
 
+        -- test to make sure when we project and then apply these directly we get our original thing back
         stateProjections ok = pureM $ K.knitMaybe ("NS projections for ok=" <> show ok <> " not found!") $ fmap snd $ M.lookup ok nullSpaceProjections
 
     K.logLE K.Info $ "uw nsvs=" <> DED.prettyVector avgNSPUW <> "\nw nsvs=" <> DED.prettyVector avgNSPW

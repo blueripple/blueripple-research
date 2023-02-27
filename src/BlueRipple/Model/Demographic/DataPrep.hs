@@ -54,15 +54,25 @@ type ACSByStateGeoR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS]
 type ACSByStateRF = ACSByStateGeoRF V.++ Categoricals V.++ DatFieldsTo
 type ACSByStateR = ACSByStateGeoR V.++ Categoricals V.++ DatFieldsTo
 
-type ACSByStateWorkingR = DT.Age4C ': PUMS.PUMS_Typed
+type ACSByPUMAGeoRF = [BRDF.Year, GT.StateFIPS, GT.PUMA]
+type ACSByPUMAGeoR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
 
-acsByStateFixRow :: F.Record PUMS.PUMS_Typed -> Maybe (F.Record ACSByStateWorkingR)
-acsByStateFixRow r = do
+type ACSByPUMARF = ACSByPUMAGeoRF V.++ Categoricals V.++ DatFieldsTo
+type ACSByPUMAR = ACSByPUMAGeoR V.++ Categoricals V.++ DatFieldsTo
+
+
+type ACSWorkingR = DT.Age4C ': PUMS.PUMS_Typed
+
+acsFixAgeYear :: F.Record PUMS.PUMS_Typed -> Maybe (F.Record ACSWorkingR)
+acsFixAgeYear r = do
   guard (F.rgetField @BRDF.Year r == 2020)
   simplifyAgeM r
 
-acsByStateKeys :: F.Record ACSByStateWorkingR -> F.Record (ACSByStateGeoRF V.++ Categoricals)
+acsByStateKeys :: F.Record ACSWorkingR -> F.Record (ACSByStateGeoRF V.++ Categoricals)
 acsByStateKeys = F.rcast . addEdu4 . addRace5
+
+acsByPUMAKeys :: F.Record ACSWorkingR -> F.Record (ACSByPUMAGeoRF V.++ Categoricals)
+acsByPUMAKeys = F.rcast . addEdu4 . addRace5
 
 datFieldsFrom :: (DatFieldsFrom F.⊆ rs) => F.Record rs -> F.Record DatFieldsFrom
 datFieldsFrom = F.rcast
@@ -76,7 +86,10 @@ datFromToFld =
   in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
 
 acsByStateRF :: F.FrameRec PUMS.PUMS_Typed -> K.StreamlyM (F.FrameRec ACSByStateRF)
-acsByStateRF = BRF.rowFold acsByStateFixRow acsByStateKeys datFieldsFrom datFromToFld
+acsByStateRF = BRF.rowFold acsFixAgeYear acsByStateKeys datFieldsFrom datFromToFld
+
+acsByPUMARF :: F.FrameRec PUMS.PUMS_Typed -> K.StreamlyM (F.FrameRec ACSByPUMARF)
+acsByPUMARF = BRF.rowFold acsFixAgeYear acsByPUMAKeys datFieldsFrom datFromToFld
 
 cachedACSByState' :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByStateR))
 cachedACSByState' = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
@@ -87,11 +100,27 @@ cachedACSByState' = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
     K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading raw ACS rows..."
     K.logLE K.Info $ "raw ACS has " <> show (FL.fold FL.length acs) <> " rows. Aggregating..."
     aggregatedACS <- K.streamlyToKnit $ acsByStateRF acs
-    K.logLE K.Info $ "aggregated ACS has " <> show (FL.fold FL.length aggregatedACS) <> " rows. Adding state abbreviations..."
+    K.logLE K.Info $ "aggregated ACS (by State) has " <> show (FL.fold FL.length aggregatedACS) <> " rows. Adding state abbreviations..."
     let (withSA, missing) = FJ.leftJoinWithMissing @'[GT.StateFIPS] aggregatedACS xWalk
     when (not $ null missing) $ K.knitError $ "Missing abbreviations in acsByState' left join: " <> show missing
     K.logLE K.Info $ "Done"
     pure $ fmap F.rcast withSA
+
+cachedACSByPUMA :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByPUMAR))
+cachedACSByPUMA = K.wrapPrefix "Model.Demographic.cachedACSByPUMA" $ do
+  rawACS_C <- PUMS.typedPUMSRowsLoader
+  stateAbbrXWalk_C <- BRL.stateAbbrCrosswalkLoader
+  let deps = (,) <$> rawACS_C <*> stateAbbrXWalk_C
+  BRK.retrieveOrMakeFrame "model/demographic/data/acs2020ByPUMA.bin" deps $ \(acs, xWalk) -> do
+    K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading raw ACS rows..."
+    K.logLE K.Info $ "raw ACS has " <> show (FL.fold FL.length acs) <> " rows. Aggregating..."
+    aggregatedACS <- K.streamlyToKnit $ acsByPUMARF acs
+    K.logLE K.Info $ "aggregated ACS (by PUMA) has " <> show (FL.fold FL.length aggregatedACS) <> " rows. Adding state abbreviations..."
+    let (withSA, missing) = FJ.leftJoinWithMissing @'[GT.StateFIPS] aggregatedACS xWalk
+    when (not $ null missing) $ K.knitError $ "Missing abbreviations in acsByState' left join: " <> show missing
+    K.logLE K.Info $ "Done"
+    pure $ fmap F.rcast withSA
+
 
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
 simplifyAgeM r =

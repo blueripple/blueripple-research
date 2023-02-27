@@ -137,6 +137,17 @@ applyNSPWeightsO  nsVs nsWs pV = do
         K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + oWs LA.<# nsVs)
         pure $ pV + oWs LA.<# nsVs
 
+-- this aggregates over cells with the same given key
+labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
+labeledRowsToVecFld key dat = VS.fromList . M.elems . addZeroes <$> (FL.premap (\row -> (key row, dat row)) $ FL.foldByKeyMap FL.sum)
+  where
+    zeroMap = M.fromList $ zip (S.toList BRK.elements) $ repeat 0
+    addZeroes m = M.union m zeroMap
+
+
+labeledRowsToVec :: (Ord k, BRK.FiniteSet k, VS.Storable a, Foldable f, Num a) => (row -> k) -> (row -> a) -> f row -> VS.Vector a
+labeledRowsToVec key dat = FL.fold (labeledRowsToVecFld key dat)
+
 applyNSPWeightsFld :: forall outerKs ks count rs r .
                       ( DED.EnrichDataEffects r
                       , V.KnownField count
@@ -147,6 +158,7 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       , F.ElemOf (ks V.++ '[count]) count
                       , F.ElemOf rs count
                       , Ord (F.Record ks)
+                      , BRK.FiniteSet (F.Record ks)
                       , Ord (F.Record outerKs)
                       , outerKs F.⊆ rs
                       , ks F.⊆ rs
@@ -158,19 +170,17 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                    -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R))
                    -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
 applyNSPWeightsFld logM nsVs nsWsFldF =
-  let pm :: F.Record (ks V.++ '[count]) -> K.Sem r (F.Record ks, Double)
-      pm d = pure $ (F.rcast @ks d, realToFrac $ F.rgetField @count d)
-      precomputeFld :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R, Double, ([F.Record ks], LA.Vector LA.R))
+  let keysL = S.toList $ BRK.elements @(F.Record ks) -- these are the same for each outerK
+      precomputeFld :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R, Double, LA.Vector LA.R)
       precomputeFld ok =
         let sumFld = FL.generalize $ FL.premap (realToFrac . F.rgetField @count) FL.sum
---            keyFld = FL.generalize $ fmap S.toList $ FL.premap (F.rcast @ks) FL.set
-            keyVecFld = FL.generalize $ fmap (second VS.fromList . unzip . M.toList) $ FL.premap (\r -> (F.rcast @ks r, realToFrac $ F.rgetField @count r)) FL.map
-        in (,,) <$> nsWsFldF ok <*> sumFld <*> keyVecFld
-      compute :: F.Record outerKs -> (LA.Vector LA.R, Double, ([F.Record ks], LA.Vector LA.R)) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
-      compute ok (nsWs, vSum, (keys, v)) = do
+            vecFld = FL.generalize $ labeledRowsToVecFld (F.rcast @ks) (realToFrac . F.rgetField @count)
+        in (,,) <$> nsWsFldF ok <*> sumFld <*> vecFld
+      compute :: F.Record outerKs -> (LA.Vector LA.R, Double, LA.Vector LA.R) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
+      compute ok (nsWs, vSum, v) = do
         maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
         optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nsVs nsWs $ VS.map (/ vSum) v
-        pure $ zipWith (\k c -> ok F.<+> k F.<+> FT.recordSingleton @count (round c)) keys (VS.toList optimalV)
+        pure $ zipWith (\k c -> ok F.<+> k F.<+> FT.recordSingleton @count (round c)) keysL (VS.toList optimalV)
       innerFld ok = FMR.postMapM (compute ok) (precomputeFld ok)
   in  FMR.concatFoldM
         $ FMR.mapReduceFoldM
@@ -179,7 +189,7 @@ applyNSPWeightsFld logM nsVs nsWsFldF =
         (FMR.ReduceFoldM $ \k -> F.toFrame <$> innerFld k)
 
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
-nullSpaceVectors n stencilSumsI = LA.tr $ LA.nullspace $ DED.mMatrix n stencilSumsI
+nullSpaceVectors n stencils = LA.tr $ LA.nullspace $ DED.mMatrix n stencils
 
 nullSpaceProjections :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r, Foldable f)
                             => LA.Matrix LA.R
@@ -209,6 +219,29 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     weight (n, v) = VS.map (* popWeightF n) v
 
 
+diffCovarianceFld :: forall outerK k row .
+                     (Ord outerK, Ord k, BRK.FiniteSet k)
+                  => (row -> outerK)
+                  -> (row -> k)
+                  -> (row -> LA.R)
+                  -> [DED.Stencil Int]
+                  -> FL.Fold row (LA.Matrix LA.R)
+diffCovarianceFld outerKey catKey dat stencils = LA.unSym . snd . LA.meanCov . LA.fromRows . fmap diffProjections <$> vecsFld
+  where
+    allKs :: Set k = BRK.elements
+    n = S.size allKs
+    nullVecs = nullSpaceVectors n stencils
+    mMatrix = DED.mMatrix n stencils
+    mSumsV vec = mMatrix LA.#> vec
+    tot = LA.sumElements
+    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
+    diffProjections vec = nullVecs LA.#> (vec - prodV vec)
+--    vecsFld :: FL.Fold row [LA.Vector LA.R]
+    vecsFld = MR.mapReduceFold
+              MR.noUnpack
+              (MR.assign outerKey (\row -> (catKey row, dat row)))
+              (MR.foldAndLabel (labeledRowsToVecFld fst snd) (\_ v -> v))
+
 {-
 buildNSPModelData :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r)
                   => LA.Matrix LA.R
@@ -222,14 +255,13 @@ buildNSPModelData nullVs outerKey key count actuals products =
 -}
 
 
-stencils :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
-            (Ord (F.Record as)
-            , Ord (F.Record bs)
-            , as F.⊆ bs
-            , BRK.FiniteSet (F.Record bs)
-            )
-         => [DED.Stencil Int]
-stencils = M.elems $ FL.fold (DED.subgroupStencils (F.rcast @as)) $ S.toList $ BRK.elements @(F.Record bs)
+stencils ::  forall a b.
+             (Ord a
+             , Ord b
+             , BRK.FiniteSet b
+             )
+         => (b -> a) -> [DED.Stencil Int]
+stencils bFromA = M.elems $ FL.fold (DED.subgroupStencils bFromA) $ S.toList BRK.elements
 
 {-
 data TableProductException = TableProductException Text
