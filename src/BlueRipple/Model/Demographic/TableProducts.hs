@@ -62,6 +62,7 @@ import qualified Data.Vector.Storable as VS
 import Control.Lens (view, (^.))
 import Control.Monad.Except (throwError)
 import GHC.TypeLits (Symbol)
+import Graphics.Vega.VegaLite (density)
 
 
 -- does a pure product
@@ -219,14 +220,15 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     weight (n, v) = VS.map (* popWeightF n) v
 
 
+
 diffCovarianceFld :: forall outerK k row .
                      (Ord outerK, Ord k, BRK.FiniteSet k)
                   => (row -> outerK)
                   -> (row -> k)
                   -> (row -> LA.R)
                   -> [DED.Stencil Int]
-                  -> FL.Fold row (LA.Matrix LA.R)
-diffCovarianceFld outerKey catKey dat stencils = LA.unSym . snd . LA.meanCov . LA.fromRows . fmap diffProjections <$> vecsFld
+                  -> FL.Fold row (LA.Herm LA.R)
+diffCovarianceFld outerKey catKey dat stencils = snd . LA.meanCov . LA.fromRows . fmap diffProjections <$> vecsFld
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
@@ -236,24 +238,68 @@ diffCovarianceFld outerKey catKey dat stencils = LA.unSym . snd . LA.meanCov . L
     tot = LA.sumElements
     prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
     diffProjections vec = nullVecs LA.#> (vec - prodV vec)
+    innerFld = (\v -> LA.scale (1 / VS.sum v) v)  <$> labeledRowsToVecFld fst snd
 --    vecsFld :: FL.Fold row [LA.Vector LA.R]
     vecsFld = MR.mapReduceFold
               MR.noUnpack
               (MR.assign outerKey (\row -> (catKey row, dat row)))
-              (MR.foldAndLabel (labeledRowsToVecFld fst snd) (\_ v -> v))
+              (MR.foldAndLabel innerFld (\_ v -> v))
 
-{-
-buildNSPModelData :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r)
-                  => LA.Matrix LA.R
-                  -> (F.Record rs -> outerK)
-                  -> (F.Record rs -> k)
-                  -> (F.Record rs -> Int)
-                  -> F.FrameRec rs
-                  -> F.FrameRec rs
-                  -> K.Sem r (K.ActionWithCacheTime r [(outerK, LA.Vector LA.R)]
-buildNSPModelData nullVs outerKey key count actuals products =
--}
 
+significantNullVecs :: Double
+                    -> Int
+                    -> [DED.Stencil Int]
+                    -> LA.Herm LA.R
+                    -> LA.Matrix LA.R
+significantNullVecs fracCovToInclude n sts cov = LA.tr sigEVecs LA.<> nullVecs
+  where
+    (eigVals, eigVecs) = LA.eigSH cov
+    totCov = VS.sum eigVals
+    nSig = fst $ VS.foldl' (\(m, csf) c -> if csf / totCov < fracCovToInclude then (m + 1, csf + c) else (m, csf)) (0, 0) eigVals
+    sigEVecs = LA.takeColumns nSig eigVecs
+    nullVecs = nullSpaceVectors n sts
+
+
+nullVecProjectionsModelDataFld ::  forall outerK k row d .
+                                   (Ord outerK, Ord k, BRK.FiniteSet k)
+                               => LA.Matrix LA.R
+                               -> [DED.Stencil Int]
+                               -> (row -> outerK)
+                               -> (row -> k)
+                               -> (row -> LA.R)
+                               -> FL.Fold row d
+                               -> FL.Fold row [(outerK, d, LA.Vector LA.R)]
+nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFold =
+  MR.mapReduceFold MR.noUnpack (MR.assign outerKey id) (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+  where
+    allKs :: Set k = BRK.elements
+    n = S.size allKs
+    mMatrix = DED.mMatrix n stencils
+    mSumsV vec = mMatrix LA.#> vec
+    tot = LA.sumElements
+    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
+    projFld = (\v -> nullVecs LA.#> (v - prodV v)) <$> labeledRowsToVecFld catKey count
+    innerFld = (,) <$> datFold <*> projFld
+
+
+data Model1P = Model1P { m1pPWLogDensity :: Double, m1pFracGrad :: Double, m1pFracOfColor :: Double } deriving stock Show
+
+model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                , F.ElemOf rs DT.Education4C
+                , F.ElemOf rs DT.Race5C
+                , F.ElemOf rs DT.PopCount
+                )
+             => FL.Fold (F.Record rs) Model1P
+model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    dens = view DT.pWPopPerSqMile
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
+    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
+    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
 
 stencils ::  forall a b.
              (Ord a
@@ -262,21 +308,3 @@ stencils ::  forall a b.
              )
          => (b -> a) -> [DED.Stencil Int]
 stencils bFromA = M.elems $ FL.fold (DED.subgroupStencils bFromA) $ S.toList BRK.elements
-
-{-
-data TableProductException = TableProductException Text
-                           deriving stock (Show)
-
-instance Exception TableProductException
-
--- IO here because we need to be able to execute things requiring a PrimMonad environment
--- for Frames inCore
---type TableProductEffects r = (K.LogWithPrefixesLE r, P.Member (PE.Error TableProductException) r, P.Member (P.Embed IO) r)
-
-tableProductExceptionToPandocError :: TableProductException -> KPM.PandocError
-tableProductExceptionToPandocError = PA.PandocSomeError . KPM.textToPandocText . show
-
-
-mapTPE :: P.Member (PE.Error PA.PandocError) r => K.Sem (PE.Error TableProductException  ': r) a -> K.Sem r a
-mapTPE = PE.mapError tableProductExceptionToPandocError
--}

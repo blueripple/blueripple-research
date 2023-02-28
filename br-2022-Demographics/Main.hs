@@ -41,6 +41,7 @@ import qualified Data.List as L
 import qualified Data.Map as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
@@ -205,7 +206,24 @@ main = do
           testStencils
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
     let projCovariances = FL.fold projCovariancesFld acsByPUMA
-    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 projCovariances)
+    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 $ LA.unSym projCovariances)
+    let (eVals, eVecs) = LA.eigSH projCovariances
+    K.logLE K.Info $ "eVals=" <> show eVals
+    K.logLE K.Info $ "eVecs=" <> toText (LA.dispf 4 eVecs)
+    let sigNullVecs = DTP.significantNullVecs 0.95 40 testStencils projCovariances
+    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 sigNullVecs)
+    let modelData = FL.fold
+                    (DTP.nullVecProjectionsModelDataFld
+                      sigNullVecs
+                      testStencils
+                      (F.rcast @[GT.StateAbbreviation, GT.PUMA])
+                      (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
+                      (realToFrac . view DT.popCount)
+                      DTP.model1DatFld
+                    )
+                    acsByPUMA
+    K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
+
 
 
     K.knitEither $ Left "Stopping before products, etc."
