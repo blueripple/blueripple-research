@@ -58,12 +58,18 @@ import qualified Numeric.LinearAlgebra as LA
 import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
+import qualified Data.Vector.Unboxed as VU
 
 import Control.Lens (view, (^.))
 import Control.Monad.Except (throwError)
 import GHC.TypeLits (Symbol)
 import Graphics.Vega.VegaLite (density)
 
+import qualified Stan.ModelBuilder as SMB
+import qualified Stan.ModelConfig as SC
+import qualified Stan.ModelBuilder.BuildingBlocks as SBB
+import qualified Stan.ModelBuilder.DesignMatrix as DM
+import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 
 -- does a pure product
 -- for each outerK we split each bs cell into as many cells as are represented by as
@@ -300,6 +306,53 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
     fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
+
+stateG :: SMB.GroupTypeTag Text
+stateG = SMB.GroupTypeTag "State"
+
+stateGroupBuilder :: (Foldable g, Foldable f, Typeable row)
+                  => (row -> Text) -> f Text -> SMB.StanGroupBuilderM (g row) () ()
+stateGroupBuilder saF states = do
+  projData <- SMB.addModelDataToGroupBuilder "ProjectionData" (SMB.ToFoldable id)
+  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show saF states
+  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable saF states
+
+designMatrixRow1 :: DM.DesignMatrixRow Model1P
+designMatrixRow1 = DM.DesignMatrixRow "ProjModel1"
+                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
+                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
+                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
+                   ]
+
+data ProjModelData outerK md =
+  ProjModelData
+  {
+    projDataTag :: SMB.RowTypeTag (outerK, md, VU.Vector Double)
+  , nCatsE :: TE.IntE
+  , nNVE :: TE.IntE
+  , nStatesE :: TE.IntE
+  , predictorsE :: TE.MatrixE
+  , projectionsE :: TE.MatrixE
+  }
+
+projModelData :: forall d outerK . (Typeable outerK, Typeable d)
+               => DM.DesignMatrixRow d
+               -> Int
+               -> Int
+               -> Int
+               -> SMB.StanBuilderM [(outerK, d, VU.Vector Double)] () (ProjModelData outerK d)
+projModelData dmr nCats nNV nStates = do
+  projData <- SMB.dataSetTag @(outerK, d, VU.Vector Double) SC.ModelData "ProjectionData"
+  nCatsE <- SBB.addFixedInt "N" nCats
+  nNVE <- SBB.addFixedInt "K" nNV
+  nStatesE <- SBB.addFixedInt "M" nStates
+  let projMER :: SMB.MatrixRowFromData (outerK, d, VU.Vector Double)
+      projMER = SMB.MatrixRowFromData "nvp" Nothing nNV (\(_, _, v) -> v)
+  pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
+  dmE <- DM.addDesignMatrix projData (contramap (\(_, md, _) -> md) dmr) Nothing
+  pure $ ProjModelData projData nCatsE nNVE nStatesE dmE pmE
+
+
 
 stencils ::  forall a b.
              (Ord a
