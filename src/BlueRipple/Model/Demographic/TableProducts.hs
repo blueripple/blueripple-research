@@ -1,14 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -69,7 +66,12 @@ import qualified Stan.ModelBuilder as SMB
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.DesignMatrix as DM
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
+import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
+import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 
 -- does a pure product
 -- for each outerK we split each bs cell into as many cells as are represented by as
@@ -328,31 +330,104 @@ data ProjModelData outerK md =
   ProjModelData
   {
     projDataTag :: SMB.RowTypeTag (outerK, md, VU.Vector Double)
-  , nCatsE :: TE.IntE
-  , nNVE :: TE.IntE
+  , nRowsE :: TE.IntE
+  , nNullVecsE :: TE.IntE
   , nStatesE :: TE.IntE
+  , nPredictorsE :: TE.IntE
   , predictorsE :: TE.MatrixE
   , projectionsE :: TE.MatrixE
   }
 
-projModelData :: forall d outerK . (Typeable outerK, Typeable d)
-               => DM.DesignMatrixRow d
-               -> Int
-               -> Int
-               -> Int
-               -> SMB.StanBuilderM [(outerK, d, VU.Vector Double)] () (ProjModelData outerK d)
-projModelData dmr nCats nNV nStates = do
-  projData <- SMB.dataSetTag @(outerK, d, VU.Vector Double) SC.ModelData "ProjectionData"
-  nCatsE <- SBB.addFixedInt "N" nCats
-  nNVE <- SBB.addFixedInt "K" nNV
-  nStatesE <- SBB.addFixedInt "M" nStates
+data ModelConfig md =
+  ModelConfig
+  {
+    nRows :: Int
+  , nNullVecs :: Int
+  , nStates :: Int
+  , designMatrixRow :: DM.DesignMatrixRow md
+  , centerAlpha :: Bool
+  }
+
+projModelData :: forall md outerK . (Typeable outerK, Typeable md)
+               => ModelConfig md
+               -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () (ProjModelData outerK md)
+projModelData mc = do
+  projData <- SMB.dataSetTag @(outerK, md, VU.Vector Double) SC.ModelData "ProjectionData"
+  nRowsE' <- SBB.addFixedInt "N" mc.nRows
+  nNullVecsE' <- SBB.addFixedInt "K" mc.nNullVecs
+  nStatesE' <- SBB.addFixedInt "M" mc.nStates
   let projMER :: SMB.MatrixRowFromData (outerK, d, VU.Vector Double)
-      projMER = SMB.MatrixRowFromData "nvp" Nothing nNV (\(_, _, v) -> v)
+      projMER = SMB.MatrixRowFromData "nvp" Nothing mc.nNullVecs (\(_, _, v) -> v)
   pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
-  dmE <- DM.addDesignMatrix projData (contramap (\(_, md, _) -> md) dmr) Nothing
-  pure $ ProjModelData projData nCatsE nNVE nStatesE dmE pmE
+  let (_, nPredictorsE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
+  dmE <- DM.addDesignMatrix projData (contramap (\(_, md, _) -> md) mc.designMatrixRow) Nothing
+  pure $ ProjModelData projData nRowsE' nNullVecsE' nStatesE' nPredictorsE' dmE pmE
 
+-- given K null vectors, S states, and D predictors
+data ProjModelParameters =
+  ProjModelParameters
+  {
+    pmpAlpha :: TE.MatrixE -- Matrix(K,S)
+--  , pmpMuAlpha :: TE.VectorE -- Vector(K)
+--  , pmpSigmaAlpha :: TE.VectorE -- Vector(K)
+  , pmpTheta :: TE.MatrixE -- Matrix(K,D)
+--  , pmpMuBeta :: TE.MatrixE -- Matrix(K,D)
+--  , pmpSigmaBeta :: TE.MatrixE -- Matrix(K,D)
+  }
 
+projModelParameters :: ModelConfig md -> ProjModelData outerK md -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () ProjModelParameters
+projModelParameters mc pmd = do
+  let stdNormalDWA = TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil)
+  muAlphaP <- DAG.simpleParameterWA
+             (TE.NamedDeclSpec "muAlpha" $ TE.vectorSpec pmd.nNullVecsE [])
+             stdNormalDWA
+  sigmaAlphaP <-  DAG.simpleParameterWA
+                  (TE.NamedDeclSpec "sigmaAlpha" $ TE.vectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
+                  stdNormalDWA
+  let alphaNDS = TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nNullVecsE pmd.nStatesE []
+      alphaPs =  DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil
+      atNV x k = TE.sliceE TEI.s0 k x
+      loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
+      diagPreMult rv m = TE.functionE SF.diagPreMultiply (rv :> m :> TNil)
+      rowsOf nColsE cv = diagPreMult (TE.transposeE cv) (TE.functionE SF.rep_matrix (TE.realE 1 :> TE.functionE SF.size (cv :> TNil) :> nColsE :> TNil))
+  alphaP <- case mc.centerAlpha of
+    True -> DAG.addBuildParameter
+            $ DAG.UntransformedP alphaNDS [] alphaPs
+            $ \(muAlphaE :> sigmaAlphaE :> TNil) m
+              -> TE.addStmt
+                 $ loopNVs
+                 $ \k -> [TE.sample (m `atNV` k) SF.normalS (muAlphaE `atNV` k :> sigmaAlphaE `atNV` k :> TNil)]
+    False -> DAG.withIIDRawMatrix alphaNDS Nothing stdNormalDWA alphaPs
+            $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf pmd.nStatesE muAlphaE `TE.plusE` diagPreMult (TE.transposeE sigmaAlphaE) rawM
+  -- for now all the thetas are iid std normals
+  thetaP <- DAG.iidMatrixP
+           (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nNullVecsE pmd.nPredictorsE [])
+           []
+           (DAG.given (TE.realE 0) :> DAG.given (TE.realE 1) :> TNil)
+           SF.normalS
+  let f = DAG.parameterTagExpr
+  pure $ ProjModelParameters (f alphaP) (f thetaP)
+
+projModel :: (Typeable outerK, Typeable md) => ModelConfig md -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () ()
+projModel mc = do
+  mData <- projModelData mc
+  mParams <- projModelParameters mc mData
+  let betaTrNDS = TE.NamedDeclSpec "betaTr" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
+      betaNDS  = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nNullVecsE mData.nPredictorsE []
+      projectionsTrNDS = TE.NamedDeclSpec "nvpTr" $ TE.matrixSpec mData.nNullVecsE mData.nRowsE []
+  (dmQ, dmR, dmRI, mBetaTr) <- DM.thinQR mData.predictorsE "DM" $ Just (TE.transposeE mParams.pmpTheta, betaTrNDS)
+  betaTrE <- SMB.stanBuildMaybe "projModel: mBeta is set to Nothing in thinQR!" mBetaTr
+  projectionsTrE <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ TE.declareRHSNW projectionsTrNDS $ TE.transposeE mData.projectionsE
+  SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
+    betaE <- TE.declareRHSNW betaNDS $ TE.transposeE betaTrE
+    let atNV x k = TE.sliceE TEI.s0 k x
+        byState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
+        loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
+        loopBody k = TE.writerL' $ do
+          let muE = byState (mParams.pmpAlpha `atNV` k) `TE.plusE` (betaE `atNV` k `TE.timesE` dmQ)
+              sigmaE = TE.functionE SF.rep_row_vector (TE.realE 1 :> mData.nRowsE :> TNil) -- this shouldn't be in model block
+          TE.addStmt $ TE.sample (projectionsTrE `atNV` k) SF.normal (muE :> sigmaE :> TNil)
+    TE.addStmt $ loopNVs loopBody
 
 stencils ::  forall a b.
              (Ord a
