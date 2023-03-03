@@ -17,11 +17,14 @@ module BlueRipple.Model.Demographic.TableProducts
   )
 where
 
+import qualified BlueRipple.Configuration as BR
+import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
 
 import qualified Knit.Report as K
 --import qualified Knit.Effect.Logger as K
@@ -63,6 +66,7 @@ import GHC.TypeLits (Symbol)
 import Graphics.Vega.VegaLite (density)
 
 import qualified Stan.ModelBuilder as SMB
+import qualified Stan.ModelRunner as SMR
 import qualified Stan.ModelConfig as SC
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.DesignMatrix as DM
@@ -227,8 +231,6 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     totalWeight = FL.fold (FL.premap (popWeightF . fst) FL.sum) m / realToFrac (M.size m)
     weight (n, v) = VS.map (* popWeightF n) v
 
-
-
 diffCovarianceFld :: forall outerK k row .
                      (Ord outerK, Ord k, BRK.FiniteSet k)
                   => (row -> outerK)
@@ -242,11 +244,13 @@ diffCovarianceFld outerKey catKey dat stencils = snd . LA.meanCov . LA.fromRows 
     n = S.size allKs
     nullVecs = nullSpaceVectors n stencils
     mMatrix = DED.mMatrix n stencils
-    mSumsV vec = mMatrix LA.#> vec
-    tot = LA.sumElements
-    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
-    diffProjections vec = nullVecs LA.#> (vec - prodV vec)
-    innerFld = (\v -> LA.scale (1 / VS.sum v) v)  <$> labeledRowsToVecFld fst snd
+    pim = LA.pinv mMatrix
+    mProd = pim LA.<> mMatrix
+--    mSumsV vec = mMatrix LA.#> vec
+--    tot = LA.sumElements
+--    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
+    diffProjections vec = nullVecs LA.#> (vec - mProd LA.#> vec)
+    innerFld = (\v -> LA.scale (1 / VS.sum v) v) <$> labeledRowsToVecFld fst snd
 --    vecsFld :: FL.Fold row [LA.Vector LA.R]
     vecsFld = MR.mapReduceFold
               MR.noUnpack
@@ -268,29 +272,41 @@ significantNullVecs fracCovToInclude n sts cov = LA.tr sigEVecs LA.<> nullVecs
     nullVecs = nullSpaceVectors n sts
 
 
-nullVecProjectionsModelDataFld ::  forall outerK k row d .
+type ProjDataRow outerK md = (outerK, md, LA.Vector LA.R)
+
+data ProjData outerK md =
+  ProjData
+  {
+    pdNNullVecs :: Int
+  , pdNPredictors :: Int
+  , pdRows :: [ProjDataRow outerK md]
+  }
+
+nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                    (Ord outerK, Ord k, BRK.FiniteSet k)
                                => LA.Matrix LA.R
                                -> [DED.Stencil Int]
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> LA.R)
-                               -> FL.Fold row d
-                               -> FL.Fold row [(outerK, d, LA.Vector LA.R)]
+                               -> FL.Fold row md
+                               -> FL.Fold row [(outerK, md, LA.Vector LA.R)]
 nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFold =
   MR.mapReduceFold MR.noUnpack (MR.assign outerKey id) (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
     mMatrix = DED.mMatrix n stencils
-    mSumsV vec = mMatrix LA.#> vec
-    tot = LA.sumElements
-    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
-    projFld = (\v -> nullVecs LA.#> (v - prodV v)) <$> labeledRowsToVecFld catKey count
+    pim = LA.pinv mMatrix
+    mProd = pim LA.<> mMatrix
+--    mSumsV vec = mMatrix LA.#> vec
+--    tot = LA.sumElements
+--    prodV vec = LA.scale (1 / tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
+    projFld = (\v -> let w = VS.map (/ VS.sum v) v in nullVecs LA.#> (w - mProd LA.#> w)) <$> labeledRowsToVecFld catKey count
     innerFld = (,) <$> datFold <*> projFld
 
 
-data Model1P = Model1P { m1pPWLogDensity :: Double, m1pFracGrad :: Double, m1pFracOfColor :: Double } deriving stock Show
+data Model1P = Model1P { m1pPWLogDensity :: Double, m1pFracGrad :: Double, m1pFracOfColor :: Double } deriving stock (Show)
 
 model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
                 , F.ElemOf rs DT.Education4C
@@ -312,12 +328,13 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
 
-stateGroupBuilder :: (Foldable g, Foldable f, Typeable row)
-                  => (row -> Text) -> f Text -> SMB.StanGroupBuilderM (g row) () ()
+stateGroupBuilder :: (Foldable f, Typeable outerK, Typeable md)
+                  => (outerK -> Text) -> f Text -> SMB.StanGroupBuilderM (ProjData outerK md) () ()
 stateGroupBuilder saF states = do
-  projData <- SMB.addModelDataToGroupBuilder "ProjectionData" (SMB.ToFoldable id)
-  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show saF states
-  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable saF states
+  let ok (x, _, _) = x
+  projData <- SMB.addModelDataToGroupBuilder "ProjectionData" (SMB.ToFoldable pdRows)
+  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . ok) states
+  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . ok) states
 
 designMatrixRow1 :: DM.DesignMatrixRow Model1P
 designMatrixRow1 = DM.DesignMatrixRow "ProjModel1"
@@ -329,10 +346,8 @@ designMatrixRow1 = DM.DesignMatrixRow "ProjModel1"
 data ProjModelData outerK md =
   ProjModelData
   {
-    projDataTag :: SMB.RowTypeTag (outerK, md, VU.Vector Double)
-  , nRowsE :: TE.IntE
+    projDataTag :: SMB.RowTypeTag (ProjDataRow outerK md)
   , nNullVecsE :: TE.IntE
-  , nStatesE :: TE.IntE
   , nPredictorsE :: TE.IntE
   , predictorsE :: TE.MatrixE
   , projectionsE :: TE.MatrixE
@@ -341,50 +356,44 @@ data ProjModelData outerK md =
 data ModelConfig md =
   ModelConfig
   {
-    nRows :: Int
-  , nNullVecs :: Int
-  , nStates :: Int
+    nNullVecs :: Int
   , designMatrixRow :: DM.DesignMatrixRow md
   , centerAlpha :: Bool
   }
 
 projModelData :: forall md outerK . (Typeable outerK, Typeable md)
                => ModelConfig md
-               -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () (ProjModelData outerK md)
+               -> SMB.StanBuilderM (ProjData outerK md) () (ProjModelData outerK md)
 projModelData mc = do
-  projData <- SMB.dataSetTag @(outerK, md, VU.Vector Double) SC.ModelData "ProjectionData"
-  nRowsE' <- SBB.addFixedInt "N" mc.nRows
-  nNullVecsE' <- SBB.addFixedInt "K" mc.nNullVecs
-  nStatesE' <- SBB.addFixedInt "M" mc.nStates
-  let projMER :: SMB.MatrixRowFromData (outerK, d, VU.Vector Double)
-      projMER = SMB.MatrixRowFromData "nvp" Nothing mc.nNullVecs (\(_, _, v) -> v)
+  projData <- SMB.dataSetTag @(ProjDataRow outerK md) SC.ModelData "ProjectionData"
+  let projMER :: SMB.MatrixRowFromData (outerK, d, VS.Vector Double)
+      projMER = SMB.MatrixRowFromData "nvp" Nothing mc.nNullVecs (\(_, _, v) -> VU.convert v)
   pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
-  let (_, nPredictorsE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
+  let nNullVecsE' = SMB.mrfdColumnsE projMER
+      (_, nPredictorsE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
   dmE <- DM.addDesignMatrix projData (contramap (\(_, md, _) -> md) mc.designMatrixRow) Nothing
-  pure $ ProjModelData projData nRowsE' nNullVecsE' nStatesE' nPredictorsE' dmE pmE
+  pure $ ProjModelData projData nNullVecsE' nPredictorsE' dmE pmE
 
 -- given K null vectors, S states, and D predictors
 data ProjModelParameters =
   ProjModelParameters
   {
     pmpAlpha :: TE.MatrixE -- Matrix(K,S)
---  , pmpMuAlpha :: TE.VectorE -- Vector(K)
---  , pmpSigmaAlpha :: TE.VectorE -- Vector(K)
   , pmpTheta :: TE.MatrixE -- Matrix(K,D)
---  , pmpMuBeta :: TE.MatrixE -- Matrix(K,D)
---  , pmpSigmaBeta :: TE.MatrixE -- Matrix(K,D)
+  , pmpSigma :: TE.VectorE
   }
 
-projModelParameters :: ModelConfig md -> ProjModelData outerK md -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () ProjModelParameters
+projModelParameters :: ModelConfig md -> ProjModelData outerK md -> SMB.StanBuilderM (ProjData outerK md) () ProjModelParameters
 projModelParameters mc pmd = do
   let stdNormalDWA = TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil)
+      nStatesE = SMB.groupSizeE stateG
   muAlphaP <- DAG.simpleParameterWA
              (TE.NamedDeclSpec "muAlpha" $ TE.vectorSpec pmd.nNullVecsE [])
              stdNormalDWA
   sigmaAlphaP <-  DAG.simpleParameterWA
                   (TE.NamedDeclSpec "sigmaAlpha" $ TE.vectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
                   stdNormalDWA
-  let alphaNDS = TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nNullVecsE pmd.nStatesE []
+  let alphaNDS = TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nNullVecsE nStatesE []
       alphaPs =  DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil
       atNV x k = TE.sliceE TEI.s0 k x
       loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
@@ -398,7 +407,7 @@ projModelParameters mc pmd = do
                  $ loopNVs
                  $ \k -> [TE.sample (m `atNV` k) SF.normalS (muAlphaE `atNV` k :> sigmaAlphaE `atNV` k :> TNil)]
     False -> DAG.withIIDRawMatrix alphaNDS Nothing stdNormalDWA alphaPs
-            $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf pmd.nStatesE muAlphaE `TE.plusE` diagPreMult (TE.transposeE sigmaAlphaE) rawM
+            $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPreMult (TE.transposeE sigmaAlphaE) rawM
   -- for now all the thetas are iid std normals
   thetaP <- DAG.iidMatrixP
            (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nNullVecsE pmd.nPredictorsE [])
@@ -406,28 +415,88 @@ projModelParameters mc pmd = do
            (DAG.given (TE.realE 0) :> DAG.given (TE.realE 1) :> TNil)
            SF.normalS
   let f = DAG.parameterTagExpr
-  pure $ ProjModelParameters (f alphaP) (f thetaP)
+  sigmaP <-  DAG.simpleParameterWA
+             (TE.NamedDeclSpec "sigma" $ TE.vectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
+             stdNormalDWA
+  pure $ ProjModelParameters (f alphaP) (f thetaP) (f sigmaP)
 
-projModel :: (Typeable outerK, Typeable md) => ModelConfig md -> SMB.StanBuilderM [(outerK, md, VU.Vector Double)] () ()
+-- not returning anything for now
+projModel :: (Typeable outerK, Typeable md) => ModelConfig md -> SMB.StanBuilderM (ProjData outerK md) () ()
 projModel mc = do
   mData <- projModelData mc
   mParams <- projModelParameters mc mData
   let betaTrNDS = TE.NamedDeclSpec "betaTr" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
-      betaNDS  = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nNullVecsE mData.nPredictorsE []
-      projectionsTrNDS = TE.NamedDeclSpec "nvpTr" $ TE.matrixSpec mData.nNullVecsE mData.nRowsE []
-  (dmQ, dmR, dmRI, mBetaTr) <- DM.thinQR mData.predictorsE "DM" $ Just (TE.transposeE mParams.pmpTheta, betaTrNDS)
-  betaTrE <- SMB.stanBuildMaybe "projModel: mBeta is set to Nothing in thinQR!" mBetaTr
+--      betaNDS  = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nNullVecsE mData.nPredictorsE []
+      nRowsE = SMB.dataSetSizeE mData.projDataTag
+--      nStatesE = SMB.groupSizeE stateG
+      projectionsTrNDS = TE.NamedDeclSpec "nvpTr" $ TE.matrixSpec mData.nNullVecsE nRowsE []
+  (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "ProjDM"
+  (dmQ, _, _, mBetaTr) <- DM.thinQR centeredPredictorsE "DM" $ Just (TE.transposeE mParams.pmpTheta, betaTrNDS)
+  dmQTr <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter
+           $ TE.declareRHSNW (TE.NamedDeclSpec "DM_Qtr" $ TE.matrixSpec mData.nPredictorsE nRowsE [])
+           $ TE.transposeE dmQ
+--  betaTrE <- SMB.stanBuildMaybe "projModel: mBeta is set to Nothing in thinQR!" mBetaTr
   projectionsTrE <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ TE.declareRHSNW projectionsTrNDS $ TE.transposeE mData.projectionsE
   SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
-    betaE <- TE.declareRHSNW betaNDS $ TE.transposeE betaTrE
+--    betaE <- TE.declareRHSNW betaNDS $ TE.transposeE betaTrE
     let atNV x k = TE.sliceE TEI.s0 k x
         byState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
         loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
         loopBody k = TE.writerL' $ do
-          let muE = byState (mParams.pmpAlpha `atNV` k) `TE.plusE` (betaE `atNV` k `TE.timesE` dmQ)
-              sigmaE = TE.functionE SF.rep_row_vector (TE.realE 1 :> mData.nRowsE :> TNil) -- this shouldn't be in model block
+          let muE = byState (mParams.pmpAlpha `atNV` k) `TE.plusE` (mParams.pmpTheta `atNV` k `TE.timesE` dmQTr)
+              sigmaE = TE.functionE SF.rep_row_vector (mParams.pmpSigma `atNV` k :> nRowsE :> TNil)
           TE.addStmt $ TE.sample (projectionsTrE `atNV` k) SF.normal (muE :> sigmaE :> TNil)
     TE.addStmt $ loopNVs loopBody
+
+runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
+                (K.KnitEffects r
+                , BRKU.CacheEffects r
+                , ks F.⊆ DDP.ACSByPUMAR
+                , Ord (F.Record ks)
+                , BRK.FiniteSet (F.Record ks)
+                , Typeable md
+                )
+             => Bool
+             -> BR.CommandLine
+             -> ModelConfig md
+             -> LA.Matrix LA.R
+             -> [DED.Stencil Int]
+             -> FL.Fold (F.Record DDP.ACSByPUMAR) md
+             -> K.Sem r (K.ActionWithCacheTime r ()) -- no returned result for now
+runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
+  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel"
+      dataName = "projectionData"
+      runnerInputNames = SC.RunnerInputNames
+                         ("br-2022-Demographics/stan/nullVecProj")
+                         ("normal")
+                         Nothing -- posterior prediction vars to wrap
+                         dataName
+  acsByPUMA_C <- DDP.cachedACSByPUMA
+--  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
+  let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
+      catKey = F.rcast @ks
+      count = realToFrac . view DT.popCount
+      projData acsByPUMA = ProjData mc.nNullVecs (DM.rowLength mc.designMatrixRow)
+                           (FL.fold
+                            (nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFld)
+                            acsByPUMA
+                           )
+      modelData_C = projData <$> acsByPUMA_C
+  states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
+  (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
+                (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
+                (projModel mc)
+  res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
+           cacheDirE
+           (Right runnerInputNames)
+           dw
+           code
+           SC.DoNothing -- (stateModelResultAction mcWithId dmr)
+           (SMR.ShinyStan []) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+           modelData_C
+           (pure ())
+  K.logLE K.Info "projModel run complete."
+  pure res_C
 
 stencils ::  forall a b.
              (Ord a

@@ -197,8 +197,16 @@ main = do
     let seInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         srInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Race5C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         testStencils = seInSERStencil <> srInSERStencil
-
-        projCovariancesFld =
+        exampleV = DTP.labeledRowsToVec (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (realToFrac . view DT.popCount)
+                   $ F.filterFrame ((== "NY") . view GT.stateAbbreviation) acsByPUMA
+        mMatrix = DED.mMatrix (VS.length exampleV) seInSERStencil
+--        pi = DTP.psuedoInverseSVD mMatrix
+    K.logLE K.Info $ "Example keys (in order)\n" <> show (Keyed.elements @(F.Record  [DT.SexC, DT.Education4C, DT.Race5C]))
+    K.logLE K.Info $ "mMatrix=\n" <> toText (LA.dispf 2 mMatrix)
+    K.logLE K.Info $ "NY       =" <> DED.prettyVector exampleV
+    K.logLE K.Info $ "NY (Prod)=" <> (DED.prettyVector $ LA.pinv mMatrix LA.#> (mMatrix LA.#> exampleV))
+--    K.knitEither $ Left "Stopping before covariance fold, etc."
+    let projCovariancesFld =
           DTP.diffCovarianceFld
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
           (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
@@ -223,7 +231,9 @@ main = do
                     )
                     acsByPUMA
     K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
-
+    K.logLE K.Info $ "Running model?"
+    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) DTP.designMatrixRow1 False
+    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] True cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
 
 
     K.knitEither $ Left "Stopping before products, etc."
