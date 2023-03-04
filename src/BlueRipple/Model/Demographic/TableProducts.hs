@@ -68,6 +68,7 @@ import Graphics.Vega.VegaLite (density)
 import qualified Stan.ModelBuilder as SMB
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.ModelConfig as SC
+import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
@@ -75,6 +76,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
+import qualified Stan.ModelBuilder.Distributions as SD
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 
 -- does a pure product
@@ -395,7 +397,7 @@ projModelParameters mc pmd = do
                   stdNormalDWA
   let alphaNDS = TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nNullVecsE nStatesE []
       alphaPs =  DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil
-      atNV x k = TE.sliceE TEI.s0 k x
+      at x k = TE.sliceE TEI.s0 k x
       loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
       diagPreMult rv m = TE.functionE SF.diagPreMultiply (rv :> m :> TNil)
       rowsOf nColsE cv = diagPreMult (TE.transposeE cv) (TE.functionE SF.rep_matrix (TE.realE 1 :> TE.functionE SF.size (cv :> TNil) :> nColsE :> TNil))
@@ -405,7 +407,7 @@ projModelParameters mc pmd = do
             $ \(muAlphaE :> sigmaAlphaE :> TNil) m
               -> TE.addStmt
                  $ loopNVs
-                 $ \k -> [TE.sample (m `atNV` k) SF.normalS (muAlphaE `atNV` k :> sigmaAlphaE `atNV` k :> TNil)]
+                 $ \k -> [TE.sample (m `at` k) SF.normalS (muAlphaE `at` k :> sigmaAlphaE `at` k :> TNil)]
     False -> DAG.withIIDRawMatrix alphaNDS Nothing stdNormalDWA alphaPs
             $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPreMult (TE.transposeE sigmaAlphaE) rawM
   -- for now all the thetas are iid std normals
@@ -430,6 +432,8 @@ projModel mc = do
       nRowsE = SMB.dataSetSizeE mData.projDataTag
 --      nStatesE = SMB.groupSizeE stateG
       projectionsTrNDS = TE.NamedDeclSpec "nvpTr" $ TE.matrixSpec mData.nNullVecsE nRowsE []
+      at x k = TE.sliceE TEI.s0 k x
+      loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
   (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "ProjDM"
   (dmQ, _, _, mBetaTr) <- DM.thinQR centeredPredictorsE "DM" $ Just (TE.transposeE mParams.pmpTheta, betaTrNDS)
   dmQTr <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter
@@ -437,16 +441,47 @@ projModel mc = do
            $ TE.transposeE dmQ
 --  betaTrE <- SMB.stanBuildMaybe "projModel: mBeta is set to Nothing in thinQR!" mBetaTr
   projectionsTrE <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ TE.declareRHSNW projectionsTrNDS $ TE.transposeE mData.projectionsE
+  (stdNVPs, meanNVPs, sdNVPs) <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+    let nvVec t = TE.NamedDeclSpec t $ TE.vectorSpec mData.nNullVecsE []
+    meanNVPs' <- TE.declareNW (nvVec "nvpMeans")
+    sdNVPs' <- TE.declareNW (nvVec "nvpSDs")
+    stdNVPs' <- TE.declareNW (TE.NamedDeclSpec "stdNVPs" $ TE.matrixSpec mData.nNullVecsE nRowsE [])
+    TE.addStmt
+      $ loopNVs
+      $ \k -> let atk :: TE.UExpr t -> TE.UExpr (TEI.Sliced TE.Z t)
+                  atk = flip at k
+              in
+                [atk meanNVPs' `TE.assign` TE.functionE SF.mean (atk projectionsTrE :> TNil)
+                , atk sdNVPs' `TE.assign` TE.functionE SF.sd (atk projectionsTrE :> TNil)
+                , atk stdNVPs' `TE.assign` ((atk projectionsTrE `TE.minusE` atk meanNVPs') `TE.divideE` atk sdNVPs')
+                ]
+    pure (stdNVPs', meanNVPs', sdNVPs')
+
+  -- model
+  let byState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
+      muE k = byState (mParams.pmpAlpha `at` k) `TE.plusE` (mParams.pmpTheta `at` k `TE.timesE` dmQTr)
+      sigmaE k = TE.functionE SF.rep_row_vector (mParams.pmpSigma `at` k :> nRowsE :> TNil)
   SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
 --    betaE <- TE.declareRHSNW betaNDS $ TE.transposeE betaTrE
-    let atNV x k = TE.sliceE TEI.s0 k x
-        byState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
-        loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
+    let
         loopBody k = TE.writerL' $ do
-          let muE = byState (mParams.pmpAlpha `atNV` k) `TE.plusE` (mParams.pmpTheta `atNV` k `TE.timesE` dmQTr)
-              sigmaE = TE.functionE SF.rep_row_vector (mParams.pmpSigma `atNV` k :> nRowsE :> TNil)
-          TE.addStmt $ TE.sample (projectionsTrE `atNV` k) SF.normal (muE :> sigmaE :> TNil)
+          TE.addStmt $ TE.sample (stdNVPs `at` k) SF.normal (muE k :> sigmaE k :> TNil)
     TE.addStmt $ loopNVs loopBody
+  -- posterior predictions
+{-  forM_ [1..mc.nNullVecs]
+    $ \k -> SBB.generatePosteriorPredictionV
+            (TE.NamedDeclSpec ("predProj_" <> show k) $ TE.vectorSpec nRowsE [])
+            SD.normalDist
+            (TE.transposeE (muE $ TE.intE k) :> TE.transposeE (sigmaE $ TE.intE k) :> TNil)
+-}
+  forM_ [1..mc.nNullVecs]
+    $ \k -> let kE = TE.intE k
+            in SBB.generatePosteriorPrediction'
+               mData.projDataTag
+               (TE.NamedDeclSpec ("predProj_" <> show k) $ TE.array1Spec nRowsE $ TE.realSpec [])
+               SD.normalDist
+               (pure $ \nE -> muE kE `at` nE :> sigmaE kE `at` nE :> TNil)
+               (\_ p -> ((p `TE.timesE` (sdNVPs `at` kE)) `TE.plusE` (meanNVPs `at` kE)))
 
 runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
                 (K.KnitEffects r
@@ -469,7 +504,7 @@ runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
       runnerInputNames = SC.RunnerInputNames
                          ("br-2022-Demographics/stan/nullVecProj")
                          ("normal")
-                         Nothing -- posterior prediction vars to wrap
+                         (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
   acsByPUMA_C <- DDP.cachedACSByPUMA
 --  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
@@ -486,13 +521,20 @@ runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
                 (projModel mc)
+
+  let (nNullVecs, _) = LA.size nullVecs
+      unwraps = (\n -> SR.UnwrapExpr ("matrix(ncol="
+                                       <> show nNullVecs
+                                       <> ", unlist(jsonData $ nvp_ProjectionData))[,"
+                                       <> show n <> "]") ("obsNVP_" <> show n))
+                <$> [1..nNullVecs]
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            cacheDirE
            (Right runnerInputNames)
            dw
            code
            SC.DoNothing -- (stateModelResultAction mcWithId dmr)
-           (SMR.ShinyStan []) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+           (SMR.ShinyStan unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            modelData_C
            (pure ())
   K.logLE K.Info "projModel run complete."

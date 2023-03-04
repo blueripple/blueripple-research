@@ -233,7 +233,7 @@ main = do
     K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
     K.logLE K.Info $ "Running model?"
     let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) DTP.designMatrixRow1 False
-    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] True cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
+    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
 
 
     K.knitEither $ Left "Stopping before products, etc."
