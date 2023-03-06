@@ -230,10 +230,10 @@ main = do
                       DTP.model1DatFld
                     )
                     acsByPUMA
-    K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
-    K.logLE K.Info $ "Running model?"
-    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) DTP.designMatrixRow1 DTP.AlphaSimple
-    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
+--    K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
+    K.logLE K.Info $ "Running model, if necessary."
+    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) True DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.CauchyDist
+    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] True cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
 
 
     K.knitEither $ Left "Stopping before products, etc."
