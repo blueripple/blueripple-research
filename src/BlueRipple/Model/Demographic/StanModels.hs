@@ -280,7 +280,7 @@ normalModel dmr mc = do
   _ <- SB.generatePosteriorPrediction'
     md.acsDataTag
     (TE.NamedDeclSpec "pObserved" $ TE.array1Spec md.nData $ TE.realSpec [])
-    SD.normalDist
+    (\f n -> SD.familyRNG SD.normalDist (f n))
     ((\(e, sig) n -> e `at` n :> sig `at` n :> TNil) <$> tempPs)
     (\n p -> md.trials `at` n `TE.timesE` p)
   pure ()
