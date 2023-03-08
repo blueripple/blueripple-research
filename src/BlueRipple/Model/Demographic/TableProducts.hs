@@ -129,26 +129,26 @@ optimalWeights :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R ->
 optimalWeights nsVs nsWs pV = do
   K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length nsWs
-      objD v = (VS.sum $ VS.map (^ 2) (v - nsWs), 2 * (v - nsWs))
+--      objD v = let x = (v - nsWs) {- LA.<# nsVs -} in (VS.sum $ VS.map (^ (2 :: Int)) (x LA.<# nsVs), 2 * x LA.<# nsVs)
+      objD v = let x = (v - nsWs) {- LA.<# nsVs -} in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
       obj2D v =
         let srNormV = Numeric.sqrt (LA.norm_2 v)
             srNormN = Numeric.sqrt (LA.norm_2 nsWs)
             nRatio = srNormN / srNormV
         in (v `LA.dot` nsWs - srNormV * srNormN, nsWs - (LA.scale nRatio v))
-      obj v = fst . objD
+--      obj v = fst . objD
       constraintData =  L.zip (VS.toList pV) (LA.toColumns nsVs)
       constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
       constraintF (p, nullC) v = (negate $ p + (v `LA.dot` nullC), negate nullC)
       constraintFs = fmap constraintF constraintData
-      nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-5) constraintFs
-      nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs
-      maxIters = 2000
-      absTol = 1e-4
+      nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-6) constraintFs
+--      nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs
+      maxIters = 1000
+      absTol = 1e-6
       absTolV = VS.fromList $ L.replicate n absTol
       nlStop = NLOPT.ParameterAbsoluteTolerance absTolV :| [NLOPT.MaximumEvaluations maxIters]
---      nlStop = NLOPT.ObjectiveAbsoluteTolerance absTol :| [NLOPT.MaximumEvaluations maxIters]
---      nlAlgo = NLOPT.SLSQP objD [] nlConstraintsD []
-      nlAlgo = NLOPT.MMA objD nlConstraintsD
+      nlAlgo = NLOPT.SLSQP objD [] nlConstraintsD []
+--      nlAlgo = NLOPT.MMA objD nlConstraintsD
       nlProblem =  NLOPT.LocalProblem (fromIntegral n) nlStop nlAlgo
       nlSol = NLOPT.minimizeLocal nlProblem nsWs
   case nlSol of
@@ -164,7 +164,7 @@ optimalWeights nsVs nsWs pV = do
 
 applyNSPWeightsO :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 applyNSPWeightsO  nsVs nsWs pV = f <$> optimalWeights nsVs nsWs pV
-  where f oWs = pV + oWs LA.<# nsVs
+  where f oWs = applyNSPWeights nsVs oWs pV
 
 -- this aggregates over cells with the same given key
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
@@ -182,15 +182,12 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       , V.KnownField count
                       , outerKs V.++ (ks V.++ '[count]) ~ (outerKs V.++ ks) V.++ '[count]
                       , ks F.⊆ (ks V.++ '[count])
-                      , Real (V.Snd count)
                       , Integral (V.Snd count)
                       , F.ElemOf (ks V.++ '[count]) count
-                      , F.ElemOf rs count
                       , Ord (F.Record ks)
                       , BRK.FiniteSet (F.Record ks)
                       , Ord (F.Record outerKs)
                       , outerKs F.⊆ rs
-                      , ks F.⊆ rs
                       , (ks V.++ '[count]) F.⊆ rs
                       , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
                       )
