@@ -339,11 +339,13 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
 
+{-
 model1MeanFld :: FL.Fold (Model1P Double) (Model1P Double)
 model1MeanFld = Model1P
                 <$> FL.premap m1pPWLogDensity FL.mean
                 <*> FL.premap m1pFracGrad FL.mean
                 <*> FL.premap m1pFracOfColor FL.mean
+-}
 
 model1ToList :: Model1P a -> [a]
 model1ToList (Model1P x y z) = [x, y, z]
@@ -353,7 +355,7 @@ model1FromList as = case as of
   [x, y, z] -> Right $ Model1P x y z
   _ -> Left "model1FromList: wrong size list given (n /= 3)"
 
-data ModelResult g (b :: Type -> Type) = Model1R { mrGeoAlpha :: Map g [Double], mrSI :: b [(Double, Double)] }
+data ModelResult g (b :: Type -> Type) = ModelResult { mrGeoAlpha :: Map g [Double], mrSI :: b [(Double, Double)] }
   deriving stock (Generic)
 
 deriving stock instance (Show g, Show (b [(Double, Double)])) => Show (ModelResult g b)
@@ -417,6 +419,8 @@ data ModelConfig md =
   , designMatrixRow :: DM.DesignMatrixRow (md Double)
   , alphaModel :: AlphaModel
   , distribution :: Distribution
+  , mdToList :: md Double -> [Double]
+  , mdFromList :: [[(Double, Double)]] -> Either Text (md [(Double, Double)])
   }
 
 modelText :: ModelConfig md -> Text
@@ -526,10 +530,12 @@ projModelParameters mc pmd = do
              (TE.DensityWithArgs SF.gamma (kVectorOf 2 :> kVectorOf 0.1 :> TNil))
       pure $ StudentTProjModelParameters alpha theta sigma nu
 
+data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
+
 -- not returning anything for now
 projModel :: (Typeable outerK, Typeable md)
-          => ModelConfig md -> SMB.StanBuilderM (ProjData outerK md) () ()
-projModel mc = do
+          => RunConfig -> ModelConfig md -> SMB.StanBuilderM (ProjData outerK md) () ()
+projModel rc mc = do
   mData <- projModelData mc
   mParams <- projModelParameters mc mData
   let betaNDS = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
@@ -607,7 +613,7 @@ projModel mc = do
     let loopBody k = TE.writerL' $ TE.addStmt $ sampleStmtF (nvps `sndI` k) k
     TE.addStmt $ loopNVs loopBody
   -- generated quantities
-  forM_ [1..mc.nNullVecs] ppStmtF
+  when rc.rcIncludePPCheck $ forM_ [1..mc.nNullVecs] ppStmtF
   pure ()
 
 runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
@@ -621,12 +627,13 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
                 )
              => Bool
              -> BR.CommandLine
+             -> RunConfig
              -> ModelConfig md
              -> LA.Matrix LA.R
              -> [DED.Stencil Int]
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
-runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
+runProjModel clearCaches cmdLine rc mc nullVecs stencils datFld = do
   let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
@@ -647,7 +654,7 @@ runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
       modelData_C = projData <$> acsByPUMA_C
       meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
       meanSDFlds :: Int -> FL.Fold [Double] [(Double, Double)]
-      meanSDFlds n = traverse (\n -> FL.premap (List.!! n) meanSDFld) [0..(n - 1)]
+      meanSDFlds m = traverse (\n -> FL.premap (List.!! n) meanSDFld) [0..(m - 1)]
 --        foldl' (\flds fld -> g <$> flds <*> fld) (pure []) $ replicate n meanSDFld
 --        where g ls l = ls ++ [l]
   modelData <- K.ignoreCacheTime modelData_C
@@ -656,7 +663,7 @@ runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
   states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
-                (projModel mc)
+                (projModel rc mc)
 
   let (nNullVecs, _) = LA.size nullVecs
       unwraps = (\n -> SR.UnwrapExpr ("matrix(ncol="
@@ -669,42 +676,57 @@ runProjModel clearCaches cmdLine mc nullVecs stencils datFld = do
            (Right runnerInputNames)
            dw
            code
-           undefined --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
+           (projModelResultAction mc) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
            (SMR.ShinyStan unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            modelData_C
            (pure ())
   K.logLE K.Info "projModel run complete."
   pure res_C
 
-{-
-projModelResultAction :: forall outerK md r. (K.KnitEffects r)
+
+projModelResultAction :: forall outerK md r .
+                         (K.KnitEffects r
+                         , Typeable md
+                         , Typeable outerK
+                         )
                       => ModelConfig md
-                      -> DM.DesignMatrixRow (md Double)
-                      -> (md a -> [a])
-                      -> ([a] -> Either Text (md a))
-                      -> FL.Fold (md Double) (md Double)
                       -> SC.ResultAction r (ProjData outerK md) () SMB.DataSetGroupIntMaps () (ModelResult Text md)
-projModelResultAction mc dmr mdToList mdFromList mdMeanFld = SC.UseSummary f where
+projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
-    (modelData, resultIndexesE) <- K.ignoreCacheTime modelAndDataIndexes_C
+    (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
     -- compute means of predictors because model was zero-centered in them
-    let mdMeans = FL.fold (FL.premap (\(_, md, _) -> md)) mdMeanFld $ pdRows modelData
+    let mdMeansFld = FL.premap (\(_, md, _) -> mc.mdToList md)
+                    $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(mc.nNullVecs - 1)]
+        mdMeansL = FL.fold mdMeansFld $ pdRows modelData
     stateIM <- K.knitEither
       $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(ProjData outerK md) SC.ModelData "ProjectionData") stateG
-    let allStates = stateIM.elements
-        numStates = length allStates
+    let allStates = IM.elems stateIM
         getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
         getMatrix n = K.knitEither $ fmap CS.mean <$> SP.parse2D n (CS.paramStats summary)
-    geoMap <- case mc.alpha of
+    geoMap <- case mc.alphaModel of
       AlphaSimple -> do
-        alphaV <- getVector "alpha"
-        pure $ M.fromList $ zip allStates (V.toList alphaV)
+        alphaV <- getVector "alpha" -- states by nNullvecs
+        pure $ M.fromList $ zip allStates (repeat $ V.toList alphaV)
       _ -> do
-        let mRowToList cols row = fmap (\c -> SP.getIndexed (row, c)) $ [0..(cols - 1)]
-        alphaVs <- getMatrix numStates mc.nNullVecs "alpha"
+        alphaVs <- getMatrix "alpha"
+        let mRowToList cols row = fmap (\c -> SP.getIndexed alphaVs (row, c)) $ [0..(cols - 1)]
         pure $ M.fromList $ fmap (\(row, sa) -> (sa, mRowToList mc.nNullVecs row)) $ IM.toList stateIM
-    betaSI <-
--}
+    betaSIL <- case DM.rowLength mc.designMatrixRow of
+      0 -> pure $ replicate mc.nNullVecs []
+      p -> do
+        betaVs <- getMatrix "beta" -- ps by nNullVecs
+        let mColToList rows col = fmap (\r -> SP.getIndexed betaVs (r, col)) [0..(rows - 1)]
+        pure $ transp $ fmap (\m -> zip (mColToList p m) mdMeansL) [0..(mc.nNullVecs - 1)]
+    betaSI <- K.knitEither $ mc.mdFromList betaSIL
+    pure $ ModelResult geoMap betaSI
+
+transp :: [[a]] -> [[a]]
+transp = go [] where
+  go x [] = fmap reverse x
+  go [] (r : rs) = go (fmap (: []) r) rs
+  go x (r :rs) = go (List.zipWith (:) r x) rs
+
+
 stencils ::  forall a b.
              (Ord a
              , Ord b

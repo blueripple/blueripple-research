@@ -232,8 +232,10 @@ main = do
                     acsByPUMA
 --    K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
     K.logLE K.Info $ "Running model, if necessary."
-    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) True DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist
-    _ <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine modelConfig sigNullVecs testStencils DTP.model1DatFld
+    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) True
+                      DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model1ToList DTP.model1FromList
+    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig sigNullVecs testStencils DTP.model1DatFld
+    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
 
 
     K.knitEither $ Left "Stopping before products, etc."
