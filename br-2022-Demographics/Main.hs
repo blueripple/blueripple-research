@@ -218,11 +218,11 @@ main = do
     let (eVals, eVecs) = LA.eigSH projCovariances
     K.logLE K.Info $ "eVals=" <> show eVals
     K.logLE K.Info $ "eVecs=" <> toText (LA.dispf 4 eVecs)
-    let sigNullVecs = DTP.significantNullVecs 0.95 40 testStencils projCovariances
-    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 sigNullVecs)
+    let ucNullVecs = DTP.uncorrelatedNullVecs 40 testStencils projCovariances
+    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 ucNullVecs)
     let modelData = FL.fold
                     (DTP.nullVecProjectionsModelDataFld
-                      sigNullVecs
+                      ucNullVecs
                       testStencils
                       (F.rcast @[GT.StateAbbreviation, GT.PUMA])
                       (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
@@ -232,10 +232,31 @@ main = do
                     acsByPUMA
 --    K.logLE K.Info $ "ModelData: " <> T.intercalate "\n" (show <$> modelData)
     K.logLE K.Info $ "Running model, if necessary."
-    let modelConfig = DTP.ModelConfig (fst $ LA.size sigNullVecs) True
-                      DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model1ToList DTP.model1FromList
-    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig sigNullVecs testStencils DTP.model1DatFld
-    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
+    let modelConfig = DTP.ModelConfig (fst $ LA.size ucNullVecs) True
+                      DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model1Funcs
+    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig ucNullVecs testStencils DTP.model1DatFld
+    -- compute the model data for each state
+    acsByState_C <- DDP.cachedACSByState'
+    acsByState <-  K.ignoreCacheTime acsByState_C
+    let stateModelData = FL.fold
+                         (DTP.nullVecProjectionsModelDataFldCheck
+                          ucNullVecs
+                          testStencils
+                          (F.rcast @'[GT.StateAbbreviation])
+                          (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
+                          (realToFrac . view DT.popCount)
+                          DTP.model1DatFld
+                         )
+                    acsByState
+    modelRes <- K.ignoreCacheTime res_C
+    forM_ stateModelData $ \(sar, md, nvpsActual, pv) -> do
+      let sa = view GT.stateAbbreviation sar
+      K.logLE K.Info $ sa <> " actual   =" <> DED.prettyVector nvpsActual
+      nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model1Funcs modelRes sa md)
+      K.logLE K.Info $ sa <> " modeled  =" <> DED.prettyVector nvpsModeled
+      nvpsOptimal <- DED.mapPE $ DTP.optimalWeights ucNullVecs nvpsModeled (VS.map (/ VS.sum pv) pv)
+      K.logLE K.Info $ sa <> " optimized=" <> DED.prettyVector nvpsOptimal
+--    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
 
 
     K.knitEither $ Left "Stopping before products, etc."

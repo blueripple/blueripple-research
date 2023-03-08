@@ -125,8 +125,8 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 applyNSPWeights :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nsVs nsWs pV = pV + nsWs LA.<# nsVs
 
-applyNSPWeightsO :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-applyNSPWeightsO  nsVs nsWs pV = do
+optimalWeights :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+optimalWeights nsVs nsWs pV = do
   K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length nsWs
       objD v = (VS.sum $ VS.map (^ 2) (v - nsWs), 2 * (v - nsWs))
@@ -142,8 +142,8 @@ applyNSPWeightsO  nsVs nsWs pV = do
       constraintFs = fmap constraintF constraintData
       nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-5) constraintFs
       nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs
-      maxIters = 500
-      absTol = 1e-6
+      maxIters = 2000
+      absTol = 1e-4
       absTolV = VS.fromList $ L.replicate n absTol
       nlStop = NLOPT.ParameterAbsoluteTolerance absTolV :| [NLOPT.MaximumEvaluations maxIters]
 --      nlStop = NLOPT.ObjectiveAbsoluteTolerance absTol :| [NLOPT.MaximumEvaluations maxIters]
@@ -160,7 +160,11 @@ applyNSPWeightsO  nsVs nsWs pV = do
         let oWs = NLOPT.solutionParams solution
         K.logLE K.Info $ "solution=" <> DED.prettyVector oWs
         K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + oWs LA.<# nsVs)
-        pure $ pV + oWs LA.<# nsVs
+        pure oWs
+
+applyNSPWeightsO :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO  nsVs nsWs pV = f <$> optimalWeights nsVs nsWs pV
+  where f oWs = pV + oWs LA.<# nsVs
 
 -- this aggregates over cells with the same given key
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
@@ -284,6 +288,17 @@ significantNullVecs fracCovToInclude n sts cov = LA.tr sigEVecs LA.<> nullVecs
     nullVecs = nullSpaceVectors n sts
 
 
+uncorrelatedNullVecs :: Int
+                    -> [DED.Stencil Int]
+                    -> LA.Herm LA.R
+                    -> LA.Matrix LA.R
+uncorrelatedNullVecs n sts cov = LA.tr eigVecs LA.<> nullVecs
+  where
+    (_, eigVecs) = LA.eigSH cov
+    nullVecs = nullSpaceVectors n sts
+
+
+
 type ProjDataRow outerK md = (outerK, md Double, LA.Vector LA.R)
 
 data ProjData outerK md =
@@ -311,11 +326,30 @@ nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFold =
     mMatrix = DED.mMatrix n stencils
     pim = LA.pinv mMatrix
     mProd = pim LA.<> mMatrix
---    mSumsV vec = mMatrix LA.#> vec
---    tot = LA.sumElements
---    prodV vec = LA.scale (1 / tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
     projFld = (\v -> let w = VS.map (/ VS.sum v) v in nullVecs LA.#> (w - mProd LA.#> w)) <$> labeledRowsToVecFld catKey count
     innerFld = (,) <$> datFold <*> projFld
+
+nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
+                                        (Ord outerK, Ord k, BRK.FiniteSet k)
+                                    => LA.Matrix LA.R
+                                    -> [DED.Stencil Int]
+                                    -> (row -> outerK)
+                                    -> (row -> k)
+                                    -> (row -> LA.R)
+                                    -> FL.Fold row md
+                                    -> FL.Fold row [(outerK, md, LA.Vector LA.R, LA.Vector LA.R)]
+nullVecProjectionsModelDataFldCheck nullVecs stencils outerKey catKey count datFold =
+  MR.mapReduceFold MR.noUnpack (MR.assign outerKey id) (MR.foldAndLabel innerFld (\ok (d, (v, pv)) -> (ok, d, v, pv)))
+  where
+    allKs :: Set k = BRK.elements
+    n = S.size allKs
+    mMatrix = DED.mMatrix n stencils
+    pim = LA.pinv mMatrix
+    mProd = pim LA.<> mMatrix
+    projFld = (\v -> let w = VS.map (/ VS.sum v) v in (nullVecs LA.#> (w - mProd LA.#> w), mProd LA.#> v)) <$> labeledRowsToVecFld catKey count
+    innerFld = (,) <$> datFold <*> projFld
+
+
 
 
 data Model1P a = Model1P { m1pPWLogDensity :: a, m1pFracGrad :: a, m1pFracOfColor :: a }
@@ -331,7 +365,7 @@ model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
 model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
   where
     nPeople = realToFrac . view DT.popCount
-    dens = view DT.pWPopPerSqMile
+    dens = Numeric.log . view DT.pWPopPerSqMile
     wgtFld = FL.premap nPeople FL.sum
     wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
     dFld = wgtdFld dens
@@ -339,21 +373,18 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
 
-{-
-model1MeanFld :: FL.Fold (Model1P Double) (Model1P Double)
-model1MeanFld = Model1P
-                <$> FL.premap m1pPWLogDensity FL.mean
-                <*> FL.premap m1pFracGrad FL.mean
-                <*> FL.premap m1pFracOfColor FL.mean
--}
 
-model1ToList :: Model1P a -> [a]
-model1ToList (Model1P x y z) = [x, y, z]
+data ModelDataFuncs md a = ModelDataFuncs { mdfToList :: md a -> [a], mdfFromList :: [[(a, a)]] -> Either Text (md [(a, a)])}
 
-model1FromList :: [a] -> Either Text (Model1P a)
-model1FromList as = case as of
-  [x, y, z] -> Right $ Model1P x y z
-  _ -> Left "model1FromList: wrong size list given (n /= 3)"
+model1Funcs :: ModelDataFuncs Model1P a
+model1Funcs = ModelDataFuncs model1ToList model1FromList where
+  model1ToList :: Model1P a -> [a]
+  model1ToList (Model1P x y z) = [x, y, z]
+
+  model1FromList :: [a] -> Either Text (Model1P a)
+  model1FromList as = case as of
+    [x, y, z] -> Right $ Model1P x y z
+    _ -> Left "model1FromList: wrong size list given (n /= 3)"
 
 data ModelResult g (b :: Type -> Type) = ModelResult { mrGeoAlpha :: Map g [Double], mrSI :: b [(Double, Double)] }
   deriving stock (Generic)
@@ -361,10 +392,16 @@ data ModelResult g (b :: Type -> Type) = ModelResult { mrGeoAlpha :: Map g [Doub
 deriving stock instance (Show g, Show (b [(Double, Double)])) => Show (ModelResult g b)
 deriving anyclass instance (Ord g, Flat.Flat g, Flat.Flat (b [(Double, Double)])) => Flat.Flat (ModelResult g b)
 
---deriving
---deriving instance
-
---deriving instance (Flat.Flat g, Flat.Flat (b (Double, Double))) => Flat.Flat (ModelResult g b)
+modelResultNVPs :: (Show g, Ord g) => (forall a . ModelDataFuncs md a) -> ModelResult g md -> g -> md Double -> Either Text [Double]
+modelResultNVPs mdf mr g md = do
+    geoAlphas <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g) $ M.lookup g mr.mrGeoAlpha
+    let mdL = mdf.mdfToList md
+        mrBetaL = mdf.mdfToList mr.mrSI
+        applyOne x (b, m) = b * (x - m)
+        applyToList x = fmap (applyOne x)
+        eachBetaL = zipWith applyToList mdL mrBetaL
+        betaL = fmap (FL.fold FL.sum) $ transp eachBetaL
+    pure $ zipWith (+) geoAlphas betaL
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
@@ -419,8 +456,7 @@ data ModelConfig md =
   , designMatrixRow :: DM.DesignMatrixRow (md Double)
   , alphaModel :: AlphaModel
   , distribution :: Distribution
-  , mdToList :: md Double -> [Double]
-  , mdFromList :: [[(Double, Double)]] -> Either Text (md [(Double, Double)])
+  , mdFuncs :: ModelDataFuncs md Double
   }
 
 modelText :: ModelConfig md -> Text
@@ -634,7 +670,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
 runProjModel clearCaches cmdLine rc mc nullVecs stencils datFld = do
-  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel"
+  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
                          ("br-2022-Demographics/stan/nullVecProj")
@@ -683,7 +719,7 @@ runProjModel clearCaches cmdLine rc mc nullVecs stencils datFld = do
   K.logLE K.Info "projModel run complete."
   pure res_C
 
-
+--NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
 projModelResultAction :: forall outerK md r .
                          (K.KnitEffects r
                          , Typeable md
@@ -695,29 +731,33 @@ projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
     -- compute means of predictors because model was zero-centered in them
-    let mdMeansFld = FL.premap (\(_, md, _) -> mc.mdToList md)
-                    $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(mc.nNullVecs - 1)]
-        mdMeansL = FL.fold mdMeansFld $ pdRows modelData
+    let nPredictors = DM.rowLength mc.designMatrixRow
+        mdMeansFld = FL.premap (\(_, md, _) -> mc.mdFuncs.mdfToList md)
+                    $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
+        nvpSDFld = FL.premap (\(_, _, v) -> VS.toList v)
+                   $ traverse (\n -> FL.premap (List.!! n) FL.std) [0..(mc.nNullVecs - 1)]
+        (mdMeansL, nvpSDsL) = FL.fold ((,) <$> mdMeansFld <*> nvpSDFld) $ pdRows modelData
+        rescaleAlphaBeta xs = if mc.standardizeNVs then zipWith (*) xs nvpSDsL else xs
     stateIM <- K.knitEither
-      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(ProjData outerK md) SC.ModelData "ProjectionData") stateG
+      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(ProjDataRow outerK md) SC.ModelData "ProjectionData") stateG
     let allStates = IM.elems stateIM
         getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
         getMatrix n = K.knitEither $ fmap CS.mean <$> SP.parse2D n (CS.paramStats summary)
     geoMap <- case mc.alphaModel of
       AlphaSimple -> do
         alphaV <- getVector "alpha" -- states by nNullvecs
-        pure $ M.fromList $ zip allStates (repeat $ V.toList alphaV)
+        pure $ M.fromList $ fmap (, rescaleAlphaBeta $ V.toList alphaV) allStates
       _ -> do
         alphaVs <- getMatrix "alpha"
-        let mRowToList cols row = fmap (\c -> SP.getIndexed alphaVs (row, c)) $ [0..(cols - 1)]
-        pure $ M.fromList $ fmap (\(row, sa) -> (sa, mRowToList mc.nNullVecs row)) $ IM.toList stateIM
-    betaSIL <- case DM.rowLength mc.designMatrixRow of
+        let mRowToList cols row = fmap (\c -> SP.getIndexed alphaVs (row, c)) $ [1..cols]
+        pure $ M.fromList $ fmap (\(row, sa) -> (sa, rescaleAlphaBeta $ mRowToList mc.nNullVecs row)) $ IM.toList stateIM
+    betaSIL <- case nPredictors of
       0 -> pure $ replicate mc.nNullVecs []
       p -> do
         betaVs <- getMatrix "beta" -- ps by nNullVecs
-        let mColToList rows col = fmap (\r -> SP.getIndexed betaVs (r, col)) [0..(rows - 1)]
-        pure $ transp $ fmap (\m -> zip (mColToList p m) mdMeansL) [0..(mc.nNullVecs - 1)]
-    betaSI <- K.knitEither $ mc.mdFromList betaSIL
+        let mColToList rows col = fmap (\r -> SP.getIndexed betaVs (r, col)) [1..rows]
+        pure $ transp $ fmap (\m -> zip (rescaleAlphaBeta $ mColToList p m) mdMeansL) [1..mc.nNullVecs]
+    betaSI <- K.knitEither $ mc.mdFuncs.mdfFromList betaSIL
     pure $ ModelResult geoMap betaSI
 
 transp :: [[a]] -> [[a]]
