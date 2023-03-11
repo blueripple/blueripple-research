@@ -90,7 +90,7 @@ import qualified Stan.ModelBuilder.Distributions as SD
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 
-unNestTableProduct :: Map a (Map b x) -> [((a, b), x)]
+unNestTableProduct :: (Ord a, Ord b) => Map a (Map b x) -> [((a, b), x)]
 unNestTableProduct = concatMap (\(a, mb) -> fmap (\(b, x) -> ((a, b), x)) $ M.toList mb) . M.toList
 
 -- Nested maps make the products easier
@@ -103,7 +103,9 @@ tableMapFld = FL.premap keyPreMap $ fmap (<> blankMap) (FL.foldByKeyMap $ fmap (
     blankMap = M.fromList $ fmap (, zeroMap) (S.toList BRK.elements)
 {-# INLINEABLE tableMapFld #-}
 
-tableProduct :: (Ord outerK, Show outerK, Ord a, Ord b)
+-- This is not symmetric. Table a is used for weights on outer key
+tableProduct :: forall outerK a b .
+                (BRK.FiniteSet outerK, Ord outerK, Show outerK, Ord a, Ord b)
              => Map outerK (Map a Double)
              -> Map outerK (Map b Double)
              -> Either Text (Map outerK (Map (a, b) Double))
@@ -113,19 +115,25 @@ tableProduct aTableMap bTableMap = MM.mergeA
                                    (MM.zipWithAMatched whenMatchedF)
                                    aTableMap bTableMap
   where
+--    outerSumMap = fmap (FL.fold FL.sum) aTableMap
+--    outerSum = FL.fold FL.sum outerSumMap
+--    outerFracMap
     missingA ok _ = Left $ "tableProduct: Missing outer key in bTable: " <> show ok
     missingB ok _ = Left $ "tableProduct: Missing outer key in aTable: " <> show ok
     whenMatchedF _ ma mb = Right $ innerProduct ma mb
     innerProduct :: (Ord a, Ord b) => Map a Double -> Map b Double -> Map (a, b) Double
-    innerProduct ma mb = M.fromList [f ae be | ae <- fracs ma, be <- fracs mb]
+    innerProduct ma mb = fmap (* aSum) $ M.fromList [f ae be | ae <- fracs ma, be <- fracs mb]
       where
+        aSum = FL.fold FL.sum ma
         f (a, x) (b, y) = ((a, b), x * y)
         fracs :: Map x Double -> [(x, Double)]
         fracs m = M.toList $ fmap (/ FL.fold FL.sum m) m
 
 zeroKnowledgeTable :: forall outerK a . (Ord outerK, BRK.FiniteSet outerK, Ord a, BRK.FiniteSet a) => Map outerK (Map a Double)
-zeroKnowledgeTable = M.fromListWith (<>) [ (ok, M.singleton a (1 / numA)) | ok <- S.toList BRK.elements, a <- S.toList BRK.elements] where
-  numA = realToFrac $ S.size (BRK.elements @a)
+zeroKnowledgeTable = M.fromList $ fmap (, aMap) (S.toList BRK.elements)
+  where
+    aMap :: Map a Double = M.fromList $ fmap (, 1 / num) (S.toList BRK.elements)
+    num = realToFrac $ S.size (BRK.elements @outerK) * S.size (BRK.elements @a)
 
 -- does a pure product
 -- for each outerK we split each bs cell into as many cells as are represented by as
@@ -437,7 +445,8 @@ nullVecProjectionsModelDataFldCheck1 nullVecs prodM outerKey catKey count datFol
     pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
     pcF = fmap (VS.fromList) . prodM . zip (S.toList allKs) . VS.toList
     postMapF v = do
-      let w = VS.map (/ VS.sum v) v
+      let n = VS.sum v
+          w = VS.map (/ n) v
       pcW <- pcF w
       pcV <- pcF v
       pure (nullVecs LA.#> (w - pcW), pcV, v)

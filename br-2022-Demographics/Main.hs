@@ -196,14 +196,15 @@ main = do
     acsByPUMA <-  K.ignoreCacheTime acsByPUMA_C
     let seInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         srInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Race5C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
-        testStencils = seInSERStencil -- <> srInSERStencil
+        testStencils = seInSERStencil <> srInSERStencil
         exampleV = DTP.labeledRowsToVec (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (realToFrac . view DT.popCount)
                    $ F.filterFrame ((== "NY") . view GT.stateAbbreviation) acsByPUMA
         mMatrix = DED.mMatrix (VS.length exampleV) testStencils
         prodSEInSER kn = fmap (fmap snd .  DTP.unNestTableProduct)
                          $ DTP.tableProduct
-                         (DTP.zeroKnowledgeTable @DT.Sex @DT.Race5)
                          (FL.fold (DTP.labeledRowsToTableMapFld (view DT.sexC . fst) (view DT.education4C . fst) snd) kn)
+                         (FL.fold (DTP.labeledRowsToTableMapFld (view DT.sexC . fst) (view DT.race5C . fst) snd) kn)
+--                         (DTP.zeroKnowledgeTable @DT.Sex @DT.Race5)
     K.logLE K.Info $ "Example keys (in order)\n" <> show (Keyed.elements @(F.Record  [DT.SexC, DT.Education4C, DT.Race5C]))
     K.logLE K.Info $ "mMatrix=\n" <> toText (LA.dispf 2 mMatrix)
     K.logLE K.Info $ "NY       =" <> DED.prettyVector exampleV
