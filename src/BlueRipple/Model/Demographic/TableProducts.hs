@@ -90,38 +90,93 @@ import qualified Stan.ModelBuilder.Distributions as SD
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 
-unNestTableProduct :: (Ord a, Ord b) => Map a (Map b x) -> [((a, b), x)]
-unNestTableProduct = concatMap (\(a, mb) -> fmap (\(b, x) -> ((a, b), x)) $ M.toList mb) . M.toList
+data MarginalStructure k where
+  MarginalStructure :: (BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, Double) [(k, Double)]-> MarginalStructure k
+
+-- these folds should be associative but for that to be true we need them to operate on probabilities not counts, I think?
+instance Semigroup (MarginalStructure k) where
+  (MarginalStructure st1 fld1) <> (MarginalStructure st2 fld2) = MarginalStructure (st1 <> st2) (fmap (FL.fold fld2) fld1)
+
+instance (BRK.FiniteSet k, Ord k, Semigroup (MarginalStructure k)) => Monoid (MarginalStructure k) where
+  mempty = MarginalStructure mempty (M.toList <$> normalizeAndFillMapFld)
+  mappend = (<>)
+
+constMap :: (BRK.FiniteSet k, Ord k) => a -> Map k a
+constMap x = M.fromList $ fmap (, x) $ S.toList BRK.elements
+
+zeroMap :: (BRK.FiniteSet k, Ord k) => Map k Double
+zeroMap = constMap 0
+
+zeroFillMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
+zeroFillMapFld = fmap (<> zeroMap) FL.map
+
+normalizeMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
+normalizeMapFld = (\m s -> fmap (/ s) m) <$> FL.map <*> FL.premap snd FL.sum
+
+normalizeAndFillMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
+normalizeAndFillMapFld = (\m s -> fmap (/ s) m <> zeroMap) <$> FL.map <*> FL.premap snd FL.sum
+
+normalizeVec :: VS.Vector Double -> VS.Vector Double
+normalizeVec v = VS.map (/ VS.sum v) v
+
+msStencils :: MarginalStructure k -> [DED.Stencil Int]
+msStencils (MarginalStructure sts _) = sts
+{-# INLINE msStencils #-}
+
+msProdFldE :: MarginalStructure k -> FL.Fold (k, Double) [(k, Double)]
+msProdFldE (MarginalStructure _ ptF) = ptF
+{-# INLINE msProdFldE #-}
+
+stencils ::  forall a b.
+             (Ord a
+             , Ord b
+             , BRK.FiniteSet b
+             )
+         => (b -> a) -> [DED.Stencil Int]
+stencils bFromA = M.elems $ FL.fold (DED.subgroupStencils bFromA) $ S.toList BRK.elements
+{-# INLINEABLE stencils #-}
+
+unNestTableProduct :: (Ord outerK, Ord a, Ord b) => Map outerK (Map (a, b) x) -> [((outerK, a, b), x)]
+unNestTableProduct = concatMap (\(ok, mab) -> fmap (\((a, b), x) -> ((ok, a, b), x)) $ M.toList mab) . M.toList
+{-# INLINEABLE unNestTableProduct #-}
 
 -- Nested maps make the products easier
+-- this fills in missing items with 0
 tableMapFld :: forall outerK x  . (BRK.FiniteSet outerK, Ord outerK, BRK.FiniteSet x, Ord x) => FL.Fold (outerK, x, Double) (Map outerK (Map x Double))
-tableMapFld = FL.premap keyPreMap $ fmap (<> blankMap) (FL.foldByKeyMap $ fmap (<> zeroMap) FL.map) where
+tableMapFld = FL.premap keyPreMap $ fmap (<> constMap zeroMap) (FL.foldByKeyMap zeroFillMapFld) where
     keyPreMap (o, k, n) = (o, (k, n))
-    zeroMap :: Map x Double
-    zeroMap = M.fromList $ fmap (, 0) (S.toList BRK.elements)
-    blankMap :: Map outerK (Map x Double)
-    blankMap = M.fromList $ fmap (, zeroMap) (S.toList BRK.elements)
 {-# INLINEABLE tableMapFld #-}
 
+tableProductL' ::  forall outerK a b .
+                  (BRK.FiniteSet outerK, Ord outerK, Show outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
+              => Map outerK (Map a Double)
+              -> Map outerK (Map b Double)
+              -> [Double]
+tableProductL' ma mb = snd <$> tableProductL ma mb
+
+tableProductL ::  forall outerK a b .
+                  (Ord outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
+              => Map outerK (Map a Double)
+              -> Map outerK (Map b Double)
+              -> [((outerK, a, b), Double)]
+tableProductL ma mb = unNestTableProduct $ tableProduct ma mb
+
 -- This is not symmetric. Table a is used for weights on outer key
+-- Also, this treats missing entries as 0
 tableProduct :: forall outerK a b .
-                (BRK.FiniteSet outerK, Ord outerK, Show outerK, Ord a, Ord b)
+                (Ord outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
              => Map outerK (Map a Double)
              -> Map outerK (Map b Double)
-             -> Either Text (Map outerK (Map (a, b) Double))
-tableProduct aTableMap bTableMap = MM.mergeA
-                                   (MM.traverseMissing missingB)
-                                   (MM.traverseMissing missingA)
-                                   (MM.zipWithAMatched whenMatchedF)
+             -> Map outerK (Map (a, b) Double)
+tableProduct aTableMap bTableMap = MM.merge
+                                   (MM.mapMissing whenMissing)
+                                   (MM.mapMissing whenMissing)
+                                   (MM.zipWithMatched whenMatched)
                                    aTableMap bTableMap
   where
---    outerSumMap = fmap (FL.fold FL.sum) aTableMap
---    outerSum = FL.fold FL.sum outerSumMap
---    outerFracMap
-    missingA ok _ = Left $ "tableProduct: Missing outer key in bTable: " <> show ok
-    missingB ok _ = Left $ "tableProduct: Missing outer key in aTable: " <> show ok
-    whenMatchedF _ ma mb = Right $ innerProduct ma mb
-    innerProduct :: (Ord a, Ord b) => Map a Double -> Map b Double -> Map (a, b) Double
+    whenMissing _ _ = zeroMap
+    whenMatched _ = innerProduct
+    innerProduct :: Map a Double -> Map b Double -> Map (a, b) Double
     innerProduct ma mb = fmap (* aSum) $ M.fromList [f ae be | ae <- fracs ma, be <- fracs mb]
       where
         aSum = FL.fold FL.sum ma
@@ -130,9 +185,7 @@ tableProduct aTableMap bTableMap = MM.mergeA
         fracs m = M.toList $ fmap (/ FL.fold FL.sum m) m
 
 zeroKnowledgeTable :: forall outerK a . (Ord outerK, BRK.FiniteSet outerK, Ord a, BRK.FiniteSet a) => Map outerK (Map a Double)
-zeroKnowledgeTable = M.fromList $ fmap (, aMap) (S.toList BRK.elements)
-  where
-    aMap :: Map a Double = M.fromList $ fmap (, 1 / num) (S.toList BRK.elements)
+zeroKnowledgeTable = constMap (constMap (1 / num)) where
     num = realToFrac $ S.size (BRK.elements @outerK) * S.size (BRK.elements @a)
 
 -- does a pure product
@@ -161,7 +214,6 @@ frameTableProduct :: forall outerK as bs count r .
 frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.mapSplitModel round realToFrac) . splitFLookup) base
   where
     splitFLookup = FL.fold (DED.splitFLookupFld (F.rcast @outerK) (F.rcast @bs) (realToFrac @Int @Double . F.rgetField @count)) splitUsing
-
 
 -- to get a set of counts from the product counts and null-space weights
 -- take the weights and left-multiply them with the vectors
@@ -218,8 +270,7 @@ applyNSPWeightsO  nsVs nsWs pV = f <$> optimalWeights nsVs nsWs pV
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
 labeledRowsToVecFld key dat = VS.fromList . M.elems . addZeroes <$> (FL.premap (\row -> (key row, dat row)) $ FL.foldByKeyMap FL.sum)
   where
-    zeroMap = M.fromList $ zip (S.toList BRK.elements) $ repeat 0
-    addZeroes m = M.union m zeroMap
+    addZeroes m = M.union m $ constMap 0
 
 labeledRowsToTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
                          => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
@@ -273,6 +324,10 @@ applyNSPWeightsFld logM nsVs nsWsFldF =
         (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
         (FMR.ReduceFoldM $ \k -> F.toFrame <$> innerFld k)
 
+nullSpaceVectorsMS :: forall k . MarginalStructure k -> LA.Matrix LA.R
+nullSpaceVectorsMS = \cases
+  (MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
+
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
 nullSpaceVectors n stencils = LA.tr $ LA.nullspace $ DED.mMatrix n stencils
 
@@ -291,7 +346,7 @@ nullSpaceProjections nullVs outerKey key count actuals products = do
       toMapFld = FL.premap (\r -> (outerKey r, (key r, realToFrac (count r)))) $ FL.foldByKeyMap toDatFld
       actualM = FL.fold toMapFld actuals
       prodM = FL.fold toMapFld products
-      whenMatchedF _ (na, aV) (np, pV) = pure (na, nullVs LA.#> (aV - pV))
+      whenMatchedF _ (na, aV) (_, pV) = pure (na, nullVs LA.#> (aV - pV))
       whenMissingAF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing actuals for outerKey=" <> show outerK
       whenMissingPF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing product for outerKey=" <> show outerK
   MM.mergeA (MM.traverseMissing whenMissingAF) (MM.traverseMissing whenMissingPF) (MM.zipWithAMatched whenMatchedF) actualM prodM
@@ -303,54 +358,31 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     totalWeight = FL.fold (FL.premap (popWeightF . fst) FL.sum) m / realToFrac (M.size m)
     weight (n, v) = VS.map (* popWeightF n) v
 
-
--- constraint vec has to be in fractional terms, that is each element of cVec represents the fraction
--- of the population in the group represented by the constraint.
--- If computing from an actual table, this is just C(v / sum(v))
--- If computing from marginals, each has to be weighted separately.
-productFracs :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-productFracs cMatrix cVecFracs = VS.map (/ VS.sum pV') pV' where
-  pV' = VS.fromList $ fmap (prod . (* cVecFracs)) $ LA.toColumns cMatrix where
-  prod = FL.fold (FL.prefilter (/= 0) FL.product) . VS.toList
-
-productCountsFromActual :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-productCountsFromActual cMatrix nV = VS.map (*tot) $ productFracs cMatrix cVec where
-  tot = VS.sum nV
-  cVec = cMatrix LA.#> VS.map (/ tot) nV
-
-productCountsFromActual2 :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-productCountsFromActual2 cMatrix nV = mProd LA.#> nV
-  where
---    cVec v = cMatrix LA.#> v
-    pim = LA.pinv cMatrix
-    mProd = pim LA.<> cMatrix
-
 diffCovarianceFld :: forall outerK k row .
                      (Ord outerK, Ord k, BRK.FiniteSet k)
                   => (row -> outerK)
                   -> (row -> k)
                   -> (row -> LA.R)
                   -> [DED.Stencil Int]
-                  -> FL.Fold row (LA.Herm LA.R)
-diffCovarianceFld outerKey catKey dat stencils = snd . LA.meanCov . LA.fromRows . fmap diffProjections <$> vecsFld
+                  -> ([(k, Double)] -> Either Text [Double])
+                  -> FL.FoldM (Either Text) row (LA.Herm LA.R)
+diffCovarianceFld outerKey catKey dat stencils prodTableE = snd . LA.meanCov . LA.fromRows <$> vecsFldM
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
     nullVecs = nullSpaceVectors n stencils
-    cMatrix = DED.mMatrix n stencils
---    cVec v = cMatrix LA.#> v
---    pim = LA.pinv mMatrix
---    mProd = pim LA.<> mMatrix
---    mSumsV vec = mMatrix LA.#> vec
---    tot = LA.sumElements
---    prodV vec = LA.scale (tot vec) $ VS.fromList $ fmap (LA.prodElements . (* mSumsV vec)) $ LA.toColumns mMatrix
-    diffProjections vec = nullVecs LA.#> (vec - productCountsFromActual cMatrix vec)
-    innerFld = (\v -> LA.scale (1 / VS.sum v) v) <$> labeledRowsToVecFld fst snd
---    vecsFld :: FL.Fold row [LA.Vector LA.R]
-    vecsFld = MR.mapReduceFold
-              MR.noUnpack
-              (MR.assign outerKey (\row -> (catKey row, dat row)))
-              (MR.foldAndLabel innerFld (\_ v -> v))
+    pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
+    pcF = fmap VS.fromList . prodTableE . zip (S.toList allKs) . VS.toList
+    postMapF v = do
+      let tot = VS.sum v
+          w = VS.map (/ tot) v
+      pcW <- pcF w
+      pure $ nullVecs LA.#> (w - pcW)
+    innerFld = FMR.postMapM postMapF $ FL.generalize (labeledRowsToVecFld fst snd)
+    vecsFldM = MR.mapReduceFoldM
+               (MR.generalizeUnpack MR.noUnpack)
+               (MR.generalizeAssign $ MR.assign outerKey (\row -> (catKey row, dat row)))
+               (MR.foldAndLabelM innerFld (\_ v -> v))
 
 
 significantNullVecs :: Double
@@ -391,41 +423,30 @@ data ProjData outerK md =
 nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                    (Ord outerK, Ord k, BRK.FiniteSet k)
                                => LA.Matrix LA.R
-                               -> [DED.Stencil Int]
+                               -> ([(k, Double)] -> Either Text [Double])
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> LA.R)
                                -> FL.Fold row md
-                               -> FL.Fold row [(outerK, md, LA.Vector LA.R)]
-nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFold =
-  MR.mapReduceFold MR.noUnpack (MR.assign outerKey id) (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+                               -> FL.FoldM (Either Text) row [(outerK, md, LA.Vector LA.R)]
+nullVecProjectionsModelDataFld nullVecs prodTableE outerKey catKey count datFold =
+  MR.mapReduceFoldM
+  (MR.generalizeUnpack MR.noUnpack)
+  (MR.generalizeAssign $ MR.assign outerKey id)
+  (MR.foldAndLabelM innerFld (\ok (d, v) -> (ok, d, v)))
   where
     allKs :: Set k = BRK.elements
-    n = S.size allKs
-    cMatrix = DED.mMatrix n stencils
-    projFld = (\v -> let w = VS.map (/ VS.sum v) v in nullVecs LA.#> (w - productCountsFromActual cMatrix w)) <$> labeledRowsToVecFld catKey count
-    innerFld = (,) <$> datFold <*> projFld
+    pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
+    pcF = fmap VS.fromList . prodTableE . zip (S.toList allKs) . VS.toList
+    postMapF v = do
+      let n = VS.sum v
+          w = VS.map (/ n) v
+      pcW <- pcF w
+      pure $ nullVecs LA.#> (w - pcW)
+    projFld = FMR.postMapM postMapF $ FL.generalize (labeledRowsToVecFld catKey count)
+    innerFld = (,) <$> FL.generalize datFold <*> projFld
 
 nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
-                                        (Ord outerK, Ord k, BRK.FiniteSet k)
-                                    => LA.Matrix LA.R
-                                    -> [DED.Stencil Int]
-                                    -> (row -> outerK)
-                                    -> (row -> k)
-                                    -> (row -> LA.R)
-                                    -> FL.Fold row md
-                                    -> FL.Fold row [(outerK, md, LA.Vector LA.R, LA.Vector LA.R, LA.Vector LA.R)]
-nullVecProjectionsModelDataFldCheck nullVecs stencils outerKey catKey count datFold =
-  MR.mapReduceFold MR.noUnpack (MR.assign outerKey id) (MR.foldAndLabel innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
-  where
-    allKs :: Set k = BRK.elements
-    n = S.size allKs
-    cMatrix = DED.mMatrix n stencils
-    pcF = productCountsFromActual cMatrix
-    projFld = (\v -> let w = VS.map (/ VS.sum v) v in (nullVecs LA.#> (w - pcF w), pcF v, v)) <$> labeledRowsToVecFld catKey count
-    innerFld = (,) <$> datFold <*> projFld
-
-nullVecProjectionsModelDataFldCheck1 ::  forall outerK k row md .
                                         (Ord outerK, Ord k, BRK.FiniteSet k)
                                     => LA.Matrix Double
                                     -> ([(k, Double)] -> Either Text [Double])
@@ -434,14 +455,12 @@ nullVecProjectionsModelDataFldCheck1 ::  forall outerK k row md .
                                     -> (row -> Double)
                                     -> FL.Fold row md
                                     -> FL.FoldM (Either Text) row [(outerK, md, LA.Vector Double, LA.Vector Double, LA.Vector Double)]
-nullVecProjectionsModelDataFldCheck1 nullVecs prodM outerKey catKey count datFold =
+nullVecProjectionsModelDataFldCheck nullVecs prodM outerKey catKey count datFold =
   MR.mapReduceFoldM
   (MR.generalizeUnpack MR.noUnpack)
   (MR.generalizeAssign $ MR.assign outerKey id) (MR.foldAndLabelM innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
   where
     allKs :: Set k = BRK.elements
---    n = S.size allKs
---    cMatrix = DED.mMatrix n stencils
     pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
     pcF = fmap (VS.fromList) . prodM . zip (S.toList allKs) . VS.toList
     postMapF v = do
@@ -474,7 +493,6 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
     fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
-
 
 data ModelDataFuncs md a = ModelDataFuncs { mdfToList :: md a -> [a], mdfFromList :: [[(a, a)]] -> Either Text (md [(a, a)])}
 
@@ -768,10 +786,10 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> RunConfig
              -> ModelConfig md
              -> LA.Matrix LA.R
-             -> [DED.Stencil Int]
+             -> ([(F.Record ks, Double)] -> Either Text [Double])
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
-runProjModel clearCaches cmdLine rc mc nullVecs stencils datFld = do
+runProjModel clearCaches cmdLine rc mc nullVecs prodTableE datFld = do
   let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
@@ -784,12 +802,15 @@ runProjModel clearCaches cmdLine rc mc nullVecs stencils datFld = do
   let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
       count = realToFrac . view DT.popCount
-      projData acsByPUMA = ProjData mc.nNullVecs (DM.rowLength mc.designMatrixRow)
-                           (FL.fold
-                            (nullVecProjectionsModelDataFld nullVecs stencils outerKey catKey count datFld)
-                            acsByPUMA
-                           )
-      modelData_C = projData <$> acsByPUMA_C
+      projDataM acsByPUMA = do
+        let nvpE = FL.foldM
+                  (nullVecProjectionsModelDataFld nullVecs prodTableE outerKey catKey count datFld)
+                  acsByPUMA
+        case nvpE of
+          Left err -> K.knitError err
+          Right nvps -> pure $ ProjData mc.nNullVecs (DM.rowLength mc.designMatrixRow) nvps
+  -- Sem r is not traversable and ActionWithCaheTime is not as Monad so we need the cache specific function
+  let modelData_C = K.wctBind projDataM acsByPUMA_C
       meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
       meanSDFlds :: Int -> FL.Fold [Double] [(Double, Double)]
       meanSDFlds m = traverse (\n -> FL.premap (List.!! n) meanSDFld) [0..(m - 1)]
@@ -867,12 +888,3 @@ transp = go [] where
   go x [] = fmap reverse x
   go [] (r : rs) = go (fmap (: []) r) rs
   go x (r :rs) = go (List.zipWith (:) r x) rs
-
-
-stencils ::  forall a b.
-             (Ord a
-             , Ord b
-             , BRK.FiniteSet b
-             )
-         => (b -> a) -> [DED.Stencil Int]
-stencils bFromA = M.elems $ FL.fold (DED.subgroupStencils bFromA) $ S.toList BRK.elements
