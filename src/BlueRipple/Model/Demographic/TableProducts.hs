@@ -25,31 +25,25 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
+import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 
 import qualified Knit.Report as K
---import qualified Knit.Effect.Logger as K
-import qualified Knit.Effect.PandocMonad as KPM
-import qualified Text.Pandoc.Error as PA
-import qualified Polysemy as P
 import qualified Polysemy.Error as PE
 
 import qualified Control.MapReduce.Simple as MR
---import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
-import qualified Frames.Folds as FF
-import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
-import qualified Streamly.Prelude as Streamly
 
 import qualified Control.Foldl as FL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
+--import Data.Maybe (fromJust)
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
 
@@ -66,10 +60,8 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Control.Lens (view, (^.))
-import Control.Monad.Except (throwError)
+import Control.Lens (view)
 import GHC.TypeLits (Symbol)
-import Graphics.Vega.VegaLite (density)
 
 import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
@@ -79,53 +71,17 @@ import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.DesignMatrix as DM
-import qualified Stan.ModelBuilder.Distributions as SDI
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
-import qualified Stan.ModelBuilder.Distributions as SD
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 
-data MarginalStructure k where
-  MarginalStructure :: (BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, Double) [(k, Double)]-> MarginalStructure k
-
--- these folds should be associative but for that to be true we need them to operate on probabilities not counts, I think?
-instance Semigroup (MarginalStructure k) where
-  (MarginalStructure st1 fld1) <> (MarginalStructure st2 fld2) = MarginalStructure (st1 <> st2) (fmap (FL.fold fld2) fld1)
-
-instance (BRK.FiniteSet k, Ord k, Semigroup (MarginalStructure k)) => Monoid (MarginalStructure k) where
-  mempty = MarginalStructure mempty (M.toList <$> normalizeAndFillMapFld)
-  mappend = (<>)
-
-constMap :: (BRK.FiniteSet k, Ord k) => a -> Map k a
-constMap x = M.fromList $ fmap (, x) $ S.toList BRK.elements
-
-zeroMap :: (BRK.FiniteSet k, Ord k) => Map k Double
-zeroMap = constMap 0
-
-zeroFillMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
-zeroFillMapFld = fmap (<> zeroMap) FL.map
-
-normalizeMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
-normalizeMapFld = (\m s -> fmap (/ s) m) <$> FL.map <*> FL.premap snd FL.sum
-
-normalizeAndFillMapFld :: (BRK.FiniteSet k, Ord k) => FL.Fold (k, Double) (Map k Double)
-normalizeAndFillMapFld = (\m s -> fmap (/ s) m <> zeroMap) <$> FL.map <*> FL.premap snd FL.sum
-
-normalizeVec :: VS.Vector Double -> VS.Vector Double
-normalizeVec v = VS.map (/ VS.sum v) v
-
-msStencils :: MarginalStructure k -> [DED.Stencil Int]
-msStencils (MarginalStructure sts _) = sts
-{-# INLINE msStencils #-}
-
-msProdFldE :: MarginalStructure k -> FL.Fold (k, Double) [(k, Double)]
-msProdFldE (MarginalStructure _ ptF) = ptF
-{-# INLINE msProdFldE #-}
+normalizedVec :: VS.Vector Double -> VS.Vector Double
+normalizedVec v = VS.map (/ VS.sum v) v
 
 stencils ::  forall a b.
              (Ord a
@@ -136,56 +92,9 @@ stencils ::  forall a b.
 stencils bFromA = M.elems $ FL.fold (DED.subgroupStencils bFromA) $ S.toList BRK.elements
 {-# INLINEABLE stencils #-}
 
-unNestTableProduct :: (Ord outerK, Ord a, Ord b) => Map outerK (Map (a, b) x) -> [((outerK, a, b), x)]
-unNestTableProduct = concatMap (\(ok, mab) -> fmap (\((a, b), x) -> ((ok, a, b), x)) $ M.toList mab) . M.toList
-{-# INLINEABLE unNestTableProduct #-}
-
--- Nested maps make the products easier
--- this fills in missing items with 0
-tableMapFld :: forall outerK x  . (BRK.FiniteSet outerK, Ord outerK, BRK.FiniteSet x, Ord x) => FL.Fold (outerK, x, Double) (Map outerK (Map x Double))
-tableMapFld = FL.premap keyPreMap $ fmap (<> constMap zeroMap) (FL.foldByKeyMap zeroFillMapFld) where
-    keyPreMap (o, k, n) = (o, (k, n))
-{-# INLINEABLE tableMapFld #-}
-
-tableProductL' ::  forall outerK a b .
-                  (BRK.FiniteSet outerK, Ord outerK, Show outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
-              => Map outerK (Map a Double)
-              -> Map outerK (Map b Double)
-              -> [Double]
-tableProductL' ma mb = snd <$> tableProductL ma mb
-
-tableProductL ::  forall outerK a b .
-                  (Ord outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
-              => Map outerK (Map a Double)
-              -> Map outerK (Map b Double)
-              -> [((outerK, a, b), Double)]
-tableProductL ma mb = unNestTableProduct $ tableProduct ma mb
-
--- This is not symmetric. Table a is used for weights on outer key
--- Also, this treats missing entries as 0
-tableProduct :: forall outerK a b .
-                (Ord outerK, BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b)
-             => Map outerK (Map a Double)
-             -> Map outerK (Map b Double)
-             -> Map outerK (Map (a, b) Double)
-tableProduct aTableMap bTableMap = MM.merge
-                                   (MM.mapMissing whenMissing)
-                                   (MM.mapMissing whenMissing)
-                                   (MM.zipWithMatched whenMatched)
-                                   aTableMap bTableMap
-  where
-    whenMissing _ _ = zeroMap
-    whenMatched _ = innerProduct
-    innerProduct :: Map a Double -> Map b Double -> Map (a, b) Double
-    innerProduct ma mb = fmap (* aSum) $ M.fromList [f ae be | ae <- fracs ma, be <- fracs mb]
-      where
-        aSum = FL.fold FL.sum ma
-        f (a, x) (b, y) = ((a, b), x * y)
-        fracs :: Map x Double -> [(x, Double)]
-        fracs m = M.toList $ fmap (/ FL.fold FL.sum m) m
 
 zeroKnowledgeTable :: forall outerK a . (Ord outerK, BRK.FiniteSet outerK, Ord a, BRK.FiniteSet a) => Map outerK (Map a Double)
-zeroKnowledgeTable = constMap (constMap (1 / num)) where
+zeroKnowledgeTable = DMS.constMap (DMS.constMap (1 / num)) where
     num = realToFrac $ S.size (BRK.elements @outerK) * S.size (BRK.elements @a)
 
 -- does a pure product
@@ -270,15 +179,22 @@ applyNSPWeightsO  nsVs nsWs pV = f <$> optimalWeights nsVs nsWs pV
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
 labeledRowsToVecFld key dat = VS.fromList . M.elems . addZeroes <$> (FL.premap (\row -> (key row, dat row)) $ FL.foldByKeyMap FL.sum)
   where
-    addZeroes m = M.union m $ constMap 0
+    addZeroes m = M.union m $ DMS.constMap 0
+
+labeledRowsToNormalizedTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
+                                   => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
+labeledRowsToNormalizedTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
+  keyF row = (outerKey row, innerKey row)
+  f :: [((outerK, a), Double)] -> Map outerK (Map a Double)
+  f = FL.fold DMS.normalizedTableMapFld
 
 labeledRowsToTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
                          => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
 labeledRowsToTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
   keyF row = (outerKey row, innerKey row)
-  g ((x, y), z) = (x, y, z)
   f :: [((outerK, a), Double)] -> Map outerK (Map a Double)
-  f = FL.fold (FL.premap g tableMapFld)
+  f = FL.fold DMS.tableMapFld
+
 
 labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
 labeledRowsToKeyedListFld key dat = fmap (zip (S.toList BRK.elements) . VS.toList) $ labeledRowsToVecFld key dat
@@ -324,12 +240,12 @@ applyNSPWeightsFld logM nsVs nsWsFldF =
         (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
         (FMR.ReduceFoldM $ \k -> F.toFrame <$> innerFld k)
 
-nullSpaceVectorsMS :: forall k . MarginalStructure k -> LA.Matrix LA.R
+nullSpaceVectorsMS :: forall k . DMS.MarginalStructure k -> LA.Matrix LA.R
 nullSpaceVectorsMS = \cases
-  (MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
+  (DMS.MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
 
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
-nullSpaceVectors n stencils = LA.tr $ LA.nullspace $ DED.mMatrix n stencils
+nullSpaceVectors n sts = LA.tr $ LA.nullspace $ DED.mMatrix n sts
 
 nullSpaceProjections :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r, Foldable f)
                             => LA.Matrix LA.R
@@ -340,8 +256,8 @@ nullSpaceProjections :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r
                             -> f row
                             -> K.Sem r (Map outerK (Double, LA.Vector LA.R))
 nullSpaceProjections nullVs outerKey key count actuals products = do
-  let normalizedVec m s = VS.fromList $ (/ s)  <$> M.elems m
-      mapData m s = (s, normalizedVec m s)
+  let normalizedVec' m s = VS.fromList $ (/ s)  <$> M.elems m
+      mapData m s = (s, normalizedVec' m s)
       toDatFld = mapData <$> FL.map <*> FL.premap snd FL.sum
       toMapFld = FL.premap (\r -> (outerKey r, (key r, realToFrac (count r)))) $ FL.foldByKeyMap toDatFld
       actualM = FL.fold toMapFld actuals
@@ -358,57 +274,65 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     totalWeight = FL.fold (FL.premap (popWeightF . fst) FL.sum) m / realToFrac (M.size m)
     weight (n, v) = VS.map (* popWeightF n) v
 
+diffCovarianceFldMS :: forall outerK k row .
+                       (Ord outerK)
+                    => (row -> outerK)
+                    -> (row -> k)
+                    -> (row -> LA.R)
+                    -> DMS.MarginalStructure k
+                    -> FL.Fold row (LA.Herm LA.R)
+diffCovarianceFldMS outerKey catKey dat = \cases
+  (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld outerKey catKey dat sts (fmap snd . FL.fold ptFld)
+
 diffCovarianceFld :: forall outerK k row .
                      (Ord outerK, Ord k, BRK.FiniteSet k)
                   => (row -> outerK)
                   -> (row -> k)
                   -> (row -> LA.R)
                   -> [DED.Stencil Int]
-                  -> ([(k, Double)] -> Either Text [Double])
-                  -> FL.FoldM (Either Text) row (LA.Herm LA.R)
-diffCovarianceFld outerKey catKey dat stencils prodTableE = snd . LA.meanCov . LA.fromRows <$> vecsFldM
+                  -> ([(k, Double)] -> [Double])
+                  -> FL.Fold row (LA.Herm LA.R)
+diffCovarianceFld outerKey catKey dat sts prodTableF = snd . LA.meanCov . LA.fromRows <$> vecsFld
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
-    nullVecs = nullSpaceVectors n stencils
-    pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
-    pcF = fmap VS.fromList . prodTableE . zip (S.toList allKs) . VS.toList
-    postMapF v = do
-      let tot = VS.sum v
-          w = VS.map (/ tot) v
-      pcW <- pcF w
-      pure $ nullVecs LA.#> (w - pcW)
-    innerFld = FMR.postMapM postMapF $ FL.generalize (labeledRowsToVecFld fst snd)
-    vecsFldM = MR.mapReduceFoldM
-               (MR.generalizeUnpack MR.noUnpack)
-               (MR.generalizeAssign $ MR.assign outerKey (\row -> (catKey row, dat row)))
-               (MR.foldAndLabelM innerFld (\_ v -> v))
+    nullVecs = nullSpaceVectors n sts
+    pcF :: VS.Vector Double -> VS.Vector Double
+    pcF = VS.fromList . prodTableF . zip (S.toList allKs) . VS.toList
+    projections v = let w = normalizedVec v in nullVecs LA.#> (w - pcF w)
+    innerFld = projections <$> labeledRowsToVecFld fst snd
+    vecsFld = MR.mapReduceFold
+              MR.noUnpack
+              (MR.assign outerKey (\row -> (catKey row, dat row)))
+              (MR.foldAndLabel innerFld (\_ v -> v))
 
+significantNullVecsMS :: Double
+                      -> DMS.MarginalStructure k
+                      -> LA.Herm LA.R
+                      -> LA.Matrix LA.R
+significantNullVecsMS fracCovToInclude ms cov = significantNullVecs fracCovToInclude (nullSpaceVectorsMS ms) cov
 
 significantNullVecs :: Double
-                    -> Int
-                    -> [DED.Stencil Int]
+                    -> LA.Matrix LA.R
                     -> LA.Herm LA.R
                     -> LA.Matrix LA.R
-significantNullVecs fracCovToInclude n sts cov = LA.tr sigEVecs LA.<> nullVecs
+significantNullVecs fracCovToInclude nullVecs cov = LA.tr sigEVecs LA.<> nullVecs
   where
     (eigVals, eigVecs) = LA.eigSH cov
     totCov = VS.sum eigVals
     nSig = fst $ VS.foldl' (\(m, csf) c -> if csf / totCov < fracCovToInclude then (m + 1, csf + c) else (m, csf)) (0, 0) eigVals
     sigEVecs = LA.takeColumns nSig eigVecs
-    nullVecs = nullSpaceVectors n sts
 
 
-uncorrelatedNullVecs :: Int
-                    -> [DED.Stencil Int]
-                    -> LA.Herm LA.R
-                    -> LA.Matrix LA.R
-uncorrelatedNullVecs n sts cov = LA.tr eigVecs LA.<> nullVecs
+uncorrelatedNullVecsMS :: DMS.MarginalStructure k -> LA.Herm LA.R -> LA.Matrix LA.R
+uncorrelatedNullVecsMS ms = uncorrelatedNullVecs (nullSpaceVectorsMS ms)
+
+uncorrelatedNullVecs :: LA.Matrix LA.R
+                     -> LA.Herm LA.R
+                     -> LA.Matrix LA.R
+uncorrelatedNullVecs nullVecs cov = LA.tr eigVecs LA.<> nullVecs
   where
     (_, eigVecs) = LA.eigSH cov
-    nullVecs = nullSpaceVectors n sts
-
-
 
 type ProjDataRow outerK md = (outerK, md Double, LA.Vector LA.R)
 
@@ -420,58 +344,55 @@ data ProjData outerK md =
   , pdRows :: [ProjDataRow outerK md]
   }
 
+-- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
+-- the eigenvectors of the covariance
 nullVecProjectionsModelDataFld ::  forall outerK k row md .
-                                   (Ord outerK, Ord k, BRK.FiniteSet k)
-                               => LA.Matrix LA.R
-                               -> ([(k, Double)] -> Either Text [Double])
+                                   (Ord outerK)
+                               => DMS.MarginalStructure k
+                               -> LA.Matrix LA.R
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> LA.R)
                                -> FL.Fold row md
-                               -> FL.FoldM (Either Text) row [(outerK, md, LA.Vector LA.R)]
-nullVecProjectionsModelDataFld nullVecs prodTableE outerKey catKey count datFold =
-  MR.mapReduceFoldM
-  (MR.generalizeUnpack MR.noUnpack)
-  (MR.generalizeAssign $ MR.assign outerKey id)
-  (MR.foldAndLabelM innerFld (\ok (d, v) -> (ok, d, v)))
-  where
-    allKs :: Set k = BRK.elements
-    pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
-    pcF = fmap VS.fromList . prodTableE . zip (S.toList allKs) . VS.toList
-    postMapF v = do
-      let n = VS.sum v
-          w = VS.map (/ n) v
-      pcW <- pcF w
-      pure $ nullVecs LA.#> (w - pcW)
-    projFld = FMR.postMapM postMapF $ FL.generalize (labeledRowsToVecFld catKey count)
-    innerFld = (,) <$> FL.generalize datFold <*> projFld
+                               -> FL.Fold row [(outerK, md, LA.Vector LA.R)]
+nullVecProjectionsModelDataFld ms nullVecs outerKey catKey count datFold = case ms of
+  DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
+                                 MR.noUnpack
+                                 (MR.assign outerKey id)
+                                 (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+    where
+      allKs :: Set k = BRK.elements
+      pcF :: VS.Vector Double -> VS.Vector Double
+      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
+      projections v = let w = normalizedVec v in nullVecs LA.#> (w - pcF w)
+      projFld = fmap projections $ labeledRowsToVecFld catKey count
+      innerFld = (,) <$> datFold <*> projFld
 
+-- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
+-- the eigenvectors of the covariance
 nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
-                                        (Ord outerK, Ord k, BRK.FiniteSet k)
-                                    => LA.Matrix Double
-                                    -> ([(k, Double)] -> Either Text [Double])
+                                        (Ord outerK)
+                                    => DMS.MarginalStructure k
+                                    -> LA.Matrix LA.R
                                     -> (row -> outerK)
                                     -> (row -> k)
                                     -> (row -> Double)
                                     -> FL.Fold row md
-                                    -> FL.FoldM (Either Text) row [(outerK, md, LA.Vector Double, LA.Vector Double, LA.Vector Double)]
-nullVecProjectionsModelDataFldCheck nullVecs prodM outerKey catKey count datFold =
-  MR.mapReduceFoldM
-  (MR.generalizeUnpack MR.noUnpack)
-  (MR.generalizeAssign $ MR.assign outerKey id) (MR.foldAndLabelM innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
-  where
-    allKs :: Set k = BRK.elements
-    pcF :: VS.Vector Double -> Either Text (VS.Vector Double)
-    pcF = fmap (VS.fromList) . prodM . zip (S.toList allKs) . VS.toList
-    postMapF v = do
-      let n = VS.sum v
-          w = VS.map (/ n) v
-      pcW <- pcF w
-      pcV <- pcF v
-      pure (nullVecs LA.#> (w - pcW), pcV, v)
-    projFld = FMR.postMapM postMapF $ FL.generalize (labeledRowsToVecFld catKey count)
-    innerFld = (,) <$> FL.generalize datFold <*> projFld
-
+                                    -> FL.Fold row [(outerK, md, LA.Vector Double, LA.Vector Double, LA.Vector Double)]
+nullVecProjectionsModelDataFldCheck ms nullVecs' outerKey catKey count datFold = case ms of
+  DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
+                                   MR.noUnpack
+                                   (MR.assign outerKey id)
+                                   (MR.foldAndLabel innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
+    where
+      allKs :: Set k = BRK.elements
+      pcF :: VS.Vector Double -> VS.Vector Double
+      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
+      results v = let w = normalizedVec v
+                      nSum = VS.sum v
+                  in (nullVecs' LA.#> (w - pcF w), {-VS.map (* nSum)-} (pcF v), w)
+      projFld = fmap results $ labeledRowsToVecFld catKey count
+      innerFld = (,) <$> datFold <*> projFld
 
 data Model1P a = Model1P { m1pPWLogDensity :: a, m1pFracGrad :: a, m1pFracOfColor :: a }
   deriving stock (Show, Generic)
@@ -571,7 +492,7 @@ distributionText StudentTDist = "studentT"
 data ModelConfig md =
   ModelConfig
   {
-    nNullVecs :: Int
+    nullVecs :: LA.Matrix Double
   , standardizeNVs :: Bool
   , designMatrixRow :: DM.DesignMatrixRow (md Double)
   , alphaModel :: AlphaModel
@@ -583,7 +504,7 @@ modelText :: ModelConfig md -> Text
 modelText mc = distributionText mc.distribution <> "_" <> mc.designMatrixRow.dmName <> "_" <> alphaModelText mc.alphaModel
 
 dataText :: ModelConfig md -> Text
-dataText mc = mc.designMatrixRow.dmName <> "_NV" <> show mc.nNullVecs
+dataText mc = mc.designMatrixRow.dmName <> "_NV" <> show (fst $ LA.size mc.nullVecs)
 
 projModelData :: forall md outerK . (Typeable outerK, Typeable md)
                => ModelConfig md
@@ -591,7 +512,7 @@ projModelData :: forall md outerK . (Typeable outerK, Typeable md)
 projModelData mc = do
   projData <- SMB.dataSetTag @(ProjDataRow outerK md) SC.ModelData "ProjectionData"
   let projMER :: SMB.MatrixRowFromData (ProjDataRow outerK md) --(outerK, md Double, VS.Vector Double)
-      projMER = SMB.MatrixRowFromData "nvp" Nothing mc.nNullVecs (\(_, _, v) -> VU.convert v)
+      projMER = SMB.MatrixRowFromData "nvp" Nothing (fst $ LA.size mc.nullVecs) (\(_, _, v) -> VU.convert v)
   pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
   let nNullVecsE' = SMB.mrfdColumnsE projMER
       (_, nPredictorsE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
@@ -769,7 +690,7 @@ projModel rc mc = do
     let loopBody k = TE.writerL' $ TE.addStmt $ sampleStmtF (nvps `sndI` k) k
     TE.addStmt $ loopNVs loopBody
   -- generated quantities
-  when rc.rcIncludePPCheck $ forM_ [1..mc.nNullVecs] ppStmtF
+  when rc.rcIncludePPCheck $ forM_ [1..(fst $ LA.size mc.nullVecs)] ppStmtF
   pure ()
 
 runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
@@ -785,11 +706,10 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig md
-             -> LA.Matrix LA.R
-             -> ([(F.Record ks, Double)] -> Either Text [Double])
+             -> DMS.MarginalStructure (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
-runProjModel clearCaches cmdLine rc mc nullVecs prodTableE datFld = do
+runProjModel clearCaches cmdLine rc mc ms datFld = do
   let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
@@ -802,29 +722,25 @@ runProjModel clearCaches cmdLine rc mc nullVecs prodTableE datFld = do
   let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
       count = realToFrac . view DT.popCount
-      projDataM acsByPUMA = do
-        let nvpE = FL.foldM
-                  (nullVecProjectionsModelDataFld nullVecs prodTableE outerKey catKey count datFld)
-                  acsByPUMA
-        case nvpE of
-          Left err -> K.knitError err
-          Right nvps -> pure $ ProjData mc.nNullVecs (DM.rowLength mc.designMatrixRow) nvps
+      projData acsByPUMA =
+        ProjData (fst $ LA.size mc.nullVecs) (DM.rowLength mc.designMatrixRow)
+        (FL.fold (nullVecProjectionsModelDataFld ms mc.nullVecs outerKey catKey count datFld) acsByPUMA)
   -- Sem r is not traversable and ActionWithCaheTime is not as Monad so we need the cache specific function
-  let modelData_C = K.wctBind projDataM acsByPUMA_C
+  let modelData_C = fmap projData acsByPUMA_C
       meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
       meanSDFlds :: Int -> FL.Fold [Double] [(Double, Double)]
       meanSDFlds m = traverse (\n -> FL.premap (List.!! n) meanSDFld) [0..(m - 1)]
 --        foldl' (\flds fld -> g <$> flds <*> fld) (pure []) $ replicate n meanSDFld
 --        where g ls l = ls ++ [l]
   modelData <- K.ignoreCacheTime modelData_C
-  let meanSDs = FL.fold (FL.premap (\(_, _, v) -> VS.toList v) $ meanSDFlds mc.nNullVecs) $ pdRows modelData
+  let meanSDs = FL.fold (FL.premap (\(_, _, v) -> VS.toList v) $ meanSDFlds (fst $ LA.size mc.nullVecs)) $ pdRows modelData
   K.logLE K.Info $ "meanSDs=" <> show meanSDs
   states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
                 (projModel rc mc)
 
-  let (nNullVecs, _) = LA.size nullVecs
+  let (nNullVecs, _) = LA.size mc.nullVecs
       unwraps = (\n -> SR.UnwrapExpr ("matrix(ncol="
                                        <> show nNullVecs
                                        <> ", byrow=TRUE, unlist(jsonData $ nvp_ProjectionData))[,"
@@ -858,7 +774,7 @@ projModelResultAction mc = SC.UseSummary f where
         mdMeansFld = FL.premap (\(_, md, _) -> mc.mdFuncs.mdfToList md)
                     $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
         nvpSDFld = FL.premap (\(_, _, v) -> VS.toList v)
-                   $ traverse (\n -> FL.premap (List.!! n) FL.std) [0..(mc.nNullVecs - 1)]
+                   $ traverse (\n -> FL.premap (List.!! n) FL.std) [0..((fst $ LA.size mc.nullVecs) - 1)]
         (mdMeansL, nvpSDsL) = FL.fold ((,) <$> mdMeansFld <*> nvpSDFld) $ pdRows modelData
         rescaleAlphaBeta xs = if mc.standardizeNVs then zipWith (*) xs nvpSDsL else xs
     stateIM <- K.knitEither
@@ -873,13 +789,13 @@ projModelResultAction mc = SC.UseSummary f where
       _ -> do
         alphaVs <- getMatrix "alpha"
         let mRowToList cols row = fmap (\c -> SP.getIndexed alphaVs (row, c)) $ [1..cols]
-        pure $ M.fromList $ fmap (\(row, sa) -> (sa, rescaleAlphaBeta $ mRowToList mc.nNullVecs row)) $ IM.toList stateIM
+        pure $ M.fromList $ fmap (\(row, sa) -> (sa, rescaleAlphaBeta $ mRowToList (fst $ LA.size mc.nullVecs) row)) $ IM.toList stateIM
     betaSIL <- case nPredictors of
-      0 -> pure $ replicate mc.nNullVecs []
+      0 -> pure $ replicate (fst $ LA.size mc.nullVecs) []
       p -> do
         betaVs <- getMatrix "beta" -- ps by nNullVecs
         let mColToList rows col = fmap (\r -> SP.getIndexed betaVs (r, col)) [1..rows]
-        pure $ transp $ fmap (\m -> zip (rescaleAlphaBeta $ mColToList p m) mdMeansL) [1..mc.nNullVecs]
+        pure $ transp $ fmap (\m -> zip (rescaleAlphaBeta $ mColToList p m) mdMeansL) [1..(fst $ LA.size mc.nullVecs)]
     betaSI <- K.knitEither $ mc.mdFuncs.mdfFromList betaSIL
     pure $ ModelResult geoMap betaSI
 

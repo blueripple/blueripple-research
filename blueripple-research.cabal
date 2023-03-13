@@ -213,7 +213,7 @@ library
                  , BlueRipple.Model.Demographic.StanModels
                  , BlueRipple.Model.Demographic.EnrichData
                  , BlueRipple.Model.Demographic.TableProducts
---                 , BlueRipple.Model.Demographic.IndexedTable
+                 , BlueRipple.Model.Demographic.MarginalStructure
                  , BlueRipple.Model.Demographic.EnrichCensus
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
