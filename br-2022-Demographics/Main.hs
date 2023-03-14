@@ -210,6 +210,18 @@ main = do
         msSE_SR :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Education4C, DT.Race5C])
         msSE_SR = DMS.MarginalStructure testStencils $ fmap (fmap (\((x, y, z), w) -> ((x F.<+> y F.<+> z), w))) prodSE_SRFld
 
+
+        -- build marginal structure the fancy way!
+--        msSE :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Education4C])
+--        msSE = DMS.identityMarginalStructure
+--        msSR :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Race5C])
+--        msSR = identityMarginalStructure
+        msSE_SR' = DMS.combineMarginalStructuresF @'[DT.SexC] @'[DT.Education4C] @'[DT.Race5C]
+                   DMS.identityMarginalStructure DMS.identityMarginalStructure
+        marginalStructure = msSE_SR
+
+    K.logLE K.Info $ "testStencils=" <> show testStencils <> "\nmsSE_SR' stencils=" <> show (DMS.msStencils msSE_SR')
+
 --                         (DTP.zeroKnowledgeTable @DT.Sex @DT.Race5)
     K.logLE K.Info $ "Example keys (in order)\n" <> show (Keyed.elements @(F.Record  [DT.SexC, DT.Education4C, DT.Race5C]))
     K.logLE K.Info $ "mMatrix=\n" <> toText (LA.dispf 2 mMatrix)
@@ -223,21 +235,22 @@ main = do
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
           (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
           (realToFrac . view DT.popCount)
-          msSE_SR
+          marginalStructure
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
     let projCovariances = FL.fold projCovariancesFld acsByPUMA
-    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 $ LA.unSym projCovariances)
+--    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 $ LA.unSym projCovariances)
     let (eVals, eVecs) = LA.eigSH projCovariances
     K.logLE K.Info $ "eVals=" <> show eVals
-    K.logLE K.Info $ "eVecs=" <> toText (LA.dispf 4 eVecs)
-    let ucNullVecs = DTP.uncorrelatedNullVecsMS msSE_SR projCovariances
-        testNullVecs = DTP.nullSpaceVectorsMS msSE_SR
+--    K.logLE K.Info $ "eVecs=" <> toText (LA.dispf 4 eVecs)
+    let nullSpaceVectors = DTP.nullSpaceVectorsMS marginalStructure
+        nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
+        testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
         cMatrix = DED.mMatrix 40 testStencils
-    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 ucNullVecs)
+--    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 ucNullVecs)
     let stateModelData = FL.fold
                          (DTP.nullVecProjectionsModelDataFldCheck
-                         msSE_SR
-                         testNullVecs
+                         marginalStructure
+                         testProjections
                          (F.rcast @'[GT.StateAbbreviation])
                          (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
                          (realToFrac . view DT.popCount)
@@ -252,9 +265,9 @@ main = do
 -}
 
     K.logLE K.Info $ "Running model, if necessary."
-    let modelConfig = DTP.ModelConfig testNullVecs True
+    let modelConfig = DTP.ModelConfig testProjections True
                       DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model1Funcs
-    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig msSE_SR DTP.model1DatFld
+    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig marginalStructure DTP.model1DatFld
     -- compute the model data for each state
 
     modelRes <- K.ignoreCacheTime res_C
@@ -265,13 +278,13 @@ main = do
       K.logLE K.Info $ sa <> " nvps (actual) =" <> DED.prettyVector nVpsActual
       K.logLE K.Info $ sa <> " actual  counts=" <> DED.prettyVector nV <> " (" <> show (VS.sum nV) <> ")"
       K.logLE K.Info $ sa <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
-      K.logLE K.Info $ sa <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testNullVecs (VS.map (* n) nVpsActual) pV)
+      K.logLE K.Info $ sa <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
       K.logLE K.Info $ sa <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
       nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model1Funcs modelRes sa md)
       K.logLE K.Info $ sa <> " modeled  =" <> DED.prettyVector nvpsModeled
-      nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testNullVecs nvpsModeled (VS.map (/ n) pV)
+      nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
       K.logLE K.Info $ sa <> " optimized=" <> DED.prettyVector nvpsOptimal
-      K.logLE K.Info $ sa <> " modeled counts=" <> DED.prettyVector (DTP.applyNSPWeights testNullVecs (VS.map (* n) nvpsOptimal) pV)
+      K.logLE K.Info $ sa <> " modeled counts=" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV)
 
 --    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
 
@@ -378,7 +391,7 @@ main = do
                                      @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
                                      @DT.PopCount
                                      (Just . show)
-                                     nullSpaceVectors
+                                     testProjections
                                      stateProjections
                                     )
                          product_SER_CSR

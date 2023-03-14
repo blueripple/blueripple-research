@@ -129,26 +129,49 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 -- to get the weighted sum of those vectors and then add it to the
 -- product counts
 
-applyNSPWeights :: LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-applyNSPWeights nsVs nsWs pV = pV + nsWs LA.<# nsVs
+data NullVectorProjections = NullVectorProjections { nvpUcProj :: LA.Matrix LA.R, nvpUcToNull :: LA.Matrix LA.R }
 
-optimalWeights :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-optimalWeights nsVs nsWs pV = do
+fullToProjM :: NullVectorProjections -> LA.Matrix LA.R
+fullToProjM (NullVectorProjections nvM ceM) = LA.tr ceM LA.<> nvM
+
+projToFull :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R
+projToFull nvps v = v LA.<# fullToProjM nvps
+
+fullToProj :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R
+fullToProj nvps v = fullToProjM nvps LA.#> v
+
+baseNullVectorProjections :: DMS.MarginalStructure k -> NullVectorProjections
+baseNullVectorProjections ms = NullVectorProjections nullVecs (LA.ident nNullVecs)
+  where
+    nullVecs = nullSpaceVectors (DMS.msNumCategories ms) (DMS.msStencils ms)
+    nNullVecs = fst $ LA.size nullVecs
+
+applyNSPWeights :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
+
+optimalWeights :: HasCallStack => DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+optimalWeights nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
-  let n = VS.length nsWs
-      nsVs2 = nsVs LA.<> LA.tr nsVs
+  let n = VS.length projWs
+--      nsVs2 = nsVs LA.<> LA.tr nsVs
       -- We minimize (Euclidean, but why?) distance between (v - nsWs)nsVs nsVs' (v - nsWs)'
-      objD v = let x = (v - nsWs) in (VS.sum $ VS.map (^ (2 :: Int)) (x LA.<# nsVs), 2 * x LA.<# nsVs2)
-{-      obj2D v =
+      prToFull = projToFull nvps
+      scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
+      objD v =
+        -- FIXME: This should be minimized in terms of distance in the unprojected space
+--        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
+        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
+
+  {-      obj2D v =
         let srNormV = Numeric.sqrt (LA.norm_2 v)
             srNormN = Numeric.sqrt (LA.norm_2 nsWs)
             nRatio = srNormN / srNormV
         in (v `LA.dot` nsWs - srNormV * srNormN, nsWs - (LA.scale nRatio v))
 -}
 --      obj v = fst . objD
-      constraintData =  L.zip (VS.toList pV) (LA.toColumns nsVs)
+      constraintData =  L.zip (VS.toList pV) (LA.toColumns $ fullToProjM nvps)
       constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
-      constraintF (p, nullC) v = (negate $ p + (v `LA.dot` nullC), negate nullC)
+      constraintF (p, projToNullC) v = (negate (p + v `LA.dot` projToNullC), negate projToNullC)
       constraintFs = fmap constraintF constraintData
       nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-6) constraintFs
 --      nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs
@@ -159,7 +182,7 @@ optimalWeights nsVs nsWs pV = do
       nlAlgo = NLOPT.SLSQP objD [] nlConstraintsD []
 --      nlAlgo = NLOPT.MMA objD nlConstraintsD
       nlProblem =  NLOPT.LocalProblem (fromIntegral n) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem nsWs
+      nlSol = NLOPT.minimizeLocal nlProblem projWs
   case nlSol of
     Left result -> PE.throw $ DED.TableMatchingException  $ "minConstrained: NLOPT solver failed: " <> show result
     Right solution -> case NLOPT.solutionResult solution of
@@ -168,12 +191,12 @@ optimalWeights nsVs nsWs pV = do
       _ -> do
         let oWs = NLOPT.solutionParams solution
         K.logLE K.Info $ "solution=" <> DED.prettyVector oWs
-        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + oWs LA.<# nsVs)
+        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
 
-applyNSPWeightsO :: DED.EnrichDataEffects r => LA.Matrix LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-applyNSPWeightsO  nsVs nsWs pV = f <$> optimalWeights nsVs nsWs pV
-  where f oWs = applyNSPWeights nsVs oWs pV
+applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
+  where f oWs = applyNSPWeights nvps oWs pV
 
 -- this aggregates over cells with the same given key
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
@@ -218,10 +241,10 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
                       )
                    => (F.Record outerKs -> Maybe Text)
-                   -> LA.Matrix LA.R
+                   -> NullVectorProjections
                    -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R))
                    -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
-applyNSPWeightsFld logM nsVs nsWsFldF =
+applyNSPWeightsFld logM nvps nsWsFldF =
   let keysL = S.toList $ BRK.elements @(F.Record ks) -- these are the same for each outerK
       precomputeFld :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R, Double, LA.Vector LA.R)
       precomputeFld ok =
@@ -231,7 +254,7 @@ applyNSPWeightsFld logM nsVs nsWsFldF =
       compute :: F.Record outerKs -> (LA.Vector LA.R, Double, LA.Vector LA.R) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
       compute ok (nsWs, vSum, v) = do
         maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
-        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nsVs nsWs $ VS.map (/ vSum) v
+        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
         pure $ zipWith (\k c -> ok F.<+> k F.<+> FT.recordSingleton @count (round c)) keysL (VS.toList optimalV)
       innerFld ok = FMR.postMapM (compute ok) (precomputeFld ok)
   in  FMR.concatFoldM
@@ -296,27 +319,28 @@ diffCovarianceFld outerKey catKey dat sts prodTableF = snd . LA.meanCov . LA.fro
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
-    nullVecs = nullSpaceVectors n sts
+    nullVecs' = nullSpaceVectors n sts
     pcF :: VS.Vector Double -> VS.Vector Double
     pcF = VS.fromList . prodTableF . zip (S.toList allKs) . VS.toList
-    projections v = let w = normalizedVec v in nullVecs LA.#> (w - pcF w)
+    projections v = let w = normalizedVec v in nullVecs' LA.#> (w - pcF w)
     innerFld = projections <$> labeledRowsToVecFld fst snd
     vecsFld = MR.mapReduceFold
               MR.noUnpack
               (MR.assign outerKey (\row -> (catKey row, dat row)))
               (MR.foldAndLabel innerFld (\_ v -> v))
 
+
 significantNullVecsMS :: Double
                       -> DMS.MarginalStructure k
                       -> LA.Herm LA.R
-                      -> LA.Matrix LA.R
+                      -> NullVectorProjections
 significantNullVecsMS fracCovToInclude ms cov = significantNullVecs fracCovToInclude (nullSpaceVectorsMS ms) cov
 
 significantNullVecs :: Double
                     -> LA.Matrix LA.R
                     -> LA.Herm LA.R
-                    -> LA.Matrix LA.R
-significantNullVecs fracCovToInclude nullVecs cov = LA.tr sigEVecs LA.<> nullVecs
+                    -> NullVectorProjections
+significantNullVecs fracCovToInclude nullVecs cov = NullVectorProjections (LA.tr sigEVecs LA.<> nullVecs) eigVecs
   where
     (eigVals, eigVecs) = LA.eigSH cov
     totCov = VS.sum eigVals
@@ -324,13 +348,13 @@ significantNullVecs fracCovToInclude nullVecs cov = LA.tr sigEVecs LA.<> nullVec
     sigEVecs = LA.takeColumns nSig eigVecs
 
 
-uncorrelatedNullVecsMS :: DMS.MarginalStructure k -> LA.Herm LA.R -> LA.Matrix LA.R
+uncorrelatedNullVecsMS :: DMS.MarginalStructure k -> LA.Herm LA.R -> NullVectorProjections
 uncorrelatedNullVecsMS ms = uncorrelatedNullVecs (nullSpaceVectorsMS ms)
 
 uncorrelatedNullVecs :: LA.Matrix LA.R
                      -> LA.Herm LA.R
-                     -> LA.Matrix LA.R
-uncorrelatedNullVecs nullVecs cov = LA.tr eigVecs LA.<> nullVecs
+                     -> NullVectorProjections
+uncorrelatedNullVecs nullVecs cov = NullVectorProjections (LA.tr eigVecs LA.<> nullVecs) eigVecs
   where
     (_, eigVecs) = LA.eigSH cov
 
@@ -349,13 +373,13 @@ data ProjData outerK md =
 nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                    (Ord outerK)
                                => DMS.MarginalStructure k
-                               -> LA.Matrix LA.R
+                               -> NullVectorProjections
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> LA.R)
                                -> FL.Fold row md
                                -> FL.Fold row [(outerK, md, LA.Vector LA.R)]
-nullVecProjectionsModelDataFld ms nullVecs outerKey catKey count datFold = case ms of
+nullVecProjectionsModelDataFld ms nvps outerKey catKey count datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                  MR.noUnpack
                                  (MR.assign outerKey id)
@@ -364,7 +388,7 @@ nullVecProjectionsModelDataFld ms nullVecs outerKey catKey count datFold = case 
       allKs :: Set k = BRK.elements
       pcF :: VS.Vector Double -> VS.Vector Double
       pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      projections v = let w = normalizedVec v in nullVecs LA.#> (w - pcF w)
+      projections v = let w = normalizedVec v in fullToProj nvps (w - pcF w)
       projFld = fmap projections $ labeledRowsToVecFld catKey count
       innerFld = (,) <$> datFold <*> projFld
 
@@ -373,13 +397,13 @@ nullVecProjectionsModelDataFld ms nullVecs outerKey catKey count datFold = case 
 nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
                                         (Ord outerK)
                                     => DMS.MarginalStructure k
-                                    -> LA.Matrix LA.R
+                                    -> NullVectorProjections
                                     -> (row -> outerK)
                                     -> (row -> k)
                                     -> (row -> Double)
                                     -> FL.Fold row md
                                     -> FL.Fold row [(outerK, md, LA.Vector Double, LA.Vector Double, LA.Vector Double)]
-nullVecProjectionsModelDataFldCheck ms nullVecs' outerKey catKey count datFold = case ms of
+nullVecProjectionsModelDataFldCheck ms nvps outerKey catKey count datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                    MR.noUnpack
                                    (MR.assign outerKey id)
@@ -388,9 +412,10 @@ nullVecProjectionsModelDataFldCheck ms nullVecs' outerKey catKey count datFold =
       allKs :: Set k = BRK.elements
       pcF :: VS.Vector Double -> VS.Vector Double
       pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      results v = let w = normalizedVec v
-                      nSum = VS.sum v
-                  in (nullVecs' LA.#> (w - pcF w), {-VS.map (* nSum)-} (pcF v), w)
+      results v = let w = normalizedVec v -- normalized original probs
+                      nSum = VS.sum v -- num of people
+
+                  in (fullToProj nvps (w - pcF w), VS.map (* nSum) (pcF v), v)
       projFld = fmap results $ labeledRowsToVecFld catKey count
       innerFld = (,) <$> datFold <*> projFld
 
@@ -492,7 +517,7 @@ distributionText StudentTDist = "studentT"
 data ModelConfig md =
   ModelConfig
   {
-    nullVecs :: LA.Matrix Double
+    projVecs :: NullVectorProjections
   , standardizeNVs :: Bool
   , designMatrixRow :: DM.DesignMatrixRow (md Double)
   , alphaModel :: AlphaModel
@@ -500,11 +525,14 @@ data ModelConfig md =
   , mdFuncs :: ModelDataFuncs md Double
   }
 
+modelNumNullVecs :: ModelConfig md -> Int
+modelNumNullVecs mc = fst $ LA.size $ nvpUcProj mc.projVecs
+
 modelText :: ModelConfig md -> Text
 modelText mc = distributionText mc.distribution <> "_" <> mc.designMatrixRow.dmName <> "_" <> alphaModelText mc.alphaModel
 
 dataText :: ModelConfig md -> Text
-dataText mc = mc.designMatrixRow.dmName <> "_NV" <> show (fst $ LA.size mc.nullVecs)
+dataText mc = mc.designMatrixRow.dmName <> "_NV" <> show (modelNumNullVecs mc)
 
 projModelData :: forall md outerK . (Typeable outerK, Typeable md)
                => ModelConfig md
@@ -512,7 +540,7 @@ projModelData :: forall md outerK . (Typeable outerK, Typeable md)
 projModelData mc = do
   projData <- SMB.dataSetTag @(ProjDataRow outerK md) SC.ModelData "ProjectionData"
   let projMER :: SMB.MatrixRowFromData (ProjDataRow outerK md) --(outerK, md Double, VS.Vector Double)
-      projMER = SMB.MatrixRowFromData "nvp" Nothing (fst $ LA.size mc.nullVecs) (\(_, _, v) -> VU.convert v)
+      projMER = SMB.MatrixRowFromData "nvp" Nothing (modelNumNullVecs mc) (\(_, _, v) -> VU.convert v)
   pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
   let nNullVecsE' = SMB.mrfdColumnsE projMER
       (_, nPredictorsE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
@@ -620,7 +648,7 @@ projModel rc mc = do
       fstI x k = TE.sliceE TEI.s0 k x
       sndI x k = TE.sliceE TEI.s1 k x
       loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
-  (predM, centerF, mBeta) <- case paramTheta mParams of
+  (predM, _centerF, _mBeta) <- case paramTheta mParams of
     Theta (Just thetaE) -> do
       (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "DM"
       (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (thetaE, betaNDS)
@@ -680,25 +708,23 @@ projModel rc mc = do
           in (ssF, \n -> ppF n rF rpF)
         StudentTProjModelParameters a t s n ->
           let nu :: Nu -> TE.IntE -> TE.VectorE
-              nu n k = TE.functionE SF.rep_vector (unNu n `fstI` k :> nRowsE :> TNil)
+              nu n' k = TE.functionE SF.rep_vector (unNu n' `fstI` k :> nRowsE :> TNil)
               ssF e k = TE.sample e SF.student_t (nu n k :> muE a t k :> sigmaE s k :> TNil)
               rF f nE = TE.functionE SF.student_t_rng (f nE)
               rpF k  = pure $ \nE -> nu n k `fstI` nE :> muE a t k `fstI` nE :> sigmaE s k `fstI` nE :>  TNil
-          in (ssF, \n -> ppF n rF rpF)
+          in (ssF, \n' -> ppF n' rF rpF)
 
   SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
     let loopBody k = TE.writerL' $ TE.addStmt $ sampleStmtF (nvps `sndI` k) k
     TE.addStmt $ loopNVs loopBody
   -- generated quantities
-  when rc.rcIncludePPCheck $ forM_ [1..(fst $ LA.size mc.nullVecs)] ppStmtF
+  when rc.rcIncludePPCheck $ forM_ [1..modelNumNullVecs mc] ppStmtF
   pure ()
 
 runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
                 , ks F.⊆ DDP.ACSByPUMAR
-                , Ord (F.Record ks)
-                , BRK.FiniteSet (F.Record ks)
                 , Typeable md
                 , Flat.Flat (md [(Double, Double)])
                 )
@@ -709,7 +735,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> DMS.MarginalStructure (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
-runProjModel clearCaches cmdLine rc mc ms datFld = do
+runProjModel clearCaches _cmdLine rc mc ms datFld = do
   let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
@@ -723,8 +749,8 @@ runProjModel clearCaches cmdLine rc mc ms datFld = do
       catKey = F.rcast @ks
       count = realToFrac . view DT.popCount
       projData acsByPUMA =
-        ProjData (fst $ LA.size mc.nullVecs) (DM.rowLength mc.designMatrixRow)
-        (FL.fold (nullVecProjectionsModelDataFld ms mc.nullVecs outerKey catKey count datFld) acsByPUMA)
+        ProjData (modelNumNullVecs mc) (DM.rowLength mc.designMatrixRow)
+        (FL.fold (nullVecProjectionsModelDataFld ms mc.projVecs outerKey catKey count datFld) acsByPUMA)
   -- Sem r is not traversable and ActionWithCaheTime is not as Monad so we need the cache specific function
   let modelData_C = fmap projData acsByPUMA_C
       meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
@@ -733,14 +759,14 @@ runProjModel clearCaches cmdLine rc mc ms datFld = do
 --        foldl' (\flds fld -> g <$> flds <*> fld) (pure []) $ replicate n meanSDFld
 --        where g ls l = ls ++ [l]
   modelData <- K.ignoreCacheTime modelData_C
-  let meanSDs = FL.fold (FL.premap (\(_, _, v) -> VS.toList v) $ meanSDFlds (fst $ LA.size mc.nullVecs)) $ pdRows modelData
+  let meanSDs = FL.fold (FL.premap (\(_, _, v) -> VS.toList v) $ meanSDFlds (modelNumNullVecs mc)) $ pdRows modelData
   K.logLE K.Info $ "meanSDs=" <> show meanSDs
   states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
                 (projModel rc mc)
 
-  let (nNullVecs, _) = LA.size mc.nullVecs
+  let nNullVecs = modelNumNullVecs mc
       unwraps = (\n -> SR.UnwrapExpr ("matrix(ncol="
                                        <> show nNullVecs
                                        <> ", byrow=TRUE, unlist(jsonData $ nvp_ProjectionData))[,"
@@ -774,7 +800,7 @@ projModelResultAction mc = SC.UseSummary f where
         mdMeansFld = FL.premap (\(_, md, _) -> mc.mdFuncs.mdfToList md)
                     $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
         nvpSDFld = FL.premap (\(_, _, v) -> VS.toList v)
-                   $ traverse (\n -> FL.premap (List.!! n) FL.std) [0..((fst $ LA.size mc.nullVecs) - 1)]
+                   $ traverse (\n -> FL.premap (List.!! n) FL.std) [0..((modelNumNullVecs mc) - 1)]
         (mdMeansL, nvpSDsL) = FL.fold ((,) <$> mdMeansFld <*> nvpSDFld) $ pdRows modelData
         rescaleAlphaBeta xs = if mc.standardizeNVs then zipWith (*) xs nvpSDsL else xs
     stateIM <- K.knitEither
@@ -789,13 +815,13 @@ projModelResultAction mc = SC.UseSummary f where
       _ -> do
         alphaVs <- getMatrix "alpha"
         let mRowToList cols row = fmap (\c -> SP.getIndexed alphaVs (row, c)) $ [1..cols]
-        pure $ M.fromList $ fmap (\(row, sa) -> (sa, rescaleAlphaBeta $ mRowToList (fst $ LA.size mc.nullVecs) row)) $ IM.toList stateIM
+        pure $ M.fromList $ fmap (\(row, sa) -> (sa, rescaleAlphaBeta $ mRowToList (modelNumNullVecs mc) row)) $ IM.toList stateIM
     betaSIL <- case nPredictors of
-      0 -> pure $ replicate (fst $ LA.size mc.nullVecs) []
+      0 -> pure $ replicate (modelNumNullVecs mc) []
       p -> do
         betaVs <- getMatrix "beta" -- ps by nNullVecs
         let mColToList rows col = fmap (\r -> SP.getIndexed betaVs (r, col)) [1..rows]
-        pure $ transp $ fmap (\m -> zip (rescaleAlphaBeta $ mColToList p m) mdMeansL) [1..(fst $ LA.size mc.nullVecs)]
+        pure $ transp $ fmap (\m -> zip (rescaleAlphaBeta $ mColToList p m) mdMeansL) [1..modelNumNullVecs mc]
     betaSI <- K.knitEither $ mc.mdFuncs.mdfFromList betaSIL
     pure $ ModelResult geoMap betaSI
 

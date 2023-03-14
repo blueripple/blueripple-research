@@ -123,8 +123,10 @@ combineMarginalStructures' kaF expandA kbF expandB collapse msA msB = MarginalSt
 --    eMSB = expandMarginalStructure (\(k, _, kb) -> (k, kb)) msB
 {-# INLINEABLE combineMarginalStructures' #-}
 
-identityMarginalStructure :: (Ord k, BRK.FiniteSet k) => MarginalStructure k
-identityMarginalStructure = MarginalStructure [] (M.toList <$> normalizeAndFillMapFld)
+identityMarginalStructure :: forall k . (Ord k, BRK.FiniteSet k) => MarginalStructure k
+identityMarginalStructure = MarginalStructure (fmap (DED.Stencil . pure) $ [0..(numCats-1)] ) (M.toList <$> normalizeAndFillMapFld)
+  where
+    numCats = S.size $ BRK.elements @k
 {-# INLINEABLE identityMarginalStructure #-}
 
 data MarginalStructure k where
@@ -137,6 +139,10 @@ msStencils (MarginalStructure sts _) = sts
 msProdFld :: MarginalStructure k -> FL.Fold (k, Double) [(k, Double)]
 msProdFld (MarginalStructure _ ptF) = ptF
 {-# INLINE msProdFld #-}
+
+msNumCategories :: forall k . MarginalStructure k -> Int
+msNumCategories ms = case ms of
+  MarginalStructure _ _ -> S.size $ BRK.elements @k
 
 constMap :: (BRK.FiniteSet k, Ord k) => a -> Map k a
 constMap x = M.fromList $ fmap (, x) $ S.toList BRK.elements
@@ -174,8 +180,10 @@ tableMapFld = FL.premap keyPreMap $ fmap (<> constMap zeroMap) (FL.foldByKeyMap 
 {-# INLINEABLE tableMapFld #-}
 
 normalizedTableMapFld :: forall outerK x  . (BRK.FiniteSet outerK, Ord outerK, BRK.FiniteSet x, Ord x) => FL.Fold ((outerK, x), Double) (Map outerK (Map x Double))
-normalizedTableMapFld = FL.premap keyPreMap $ fmap (<> constMap zeroMap) (FL.foldByKeyMap normalizeAndFillMapFld) where
+normalizedTableMapFld = FL.premap keyPreMap $ fmap (normalize . (<> constMap zeroMap)) (FL.foldByKeyMap zeroFillMapFld) where
     keyPreMap ((o, k), n) = (o, (k, n))
+    sum' mm = FL.fold FL.sum $ fmap (FL.fold FL.sum) mm
+    normalize mm = fmap (fmap ( / sum' mm)) mm
 {-# INLINEABLE normalizedTableMapFld #-}
 
 
