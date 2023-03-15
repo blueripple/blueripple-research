@@ -76,7 +76,7 @@ brLocalRoot :: T.Text
 brLocalRoot = "posts/"
 
 -- command line
-data LogLevel = LogInfo | LogDiagnostic | LogDebugMinimal | LogDebugVerbose | LogDebugAll  deriving stock (Show, CmdArgs.Data, Typeable, Eq)
+data LogLevel = LogInfo | LogDiagnostic | LogDebugMinimal | LogDebugVerbose | LogDebugAll  deriving stock (Show, CmdArgs.Data, Typeable, Ord, Eq)
 
 knitLogSeverity :: LogLevel -> K.LogSeverity -> Bool
 knitLogSeverity LogInfo = K.nonDiagnostic

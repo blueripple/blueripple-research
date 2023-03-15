@@ -152,6 +152,7 @@ compareResults allStates exampleStateM catKey rowKey colKey results = do
     Nothing -> pure ()
     Just sa -> do
       let ff = F.filterFrame ((== sa) . view GT.stateAbbreviation)
+      K.logLE K.Info $ "Example State=" <> sa
       K.logLE K.Info $ "Actual" <> "\n" <> tableText (ff $ mrActual results)
       K.logLE K.Info $ "Product" <> "\n" <> tableText (ff $ mrProduct results)
       K.logLE K.Info $ "Product + NS" <> "\n" <> tableText (ff $ mrProductWithNS results)
@@ -198,102 +199,92 @@ main = do
     let seInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         srInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Race5C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
         testStencils = seInSERStencil <> srInSERStencil
-        exampleV = DTP.labeledRowsToVec (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (realToFrac . view DT.popCount)
+        exampleV = DTP.labeledRowsToVec (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (realToFrac @_ @Double . view DT.popCount)
                    $ F.filterFrame ((== "NY") . view GT.stateAbbreviation) acsByPUMA
         mMatrix = DED.mMatrix (VS.length exampleV) testStencils
-{-        prodSEInSER kn = DMS.tableProductL'
-                         (FL.fold (DTP.labeledRowsToTableMapFld (view DT.sexC . fst) (view DT.education4C . fst) snd) kn)
-                         (FL.fold (DTP.labeledRowsToTableMapFld (view DT.sexC . fst) (view DT.race5C . fst) snd) kn) -}
-        prodSE_SRFld = DMS.tableProductL
-                            <$> DTP.labeledRowsToNormalizedTableMapFld (F.rcast @'[DT.SexC] . fst) (F.rcast @'[DT.Education4C] . fst) snd
-                            <*> DTP.labeledRowsToNormalizedTableMapFld (F.rcast @'[DT.SexC] . fst) (F.rcast @'[DT.Race5C] . fst) snd
-        msSE_SR :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Education4C, DT.Race5C])
-        msSE_SR = DMS.MarginalStructure testStencils $ fmap (fmap (\((x, y, z), w) -> ((x F.<+> y F.<+> z), w))) prodSE_SRFld
-
-
         -- build marginal structure the fancy way!
---        msSE :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Education4C])
---        msSE = DMS.identityMarginalStructure
---        msSR :: DMS.MarginalStructure (F.Record [DT.SexC, DT.Race5C])
---        msSR = identityMarginalStructure
-        msSE_SR' = DMS.combineMarginalStructuresF @'[DT.SexC] @'[DT.Education4C] @'[DT.Race5C]
-                   DMS.identityMarginalStructure DMS.identityMarginalStructure
-        marginalStructure = msSE_SR
+        msSER_CSR = DMS.reKeyMarginalStructure
+                    (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.CitizenC])
+                    (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+                    $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC]
+                    DMS.identityMarginalStructure DMS.identityMarginalStructure
+        marginalStructure = msSER_CSR
+--    K.logLE K.Info $ "stencils=" <> show (DMS.msStencils marginalStructure)
 
-    K.logLE K.Info $ "testStencils=" <> show testStencils <> "\nmsSE_SR' stencils=" <> show (DMS.msStencils msSE_SR')
-
---                         (DTP.zeroKnowledgeTable @DT.Sex @DT.Race5)
-    K.logLE K.Info $ "Example keys (in order)\n" <> show (Keyed.elements @(F.Record  [DT.SexC, DT.Education4C, DT.Race5C]))
-    K.logLE K.Info $ "mMatrix=\n" <> toText (LA.dispf 2 mMatrix)
-    K.logLE K.Info $ "NY       =" <> DED.prettyVector exampleV
---    K.logLE K.Info $ "NY (Prod)=" <> (DED.prettyVector $ DTP.productCountsFromActual mMatrix exampleV)
-    acsByState_C <- DDP.cachedACSByState'
-    acsByState <-  K.ignoreCacheTime acsByState_C
---    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
     let projCovariancesFld =
           DTP.diffCovarianceFldMS
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
-          (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
+          (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
           (realToFrac . view DT.popCount)
           marginalStructure
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
-    let projCovariances = FL.fold projCovariancesFld acsByPUMA
---    K.logLE K.Info $ "C = " <> toText (LA.dispf 4 $ LA.unSym projCovariances)
-    let (eVals, eVecs) = LA.eigSH projCovariances
-    K.logLE K.Info $ "eVals=" <> show eVals
---    K.logLE K.Info $ "eVecs=" <> toText (LA.dispf 4 eVecs)
+    let (projMeans, projCovariances) = FL.fold projCovariancesFld acsByPUMA
+--    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
+--    K.logLE K.Info $ "cov=" <> toText (LA.dispf 4 $ LA.unSym $ projCovariances)
     let nullSpaceVectors = DTP.nullSpaceVectorsMS marginalStructure
-        nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
+--    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
+    let nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
         testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
-        cMatrix = DED.mMatrix 40 testStencils
---    K.logLE K.Info $ "snVecs=" <> toText (LA.dispf 4 ucNullVecs)
+        cMatrix = DED.mMatrix (DMS.msNumCategories marginalStructure) (DMS.msStencils marginalStructure)
+--    K.logLE K.Info $ "nvpUcProj=" <> toText (LA.dispf 4 $ DTP.nvpUcProj nvProjections) <> "\nnvpUcToNull=" <> toText (LA.dispf 4 $ DTP.nvpUcToNull nvProjections)
+    acsByState_C <- DDP.cachedACSByState
+    acsByState <-  K.ignoreCacheTime acsByState_C
     let stateModelData = FL.fold
                          (DTP.nullVecProjectionsModelDataFldCheck
                          marginalStructure
                          testProjections
-                         (F.rcast @'[GT.StateAbbreviation])
-                         (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C])
+                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation])
+                         (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
                          (realToFrac . view DT.popCount)
-                         DTP.model1DatFld
+                         DTP.model2DatFld
                          )
                          acsByState
-{-    forM_ stateModelData $ \(sar, _, nVpsActual, pV, nV) -> do
-      let sa = view GT.stateAbbreviation sar
-      K.logLE K.Info $ sa <> " actual   =" <> DED.prettyVector nVpsActual
-      K.logLE K.Info $ sa <> "actual  counts=" <> DED.prettyVector nV
-      K.logLE K.Info $ sa <> "prod    counts=" <> DED.prettyVector pV
--}
-
     K.logLE K.Info $ "Running model, if necessary."
     let modelConfig = DTP.ModelConfig testProjections True
-                      DTP.designMatrixRow1 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model1Funcs
-    res_C <- DTP.runProjModel @[DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig marginalStructure DTP.model1DatFld
-    -- compute the model data for each state
-
+                      DTP.designMatrixRow2 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model2Funcs
+    res_C <- DTP.runProjModel @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig marginalStructure DTP.model2DatFld
     modelRes <- K.ignoreCacheTime res_C
+
 
     forM_ stateModelData $ \(sar, md, nVpsActual, pV, nV) -> do
       let sa = view GT.stateAbbreviation sar
           n = VS.sum pV
-      K.logLE K.Info $ sa <> " nvps (actual) =" <> DED.prettyVector nVpsActual
-      K.logLE K.Info $ sa <> " actual  counts=" <> DED.prettyVector nV <> " (" <> show (VS.sum nV) <> ")"
-      K.logLE K.Info $ sa <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
-      K.logLE K.Info $ sa <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
-      K.logLE K.Info $ sa <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
-      nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model1Funcs modelRes sa md)
-      K.logLE K.Info $ sa <> " modeled  =" <> DED.prettyVector nvpsModeled
-      nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
-      K.logLE K.Info $ sa <> " optimized=" <> DED.prettyVector nvpsOptimal
-      K.logLE K.Info $ sa <> " modeled counts=" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV)
+
+      when (True {- BR.logLevel cmdLine >= BR.LogDebugMinimal -}) $ do
+        K.logLE K.Info $ sa <> " nvps (actual) =" <> DED.prettyVector nVpsActual
+        K.logLE K.Info $ sa <> " actual  counts=" <> DED.prettyVector nV <> " (" <> show (VS.sum nV) <> ")"
+        K.logLE K.Info $ sa <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
+        K.logLE K.Info $ sa <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
+        K.logLE K.Info $ sa <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model2Funcs modelRes sa md)
+        K.logLE K.Info $ sa <> " modeled  =" <> DED.prettyVector nvpsModeled
+        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
+        K.logLE K.Info $ sa <> " optimized=" <> DED.prettyVector nvpsOptimal
+        K.logLE K.Info $ sa <> " modeled counts=" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV)
+
+    let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
+        smcRowToProdAndModeled (ok, md, _, pV, _) = do
+          let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
+          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model2Funcs modelRes (view GT.stateAbbreviation ok) md)
+          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
+          let mV = DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
+          pure (ok, pV, mV)
+    prodAndModeled <- traverse smcRowToProdAndModeled stateModelData
+    let prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)
+        (product_SER_CSR, productNS_SER_CSR) =
+          first (F.toFrame . concat)
+          $ second (F.toFrame . concat)
+          $ unzip
+          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))) prodAndModeled
+--      smcToProdFrame ks (ok, _, _, pv, nv) = zip
+--      productFrame = F.toFrame $ fmap (
 
 --    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
 
 
-    K.knitEither $ Left "Stopping before products, etc."
+--    K.knitEither $ Left "Stopping before products, etc."
 
     K.logLE K.Info $ "Loading ACS data and building marginal distributions (SER, ASR, CSR) for each state" <> show cmdLine
-    acsSample_C <- DDP.cachedACSByState'
-    acsSample <-  K.ignoreCacheTime acsSample_C
     let zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
         acsSampleWZ_C = fmap (FL.fold
                               (FMR.concatFold
@@ -306,9 +297,9 @@ main = do
                                )
                               )
                              )
-                      $ acsSample_C
+                      $ acsByState_C
     acsSampleWZ <- K.ignoreCacheTime acsSampleWZ_C
-    let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsSample
+    let allStates = S.toList $ FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsByState
         emptyUnless x y = if x then y else mempty
         logText t k = Just $ t <> ": Joint distribution matching for " <> show k
         zeroPopAndDens :: F.Record [DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
@@ -348,53 +339,6 @@ main = do
                                    )
                          <$> acsSampleWZ_C
     acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
-    -- product
-    product_SER_CSR <- DED.mapPE
-                       $ fmap toOutputRow
-                       <$> DTP.frameTableProduct @[BRDF.Year, GT.StateAbbreviation, DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC] @DT.PopCount
-                       (fmap F.rcast acsSampleSER) (fmap F.rcast acsSampleCSR)
-
-  -- create stencils
-    let serInCSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
-        csrInCSERStencil = DTP.stencils @(F.Record [DT.CitizenC, DT.SexC, DT.Race5C]) @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
-        nullSpaceVectors = DTP.nullSpaceVectors
-                           (S.size $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))
-                           (serInCSERStencil <> csrInCSERStencil)
-
---    K.logLE K.Info $ "nullSpaceVectors for SER, CSR in CSER" <> show nullSpaceVectors
-    nullSpaceProjections <- DED.mapPE
-                            $ DTP.nullSpaceProjections
-                            nullSpaceVectors
-                            (F.rcast @[BRDF.Year, GT.StateAbbreviation])
-                            (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-                            (view DT.popCount)
-                            (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> acsSampleCSER)
-                            (F.rcast @[BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount] <$> product_SER_CSR)
-
-
-    let avgNSPUW = DTP.avgNullSpaceProjections (const 1) nullSpaceProjections
-        avgNSPW = DTP.avgNullSpaceProjections (id) nullSpaceProjections
-
-        fixedProjections ps = const $ pure ps
-        pureM :: Monad m => m b -> FL.FoldM m a b
-        pureM x = FL.FoldM (\_ _ -> x) x (const x)
-
-        -- test to make sure when we project and then apply these directly we get our original thing back
-        stateProjections ok = pureM $ K.knitMaybe ("NS projections for ok=" <> show ok <> " not found!") $ fmap snd $ M.lookup ok nullSpaceProjections
-
-    K.logLE K.Info $ "uw nsvs=" <> DED.prettyVector avgNSPUW <> "\nw nsvs=" <> DED.prettyVector avgNSPW
-
-    -- product with null-space adjustments
-    productNS_SER_CSR <- DED.mapPE
-                         $ FL.foldM (DTP.applyNSPWeightsFld
-                                     @[BRDF.Year, GT.StateAbbreviation]
-                                     @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-                                     @DT.PopCount
-                                     (Just . show)
-                                     testProjections
-                                     stateProjections
-                                    )
-                         product_SER_CSR
 
     -- model & match pipeline
     cFromSER_C <- SM.runModel
@@ -408,14 +352,14 @@ main = do
                     (Sum . F.rgetField @DT.PopCount)
                     (F.rcast @'[BRDF.Year, GT.StateAbbreviation])
                     (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
-        csrDS = getSum <<$>> FL.fold csrDSFld acsSample
+        csrDS = getSum <<$>> FL.fold csrDSFld acsByState
         serRec :: (DT.Sex, DT.Education4, DT.Race5) -> F.Record [DT.SexC, DT.Education4C, DT.Race5C]
         serRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
         serDSFld =  DED.desiredSumsFld
                     (Sum . F.rgetField @DT.PopCount)
                     (F.rcast @'[BRDF.Year, GT.StateAbbreviation])
                     (\r -> serRec (r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C))
-        serDS = getSum <<$>> FL.fold serDSFld acsSample
+        serDS = getSum <<$>> FL.fold serDSFld acsByState
 
     let serToCSER_PC eu = fmap
           (\m -> DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
@@ -443,7 +387,7 @@ main = do
 
     let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
         mResults = (MethodResults (fmap toOutputRow acsSampleCSER) product_SER_CSR productNS_SER_CSR modelCSERFromCSR modelCO_CSERFromCSR)
-    compareResults allStates (Just "AK")
+    compareResults allStates (Just "HI")
       (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
       (\r -> (r ^. DT.sexC, r ^. DT.race5C))
       (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
@@ -1072,7 +1016,7 @@ runCitizenModel clearCaches cmdLine mc dmr = do
       only2020 r = F.rgetField @BRDF.Year r == 2020
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   _ageModelPaths <- postPaths "CitizenModel" cmdLine
-  acs_C <- DDP.cachedACSByState'
+  acs_C <- DDP.cachedACSByState
 --  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateCitizenMN acs_C
@@ -1115,7 +1059,7 @@ runAgeModel clearCaches cmdLine mc dmr = do
       only2020 r = F.rgetField @BRDF.Year r == 2020
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   _ageModelPaths <- postPaths "AgeModel" cmdLine
-  acs_C <- DDP.cachedACSByState'
+  acs_C <- DDP.cachedACSByState
 --  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateAgeMN acs_C
@@ -1157,7 +1101,7 @@ runEduModel clearCaches cmdLine mc dmr = do
       only2020 r = F.rgetField @BRDF.Year r == 2020
       postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
   eduModelPaths <- postPaths "EduModel" cmdLine
-  acs_C <- DDP.cachedACSByState'
+  acs_C <- DDP.cachedACSByState
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap DDP.acsByStateEduMN acs_C
   logLengthC acsMN_C "acsByStateMNEdu"

@@ -91,8 +91,8 @@ acsByStateRF = BRF.rowFold acsFixAgeYear acsByStateKeys datFieldsFrom datFromToF
 acsByPUMARF :: F.FrameRec PUMS.PUMS_Typed -> K.StreamlyM (F.FrameRec ACSByPUMARF)
 acsByPUMARF = BRF.rowFold acsFixAgeYear acsByPUMAKeys datFieldsFrom datFromToFld
 
-cachedACSByState' :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByStateR))
-cachedACSByState' = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
+cachedACSByState :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByStateR))
+cachedACSByState = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
   rawACS_C <- PUMS.typedPUMSRowsLoader
   stateAbbrXWalk_C <- BRL.stateAbbrCrosswalkLoader
   let deps = (,) <$> rawACS_C <*> stateAbbrXWalk_C

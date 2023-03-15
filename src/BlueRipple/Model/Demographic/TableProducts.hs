@@ -149,7 +149,7 @@ baseNullVectorProjections ms = NullVectorProjections nullVecs (LA.ident nNullVec
 applyNSPWeights :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
 
-optimalWeights :: HasCallStack => DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+optimalWeights :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 optimalWeights nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length projWs
@@ -161,6 +161,7 @@ optimalWeights nvps projWs pV = do
         -- FIXME: This should be minimized in terms of distance in the unprojected space
 --        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
         let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
+
 
   {-      obj2D v =
         let srNormV = Numeric.sqrt (LA.norm_2 v)
@@ -190,8 +191,8 @@ optimalWeights nvps projWs pV = do
       NLOPT.MAXTIME_REACHED -> PE.throw $ DED.TableMatchingException $ "minConstrained: NLOPT Solver hit max time."
       _ -> do
         let oWs = NLOPT.solutionParams solution
-        K.logLE K.Info $ "solution=" <> DED.prettyVector oWs
-        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
+--        K.logLE K.Info $ "solution=" <> DED.prettyVector oWs
+--        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
 
 applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
@@ -200,9 +201,7 @@ applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
 
 -- this aggregates over cells with the same given key
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
-labeledRowsToVecFld key dat = VS.fromList . M.elems . addZeroes <$> (FL.premap (\row -> (key row, dat row)) $ FL.foldByKeyMap FL.sum)
-  where
-    addZeroes m = M.union m $ DMS.constMap 0
+labeledRowsToVecFld key dat = VS.fromList . M.elems <$> (FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld)
 
 labeledRowsToNormalizedTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
                                    => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
@@ -218,13 +217,12 @@ labeledRowsToTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld 
   f :: [((outerK, a), Double)] -> Map outerK (Map a Double)
   f = FL.fold DMS.tableMapFld
 
-
-labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
-labeledRowsToKeyedListFld key dat = fmap (zip (S.toList BRK.elements) . VS.toList) $ labeledRowsToVecFld key dat
+labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, Num a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
+labeledRowsToKeyedListFld key dat =  M.toList <$> FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld
+  -- fmap (zip (S.toList BRK.elements) . VS.toList) $ labeledRowsToVecFld key dat
 
 labeledRowsToVec :: (Ord k, BRK.FiniteSet k, VS.Storable a, Foldable f, Num a) => (row -> k) -> (row -> a) -> f row -> VS.Vector a
 labeledRowsToVec key dat = FL.fold (labeledRowsToVecFld key dat)
-
 
 applyNSPWeightsFld :: forall outerKs ks count rs r .
                       ( DED.EnrichDataEffects r
@@ -303,7 +301,7 @@ diffCovarianceFldMS :: forall outerK k row .
                     -> (row -> k)
                     -> (row -> LA.R)
                     -> DMS.MarginalStructure k
-                    -> FL.Fold row (LA.Herm LA.R)
+                    -> FL.Fold row (LA.Vector LA.R, LA.Herm LA.R)
 diffCovarianceFldMS outerKey catKey dat = \cases
   (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld outerKey catKey dat sts (fmap snd . FL.fold ptFld)
 
@@ -314,8 +312,8 @@ diffCovarianceFld :: forall outerK k row .
                   -> (row -> LA.R)
                   -> [DED.Stencil Int]
                   -> ([(k, Double)] -> [Double])
-                  -> FL.Fold row (LA.Herm LA.R)
-diffCovarianceFld outerKey catKey dat sts prodTableF = snd . LA.meanCov . LA.fromRows <$> vecsFld
+                  -> FL.Fold row (LA.Vector LA.R, LA.Herm LA.R)
+diffCovarianceFld outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRows <$> vecsFld
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
@@ -440,8 +438,6 @@ model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
 
-data ModelDataFuncs md a = ModelDataFuncs { mdfToList :: md a -> [a], mdfFromList :: [[(a, a)]] -> Either Text (md [(a, a)])}
-
 model1Funcs :: ModelDataFuncs Model1P a
 model1Funcs = ModelDataFuncs model1ToList model1FromList where
   model1ToList :: Model1P a -> [a]
@@ -451,6 +447,60 @@ model1Funcs = ModelDataFuncs model1ToList model1FromList where
   model1FromList as = case as of
     [x, y, z] -> Right $ Model1P x y z
     _ -> Left "model1FromList: wrong size list given (n /= 3)"
+
+emptyDM :: DM.DesignMatrixRow (Model1P Double)
+emptyDM = DM.DesignMatrixRow "EDM" []
+
+designMatrixRow1 :: DM.DesignMatrixRow (Model1P Double)
+designMatrixRow1 = DM.DesignMatrixRow "PM1"
+                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
+                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
+                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
+                   ]
+
+data Model2P a = Model2P { m2pPWLogDensity :: a, m2pFracCit :: a, m2pFracGrad :: a, m2pFracOfColor :: a }
+  deriving stock (Show, Generic)
+  deriving anyclass Flat.Flat
+
+model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                , F.ElemOf rs DT.CitizenC
+                , F.ElemOf rs DT.Education4C
+                , F.ElemOf rs DT.Race5C
+                , F.ElemOf rs DT.PopCount
+                )
+             => FL.Fold (F.Record rs) (Model2P Double)
+model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    dens = Numeric.log . view DT.pWPopPerSqMile
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
+    cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
+    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
+    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
+
+model2Funcs :: ModelDataFuncs Model2P a
+model2Funcs = ModelDataFuncs model2ToList model2FromList where
+  model2ToList :: Model2P a -> [a]
+  model2ToList (Model2P x y z a) = [x, y, z, a]
+
+  model2FromList :: [a] -> Either Text (Model2P a)
+  model2FromList as = case as of
+    [x, y, z, a] -> Right $ Model2P x y z a
+    _ -> Left "model1FromList: wrong size list given (n /= 3)"
+
+designMatrixRow2 :: DM.DesignMatrixRow (Model2P Double)
+designMatrixRow2 = DM.DesignMatrixRow "PM2"
+                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m2pPWLogDensity)
+                   , DM.DesignMatrixRowPart "fracCit" 1 (VU.singleton . m2pFracCit)
+                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m2pFracGrad)
+                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m2pFracOfColor)
+                   ]
+
+data ModelDataFuncs md a = ModelDataFuncs { mdfToList :: md a -> [a], mdfFromList :: [[(a, a)]] -> Either Text (md [(a, a)])}
+
 
 data ModelResult g (b :: Type -> Type) = ModelResult { mrGeoAlpha :: Map g [Double], mrSI :: b [(Double, Double)] }
   deriving stock (Generic)
@@ -480,15 +530,7 @@ stateGroupBuilder saF states = do
   SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . ok) states
   SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . ok) states
 
-emptyDM :: DM.DesignMatrixRow (Model1P Double)
-emptyDM = DM.DesignMatrixRow "EDM" []
 
-designMatrixRow1 :: DM.DesignMatrixRow (Model1P Double)
-designMatrixRow1 = DM.DesignMatrixRow "PM1"
-                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
-                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
-                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
-                   ]
 
 data ProjModelData outerK md =
   ProjModelData
@@ -751,7 +793,6 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
       projData acsByPUMA =
         ProjData (modelNumNullVecs mc) (DM.rowLength mc.designMatrixRow)
         (FL.fold (nullVecProjectionsModelDataFld ms mc.projVecs outerKey catKey count datFld) acsByPUMA)
-  -- Sem r is not traversable and ActionWithCaheTime is not as Monad so we need the cache specific function
   let modelData_C = fmap projData acsByPUMA_C
       meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
       meanSDFlds :: Int -> FL.Fold [Double] [(Double, Double)]
