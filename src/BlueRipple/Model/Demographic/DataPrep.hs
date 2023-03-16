@@ -22,8 +22,10 @@ import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Data.BasicRowFolds as BRF
+import qualified BlueRipple.Utilities.FramesUtils as BRF
 
 import qualified Control.MapReduce.Simple as MR
+import qualified Frames.MapReduce as FMR
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
 --import qualified Frames.Streamly.Transform as FST
@@ -41,6 +43,7 @@ import qualified Frames.Melt as F
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
 import qualified Numeric
+import qualified BlueRipple.Data.Loaders as BR
 
 
 
@@ -60,6 +63,11 @@ type ACSByPUMAGeoR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
 type ACSByPUMARF = ACSByPUMAGeoRF V.++ Categoricals V.++ DatFieldsTo
 type ACSByPUMAR = ACSByPUMAGeoR V.++ Categoricals V.++ DatFieldsTo
 
+type ACSByCDGeoRF = [BRDF.Year, GT.StateFIPS, GT.CongressionalDistrict]
+type ACSByCDGeoR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
+
+type ACSByCDRF = ACSByCDGeoRF V.++ Categoricals V.++ DatFieldsTo
+type ACSByCDR = ACSByCDGeoR V.++ Categoricals V.++ DatFieldsTo
 
 type ACSWorkingR = DT.Age4C ': PUMS.PUMS_Typed
 
@@ -121,6 +129,42 @@ cachedACSByPUMA = K.wrapPrefix "Model.Demographic.cachedACSByPUMA" $ do
     K.logLE K.Info $ "Done"
     pure $ fmap F.rcast withSA
 
+cachedACSByCD :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByCDR))
+cachedACSByCD = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
+  acsByPUMA_C <- cachedACSByPUMA
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  let deps = (,) <$> acsByPUMA_C <*> cdFromPUMA_C
+      pumaToCDFld :: FL.Fold (F.Record ((BRDF.FracPUMAInCD ': DatFieldsTo))) (F.Record DatFieldsTo)
+      pumaToCDFld =
+        let cdWgt = F.rgetField @BRDF.FracPUMAInCD
+            ppl = realToFrac . view DT.popCount
+            wgtdPpl r = cdWgt r * ppl r
+            density = view DT.pWPopPerSqMile
+            countFld = fmap round $ FL.premap wgtdPpl FL.sum
+            densityFld = FL.premap (\r -> (wgtdPpl r, density r)) PUMS.wgtdDensityF
+        in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
+
+  BRK.retrieveOrMakeFrame "model/demographic/data/acs2020ByCD.bin" deps $ \(acsByPUMA, cdFromPUMA) -> do
+    K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading ACSByPUMA rows..."
+    K.logLE K.Info $ "ACSByPUMA has " <> show (FL.fold FL.length acsByPUMA) <> " rows. Joining with CD weights..."
+    let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BRDF.Year, GT.StateFIPS, GT.PUMA] acsByPUMA cdFromPUMA
+    when (not $ null missing) $ K.knitError $ "Missing PUMAs in acsByCD left join: " <> show missing
+    aggregatedACS <-
+      K.streamlyToKnit
+      $ BRF.frameCompactMR
+      FMR.noUnpack
+      (FMR.assignKeysAndData @([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ Categoricals)  @(BRDF.FracPUMAInCD ': DatFieldsTo))
+      pumaToCDFld
+      byPUMAWithCDAndWeight
+    K.logLE K.Info $ "aggregated ACS (by PUMA) has " <> show (FL.fold FL.length aggregatedACS)
+    pure aggregatedACS
+
+districtKey :: F.Record ACSByCDR -> F.Record [GT.StateAbbreviation, GT.CongressionalDistrict]
+districtKey = F.rcast
+
+districtKeyT :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict)
+             => F.Record rs -> Text
+districtKeyT r = view GT.stateAbbreviation r <> "-" <> show (view GT.congressionalDistrict r)
 
 simplifyAgeM :: F.ElemOf rs DT.Age5FC => F.Record rs -> Maybe (F.Record (DT.Age4C ': rs))
 simplifyAgeM r =
@@ -240,8 +284,8 @@ educationWithInCollege r = case inCollege r of
     DT.BA -> DT.BA
     DT.AD -> DT.AD
 
-districtKey :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict) => F.Record rs -> Text
-districtKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @GT.CongressionalDistrict r)
+--districtKey :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict) => F.Record rs -> Text
+--districtKey r = F.rgetField @GT.StateAbbreviation r <> "-" <> show (F.rgetField @GT.CongressionalDistrict r)
 
 logDensityPredictor :: F.ElemOf rs DT.PWPopPerSqMile => F.Record rs -> VU.Vector Double
 logDensityPredictor = safeLogV . F.rgetField @DT.PWPopPerSqMile

@@ -533,18 +533,22 @@ metroF =
   in asPct <$> wgtInCityF <*> wgtF
 {-# INLINE metroF #-}
 
+safeDiv :: Double -> Double -> Double
+safeDiv x y = if y /= 0 then x / y else 0
+{-# INLINE safeDiv #-}
+
 wgtdDensityF :: FL.Fold (Double, Double) Double
 wgtdDensityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = FL.premap (uncurry (*)) FL.sum
-  in (/) <$> wgtSumF <*> wgtF
+  in safeDiv <$> wgtSumF <*> wgtF
 {-# INLINE wgtdDensityF #-}
 
 geomWgtdDensityF :: FL.Fold (Double, Double) Double
 geomWgtdDensityF =
   let wgtF = FL.premap fst FL.sum
       wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * Numeric.log d) FL.sum
-  in (/) <$> wgtSumF <*> wgtF
+  in safeDiv <$> wgtSumF <*> wgtF
 {-# INLINE geomWgtdDensityF #-}
 
 pctNativeEnglishF :: FL.Fold (Double, DT.Language) Double
@@ -572,7 +576,7 @@ avgIncomeF :: FL.Fold (Double, Double) Double
 avgIncomeF =
    let wgtF = FL.premap fst FL.sum
        wgtIncomeF = FL.premap (uncurry (*)) FL.sum
-  in (/) <$> wgtIncomeF <*> wgtF
+  in safeDiv <$> wgtIncomeF <*> wgtF
 {-# INLINE avgIncomeF #-}
 {-
 weightedMedian :: (Ord a, Fractional a) => a -> [(Int, a)] -> a

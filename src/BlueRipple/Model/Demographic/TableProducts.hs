@@ -461,6 +461,10 @@ data Model2P a = Model2P { m2pPWLogDensity :: a, m2pFracCit :: a, m2pFracGrad ::
   deriving stock (Show, Generic)
   deriving anyclass Flat.Flat
 
+safeDiv :: Double -> Double -> Double
+safeDiv x y = if y /= 0 then x / y else 0
+{-# INLINE safeDiv #-}
+
 model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
                 , F.ElemOf rs DT.CitizenC
                 , F.ElemOf rs DT.Education4C
@@ -471,9 +475,9 @@ model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
 model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
   where
     nPeople = realToFrac . view DT.popCount
-    dens = Numeric.log . view DT.pWPopPerSqMile
+    dens r = let pwd = view DT.pWPopPerSqMile r in if pwd > 1 then Numeric.log pwd else 0
     wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
     dFld = wgtdFld dens
     fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
     cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
