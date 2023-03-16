@@ -158,7 +158,6 @@ optimalWeights nvps projWs pV = do
       prToFull = projToFull nvps
       scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
       objD v =
-        -- FIXME: This should be minimized in terms of distance in the unprojected space
 --        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
         let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
 

@@ -58,7 +58,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 
 
-import Control.Lens (view, (^.))
+import Control.Lens (view, over, (^.))
 
 import Path (Dir, Rel)
 import qualified Path
@@ -118,27 +118,38 @@ data MethodResults ks =
   }
 
 
-compareResults :: (K.KnitEffects r
---                  , K.KnitOne r
+compareResults :: forall ks key colKey rowKey r .
+                  (K.KnitEffects r
+                  , K.KnitOne r
                   , Keyed.FiniteSet colKey
                   , Show colKey
                   , Ord colKey
                   , Keyed.FiniteSet rowKey
                   , Show rowKey
                   , Ord rowKey
+                  , Show (F.Record ks)
+                  , Ord (F.Record ks)
+                  , V.RecordToList ks
+                  , ks F.⊆ (ks V.++ '[DT.PopCount])
+                  , V.ReifyConstraint Show F.ElField ks
+                  , V.RMap ks
                   , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
+                  , F.ElemOf ks GT.StateAbbreviation
                   , FSI.RecVec (ks V.++ '[DT.PopCount])
                   , Ord key
                   , F.ElemOf (ks V.++ '[DT.PopCount]) GT.StateAbbreviation
                   )
-               => [Text] -- state abbreviations
+               => Map Text Int -- state populations
                -> Maybe Text
                -> (F.Record (ks V.++ '[DT.PopCount]) -> key)
                -> (F.Record (ks V.++ '[DT.PopCount]) -> rowKey)
                -> (F.Record (ks V.++ '[DT.PopCount]) -> colKey)
+               -> (F.Record ks -> Text)
+               -> Maybe (Text, F.Record ks -> Text)
+               -> Maybe (Text, F.Record ks -> Text)
                -> MethodResults ks
                -> K.Sem r ()
-compareResults allStates exampleStateM catKey rowKey colKey results = do
+compareResults statePopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -148,6 +159,23 @@ compareResults allStates exampleStateM catKey rowKey colKey results = do
                                        )
                              d
                            )
+      allStates = M.keys statePopMap
+  let compChart ff pctPop ls l f = do
+        let logF = if pctPop then Numeric.log else Numeric.logBase 10
+        vl <- K.knitEither
+              $ distCompareChart
+              (FV.ViewConfig 300 300 5)
+              l
+              (F.rcast @ks)
+              showCellKey
+              colorM
+              shapeM
+              ((if ls then logF else id) . realToFrac . view DT.popCount)
+              (if pctPop then (Just (view GT.stateAbbreviation, statePopMap)) else Nothing)
+              ("Actual ACS", ff $ mrActual results)
+              (l, ff f)
+        K.addHvega Nothing Nothing vl
+
   case exampleStateM of
     Nothing -> pure ()
     Just sa -> do
@@ -158,6 +186,16 @@ compareResults allStates exampleStateM catKey rowKey colKey results = do
       K.logLE K.Info $ "Product + NS" <> "\n" <> tableText (ff $ mrProductWithNS results)
       K.logLE K.Info $ "Model" <> "\n" <> tableText (ff $ mrModel results)
       K.logLE K.Info $ "Model + CO" <> "\n" <> tableText (ff $ mrModelWithCO results)
+      _ <- compChart ff False False ("Product: " <> sa) $ mrProduct results
+      _ <- compChart ff False False ("ProductNS: " <> sa) $ mrProductWithNS results
+      _ <- compChart ff False False ("ModelOnly: " <> sa) $ mrModel results
+      _ <- compChart ff False False "ModelWithCO" $ mrModelWithCO results
+      _ <- compChart ff False True "Product" $ mrProduct results
+      _ <- compChart ff False True "ProductNS" $ mrProductWithNS results
+      _ <- compChart ff False True "ModelOnly" $ mrModel results
+      _ <- compChart ff False True "ModelWithCO" $ mrModelWithCO results
+      pure ()
+
   -- compute KL divergences
   let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
       computeKL d sa = DED.klDiv' acsV dV where
@@ -171,7 +209,17 @@ compareResults allStates exampleStateM catKey rowKey colKey results = do
   K.logLE K.Info "Divergence Table:"
   K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) forKLsTable)
 
+--  _ <- compChart True "Actual" $ mrActual results
+  _ <- compChart id True False "Product" $ mrProduct results
+  _ <- compChart id True False "ProductNS" $ mrProductWithNS results
+  _ <- compChart id True False "ModelOnly" $ mrModel results
+  _ <- compChart id True False "ModelWithCO" $ mrModelWithCO results
+  _ <- compChart id True True "Product" $ mrProduct results
+  _ <- compChart id True True "ProductNS" $ mrProductWithNS results
+  _ <- compChart id True True "ModelOnly" $ mrModel results
+  _ <- compChart id True True "ModelWithCO" $ mrModelWithCO results
 
+  pure ()
 
 main :: IO ()
 main = do
@@ -229,6 +277,7 @@ main = do
 --    K.logLE K.Info $ "nvpUcProj=" <> toText (LA.dispf 4 $ DTP.nvpUcProj nvProjections) <> "\nnvpUcToNull=" <> toText (LA.dispf 4 $ DTP.nvpUcToNull nvProjections)
     acsByState_C <- DDP.cachedACSByState
     acsByState <-  K.ignoreCacheTime acsByState_C
+    let statePopMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByState
     let stateModelData = FL.fold
                          (DTP.nullVecProjectionsModelDataFldCheck
                          marginalStructure
@@ -387,11 +436,18 @@ main = do
 
     let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
         mResults = (MethodResults (fmap toOutputRow acsSampleCSER) product_SER_CSR productNS_SER_CSR modelCSERFromCSR modelCO_CSERFromCSR)
-    compareResults allStates (Just "HI")
-      (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-      (\r -> (r ^. DT.sexC, r ^. DT.race5C))
-      (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
-      mResults
+    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+    synthModelPaths <- postPaths "SynthModel" cmdLine
+    BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
+      let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
+      compareResults statePopMap (Just "NY")
+        (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
+        showCellKey
+        (Just ("Education", show . view DT.education4C))
+        (Just ("Citizenship", show . view DT.citizenC))
+        mResults
 
 {-
     let acsSampleSE2R = F.toFrame
@@ -476,7 +532,6 @@ main = do
 
 -}
 
-    K.knitEither $ Left "Stopping before models, etc."
 {-
   let  a2srRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
        a2srRec (a, s, r) = a F.&: s F.&: r F.&: V.RNil
@@ -849,8 +904,7 @@ main = do
     let allKLs = L.zip4 allStates serToCA2SE2R_MO_KLs serToCA2SE2R_KLs serToCASER_Prod_KLs --asrToCASGR_MO_KLs asrToCASGR_KLs csrToCASER_MO_KLs csrToCASER_KLs
 --    K.logLE K.Info "Divergence Table:"
 --    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) allKLs)
-    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    synthModelPaths <- postPaths "SynthModel" cmdLine
+
     BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
       let cellKey r = (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.simpleAgeC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
       modelVL <- K.knitEither
@@ -1155,7 +1209,7 @@ chart vc rows =
       enc = (GV.encoding . encAge . encSex . encFracGrad . encRace . encTotal)
   in FV.configuredVegaLite vc [FV.title "FracGrad v Age", enc [], mark, vlData]
 
-distCompareChart :: (Ord k, Show k)
+distCompareChart :: (Ord k, Show k, Show a, Ord a)
                  => FV.ViewConfig
                  -> Text
                  -> (F.Record rs -> k) -- key for map
@@ -1163,10 +1217,11 @@ distCompareChart :: (Ord k, Show k)
                  -> Maybe (Text, k -> Text) -- category for color
                  -> Maybe (Text, k -> Text) -- category for shape
                  -> (F.Record rs -> Double)
+                 -> Maybe (k -> a, Map a Int) -- pop counts to divide by
                  -> (Text, F.FrameRec rs)
                  -> (Text, F.FrameRec rs)
                  -> Either Text GV.VegaLite
-distCompareChart vc title key keyText colorM shapeM count (xLabel, xRows) (yLabel, yRows) = do
+distCompareChart vc title key keyText colorM shapeM count scalesM (xLabel, xRows) (yLabel, yRows) = do
   let assoc r = (key r, count r)
       toMap = FL.fold (FL.premap assoc FL.map)
       whenMatchedF _ xCount yCount = Right (xCount, yCount)
@@ -1175,18 +1230,21 @@ distCompareChart vc title key keyText colorM shapeM count (xLabel, xRows) (yLabe
       whenMissingFromX = MM.traverseMissing (whenMissingF xLabel)
       whenMissingFromY = MM.traverseMissing (whenMissingF yLabel)
   mergedMap <- MM.mergeA whenMissingFromY whenMissingFromX whenMatched (toMap xRows) (toMap yRows)
-  let rowToData (k, (xCount, yCount)) =
-        [ (xLabel, GV.Number xCount)
-        , (yLabel, GV.Number yCount)
-        , ("Description", GV.Str $ keyText k)
-        ]
-        <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) colorM
-        <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) shapeM
-      toVLDataRows x = GV.dataRow (rowToData x) []
-      vlData = GV.dataFromRows []
-               $ concatMap toVLDataRows
-               $ M.toList mergedMap
-      encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+  let rowToDataM (k, (xCount, yCount)) = do
+        let scaleErr :: Show a => a -> Text
+            scaleErr a = "distCompareChart: Missing key=" <> show a <> " in scale lookup."
+        scale <- realToFrac <$> case scalesM of
+          Nothing -> pure 1
+          Just (keyF, scaleMap) -> let a = keyF k in maybeToRight (scaleErr a) $ M.lookup a scaleMap
+        pure $ [ (xLabel, GV.Number $ xCount / scale)
+               , (yLabel, GV.Number $ yCount / scale)
+               , ("Description", GV.Str $ keyText k)
+               ]
+               <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) colorM
+               <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) shapeM
+      toVLDataRowsM x = GV.dataRow <$> rowToDataM x <*> pure []
+  vlData <- GV.dataFromRows [] . concat <$> (traverse toVLDataRowsM $ M.toList mergedMap)
+  let encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
       encY = GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
       encColor = maybe id (\(l, _) -> GV.color [GV.MName l, GV.MmType GV.Nominal]) colorM
       encShape = maybe id (\(l, _) -> GV.shape [GV.MName l, GV.MmType GV.Nominal]) shapeM
