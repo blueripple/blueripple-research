@@ -416,91 +416,6 @@ nullVecProjectionsModelDataFldCheck ms nvps outerKey catKey count datFold = case
       projFld = fmap results $ labeledRowsToVecFld catKey count
       innerFld = (,) <$> datFold <*> projFld
 
-data Model1P a = Model1P { m1pPWLogDensity :: a, m1pFracGrad :: a, m1pFracOfColor :: a }
-  deriving stock (Show, Generic)
-  deriving anyclass Flat.Flat
-
-model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                , F.ElemOf rs DT.Education4C
-                , F.ElemOf rs DT.Race5C
-                , F.ElemOf rs DT.PopCount
-                )
-             => FL.Fold (F.Record rs) (Model1P Double)
-model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
-  where
-    nPeople = realToFrac . view DT.popCount
-    dens = Numeric.log . view DT.pWPopPerSqMile
-    wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
-    dFld = wgtdFld dens
-    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
-    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
-    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
-
-model1Funcs :: ModelDataFuncs Model1P a
-model1Funcs = ModelDataFuncs model1ToList model1FromList where
-  model1ToList :: Model1P a -> [a]
-  model1ToList (Model1P x y z) = [x, y, z]
-
-  model1FromList :: [a] -> Either Text (Model1P a)
-  model1FromList as = case as of
-    [x, y, z] -> Right $ Model1P x y z
-    _ -> Left "model1FromList: wrong size list given (n /= 3)"
-
-emptyDM :: DM.DesignMatrixRow (Model1P Double)
-emptyDM = DM.DesignMatrixRow "EDM" []
-
-designMatrixRow1 :: DM.DesignMatrixRow (Model1P Double)
-designMatrixRow1 = DM.DesignMatrixRow "PM1"
-                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
-                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
-                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
-                   ]
-
-data Model2P a = Model2P { m2pPWLogDensity :: a, m2pFracCit :: a, m2pFracGrad :: a, m2pFracOfColor :: a }
-  deriving stock (Show, Generic)
-  deriving anyclass Flat.Flat
-
-safeDiv :: Double -> Double -> Double
-safeDiv x y = if y /= 0 then x / y else 0
-{-# INLINE safeDiv #-}
-
-model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                , F.ElemOf rs DT.CitizenC
-                , F.ElemOf rs DT.Education4C
-                , F.ElemOf rs DT.Race5C
-                , F.ElemOf rs DT.PopCount
-                )
-             => FL.Fold (F.Record rs) (Model2P Double)
-model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
-  where
-    nPeople = realToFrac . view DT.popCount
-    dens r = let pwd = view DT.pWPopPerSqMile r in if pwd > 1 then Numeric.log pwd else 0
-    wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
-    dFld = wgtdFld dens
-    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
-    cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
-    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
-    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
-
-model2Funcs :: ModelDataFuncs Model2P a
-model2Funcs = ModelDataFuncs model2ToList model2FromList where
-  model2ToList :: Model2P a -> [a]
-  model2ToList (Model2P x y z a) = [x, y, z, a]
-
-  model2FromList :: [a] -> Either Text (Model2P a)
-  model2FromList as = case as of
-    [x, y, z, a] -> Right $ Model2P x y z a
-    _ -> Left "model1FromList: wrong size list given (n /= 3)"
-
-designMatrixRow2 :: DM.DesignMatrixRow (Model2P Double)
-designMatrixRow2 = DM.DesignMatrixRow "PM2"
-                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m2pPWLogDensity)
-                   , DM.DesignMatrixRowPart "fracCit" 1 (VU.singleton . m2pFracCit)
-                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m2pFracGrad)
-                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m2pFracOfColor)
-                   ]
 
 data ModelDataFuncs md a = ModelDataFuncs { mdfToList :: md a -> [a], mdfFromList :: [[(a, a)]] -> Either Text (md [(a, a)])}
 
@@ -874,3 +789,140 @@ transp = go [] where
   go x [] = fmap reverse x
   go [] (r : rs) = go (fmap (: []) r) rs
   go x (r :rs) = go (List.zipWith (:) r x) rs
+
+
+data ASERModelP a = ASERModelP { mASER_PWLogDensity :: a, mASER_FracOver45 :: a, mASER_FracGrad :: a, mASER_FracOfColor :: a , mASER_FracWNG :: a  }
+  deriving stock (Show, Generic)
+  deriving anyclass Flat.Flat
+
+aserModelDatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                   , F.ElemOf rs DT.Age4C
+                   , F.ElemOf rs DT.Education4C
+                   , F.ElemOf rs DT.Race5C
+                   , F.ElemOf rs DT.PopCount
+                   )
+             => FL.Fold (F.Record rs) (ASERModelP Double)
+aserModelDatFld = ASERModelP <$> dFld <*> aFld <*> gFld <*> rFld <*> wngFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    dens r = let x = view DT.pWPopPerSqMile r in if x > 1 then Numeric.log x else 0
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    over45 = (`elem` [DT.A4_45To64, DT.A4_65AndOver]) . view DT.age4C
+    grad = (== DT.E4_CollegeGrad) . view DT.education4C
+    ofColor = (/= DT.R5_WhiteNonHispanic) . view DT.race5C
+    fracFld f = safeDiv <$> FL.prefilter f wgtFld <*> wgtFld
+    wng x = not (ofColor x) && not (grad x)
+    aFld = fracFld over45
+    gFld = fracFld grad
+    rFld = fracFld ofColor
+    wngFld = fracFld wng
+
+aserModelFuncs :: ModelDataFuncs ASERModelP a
+aserModelFuncs = ModelDataFuncs aserModelToList aserModelFromList where
+  aserModelToList :: ASERModelP a -> [a]
+  aserModelToList (ASERModelP x y z a b) = [x, y, z, a, b]
+
+  aserModelFromList :: [a] -> Either Text (ASERModelP a)
+  aserModelFromList as = case as of
+    [x, y, z, a, b] -> Right $ ASERModelP x y z a b
+    _ -> Left "aserModelFromList: wrong size list given (n /= 5)"
+
+designMatrixRowASER :: DM.DesignMatrixRow (ASERModelP Double)
+designMatrixRowASER = DM.DesignMatrixRow "ASER"
+                      [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . mASER_PWLogDensity)
+                      , DM.DesignMatrixRowPart "fracOver45" 1 (VU.singleton . mASER_FracOver45)
+                      , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . mASER_FracGrad)
+                      , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . mASER_FracOfColor)
+                      , DM.DesignMatrixRowPart "fracWNG" 1 (VU.singleton . mASER_FracWNG)
+                      ]
+
+
+---
+
+data Model1P a = Model1P { m1pPWLogDensity :: a, m1pFracGrad :: a, m1pFracOfColor :: a }
+  deriving stock (Show, Generic)
+  deriving anyclass Flat.Flat
+
+model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                , F.ElemOf rs DT.Education4C
+                , F.ElemOf rs DT.Race5C
+                , F.ElemOf rs DT.PopCount
+                )
+             => FL.Fold (F.Record rs) (Model1P Double)
+model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    dens = Numeric.log . view DT.pWPopPerSqMile
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
+    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
+    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
+
+model1Funcs :: ModelDataFuncs Model1P a
+model1Funcs = ModelDataFuncs model1ToList model1FromList where
+  model1ToList :: Model1P a -> [a]
+  model1ToList (Model1P x y z) = [x, y, z]
+
+  model1FromList :: [a] -> Either Text (Model1P a)
+  model1FromList as = case as of
+    [x, y, z] -> Right $ Model1P x y z
+    _ -> Left "model1FromList: wrong size list given (n /= 3)"
+
+emptyDM :: DM.DesignMatrixRow (Model1P Double)
+emptyDM = DM.DesignMatrixRow "EDM" []
+
+designMatrixRow1 :: DM.DesignMatrixRow (Model1P Double)
+designMatrixRow1 = DM.DesignMatrixRow "PM1"
+                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
+                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
+                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
+                   ]
+
+data Model2P a = Model2P { m2pPWLogDensity :: a, m2pFracCit :: a, m2pFracGrad :: a, m2pFracOfColor :: a }
+  deriving stock (Show, Generic)
+  deriving anyclass Flat.Flat
+
+safeDiv :: Double -> Double -> Double
+safeDiv x y = if y /= 0 then x / y else 0
+{-# INLINE safeDiv #-}
+
+model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                , F.ElemOf rs DT.CitizenC
+                , F.ElemOf rs DT.Education4C
+                , F.ElemOf rs DT.Race5C
+                , F.ElemOf rs DT.PopCount
+                )
+             => FL.Fold (F.Record rs) (Model2P Double)
+model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    dens r = let pwd = view DT.pWPopPerSqMile r in if pwd > 1 then Numeric.log pwd else 0
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
+    cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
+    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
+    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
+
+model2Funcs :: ModelDataFuncs Model2P a
+model2Funcs = ModelDataFuncs model2ToList model2FromList where
+  model2ToList :: Model2P a -> [a]
+  model2ToList (Model2P x y z a) = [x, y, z, a]
+
+  model2FromList :: [a] -> Either Text (Model2P a)
+  model2FromList as = case as of
+    [x, y, z, a] -> Right $ Model2P x y z a
+    _ -> Left "model1FromList: wrong size list given (n /= 3)"
+
+designMatrixRow2 :: DM.DesignMatrixRow (Model2P Double)
+designMatrixRow2 = DM.DesignMatrixRow "PM2"
+                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m2pPWLogDensity)
+                   , DM.DesignMatrixRowPart "fracCit" 1 (VU.singleton . m2pFracCit)
+                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m2pFracGrad)
+                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m2pFracOfColor)
+                   ]

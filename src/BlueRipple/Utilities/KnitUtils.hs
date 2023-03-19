@@ -24,6 +24,7 @@ import qualified BlueRipple.Configuration as BRC
 import qualified Control.Foldl as FL
 import qualified Control.Monad.Except as X
 import qualified Control.Monad.Primitive as Prim
+import qualified Data.Aeson as A
 import qualified Data.ByteString as BS
 import qualified Data.Map as M
 import qualified Data.Sequence as Seq
@@ -106,9 +107,6 @@ brAddMarkDown = K.addMarkDownWithOptions brMarkDownReaderOptions
                   $ exts
             }
 
-
-
-
 brAddAnchor :: K.KnitOne r => T.Text -> K.Sem r Text
 brAddAnchor t = do
   brAddMarkDown $ "<a name=\"" <> t <> "\"></a>"
@@ -131,7 +129,6 @@ brAddDates updated pubDate updateDate tMap =
                )
              else M.empty
    in tMap <> pubT <> updT
-
 
 brGetTextFromFile :: K.KnitEffects r => Path.Path Path.Abs Path.File -> K.Sem r (Maybe Text)
 brGetTextFromFile p = do
@@ -242,6 +239,21 @@ brNewNote pp pi' nn pageTitle content = do
   case nn of
     BRC.Unused _ -> return Nothing
     BRC.Used _ -> Just <$> (K.knitEither $ BRC.noteUrl pp pi' nn)
+
+-- returns URL
+brAddJSON :: K.KnitEffects r
+          => BRC.PostPaths Path.Abs
+          -> BRC.PostInfo
+          -> Text
+          -> A.Value
+          -> K.Sem r Text
+brAddJSON pp postInfo jsonName jsonVal = do
+  let destDir = BRC.dataDir pp postInfo
+      jsonFileName = jsonName <> ".json"
+  K.liftKnit $ SD.createDirectoryIfMissing True (Path.toFilePath destDir)
+  jsonPath' <- K.knitEither $ BRC.jsonPath pp postInfo jsonFileName
+  K.liftKnit $ A.encodeFile (Path.toFilePath jsonPath') jsonVal
+  K.knitEither $ BRC.jsonURL pp postInfo jsonFileName
 
 --  let noteParent = Path.parent notePath
 --  K.logLE K.Info $ "If necessary, creating note path \"" <> toText (Path.toFilePath noteParent)

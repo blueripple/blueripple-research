@@ -6,7 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
---{-# LANGUAGE NoStrictData #-}
+{-# LANGUAGE StrictData #-}
 
 module Main
   (main)
@@ -39,7 +39,7 @@ import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
 import qualified Data.List as L
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
 import qualified Data.Text as T
@@ -68,6 +68,7 @@ import qualified Text.Printf as PF
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.JSON as VJ
 import qualified BlueRipple.Model.Demographic.DataPrep as DED
 --import Data.Monoid (Sum(getSum))
 
@@ -111,10 +112,10 @@ type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
 data MethodResults ks =
   MethodResults
   { mrActual :: ResultFrame ks
-  , mrProduct :: ResultFrame ks
-  , mrProductWithNS :: ResultFrame ks
-  , mrModel :: ResultFrame ks
-  , mrModelWithCO :: ResultFrame ks
+  , mrProduct :: Maybe (ResultFrame ks)
+  , mrProductWithNS :: Maybe (ResultFrame ks)
+  , mrModel :: Maybe (ResultFrame ks)
+  , mrModelWithCO :: Maybe (ResultFrame ks)
   }
 
 
@@ -141,7 +142,9 @@ compareResults :: forall ks key colKey rowKey r .
                   , Ord key
                   , F.ElemOf (ks V.++ '[DT.PopCount]) GT.StateAbbreviation
                   )
-               => Map Text Int -- populations
+               => BR.PostPaths Path.Abs
+               -> BR.PostInfo
+               -> Map Text Int -- populations
                -> Maybe Text
                -> (F.Record (ks V.++ '[DT.PopCount]) -> key)
                -> (F.Record (ks V.++ '[DT.PopCount]) -> rowKey)
@@ -151,7 +154,7 @@ compareResults :: forall ks key colKey rowKey r .
                -> Maybe (Text, F.Record ks -> Text)
                -> MethodResults ks
                -> K.Sem r ()
-compareResults cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM results = do
+compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -162,43 +165,57 @@ compareResults cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM sh
                              d
                            )
       allCDs = M.keys cdPopMap
-  let compChart ff pctPop ls l f = do
+  let compChartM ff pctPop ls l fM = do
         let logF = if pctPop then Numeric.log else Numeric.logBase 10
-        vl <- K.knitEither
-              $ distCompareChart
-              (FV.ViewConfig 300 300 5)
-              l
-              (F.rcast @ks)
-              showCellKey
-              colorM
-              shapeM
-              ((if ls then logF else id) . realToFrac . view DT.popCount)
-              (if pctPop then (Just (DDP.districtKeyT, cdPopMap)) else Nothing)
-              ("Actual ACS", ff $ mrActual results)
-              (l, ff f)
-        K.addHvega Nothing Nothing vl
+            title = case (ls, pctPop) of
+              (False, False) -> l
+              (True, False) -> l <> " (Log scale)"
+              (False, True) -> l <> " (% Pop)"
+              (True, True) -> l <> " (% Pop, Log scale)"
+        case fM of
+          Just f -> do
+            vl <- distCompareChart pp pi
+                  (FV.ViewConfig 300 300 5)
+                  title
+                  (F.rcast @ks)
+                  showCellKey
+                  colorM
+                  shapeM
+                  ((if ls then logF else id) . realToFrac . view DT.popCount)
+                  (if pctPop then (Just (DDP.districtKeyT, cdPopMap)) else Nothing)
+                  ("Actual ACS", ff $ mrActual results)
+                  (l, ff f)
+            _ <- K.addHvega Nothing Nothing vl
+            pure ()
+          Nothing -> pure ()
 
+
+--      compChartMF f pp ls
   case exampleStateM of
     Nothing -> pure ()
     Just sa -> do
       let ff = F.filterFrame (\r -> r ^. GT.stateAbbreviation == sa)
+          tableTextMF t rfM = whenJust rfM $ \rf -> K.logLE K.Info $ t <> "\n" <> tableText (ff rf)
+
       K.logLE K.Info $ "Example State=" <> sa
-      K.logLE K.Info $ "Actual" <> "\n" <> tableText (ff $ mrActual results)
-      K.logLE K.Info $ "Product" <> "\n" <> tableText (ff $ mrProduct results)
-      K.logLE K.Info $ "Product + NS" <> "\n" <> tableText (ff $ mrProductWithNS results)
-      K.logLE K.Info $ "Model" <> "\n" <> tableText (ff $ mrModel results)
-      K.logLE K.Info $ "Model + CO" <> "\n" <> tableText (ff $ mrModelWithCO results)
-      _ <- compChart ff False False ("Product: " <> sa) $ mrProduct results
-      _ <- compChart ff False False ("ProductNS: " <> sa) $ mrProductWithNS results
-      _ <- compChart ff False False ("ModelOnly: " <> sa) $ mrModel results
-      _ <- compChart ff False False "ModelWithCO" $ mrModelWithCO results
-      _ <- compChart ff False True "Product" $ mrProduct results
-      _ <- compChart ff False True "ProductNS" $ mrProductWithNS results
-      _ <- compChart ff False True "ModelOnly" $ mrModel results
-      _ <- compChart ff False True "ModelWithCO" $ mrModelWithCO results
+      tableTextMF "Actual" (Just $ mrActual results)
+      tableTextMF "Product" (mrProduct results)
+      tableTextMF "Product + NS" (mrProductWithNS results)
+      tableTextMF "ModelOnly" (mrModel results)
+      tableTextMF "Model + CO" (mrModelWithCO results)
+      K.logLE K.Info "Building example state charts."
+      compChartM ff False False ("Product: " <> sa) $ mrProduct results
+      compChartM ff False False ("ProductNS: " <> sa) $ mrProductWithNS results
+      compChartM ff False False ("ModelOnly: " <> sa) $ mrModel results
+      compChartM ff False False ("ModelWithCO: " <> sa) $ mrModelWithCO results
+      compChartM ff False True ("Product: " <> sa) $ mrProduct results
+      compChartM ff False True ("ProductNS: " <> sa) $ mrProductWithNS results
+      compChartM ff False True ("ModelOnly: " <> sa) $ mrModel results
+      compChartM ff False True ("ModelWithCO: " <> sa) $ mrModelWithCO results
       pure ()
 
   -- compute KL divergences
+{-
   let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
       computeKL d cd = DED.klDiv' acsV dV where
         acsV = toVecF $ F.filterFrame ((== cd) . DDP.districtKeyT) (mrActual results)
@@ -210,18 +227,23 @@ compareResults cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM sh
       forKLsTable = L.zip5 allCDs prodKLs prodNSKLs modelKLs modelCOKLs
   K.logLE K.Info "Divergence Table:"
   K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) forKLsTable)
-
+-}
 --  _ <- compChart True "Actual" $ mrActual results
-  _ <- compChart id True False "Product" $ mrProduct results
-  _ <- compChart id True False "ProductNS" $ mrProductWithNS results
-  _ <- compChart id True False "ModelOnly" $ mrModel results
-  _ <- compChart id True False "ModelWithCO" $ mrModelWithCO results
-  _ <- compChart id True True "Product" $ mrProduct results
-  _ <- compChart id True True "ProductNS" $ mrProductWithNS results
-  _ <- compChart id True True "ModelOnly" $ mrModel results
-  _ <- compChart id True True "ModelWithCO" $ mrModelWithCO results
+  K.logLE K.Info "Building national charts."
+  compChartM id True False "Product" $ mrProduct results
+  compChartM id True False "ProductNS" $ mrProductWithNS results
+  compChartM id True False "ModelOnly" $ mrModel results
+  compChartM id True False "ModelWithCO" $ mrModelWithCO results
+  compChartM id True True "Product" $ mrProduct results
+  compChartM id True True "ProductNS" $ mrProductWithNS results
+  compChartM id True True "ModelOnly" $ mrModel results
+  compChartM id True True "ModelWithCO" $ mrModelWithCO results
 
   pure ()
+
+type SER = [DT.SexC, DT.Education4C, DT.Race5C]
+type ASR = [DT.Age4C, DT.SexC, DT.Race5C]
+type ASER = [DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
 
 main :: IO ()
 main = do
@@ -246,25 +268,18 @@ main = do
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsByPUMA_C <- DDP.cachedACSByPUMA
     acsByPUMA <-  K.ignoreCacheTime acsByPUMA_C
-    let seInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Education4C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
-        srInSERStencil = DTP.stencils @(F.Record [DT.SexC, DT.Race5C]) @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]) F.rcast
-        testStencils = seInSERStencil <> srInSERStencil
-        exampleV = DTP.labeledRowsToVec (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (realToFrac @_ @Double . view DT.popCount)
-                   $ F.filterFrame ((== "NY") . view GT.stateAbbreviation) acsByPUMA
-        mMatrix = DED.mMatrix (VS.length exampleV) testStencils
-        -- build marginal structure the fancy way!
-        msSER_CSR = DMS.reKeyMarginalStructure
-                    (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.CitizenC])
-                    (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
-                    $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.CitizenC]
+    let msSER_ASR = DMS.reKeyMarginalStructure
+                    (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age4C])
+                    (F.rcast @ASER)
+                    $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.Age4C]
                     DMS.identityMarginalStructure DMS.identityMarginalStructure
-        marginalStructure = msSER_CSR
+        marginalStructure = msSER_ASR
 --    K.logLE K.Info $ "stencils=" <> show (DMS.msStencils marginalStructure)
 
     let projCovariancesFld =
           DTP.diffCovarianceFldMS
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
-          (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+          (F.rcast @ASER)
           (realToFrac . view DT.popCount)
           marginalStructure
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
@@ -279,21 +294,23 @@ main = do
 --    K.logLE K.Info $ "nvpUcProj=" <> toText (LA.dispf 4 $ DTP.nvpUcProj nvProjections) <> "\nnvpUcToNull=" <> toText (LA.dispf 4 $ DTP.nvpUcToNull nvProjections)
     acsByCD_C <- DDP.cachedACSByCD
     acsByCD <-  K.ignoreCacheTime acsByCD_C
+--    BRK.logFrame acsByCD
+--    K.knitError "STOP"
     let cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByCD
     let cdModelData = FL.fold
                       (DTP.nullVecProjectionsModelDataFldCheck
                         marginalStructure
                         testProjections
                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
-                        (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+                        (F.rcast @ASER)
                         (realToFrac . view DT.popCount)
-                        DTP.model2DatFld
+                        DTP.aserModelDatFld
                       )
                       acsByCD
     K.logLE K.Info $ "Running model, if necessary."
     let modelConfig = DTP.ModelConfig testProjections True
-                      DTP.designMatrixRow2 DTP.AlphaHierNonCentered DTP.NormalDist DTP.model2Funcs
-    res_C <- DTP.runProjModel @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] False cmdLine (DTP.RunConfig False False) modelConfig marginalStructure DTP.model2DatFld
+                      DTP.designMatrixRowASER DTP.AlphaHierNonCentered DTP.NormalDist DTP.aserModelFuncs
+    res_C <- DTP.runProjModel @ASER False cmdLine (DTP.RunConfig False False) modelConfig marginalStructure DTP.aserModelDatFld
     modelRes <- K.ignoreCacheTime res_C
 
     forM_ cdModelData $ \(sar, md, nVpsActual, pV, nV) -> do
@@ -306,8 +323,8 @@ main = do
         K.logLE K.Info $ keyT <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
         K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
         K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
-        K.logLE K.Info $ keyT <> "predictors: " <> show md
-        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model2Funcs modelRes (sar ^. GT.stateAbbreviation) md)
+        K.logLE K.Info $ keyT <> " predictors: " <> show md
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled
         nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
         K.logLE K.Info $ keyT <> " optimized=" <> DED.prettyVector nvpsOptimal
@@ -316,17 +333,26 @@ main = do
     let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
         smcRowToProdAndModeled (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
-          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.model2Funcs modelRes (view GT.stateAbbreviation ok) md)
+          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
           nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
           let mV = DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
           pure (ok, pV, mV)
     prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
     let prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)
-        (product_SER_CSR, productNS_SER_CSR) =
+        (product_SER_ASR, productNS_SER_ASR) =
           first (F.toFrame . concat)
           $ second (F.toFrame . concat)
           $ unzip
-          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record [DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]))) prodAndModeled
+          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record ASER))) prodAndModeled
+        addSimpleAge r = FT.recordSingleton @DT.SimpleAgeC (DT.age4ToSimple $ r ^. DT.age4C) F.<+> r
+        aggregateAge = FMR.concatFold
+                       $ FMR.mapReduceFold
+                       (FMR.Unpack $ \r -> [addSimpleAge r])
+                       (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
+                         @'[DT.PopCount])
+                       (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+        product_SER_A2SR = FL.fold aggregateAge product_SER_ASR
+        productNS_SER_A2SR = FL.fold aggregateAge productNS_SER_ASR
 --      smcToProdFrame ks (ok, _, _, pv, nv) = zip
 --      productFrame = F.toFrame $ fmap (
 
@@ -359,21 +385,36 @@ main = do
         tableMatchingDataFunctions = DED.TableMatchingDataFunctions zeroPopAndDens recToCWD cwdToRec cwdN updateCWDCount
 --        exampleState = "KY"
         rerunMatches = False
-    -- SER to CSER
-    let toOutputRow :: ([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]  F.⊆ rs)
-                    => F.Record rs -> F.Record [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+    -- SER to A2SER
+    let toOutputRow :: ([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]  F.⊆ rs)
+                    => F.Record rs -> F.Record [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
         toOutputRow = F.rcast
+    let toOutputRow2 :: ([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]  F.⊆ rs)
+                    => F.Record rs -> F.Record [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+        toOutputRow2 = F.rcast
     -- actual
-    let acsSampleCSER_C = F.toFrame
+    let acsSampleASER_C = F.toFrame
                          . FL.fold (FMR.concatFold
                                     $ FMR.mapReduceFold
                                     FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
                                      @'[DT.PopCount, DT.PWPopPerSqMile])
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
                          <$> acsSampleWZ_C
-    acsSampleCSER <- K.ignoreCacheTime acsSampleCSER_C
+    acsSampleASER <- K.ignoreCacheTime acsSampleASER_C
+
+    let acsSampleA2SER_C = F.toFrame
+                           . FL.fold (FMR.concatFold
+                                      $ FMR.mapReduceFold
+                                      (FMR.Unpack $ \r -> [FT.recordSingleton @DT.SimpleAgeC (DT.age4ToSimple $ r ^. DT.age4C) F.<+> r])
+                                      (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
+                                       @'[DT.PopCount, DT.PWPopPerSqMile])
+                                      (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                     )
+                           <$> acsSampleWZ_C
+    acsSampleA2SER <- K.ignoreCacheTime acsSampleA2SER_C
+
     -- marginals, SER and CSR
     let acsSampleSER_C = F.toFrame
                          . FL.fold (FMR.concatFold
@@ -385,6 +426,7 @@ main = do
                                    )
                          <$> acsSampleWZ_C
     acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
+{-
     let acsSampleCSR_C = F.toFrame
                          . FL.fold (FMR.concatFold
                                     $ FMR.mapReduceFold
@@ -395,20 +437,37 @@ main = do
                                    )
                          <$> acsSampleWZ_C
     acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
+-}
+    let acsSampleASR_C = F.toFrame
+                         . FL.fold (FMR.concatFold
+                                    $ FMR.mapReduceFold
+                                    FMR.noUnpack
+                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Race5C]
+                                     @[DT.PopCount, DT.PWPopPerSqMile])
+                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
+                                   )
+                         <$> acsSampleWZ_C
+    acsSampleASR <- K.ignoreCacheTime acsSampleASR_C
 
     -- model & match pipeline
+    a2FromSER_C <- SM.runModel
+                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
+                   ("Age", DT.age4ToSimple . view DT.age4C)
+                   ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
+{-
     cFromSER_C <- SM.runModel
                   False cmdLine (SM.ModelConfig () False SM.HCentered True)
                   ("Cit", view DT.citizenC)
                   ("SER", F.rcast @[DT.SexC, DT.Education4C, DT.Race5C], SM.dmrS_ER)
-
-    let csrRec :: (DT.Citizen, DT.Sex, DT.Race5) -> F.Record [DT.CitizenC, DT.SexC, DT.Race5C]
-        csrRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
-        csrDSFld =  DED.desiredSumsFld
+-}
+    let a2srRec :: (DT.SimpleAge, DT.Sex, DT.Race5) -> F.Record [DT.SimpleAgeC, DT.SexC, DT.Race5C]
+        a2srRec (c, s, r) = c F.&: s F.&: r F.&: V.RNil
+        a2srDSFld =  DED.desiredSumsFld
                     (Sum . F.rgetField @DT.PopCount)
                     (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
-                    (\r -> csrRec (r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.race5C))
-        csrDS = getSum <<$>> FL.fold csrDSFld acsByCD
+                    (\r -> a2srRec (DT.age4ToSimple (r ^. DT.age4C), r ^. DT.sexC, r ^. DT.race5C))
+        a2srDS = getSum <<$>> FL.fold a2srDSFld acsByCD
+
         serRec :: (DT.Sex, DT.Education4, DT.Race5) -> F.Record [DT.SexC, DT.Education4C, DT.Race5C]
         serRec (s, e, r) = s F.&: e F.&: r F.&: V.RNil
         serDSFld =  DED.desiredSumsFld
@@ -417,43 +476,62 @@ main = do
                     (\r -> serRec (r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C))
         serDS = getSum <<$>> FL.fold serDSFld acsByCD
 
-    let serToCSER_PC eu = fmap
-          (\m -> DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.CitizenC] @_ @_ @_ @DT.PopCount
+    let serToA2SER_PC eu = fmap
+          (\m -> DED.pipelineStep @[DT.SexC, DT.Education4C, DT.Race5C] @'[DT.SimpleAgeC] @_ @_ @_ @DT.PopCount
                  tableMatchingDataFunctions
                  (DED.minConstrained DED.klPObjF)
-                 (DED.enrichFrameFromBinaryModelF @DT.CitizenC @DT.PopCount m (view GT.stateAbbreviation) DT.Citizen DT.NonCitizen)
-                 (logText "SER -> CSER")
+                 (DED.enrichFrameFromBinaryModelF @DT.SimpleAgeC @DT.PopCount m (view GT.stateAbbreviation) DT.Under DT.EqualOrOver)
+                 (logText "SER -> A2SER")
                  (emptyUnless eu
-                   $ DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] serDS
-                   <> DED.desiredSumMapToLookup @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C] csrDS)
+                   $ DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C] serDS
+                   <> DED.desiredSumMapToLookup @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C] a2srDS)
           )
-          cFromSER_C
+          a2FromSER_C
 
-    modelCSERFromCSR <- fmap (fmap toOutputRow)
-                        $ BRK.clearIf' rerunMatches  "model/synthJoint/serToCSER_MO.bin" >>=
-                        \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
-                               ((,) <$> serToCSER_PC False <*> acsSampleSER_C)
-                               $ \(p, d) -> DED.mapPE $ p d
+    modelA2SERFromSER <- fmap (fmap toOutputRow2)
+                         $ BRK.clearIf' rerunMatches  "model/synthJoint/serToA2SER_MO.bin" >>=
+                         \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
+                                ((,) <$> serToA2SER_PC False <*> acsSampleSER_C)
+                                $ \(p, d) -> DED.mapPE $ p d
 
-    modelCO_CSERFromCSR <- fmap (fmap toOutputRow)
-                           $ BRK.clearIf' rerunMatches  "model/synthJoint/serToCSER.bin" >>=
-                           \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
-                                  ((,) <$> serToCSER_PC True <*> acsSampleSER_C)
-                                  $ \(p, d) -> DED.mapPE $ p d
+    modelCO_A2SERFromSER <- fmap (fmap toOutputRow2)
+                            $ BRK.clearIf' rerunMatches  "model/synthJoint/serToA2SER.bin" >>=
+                            \ck -> K.ignoreCacheTimeM $ BRK.retrieveOrMakeFrame ck
+                                   ((,) <$> serToA2SER_PC True <*> acsSampleSER_C)
+                                   $ \(p, d) -> DED.mapPE $ p d
 
-    let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]
-        mResults = (MethodResults (fmap toOutputRow acsSampleCSER) product_SER_CSR productNS_SER_CSR modelCSERFromCSR modelCO_CSERFromCSR)
+    let mResultsA2 :: MethodResults [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
+        mResultsA2 = MethodResults
+                     (fmap toOutputRow2 acsSampleA2SER)
+                     (Just product_SER_A2SR)
+                     (Just productNS_SER_A2SR)
+                     (Just modelA2SERFromSER)
+                     (Just modelCO_A2SERFromSER)
+
+    let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
+        mResults = MethodResults (fmap toOutputRow acsSampleASER) (Just product_SER_ASR) (Just productNS_SER_ASR) Nothing Nothing
+
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
     synthModelPaths <- postPaths "SynthModel" cmdLine
     BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
-      let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
-      compareResults cdPopMap (Just "NY")
-        (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C])
+      let showCellKeyA2 r = show (r ^. GT.stateAbbreviation, r ^. DT.simpleAgeC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
+      compareResults synthModelPaths postInfo cdPopMap (Just "NY")
+        (F.rcast @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
-        (\r -> (r ^. DT.citizenC, r ^. DT.education4C))
+        (\r -> (r ^. DT.simpleAgeC, r ^. DT.education4C))
+        showCellKeyA2
+        (Just ("Education", show . view DT.education4C))
+        (Just ("SimpleAge", show . view DT.simpleAgeC))
+        mResultsA2
+
+      let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.age4C, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
+      compareResults synthModelPaths postInfo cdPopMap (Just "NY")
+        (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.age4C, r ^. DT.education4C))
         showCellKey
         (Just ("Education", show . view DT.education4C))
-        (Just ("Citizenship", show . view DT.citizenC))
+        (Just ("Age", show . view DT.age4C))
         mResults
 
 {-
@@ -1216,8 +1294,10 @@ chart vc rows =
       enc = (GV.encoding . encAge . encSex . encFracGrad . encRace . encTotal)
   in FV.configuredVegaLite vc [FV.title "FracGrad v Age", enc [], mark, vlData]
 
-distCompareChart :: (Ord k, Show k, Show a, Ord a)
-                 => FV.ViewConfig
+distCompareChart :: (Ord k, Show k, Show a, Ord a, K.KnitEffects r)
+                 => BR.PostPaths Path.Abs
+                 -> BR.PostInfo
+                 -> FV.ViewConfig
                  -> Text
                  -> (F.Record rs -> k) -- key for map
                  -> (k -> Text) -- description for tooltip
@@ -1227,8 +1307,8 @@ distCompareChart :: (Ord k, Show k, Show a, Ord a)
                  -> Maybe (k -> a, Map a Int) -- pop counts to divide by
                  -> (Text, F.FrameRec rs)
                  -> (Text, F.FrameRec rs)
-                 -> Either Text GV.VegaLite
-distCompareChart vc title key keyText colorM shapeM count scalesM (xLabel, xRows) (yLabel, yRows) = do
+                 -> K.Sem r GV.VegaLite
+distCompareChart pp pi' vc title key keyText colorM shapeM count scalesM (xLabel, xRows) (yLabel, yRows) = do
   let assoc r = (key r, count r)
       toMap = FL.fold (FL.premap assoc FL.map)
       whenMatchedF _ xCount yCount = Right (xCount, yCount)
@@ -1236,22 +1316,29 @@ distCompareChart vc title key keyText colorM shapeM count scalesM (xLabel, xRows
       whenMissingF t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " rows."
       whenMissingFromX = MM.traverseMissing (whenMissingF xLabel)
       whenMissingFromY = MM.traverseMissing (whenMissingF yLabel)
-  mergedMap <- MM.mergeA whenMissingFromY whenMissingFromX whenMatched (toMap xRows) (toMap yRows)
+  mergedMap <- K.knitEither $ MM.mergeA whenMissingFromY whenMissingFromX whenMatched (toMap xRows) (toMap yRows)
+--  let mergedList = (\(r1, r2) -> (key r1, (count r1, count r2))) <$> zip (FL.fold FL.list xRows) (FL.fold FL.list yRows)
+  let scaleErr :: Show a => a -> Text
+      scaleErr a = "distCompareChart: Missing key=" <> show a <> " in scale lookup."
+      scaleF = fmap realToFrac <$> case scalesM of
+        Nothing -> const $ pure 1
+        Just (keyF, scaleMap) -> \k -> let a = keyF k in maybeToRight (scaleErr a) $ M.lookup a scaleMap
   let rowToDataM (k, (xCount, yCount)) = do
-        let scaleErr :: Show a => a -> Text
-            scaleErr a = "distCompareChart: Missing key=" <> show a <> " in scale lookup."
-        scale <- realToFrac <$> case scalesM of
-          Nothing -> pure 1
-          Just (keyF, scaleMap) -> let a = keyF k in maybeToRight (scaleErr a) $ M.lookup a scaleMap
+        scale <- scaleF k
         pure $ [ (xLabel, GV.Number $ xCount / scale)
                , (yLabel, GV.Number $ yCount / scale)
                , ("Description", GV.Str $ keyText k)
                ]
                <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) colorM
                <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) shapeM
-      toVLDataRowsM x = GV.dataRow <$> rowToDataM x <*> pure []
-  vlData <- GV.dataFromRows [] . concat <$> (traverse toVLDataRowsM $ M.toList mergedMap)
-  let encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+  jsonRows <- K.knitEither $ FL.foldM (VJ.rowsToJSONM rowToDataM [] Nothing) (M.toList mergedMap)
+  jsonFilePrefix <- K.getNextUnusedId "distCompareChart"
+  jsonUrl <- BRK.brAddJSON pp pi' jsonFilePrefix jsonRows
+--      toVLDataRowsM x = GV.dataRow <$> rowToDataM x <*> pure []
+--  vlData <- GV.dataFromRows [] . concat <$> (traverse toVLDataRowsM $ M.toList mergedMap)
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+      encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+      encXYLineY = GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative, GV.PAxis [GV.AxLabels False]]
       encY = GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
       encColor = maybe id (\(l, _) -> GV.color [GV.MName l, GV.MmType GV.Nominal]) colorM
       encShape = maybe id (\(l, _) -> GV.shape [GV.MName l, GV.MmType GV.Nominal]) shapeM
@@ -1261,9 +1348,12 @@ distCompareChart vc title key keyText colorM shapeM count scalesM (xLabel, xRows
                                   , maybe [] (\(l, _) -> [GV.TName l, GV.TmType GV.Nominal]) shapeM
                                   , [GV.TName "Description", GV.TmType GV.Nominal]
                                   ]
-      mark = GV.mark GV.Point []
-      enc = (GV.encoding . encX . encY . encColor . encShape . encTooltips)
-  pure $ FV.configuredVegaLite vc [FV.title title, enc [], mark, vlData]
+      mark = GV.mark GV.Point [GV.MSize 10]
+      enc = GV.encoding . encX . encY . encColor . encShape . encTooltips
+      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MStrokeDash [5,3]]
+      dataSpec = GV.asSpec [enc [], mark]
+      xySpec = GV.asSpec [(GV.encoding . encX . encXYLineY) [], markXYLine]
+  pure $ FV.configuredVegaLite vc [FV.title title, GV.layer [dataSpec, xySpec], vlData]
 
 {-
 applyMethods :: forall outerKs startKs addKs r .

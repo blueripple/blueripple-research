@@ -223,7 +223,7 @@ library
                  , BlueRipple.Utilities.FramesUtils
                  , Paths_blueripple_research
   build-depends: ad >= 3.4 && < 4.6
-               , aeson >= 1.4 && < 2.1
+               , aeson >= 1.4 && < 2.3
                , blaze-colonnade
                , bytestring >= 0.10 && < 0.12
                , cassava >= 0.5 && < 0.6

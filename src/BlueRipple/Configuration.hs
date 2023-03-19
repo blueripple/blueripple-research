@@ -175,12 +175,14 @@ data PostPaths a = PostPaths { sharedInputsDir :: Path a Dir -- inputs shared am
                              , localDraftDir :: Path a Dir
                              , onlineDraftDir :: Path a Dir
                              , onlinePubDir :: Path a Dir -- local html location, to be pushed to github pages
+                             , localWebDir :: Path a Dir -- files that will be served at http://localhost:1313/
                              , draftUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
                              , pubUrlRoot :: Path Abs Dir -- URL root for post links, without "https:/"
                              } deriving stock Show
 
 absPostPaths :: Path Abs Dir -> PostPaths Rel -> PostPaths Abs
-absPostPaths s (PostPaths si i' ld pd pp dr pr) = PostPaths (s </> si) (s </> i') (s </> ld) (s </> pd) (s </> pp) dr pr
+absPostPaths s (PostPaths si i' ld pd pp lwd dr pr) =
+  PostPaths (s </> si) (s </> i') (s </> ld) (s </> pd) (s </> pp) (s </> lwd) dr pr
 
 defaultLocalRoot :: Path Abs Dir
 defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
@@ -188,10 +190,14 @@ defaultLocalRoot = [Path.absdir|/Users/adam/BlueRipple|]
 noteRelDir :: Path Rel Dir
 noteRelDir = [Path.reldir|Notes|]
 
+dataRelDir :: Path Rel Dir
+dataRelDir = [Path.reldir|data|]
+
 unusedRelDir :: Path Rel Dir
 unusedRelDir = [Path.reldir|Unused|]
 
-postPaths :: MonadIO m => Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> m (PostPaths Abs)
+postPaths :: MonadIO m
+          => Path Abs Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> Path Rel Dir -> m (PostPaths Abs)
 postPaths localRoot siP iP ldP postRel = do
   let pp = absPostPaths
            localRoot
@@ -201,6 +207,7 @@ postPaths localRoot siP iP ldP postRel = do
            ([Path.reldir|research|] </> ldP)
            ([Path.reldir|blueripple.github.io/Draft|] </> postRel)
            ([Path.reldir|blueripple.github.io|] </> postRel)
+           ([Path.reldir|localWebRoot|])
            ([Path.absdir|/blueripple.github.io/Draft|] </> postRel)
            ([Path.absdir|/blueripple.github.io|] </> postRel)
   Say.say "If necessary, creating post input directories"
@@ -215,6 +222,11 @@ postPaths localRoot siP iP ldP postRel = do
   Path.ensureDir iUnusedP
   return pp
 
+dataDir ::   PostPaths a -> PostInfo -> Path a Dir
+dataDir pp (PostInfo ps _) = case ps of
+  LocalDraft -> localWebDir pp </> [Path.reldir|data|]
+  OnlineDraft -> onlineDraftDir pp </>  [Path.reldir|data|]
+  OnlinePublished -> onlinePubDir pp </> [Path.reldir|data|]
 
 postInputPath :: PostPaths a -> Text -> Either Text (Path a File)
 postInputPath pp postFileEnd = do
@@ -225,7 +237,6 @@ sharedInputPath :: PostPaths a -> Text -> Either Text (Path a File)
 sharedInputPath pp fileName = do
   pTail <- first show $ Path.parseRelFile $ toString fileName
   return $ sharedInputsDir pp </> pTail
-
 
 noteInputPath ::  PostPaths a -> NoteName -> Text -> Either Text (Path a File)
 noteInputPath pp noteName noteFileEnd = do
@@ -252,7 +263,6 @@ notePath pp (PostInfo ps _) nn = do
       OnlineDraft -> fmap (\s -> onlineDraftDir pp </> noteRelDir </> s) $ parseRel t
       OnlinePublished ->fmap (\s -> onlinePubDir pp </> noteRelDir </> s) $ parseRel t
 
-
 -- | Given PostPaths, post info and a note name, produce the link URL
 noteUrl :: PostPaths Abs -> PostInfo -> NoteName -> Either Text Text
 noteUrl pp (PostInfo ps _) noteName = do
@@ -265,3 +275,20 @@ noteUrl pp (PostInfo ps _) noteName = do
         OnlineDraft -> "https:/" <> Path.toFilePath (draftUrlRoot pp </> noteRelFile)
         OnlinePublished -> "https:/" <> Path.toFilePath (pubUrlRoot pp </> noteRelFile)
   return $ toText noteUrl'
+
+jsonPath :: PostPaths a -> PostInfo -> Text -> Either Text (Path a File)
+jsonPath pp postInfo jn = do
+  let parseRel = first show . Path.parseRelFile . toString
+      dataPath = dataDir pp postInfo
+  (dataPath </>) <$> parseRel jn
+
+-- | Given PostPaths and PostInfo and a relative JSON path, construct URL for hvega
+jsonURL :: PostPaths Abs -> PostInfo -> Text -> Either Text Text
+jsonURL pp (PostInfo ps _) jsonName = do
+  jsonNameRelFile <- first show $ Path.parseRelFile (toString $ jsonName)
+  let jsonRelFile :: Path Rel File = dataRelDir </> jsonNameRelFile
+      jsonUrl' = case ps of
+        LocalDraft -> "http://localhost:1313/" <> Path.toFilePath jsonRelFile
+        OnlineDraft -> "https:/" <> Path.toFilePath (draftUrlRoot pp </> jsonRelFile)
+        OnlinePublished -> "https:/" <> Path.toFilePath (pubUrlRoot pp </> jsonRelFile)
+  pure $ toText jsonUrl'
