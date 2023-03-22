@@ -72,7 +72,7 @@ sConcatEffect = Streamly.concatEffect
 
 #else
 type Stream = Streamly.SerialT
-type MonadASync m = Streamly.MonadAsync m
+type MonadAsync m = Streamly.MonadAsync m
 sFromFoldable :: (Monad m, Foldable f) => f a -> Stream m a
 sFromFoldable = Streamly.fromFoldable
 {-# INLINE sFromFoldable #-}

@@ -165,22 +165,30 @@ compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey col
                              d
                            )
       allCDs = M.keys cdPopMap
-  let compChartM ff pctPop ls l fM = do
+      numRows = length $ Keyed.elements @rowKey
+      numCols = length $ Keyed.elements @colKey
+      facetB = True
+      hvWidth = if facetB then 100 else 500
+      hvHeight = if facetB then 100 else 500
+      hvPad = if facetB then 1 else 5
+  let compChartM ff pctPop ls t l fM = do
         let logF = if pctPop then Numeric.log else Numeric.logBase 10
             title = case (ls, pctPop) of
-              (False, False) -> l
-              (True, False) -> l <> " (Log scale)"
-              (False, True) -> l <> " (% Pop)"
-              (True, True) -> l <> " (% Pop, Log scale)"
+              (False, False) -> t
+              (True, False) -> t <> " (Log scale)"
+              (False, True) -> t <> " (% Pop)"
+              (True, True) -> t <> " (% Pop, Log scale)"
         case fM of
           Just f -> do
             vl <- distCompareChart pp pi
-                  (FV.ViewConfig 300 300 5)
+                  (FV.ViewConfig hvHeight hvWidth hvPad)
                   title
                   (F.rcast @ks)
                   showCellKey
+                  facetB
                   colorM
                   shapeM
+                  True
                   ((if ls then logF else id) . realToFrac . view DT.popCount)
                   (if pctPop then (Just (DDP.districtKeyT, cdPopMap)) else Nothing)
                   ("Actual ACS", ff $ mrActual results)
@@ -204,14 +212,14 @@ compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey col
       tableTextMF "ModelOnly" (mrModel results)
       tableTextMF "Model + CO" (mrModelWithCO results)
       K.logLE K.Info "Building example state charts."
-      compChartM ff False False ("Product: " <> sa) $ mrProduct results
-      compChartM ff False False ("ProductNS: " <> sa) $ mrProductWithNS results
-      compChartM ff False False ("ModelOnly: " <> sa) $ mrModel results
-      compChartM ff False False ("ModelWithCO: " <> sa) $ mrModelWithCO results
-      compChartM ff False True ("Product: " <> sa) $ mrProduct results
-      compChartM ff False True ("ProductNS: " <> sa) $ mrProductWithNS results
-      compChartM ff False True ("ModelOnly: " <> sa) $ mrModel results
-      compChartM ff False True ("ModelWithCO: " <> sa) $ mrModelWithCO results
+      compChartM ff False False ("Raw Product - Actual vs. Raw Product:" <> sa) "Raw Product" $ mrProduct results
+      compChartM ff False False ("ProductNS - Actual vs. ProductNS: " <> sa) "ProductNS" $ mrProductWithNS results
+      compChartM ff False False ("ModelOnly - Actual vs. ModelOnly: " <> sa) "ModelOnly" $ mrModel results
+      compChartM ff False False ("ModelWithCO - Actual vs ModelWithCO: " <> sa) "ModelWithCO" $ mrModelWithCO results
+      compChartM ff False True ("RawProduct - Actual vs Raw Product: " <> sa) "Raw Product" $ mrProduct results
+      compChartM ff False True ("ProductNS - Actual vs ProductNS: " <> sa) "ProductNS" $ mrProductWithNS results
+      compChartM ff False True ("ModelOnly - Actual vs ModelOnly: " <> sa) "ModelOnly" $ mrModel results
+      compChartM ff False True ("ModelWithCO - Actual vs ModelWithCO: " <> sa) "ModelWithgCO" $ mrModelWithCO results
       pure ()
 
   -- compute KL divergences
@@ -230,14 +238,14 @@ compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey col
 -}
 --  _ <- compChart True "Actual" $ mrActual results
   K.logLE K.Info "Building national charts."
-  compChartM id True False "Product" $ mrProduct results
-  compChartM id True False "ProductNS" $ mrProductWithNS results
-  compChartM id True False "ModelOnly" $ mrModel results
-  compChartM id True False "ModelWithCO" $ mrModelWithCO results
-  compChartM id True True "Product" $ mrProduct results
-  compChartM id True True "ProductNS" $ mrProductWithNS results
-  compChartM id True True "ModelOnly" $ mrModel results
-  compChartM id True True "ModelWithCO" $ mrModelWithCO results
+  compChartM id False False "Raw Product - Actual vs Raw Product" "Raw Produict" $ mrProduct results
+  compChartM id False False "ProductNS - Actual vs ProductNS" "ProductNS" $ mrProductWithNS results
+  compChartM id False False "ModelOnly - Actual vs ModelOnly" "ModelOnly" $ mrModel results
+  compChartM id False False "ModelWithCO - Actual vs ModelWithCO" "ModelWithCO" $ mrModelWithCO results
+  compChartM id False True "Raw Product - Actual vs. Raw Product" "Raw Product" $ mrProduct results
+  compChartM id False True "ProductNS - Actual vs. ProductNS" "PrductNS" $ mrProductWithNS results
+  compChartM id False True "ModelOnly - Actual vs ModelOnly" "ModelOnly" $ mrModel results
+  compChartM id False True "ModelWithCO - Actual vs ModelWithCO" "ModelWithCO" $ mrModelWithCO results
 
   pure ()
 
@@ -1301,59 +1309,72 @@ distCompareChart :: (Ord k, Show k, Show a, Ord a, K.KnitEffects r)
                  -> Text
                  -> (F.Record rs -> k) -- key for map
                  -> (k -> Text) -- description for tooltip
+                 -> Bool
                  -> Maybe (Text, k -> Text) -- category for color
                  -> Maybe (Text, k -> Text) -- category for shape
+                 -> Bool
                  -> (F.Record rs -> Double)
                  -> Maybe (k -> a, Map a Int) -- pop counts to divide by
                  -> (Text, F.FrameRec rs)
                  -> (Text, F.FrameRec rs)
                  -> K.Sem r GV.VegaLite
-distCompareChart pp pi' vc title key keyText colorM shapeM count scalesM (xLabel, xRows) (yLabel, yRows) = do
+distCompareChart pp pi' vc title key keyText facetB cat1M cat2M asDiffB count scalesM (actualLabel, actualRows) (synthLabel, synthRows) = do
   let assoc r = (key r, count r)
       toMap = FL.fold (FL.premap assoc FL.map)
-      whenMatchedF _ xCount yCount = Right (xCount, yCount)
+      whenMatchedF _ aCount sCount = Right (aCount, sCount)
       whenMatched = MM.zipWithAMatched whenMatchedF
       whenMissingF t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " rows."
-      whenMissingFromX = MM.traverseMissing (whenMissingF xLabel)
-      whenMissingFromY = MM.traverseMissing (whenMissingF yLabel)
-  mergedMap <- K.knitEither $ MM.mergeA whenMissingFromY whenMissingFromX whenMatched (toMap xRows) (toMap yRows)
+      whenMissingFromX = MM.traverseMissing (whenMissingF actualLabel)
+      whenMissingFromY = MM.traverseMissing (whenMissingF synthLabel)
+  mergedMap <- K.knitEither $ MM.mergeA whenMissingFromY whenMissingFromX whenMatched (toMap actualRows) (toMap synthRows)
 --  let mergedList = (\(r1, r2) -> (key r1, (count r1, count r2))) <$> zip (FL.fold FL.list xRows) (FL.fold FL.list yRows)
-  let scaleErr :: Show a => a -> Text
+  let diffLabel = actualLabel <> "-" <> synthLabel
+      scaleErr :: Show a => a -> Text
       scaleErr a = "distCompareChart: Missing key=" <> show a <> " in scale lookup."
       scaleF = fmap realToFrac <$> case scalesM of
         Nothing -> const $ pure 1
         Just (keyF, scaleMap) -> \k -> let a = keyF k in maybeToRight (scaleErr a) $ M.lookup a scaleMap
   let rowToDataM (k, (xCount, yCount)) = do
         scale <- scaleF k
-        pure $ [ (xLabel, GV.Number $ xCount / scale)
-               , (yLabel, GV.Number $ yCount / scale)
-               , ("Description", GV.Str $ keyText k)
-               ]
-               <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) colorM
-               <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) shapeM
+        pure $
+          [ (actualLabel, GV.Number $ xCount / scale)
+          , (synthLabel, GV.Number $ yCount / scale)
+          , (diffLabel,  GV.Number $ (xCount - yCount) / scale)
+          , ("Description", GV.Str $ keyText k)
+          ]
+          <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) cat1M
+          <> maybe [] (\(l, f) -> [(l, GV.Str $ f k)]) cat2M
   jsonRows <- K.knitEither $ FL.foldM (VJ.rowsToJSONM rowToDataM [] Nothing) (M.toList mergedMap)
   jsonFilePrefix <- K.getNextUnusedId "distCompareChart"
   jsonUrl <- BRK.brAddJSON pp pi' jsonFilePrefix jsonRows
 --      toVLDataRowsM x = GV.dataRow <$> rowToDataM x <*> pure []
 --  vlData <- GV.dataFromRows [] . concat <$> (traverse toVLDataRowsM $ M.toList mergedMap)
+  let xLabel = if asDiffB then synthLabel else actualLabel
+      yLabel =  if asDiffB then diffLabel else synthLabel
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
-      encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
-      encXYLineY = GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative, GV.PAxis [GV.AxLabels False]]
-      encY = GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
-      encColor = maybe id (\(l, _) -> GV.color [GV.MName l, GV.MmType GV.Nominal]) colorM
-      encShape = maybe id (\(l, _) -> GV.shape [GV.MName l, GV.MmType GV.Nominal]) shapeM
+      encX = GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
+      encY = GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
+      encXYLineY = GV.position GV.Y [GV.PName actualLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
+      encColor = maybe id (\(l, _) -> GV.color [GV.MName l, GV.MmType GV.Nominal]) cat1M
+      encShape = maybe id (\(l, _) -> GV.shape [GV.MName l, GV.MmType GV.Nominal]) cat2M
       encTooltips = GV.tooltips $ [ [GV.TName xLabel, GV.TmType GV.Quantitative]
                                   , [GV.TName yLabel, GV.TmType GV.Quantitative]
-                                  , maybe [] (\(l, _) -> [GV.TName l, GV.TmType GV.Nominal]) colorM
-                                  , maybe [] (\(l, _) -> [GV.TName l, GV.TmType GV.Nominal]) shapeM
+                                  , maybe [] (\(l, _) -> [GV.TName l, GV.TmType GV.Nominal]) cat1M
+                                  , maybe [] (\(l, _) -> [GV.TName l, GV.TmType GV.Nominal]) cat2M
                                   , [GV.TName "Description", GV.TmType GV.Nominal]
                                   ]
-      mark = GV.mark GV.Point [GV.MSize 10]
-      enc = GV.encoding . encX . encY . encColor . encShape . encTooltips
+      mark = GV.mark GV.Point [GV.MSize 1]
+      enc = GV.encoding . encX . encY . if facetB then id else encColor . encShape . encTooltips
       markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MStrokeDash [5,3]]
       dataSpec = GV.asSpec [enc [], mark]
       xySpec = GV.asSpec [(GV.encoding . encX . encXYLineY) [], markXYLine]
-  pure $ FV.configuredVegaLite vc [FV.title title, GV.layer [dataSpec, xySpec], vlData]
+      layers = GV.layer $ [dataSpec] <> if asDiffB then [] else [xySpec]
+      facets = GV.facet $ (maybe [] (\(l, _) -> [GV.RowBy [GV.FName l, GV.FmType GV.Nominal]]) cat1M)
+                           <> (maybe [] (\(l, _) -> [GV.ColumnBy [GV.FName l, GV.FmType GV.Nominal]]) cat2M)
+
+  pure $ if facetB
+         then FV.configuredVegaLite vc [FV.title title, facets, GV.specification dataSpec, vlData]
+         else FV.configuredVegaLite vc [FV.title title, layers, vlData]
 
 {-
 applyMethods :: forall outerKs startKs addKs r .
