@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
@@ -36,8 +37,11 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
+#if MIN_VERSION_streamly(0,9,0)
+import qualified Streamly.Data.Stream as Streamly
+#else
 import qualified Streamly.Prelude as Streamly
-
+#endif
 import qualified Control.Foldl as FL
 import qualified Data.IntMap as IM
 import qualified Data.List as L
@@ -682,7 +686,15 @@ enrichFrameFromModel modelResultF =  toSem . FST.transform f where
   toSem x = do
     rE <- P.embed @IO $ runExceptT x
     either PE.throw pure rE
-
+#if MIN_VERSION_streamly(0,9,0)
+  f :: Streamly.Stream (ExceptT EnrichDataException IO) (F.Record rs) -> Streamly.Stream (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs))
+  f = Streamly.concatMapM g
+  g :: F.Record rs -> ExceptT EnrichDataException IO (Streamly.Stream (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs)))
+  g r = do
+    case enrichFromModel @count modelResultF r of
+      Left err -> throwError $ ModelLookupException err
+      Right rs -> pure $ Streamly.fromList rs
+#else
   f :: Streamly.IsStream t => t (ExceptT EnrichDataException IO) (F.Record rs) -> t (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs))
   f = Streamly.concatMapM g
   g :: Streamly.IsStream t => F.Record rs -> ExceptT EnrichDataException IO (t (ExceptT EnrichDataException IO) (F.Record (cks V.++ rs)))
@@ -690,7 +702,7 @@ enrichFrameFromModel modelResultF =  toSem . FST.transform f where
     case enrichFromModel @count modelResultF r of
       Left err -> throwError $ ModelLookupException err
       Right rs -> pure $ Streamly.fromList rs
-
+#endif
 {-
 rhsUV :: [Stencil Int] -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 rhsUV stencils nV qV mV = VS.zipWith rhsuF nDivq mShiftV

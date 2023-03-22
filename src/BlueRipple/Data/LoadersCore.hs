@@ -35,24 +35,46 @@ import qualified Data.Text                     as T
 import qualified Data.Vinyl                    as V
 import qualified Frames                        as F
 
-#if MIN_VERSION_streamly(0,8,0)
+#if MIN_VERSION_streamly(0,9,0)
+import qualified Streamly.Data.Stream as Streamly
+import qualified Streamly.Data.Stream.Prelude as SP
+import qualified Streamly.Internal.Data.Stream.StreamD.Transform as Streamly
+#elif MIN_VERSION_streamly(0,8,0)
+import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Streamly
 #else
+import qualified Streamly.Prelude as Streamly
 import qualified Streamly
 import qualified Streamly.Internal.Prelude as Streamly
 #endif
-import qualified Streamly.Prelude as Streamly
 
 import qualified Streamly.Data.Fold as Streamly.Fold
 import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 
 import qualified Frames.Streamly.InCore        as FStreamly
 import qualified Frames.Streamly.CSV        as FStreamly
-import Frames.Streamly.Streaming.Streamly (StreamlyStream(..), SerialT)
+import Frames.Streamly.Streaming.Streamly (StreamlyStream(..))
 
 import qualified System.Directory as System
 import qualified System.Clock
 import GHC.TypeLits (Symbol)
+
+#if MIN_VERSION_streamly(0,9,0)
+type Stream = Streamly.Stream
+type MonadAsync m = SP.MonadAsync m
+
+sMap :: Monad m => (a -> b) -> Stream m a  -> Stream m b
+sMap = fmap
+{-# INLINE sMap #-}
+#else
+type Stream = Streamly.SerialT
+type MonadAsync m = Streamly.MonadAsync m
+
+sMap :: Monad m => (a -> b) -> Stream m a  -> Stream m b
+sMap = Streamly.map
+{-# INLINE sMap #-}
+#endif
+
 
 data DataPath = DataSets T.Text | LocalData T.Text
 
@@ -70,34 +92,30 @@ dataPathWithCacheTime dp@(LocalData _) = do
   return $ K.withCacheTime (Just modTime) (pure dp)
 dataPathWithCacheTime dp@(DataSets _) = return $ K.withCacheTime Nothing (pure dp)
 
+#if MIN_VERSION_streamly(0,9,0)
 recStreamLoader
-  :: forall qs rs t m
+  :: forall qs rs m
    . ( --V.RMap rs
      V.RMap qs
      , FStreamly.StrictReadRec qs
-     , Streamly.MonadAsync m
+     , MonadAsync m
      , FL.PrimMonad m
-     , Monad (t m)
      , Exceptions.MonadCatch m
-     , Streamly.IsStream t
      )
   => DataPath
   -> Maybe FStreamly.ParserOptions
   -> Maybe (F.Record qs -> Bool)
   -> (F.Record qs -> F.Record rs)
-  -> t m (F.Record rs)
-recStreamLoader dataPath parserOptionsM mFilter fixRow = do
+  -> Stream m (F.Record rs)
+recStreamLoader dataPath parserOptionsM mFilter fixRow = Streamly.concatEffect $ do
   let csvParserOptions =
         FStreamly.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filterF !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
-#if MIN_VERSION_streamly(0,8,0)
-  path <- Streamly.fromEffect $ liftIO $ getPath dataPath
-#else
-  path <- Streamly.yieldM $ liftIO $ getPath dataPath
-#endif
-  Streamly.map strictFix
+  path <- liftIO $ getPath dataPath
+  pure
+    $ sMap strictFix
     $! Streamly.tapOffsetEvery
     250000
     250000
@@ -112,8 +130,6 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = do
       ("loading \"" <> toText path <> "\" from disk finished.")
     )
     $! BR.loadToRecStream @qs parserOptions path filterF
-
-type StreamlyS = StreamlyStream SerialT
 
 -- file/rowGen has qs
 -- Filter qs
@@ -141,8 +157,83 @@ cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
   cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
   K.logLE (K.Debug 3) $ "loading or retrieving and saving data at key=" <> cacheKey
   BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
-    let recStream = recStreamLoader @qs @rs @SerialT dataPath parserOptionsM mFilter fixRow
+    let recStream = recStreamLoader @qs @rs dataPath parserOptionsM mFilter fixRow
     K.streamlyToKnit $ FStreamly.inCoreAoS @_ @rs @StreamlyS $ StreamlyStream recStream
+
+#else
+recStreamLoader
+  :: forall qs rs t m
+   . ( --V.RMap rs
+     V.RMap qs
+     , FStreamly.StrictReadRec qs
+     , MonadAsync m
+     , FL.PrimMonad m
+     , Monad (t m)
+     , Exceptions.MonadCatch m
+     )
+  => DataPath
+  -> Maybe FStreamly.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> Stream m (F.Record rs)
+recStreamLoader dataPath parserOptionsM mFilter fixRow = do
+  let csvParserOptions =
+        FStreamly.defaultParser --{ F.quotingMode = F.RFC4180Quoting '"' }
+      parserOptions = (fromMaybe csvParserOptions parserOptionsM)
+      filterF !r = fromMaybe (const True) mFilter r
+      strictFix !r = fixRow r
+#if MIN_VERSION_streamly(0,8,0)
+  path <- Streamly.fromEffect $ liftIO $ getPath dataPath
+#else
+  path <- Streamly.yieldM $ liftIO $ getPath dataPath
+#endif
+  sMap strictFix
+    $! Streamly.tapOffsetEvery
+    250000
+    250000
+    (runningCountF
+      ("Read (k rows, from \"" <> toText path <> "\")")
+      (\n-> " "
+            <> ("from \""
+                 <> toText path
+                 <> "\": "
+                 <> (show $ 250000 * n))
+      )
+      ("loading \"" <> toText path <> "\" from disk finished.")
+    )
+    $! BR.loadToRecStream @qs parserOptions path filterF
+
+
+-- file/rowGen has qs
+-- Filter qs
+-- transform to rs
+cachedFrameLoader
+  :: forall qs rs r
+   . ( V.RMap rs
+     , V.RMap qs
+     , FStreamly.StrictReadRec qs
+--     , FStreamly.RecVec qs
+     , FStreamly.RecVec rs
+     , BR.RecSerializerC rs
+     , K.KnitEffects r
+     , BR.CacheEffects r
+     )
+  => DataPath
+  -> Maybe FStreamly.ParserOptions
+  -> Maybe (F.Record qs -> Bool)
+  -> (F.Record qs -> F.Record rs)
+  -> Maybe T.Text -- ^ optional cache-path. Defaults to "data/"
+  -> T.Text -- ^ cache key
+  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec rs))
+cachedFrameLoader filePath parserOptionsM mFilter fixRow cachePathM key = do
+  let cacheKey      = fromMaybe "data/" cachePathM <> key
+  cachedDataPath :: K.ActionWithCacheTime r DataPath <- liftIO $ dataPathWithCacheTime filePath
+  K.logLE (K.Debug 3) $ "loading or retrieving and saving data at key=" <> cacheKey
+  BR.retrieveOrMakeFrame cacheKey cachedDataPath $ \dataPath -> do
+    let recStream = recStreamLoader @qs @rs @Stream dataPath parserOptionsM mFilter fixRow
+    K.streamlyToKnit $ FStreamly.inCoreAoS @_ @rs @StreamlyS $ StreamlyStream recStream
+#endif
+type StreamlyS = StreamlyStream Stream
 
 -- file has qs
 -- Filter qs
@@ -214,6 +305,7 @@ maybeFrameLoader
 maybeFrameLoader  dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
   = K.streamlyToKnit $ FStreamly.inCoreAoS $ StreamlyStream $ maybeRecStreamLoader @fs @qs @qs' @rs dataPath parserOptionsM mFilterMaybes fixMaybes transformRow
 
+#if MIN_VERSION_streamly(0,9,0)
 -- file has fs
 -- load fs
 -- rcast to qs
@@ -246,7 +338,51 @@ maybeRecStreamLoader
   -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
   -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs')
   -> (F.Record qs' -> F.Record rs)
-  -> Streamly.SerialT K.StreamlyM (F.Record rs)
+  -> Stream K.StreamlyM (F.Record rs)
+maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow = Streamly.concatEffect $ do
+  let csvParserOptions = FStreamly.defaultParser
+      parserOptions = fromMaybe csvParserOptions mParserOptions
+      filterMaybes !r = fromMaybe (const True) mFilterMaybes r
+      strictTransform r = transformRow r
+  path <- liftIO $ getPath dataPath
+  pure
+    $ Streamly.map strictTransform
+    $ BR.processMaybeRecStream fixMaybes (const True)
+    $ BR.loadToMaybeRecStream @fs parserOptions path filterMaybes
+#else
+-- file has fs
+-- load fs
+-- rcast to qs
+-- filter qs
+-- "fix" the maybes in qs
+-- transform to rs
+maybeRecStreamLoader
+  :: forall fs qs qs' rs
+   . ( V.RMap fs
+     , FStreamly.StrictReadRec fs
+--     , FStreamly.RecVec qs
+     , V.RFoldMap qs
+     , V.RMap qs
+     , V.RPureConstrained V.KnownField qs
+     , V.RecApplicative qs
+     , V.RApply qs
+     , V.RFoldMap qs'
+--     , V.RMap qs'
+     , V.RPureConstrained V.KnownField qs'
+     , V.RecApplicative qs'
+     , V.RApply qs'
+     , qs F.⊆ fs
+--     , K.KnitEffects r, BR.CacheEffects r
+     , Show (F.Record qs)
+     , V.RecordToList qs
+     , (V.ReifyConstraint Show (Maybe F.:. F.ElField) qs)
+     )
+  => DataPath
+  -> Maybe FStreamly.ParserOptions
+  -> Maybe (F.Rec (Maybe F.:. F.ElField) qs -> Bool)
+  -> (F.Rec (Maybe F.:. F.ElField) qs -> F.Rec (Maybe F.:. F.ElField) qs')
+  -> (F.Record qs' -> F.Record rs)
+  -> Stream K.StreamlyM (F.Record rs)
 maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRow = do
   let csvParserOptions = FStreamly.defaultParser
       parserOptions = fromMaybe csvParserOptions mParserOptions
@@ -256,6 +392,7 @@ maybeRecStreamLoader dataPath mParserOptions mFilterMaybes fixMaybes transformRo
   Streamly.map strictTransform
     $ BR.processMaybeRecStream fixMaybes (const True)
     $ BR.loadToMaybeRecStream @fs parserOptions path filterMaybes
+#endif
 
 -- file has fs
 -- load fs
