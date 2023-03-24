@@ -168,7 +168,7 @@ compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey col
       numRows = length $ Keyed.elements @rowKey
       numCols = length $ Keyed.elements @colKey
       facetB = True
-      hvWidth = if facetB then 100 else 500
+      hvWidth = if facetB then 135 else 500
       hvHeight = if facetB then 100 else 500
       hvPad = if facetB then 1 else 5
   let compChartM ff pctPop ls t l fM = do
@@ -181,7 +181,7 @@ compareResults pp pi cdPopMap exampleStateM catKey rowKey colKey showCellKey col
         case fM of
           Just f -> do
             vl <- distCompareChart pp pi
-                  (FV.ViewConfig hvHeight hvWidth hvPad)
+                  (FV.ViewConfig hvWidth hvHeight hvPad)
                   title
                   (F.rcast @ks)
                   showCellKey
@@ -334,16 +334,20 @@ main = do
         K.logLE K.Info $ keyT <> " predictors: " <> show md
         nvpsModeled <- VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled
-        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
-        K.logLE K.Info $ keyT <> " optimized=" <> DED.prettyVector nvpsOptimal
-        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV)
+        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ VS.sum pV) pV)
+            simplexNVPs = DTP.fullToProj testProjections simplexFull
+--        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
+        K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs
+        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector (VS.map (* VS.sum pV) simplexFull)
 
     let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
         smcRowToProdAndModeled (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
           nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTP.modelResultNVPs DTP.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
-          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
-          let mV = DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
+          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
+--            simplexNVPs = DTP.fullToProj testProjections simplexFull
+--          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
+          let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
           pure (ok, pV, mV)
     prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
     let prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)

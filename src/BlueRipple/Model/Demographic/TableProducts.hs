@@ -129,7 +129,8 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 -- to get the weighted sum of those vectors and then add it to the
 -- product counts
 
-data NullVectorProjections = NullVectorProjections { nvpUcProj :: LA.Matrix LA.R, nvpUcToNull :: LA.Matrix LA.R }
+data NullVectorProjections =
+  NullVectorProjections { nvpUcProj :: LA.Matrix LA.R, nvpUcToNull :: LA.Matrix LA.R }
 
 fullToProjM :: NullVectorProjections -> LA.Matrix LA.R
 fullToProjM (NullVectorProjections nvM ceM) = LA.tr ceM LA.<> nvM
@@ -194,6 +195,18 @@ optimalWeights nvps projWs pV = do
 --        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
 
+-- after Chen & Ye: https://arxiv.org/pdf/1101.6081
+projectToSimplex :: VS.Vector Double -> VS.Vector Double
+projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x-tHat)) yL
+  where
+    yL = VS.toList y
+    n = VS.length y
+    sY = sort yL
+    t i = (FL.fold FL.sum (L.drop i sY) - 1) / realToFrac (n - i)
+    tHat = go (n - 1)
+    go 0 = t 0
+    go k = let tk = t k in if tk > sY L.!! k then tk else go (k - 1)
+
 applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
   where f oWs = applyNSPWeights nvps oWs pV
@@ -251,7 +264,8 @@ applyNSPWeightsFld logM nvps nsWsFldF =
       compute :: F.Record outerKs -> (LA.Vector LA.R, Double, LA.Vector LA.R) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
       compute ok (nsWs, vSum, v) = do
         maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
-        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
+        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights nvps nsWs $ VS.map (/ vSum) v
+--        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
         pure $ zipWith (\k c -> ok F.<+> k F.<+> FT.recordSingleton @count (round c)) keysL (VS.toList optimalV)
       innerFld ok = FMR.postMapM (compute ok) (precomputeFld ok)
   in  FMR.concatFoldM
