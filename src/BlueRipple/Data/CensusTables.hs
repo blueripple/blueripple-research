@@ -17,13 +17,9 @@ module BlueRipple.Data.CensusTables
 where
 
 import qualified BlueRipple.Data.DemographicTypes as DT
---import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
-import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.Keyed as K
 
---import qualified Data.Binary as B
---import qualified Data.Serialize as S
 import qualified Flat
 
 import qualified Data.Array as Array
@@ -121,7 +117,8 @@ derivingUnbox "Age14"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Age14 = UVec.Vector
-type Age14C = "Age14" F.:-> Age14
+F.declareColumn "Age14C" ''Age14
+--type Age14C = "Age14" F.:-> Age14
 
 age14FromAge5F :: DT.Age5F -> [Age14]
 age14FromAge5F DT.A5F_Under18 = [A14_Under5, A14_5To9, A14_10To14, A14_15To17]
@@ -161,7 +158,8 @@ derivingUnbox "Citizenship"
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Citizenship = UVec.Vector
 --F.declareColumn "AgeACS" ''AgeACS
-type CitizenshipC = "Citizenship" F.:-> Citizenship
+F.declareColumn "CitizenshipC" ''Citizenship
+--type CitizenshipC = "Citizenship" F.:-> Citizenship
 
 citizenshipFromIsCitizen :: Bool -> [Citizenship]
 citizenshipFromIsCitizen True = [Native, Naturalized]
@@ -207,7 +205,8 @@ derivingUnbox "RaceEthnicity"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor RaceEthnicity = UVec.Vector
-type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
+F.declareColumn "RaceEthnicityC" ''RaceEthnicity
+--type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
 
 data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 --instance S.Serialize Employment
@@ -220,7 +219,8 @@ derivingUnbox "Employment"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Employment = UVec.Vector
-type EmploymentC = "Employment" F.:-> Employment
+F.declareColumn "EmploymentC" ''Employment
+--type EmploymentC = "Employment" F.:-> Employment
 
 {-
 data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving stock (Show, Eq, Ord)
@@ -279,7 +279,8 @@ derivingUnbox "EmpAge"
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 type instance FI.VectorFor EmpAge = UVec.Vector
-type EmpAgeC = "EmpAge" F.:-> EmpAge
+F.declareColumn "EmpAgeC" ''EmpAge
+--type EmpAgeC = "EmpAge" F.:-> EmpAge
 
 sexByAgeByEmployment :: NHGISPrefix -> Map (DT.Sex, EmpAge, Employment) Text
 sexByAgeByEmployment (NHGISPrefix p) =
