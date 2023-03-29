@@ -15,9 +15,9 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module BlueRipple.Model.Demographic.TPModels
+module BlueRipple.Model.Demographic.TPModel1
   (
-    module BlueRipple.Model.Demographic.TPModels
+    module BlueRipple.Model.Demographic.TPModel1
   )
 where
 

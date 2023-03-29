@@ -17,7 +17,7 @@ import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
-import qualified BlueRipple.Model.Demographic.TPModels as DTM
+import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Data.Keyed as Keyed
 
@@ -302,19 +302,19 @@ main = do
 --    K.knitError "STOP"
     let cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByCD
     let cdModelData = FL.fold
-                      (DTM.nullVecProjectionsModelDataFldCheck
+                      (DTM1.nullVecProjectionsModelDataFldCheck
                         marginalStructure
                         testProjections
                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
                         (F.rcast @ASER)
                         (realToFrac . view DT.popCount)
-                        DTM.aserModelDatFld
+                        DTM1.aserModelDatFld
                       )
                       acsByCD
     K.logLE K.Info $ "Running model, if necessary."
-    let modelConfig = DTM.ModelConfig testProjections True
-                      DTM.designMatrixRowASER DTM.AlphaHierNonCentered DTM.NormalDist DTM.aserModelFuncs
-    res_C <- DTM.runProjModel @ASER False cmdLine (DTM.RunConfig False False) modelConfig marginalStructure DTM.aserModelDatFld
+    let modelConfig = DTM1.ModelConfig testProjections True
+                      DTM1.designMatrixRowASER DTM1.AlphaHierNonCentered DTM1.NormalDist DTM1.aserModelFuncs
+    res_C <- DTM1.runProjModel @ASER False cmdLine (DTM1.RunConfig False False) modelConfig marginalStructure DTM1.aserModelDatFld
     modelRes <- K.ignoreCacheTime res_C
 
     forM_ cdModelData $ \(sar, md, nVpsActual, pV, nV) -> do
@@ -328,7 +328,7 @@ main = do
         K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
         K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
         K.logLE K.Info $ keyT <> " predictors: " <> show md
-        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM.modelResultNVPs DTM.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled
         let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ VS.sum pV) pV)
             simplexNVPs = DTP.fullToProj testProjections simplexFull
@@ -339,7 +339,7 @@ main = do
     let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
         smcRowToProdAndModeled (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
-          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM.modelResultNVPs DTM.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
+          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
           let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
 --            simplexNVPs = DTP.fullToProj testProjections simplexFull
 --          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
