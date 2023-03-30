@@ -212,7 +212,7 @@ modelText mc = distributionText mc.distribution <> "_" <> mc.alphaDMR.dmName <> 
 dataText :: ModelConfig alphaK md -> Text
 dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_NV" <> show (modelNumNullVecs mc)
 
-projModelData :: forall pd alphaK r . (Typeable r, Typeable pd)
+projModelData :: forall pd alphaK r . (Typeable r)
               =>  ModelConfig alphaK pd
               -> (r -> alphaK)
               -> (r -> pd Double)
@@ -252,24 +252,30 @@ data ProjModelParameters where
 
 projModelAlpha :: ModelConfig alphaK pd -> ProjModelData r -> SMB.StanBuilderM (ProjData r) () Alpha
 projModelAlpha mc pmd = do
-  let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
-      stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
+  let -- stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
+      -- stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
       f = DAG.parameterTagExpr
       nStatesE = SMB.groupSizeE stateG
-      numCats = DM.rowLength mc.pred
-      hierAlphaNDS = TE.NamedDeclSpec "alpha" $ TE.arraySpec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE) []
+--       numCats = DM.rowLength mc.predDMR
+      hierAlphaSpec = TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
+      hierAlphaNDS = TE.NamedDeclSpec "alpha" hierAlphaSpec
       fstI x k = TE.sliceE TEI.s0 k x
+      indexAK a k = TE.sliceE TEI.s0 k . TE.sliceE TEI.s0 a
+      indexSAK s a k = TE.sliceE TEI.s0 s . indexAK a k
       loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
+      loopStates = TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
+      loopAlphas = TE.for "a" (TE.SpecificNumbered (TE.intE 1) pmd.nAlphasE)
+      loopSAK stmtsF = loopStates $ \s -> [loopAlphas $ \a -> [loopNVs $ \k -> stmtsF s a k]]
       diagPostMult m cv = TE.functionE SF.diagPostMultiply (m :> cv :> TNil)
       rowsOf nRowsE rv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> nRowsE :> TE.functionE SF.size (rv :> TNil) :> TNil)) (TE.transposeE rv)
 --      colsOf nColsE cv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> TE.functionE SF.size (cv :> TNil) :> nColsE) cv :> TNil)
       hierAlphaPs = do
         muAlphaP <- DAG.iidMatrixP
                     (TE.NamedDeclSpec "muAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
-                    [] TNil (SF.Density SF.std_normal)
+                    [] TNil SF.std_normal
         sigmaAlphaP <- DAG.iidMatrixP
                        (TE.NamedDeclSpec "sigmaAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
-                       [] TNil (SF.Density SF.std_normal)
+                       [] TNil SF.std_normal
         pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
 
   case mc.alphaModel of
@@ -277,7 +283,7 @@ projModelAlpha mc pmd = do
       SimpleAlpha . f
         <$>  DAG.iidMatrixP
         (TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
-        [] TNil (SF.Density SF.std_normal)
+        [] TNil SF.std_normal
     AlphaHierCentered -> do
       alphaPs <- hierAlphaPs
       fmap (HierarchicalAlpha . f)
@@ -285,16 +291,21 @@ projModelAlpha mc pmd = do
         $ DAG.UntransformedP hierAlphaNDS [] alphaPs
         $ \(muAlphaE :> sigmaAlphaE :> TNil) m
           -> TE.addStmt
-             $ loopNVs
-             $ \k -> [TE.sample (m `fstI` k) SF.normalS (muAlphaE `fstI` k :> sigmaAlphaE `fstI` k :> TNil)]
+             $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m)  SF.normalS (indexAK a k muAlphaE :> indexAK a k sigmaAlphaE :> TNil)]
     AlphaHierNonCentered -> do
       alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha0 . f)
-        $ DAG.withIIDRawMatrix hierAlphaNDS Nothing stdNormalDWA alphaPs
-        $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPostMult rawM (TE.transposeE sigmaAlphaE)
+      let rawNDS = TE.NamedDeclSpec (DAG.rawName $ TE.declName hierAlphaNDS) hierAlphaSpec
 
+      rawP <- DAG.addBuildParameter
+              $ DAG.UntransformedP rawNDS [] TNil
+              $ \_ m -> TE.addStmt $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m) SF.std_normal TNil]
+      fmap (HierarchicalAlpha . f)
+        $ DAG.addBuildParameter
+        $ DAG.simpleTransformedP hierAlphaNDS [] (DAG.BuildP rawP :> alphaPs)
+        $ \(rmE :> muE :> sigmaE :> TNil) ->
+            let inner pE s a k = [indexSAK s a k pE `TE.assign` (indexAK a k muE `TE.plusE` (indexAK a k sigmaE `TE.timesE` indexSAK s a k rmE))]
+            in DAG.DeclCodeF $ \pE -> TE.addStmt $ loopSAK $ inner pE
 
-{-
 projModelParameters :: ModelConfig alphaK pd -> ProjModelData r -> SMB.StanBuilderM (ProjData r) () ProjModelParameters
 projModelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
@@ -312,52 +323,38 @@ projModelParameters mc pmd = do
              <$> DAG.simpleParameterWA
              (TE.NamedDeclSpec "sigma" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
              stdNormalDWA
+  alpha <- projModelAlpha mc pmd
+  pure $ NormalParameters alpha theta sigma
 
-  let nStatesE = SMB.groupSizeE stateG
-      hierAlpha0NDS = TE.NamedDeclSpec "alpha0" $ TE.matrixSpec nStatesE pmd.nNullVecsE []
-      fstI x k = TE.sliceE TEI.s0 k x
-      loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
-      diagPostMult m cv = TE.functionE SF.diagPostMultiply (m :> cv :> TNil)
-      rowsOf nRowsE rv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> nRowsE :> TE.functionE SF.size (rv :> TNil) :> TNil)) (TE.transposeE rv)
---      colsOf nColsE cv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> TE.functionE SF.size (cv :> TNil) :> nColsE) cv :> TNil)
-      hierAlpha0Ps = do
-        muAlphaP <- DAG.simpleParameterWA
-                    (TE.NamedDeclSpec "muAlpha0" $ TE.rowVectorSpec pmd.nNullVecsE [])
-                    stdNormalDWA
-        sigmaAlphaP <-  DAG.simpleParameterWA
-                        (TE.NamedDeclSpec "sigmaAlpha0" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
-                        stdNormalDWA
-        pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
+data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
 
-  alpha0 <- case mc.alphaModel of
-    AlphaSimple -> do
-      SimpleAlpha0 . f
-        <$> DAG.simpleParameterWA
-           (TE.NamedDeclSpec "alpha0" $ TE.rowVectorSpec pmd.nNullVecsE [])
-           stdNormalDWA
-    AlphaHierCentered -> do
-      alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha0 . f)
-        $ DAG.addBuildParameter
-        $ DAG.UntransformedP hierAlphaNDS [] alphaPs
-        $ \(muAlphaE :> sigmaAlphaE :> TNil) m
-          -> TE.addStmt
-             $ loopNVs
-             $ \k -> [TE.sample (m `fstI` k) SF.normalS (muAlphaE `fstI` k :> sigmaAlphaE `fstI` k :> TNil)]
-    AlphaHierNonCentered -> do
-      alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha0 . f)
-        $ DAG.withIIDRawMatrix hierAlphaNDS Nothing stdNormalDWA alphaPs
-        $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPostMult rawM (TE.transposeE sigmaAlphaE)
+projModel :: RunConfig -> ModelConfig alphaK pd -> SMB.StanBuilderM (ProjData r)
+projModel rc mc = do
+  mData <- projModelData mc
+  mParams <- projModelParams mc mData
+  let betaNDS = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
+      nRowsE = SMB.dataSetSizeE mData.projDataTag
+      loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
+  (predM, _centerF, _mBeta) <- case paramTheta mParams of
+    Theta (Just thetaE) -> do
+      (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "DM"
+      (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (thetaE, betaNDS)
+      pure (dmQ, centerF, mBeta)
+    Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
+  (nvps, inverseF) <- case mc.standardizeNVs of
+    True -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+      let nvVecDS t = TE.NamedDeclSpec t $ TE.rowVectorSpec mData.nNullVecsE []
+      sds <- TE.declareNW (nvVecDS "nvpSDs")
+      stdNVPs <- TE.declareNW (TE.NamedDeclSpec "stdNVPs" $ TE.matrixSpec nRowsE mData.nNullVecsE [])
+      TE.addStmt
+        $ loopNVs
+        $ \k -> [ (sds `TEI.at` k) `TE.assign` TE.functionE SF.sd (colk mData.projectionsE :> TNil)
+                , stdNVPs `TEI.atCol` k `TE.assign` (colk mData.projectionsE `TE.divideE` (sds `TEI.at` k))]
+      let inverse :: (t ~ TEO.BinaryResultT TEO.BMultiply TE.EReal t) => TE.IntE -> TE.UExpr t -> TE.UExpr t --TE.UExpr (TEO.BinaryResultT TEO.BMultiply TE.EReal t)
+          inverse k psCol = sds `TEI.at` k `TE.timesE` psCol
+      pure (stdNVPs, inverse)
+    False -> pure (mData.projectionsE, const id)
 
-  alphaCat <- case mc.alphaModel of
-    AlphaSimple -> do
-      SimpleAlpha . f
-      <$> DAG.simpleParameterWA
-        (TE.NamedDeclSpec)
-
-      numAs = DM.rowLength mc.alphaDMR
--}
 newtype PModel1 a = PModel1 { pdLogDensity :: a }
   deriving stock (Show, Functor, Foldable, Traversable, Generic)
   deriving anyclass Flat.Flat
@@ -373,7 +370,7 @@ designMatrixRow1 = DM.DesignMatrixRow "Model1" [DM.DesignMatrixRowPart "logDensi
 designMatrixRow_1_S_E_R :: DM.DesignMatrixRow (F.Record [DT.SexC, DT.Education4C, DT.Race5C])
 designMatrixRow_1_S_E_R = DM.DesignMatrixRow "S_E_R" [cRP, sRP, eRP, rRP]
   where
-    cRP = DM.DesignMatrixRowPart "Ones" 1 (const 1) -- for pure (state-level) alpha
+    cRP = DM.DesignMatrixRowPart "Ones" 1 (const $ VU.singleton 1) -- for pure (state-level) alpha
     sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
     eRP = DM.boundedEnumRowPart (Just DT.E4_HSGrad) "Edu" (view DT.education4C)
     rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
