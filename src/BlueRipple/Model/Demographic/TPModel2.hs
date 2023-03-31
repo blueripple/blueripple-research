@@ -143,7 +143,8 @@ instance (V.RMap rs, FS.RecFlat rs) => Flat.Flat (ProjDataRow rs) where
   encode (ProjDataRow r v) = Flat.encode (FS.toS r, VS.toList v)
   decode = fmap (\(sr, l) -> ProjDataRow (FS.fromS sr) (VS.fromList l)) Flat.decode
 
-data ProjData r = ProjData {pdNNullVecs :: Int, pdNPredictors :: Int, pdRows :: [ProjDataRow r]}
+data ProjData rs = ProjData {pdNNullVecs :: Int, pdNPredictors :: Int, pdRows :: [ProjDataRow rs]} deriving stock (Generic)
+deriving anyclass instance (Flat.Flat (ProjDataRow rs)) => Flat.Flat (ProjData rs)
 
 data SlopeIntercept = SlopeIntercept { siSlope :: Double, siIntercept :: Double} deriving stock (Show, Generic)
 
@@ -284,15 +285,8 @@ projModelAlpha mc pmd = do
         TE.nestedLoops (TE.vftSized "s" nStatesE :> TE.vftSized "a" pmd.nAlphasE :> TE.vftSized "k" pmd.nNullVecsE :> TNil)
         $ \(s :> a :> k :> TNil) -> stmtsF s a k
 
---      loopNVs = TE.loopSized pmd.nNullVecsE "k" --TE.for "k" (TE.SpecificNumbered (TE.intE 1) pmd.nNullVecsE)
---      loopStates = TE.loopSized nStatesE "s" -- "TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
---      loopAlphas = TE.loopSized pmd.nAlphasE "a" -- TE.for "a" (TE.SpecificNumbered (TE.intE 1) pmd.nAlphasE)
---                       $ \(sE :> aE :> kE :> TNil) -> stmtF s a k
---      loopSAK stmtsF = loopStates $ \s -> [loopAlphas $ \a -> [loopNVs $ \k -> stmtsF s a k]]
-
       diagPostMult m cv = TE.functionE SF.diagPostMultiply (m :> cv :> TNil)
       rowsOf nRowsE rv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> nRowsE :> TE.functionE SF.size (rv :> TNil) :> TNil)) (TE.transposeE rv)
---      colsOf nColsE cv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> TE.functionE SF.size (cv :> TNil) :> nColsE) cv :> TNil)
       hierAlphaPs = do
         muAlphaP <- DAG.iidMatrixP
                     (TE.NamedDeclSpec "muAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
@@ -384,17 +378,21 @@ projModel rc alphaKey predF mc = do
       -- given alpha and theta return an nData x nNullVecs matrix
       muE :: Alpha -> Theta -> SMB.StanBuilderM (ProjData r) () TE.MatrixE
       muE a t =
-        let thetaME = case t of
-              Theta Nothing -> TE.functionE SF.rep_matrix (TE.realE 0 :> nRowsE :> mData.nNullVecsE :> TNil)
-              Theta (Just theta) -> predM `TE.timesE` theta
+        let mTheta = case t of
+              Theta x -> fmap (\t -> predM `TE.timesE` t) x
         in case a of
-             SimpleAlpha alpha -> pure $ mData.alphasE `TE.timesE` alpha  `TE.plusE` thetaME
+             SimpleAlpha alpha -> pure $ case mTheta of
+               Nothing -> mData.alphasE `TE.timesE` alpha
+               Just x -> mData.alphasE `TE.timesE` alpha `TE.plusE` x
              HierarchicalAlpha alpha -> SMB.addFromCodeWriter $ do
                mu <- TE.declareNW $ TE.NamedDeclSpec "mu" $ TE.matrixSpec nRowsE mData.nNullVecsE []
                TE.addStmt $ TE.loopSized nRowsE "n" $ \n ->
                  [(mu `TE.atRow` n)
                   `TE.assign`
-                  ((mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState alpha) `TE.at` n) `TE.plusE` (thetaME `TE.atRow` n))]
+                  (case mTheta of
+                     Nothing -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState alpha) `TE.at` n)
+                     Just mt -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState alpha) `TE.at` n) `TE.plusE` (mt `TE.atRow` n)
+                  )]
                pure mu
       sigmaE :: Sigma -> TE.IntE -> TE.VectorE
       sigmaE s k = TE.functionE SF.rep_vector (unSigma s `TE.at` k :> nRowsE :> TNil)
@@ -449,7 +447,8 @@ runProjModel :: forall (ksO :: [(Symbol, Type)]) ksM pd r .
              -> (F.Record DDP.ACSModelRow -> pd Double)
              -> K.Sem r (K.ActionWithCacheTime r ())
 runProjModel clearCaches _cmdLine rc mc ms predF = do
-  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
+  let cacheRoot = "model/demographic/nullVecProjModel/"
+      cacheDirE = (if clearCaches then Left else Right) cacheRoot
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
                          ("br-2022-Demographics/stan/nullVecProj2")
@@ -465,13 +464,13 @@ runProjModel clearCaches _cmdLine rc mc ms predF = do
       catKeyM :: (ksM F.⊆ qs) => F.Record qs -> F.Record ksM
       catKeyM = F.rcast
       count = realToFrac . view DT.popCount
-      pdByPUMA_C = fmap (FL.fold (productDistributionFld ms outerKey catKeyO count)) acsByPUMA_C
-      projDataE pdByPUMA acs =
-        let projRowsE = rowsWithProjectedDiffs mc.projVecs pdByPUMA outerKey catKeyO $ FL.fold FL.list acs
-        in ProjData (modelNumNullVecs mc) (DM.rowLength mc.predDMR) <$> projRowsE
-      projDataE_C = projDataE <$> pdByPUMA_C <*> acs_C
-      modelData_C = K.wctBind K.knitEither projDataE_C
-      meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
+  let projDataF acsByPUMA acs = do
+        let pdByPUMA = FL.fold (productDistributionFld ms outerKey catKeyO count) acsByPUMA
+        projRows <- K.knitEither $ rowsWithProjectedDiffs mc.projVecs pdByPUMA outerKey catKeyO $ FL.fold FL.list acs
+        pure $ ProjData (modelNumNullVecs mc) (DM.rowLength mc.predDMR) projRows
+      modelDataDeps = (,) <$> acsByPUMA_C <*> acs_C
+  modelData_C <- BRKU.retrieveOrMakeD (cacheRoot <> "/projModelData.bin") modelDataDeps $ uncurry projDataF
+  let meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
       meanSDFlds :: Int -> FL.Fold [Double] [(Double, Double)]
       meanSDFlds m = traverse (\n -> FL.premap (List.!! n) meanSDFld) [0..(m - 1)]
   modelData <- K.ignoreCacheTime modelData_C
