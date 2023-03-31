@@ -163,8 +163,6 @@ stateGroupBuilder saF states = do
   SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . ok) states
   SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . ok) states
 
-
-
 data ProjModelData outerK md =
   ProjModelData
   {

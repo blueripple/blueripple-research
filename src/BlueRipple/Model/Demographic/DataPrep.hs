@@ -28,7 +28,7 @@ import qualified Control.MapReduce.Simple as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
---import qualified Frames.Streamly.Transform as FST
+import qualified Frames.Streamly.Transform as FST
 
 import qualified Control.Foldl as FL
 import qualified Control.Lens as Lens
@@ -98,6 +98,22 @@ acsByStateRF = BRF.rowFold acsFixAgeYear acsByStateKeys datFieldsFrom datFromToF
 
 acsByPUMARF :: F.FrameRec PUMS.PUMS_Typed -> K.StreamlyM (F.FrameRec ACSByPUMARF)
 acsByPUMARF = BRF.rowFold acsFixAgeYear acsByPUMAKeys datFieldsFrom datFromToFld
+
+type ACSModelRow =  [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA] V.++ Categoricals V.++ DatFieldsFrom
+
+cachedACS :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSModelRow))
+cachedACS = do
+  typedACS_C <- PUMS.typedPUMSRowsLoader
+  stateAbbrXWalk_C <- BRL.stateAbbrCrosswalkLoader
+  let typedACS2020_C = F.filterFrame ((== 2020) . view BRDF.year) <$> typedACS_C
+      deps = (,) <$> typedACS2020_C <*> stateAbbrXWalk_C
+  BRK.retrieveOrMakeFrame "model/demographic/data/acs2020.bin" deps $ \(acs, xWalk) -> do
+    K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading raw ACS rows..."
+    K.logLE K.Info $ "raw ACS has " <> show (FL.fold FL.length acs) <> " rows. Adding state abbreviations..."
+    let (withSA, missing) = FJ.leftJoinWithMissing @'[GT.StateFIPS] acs xWalk
+    when (not $ null missing) $ K.knitError $ "Missing abbreviations in cachedCSWithAbbreviations left join: " <> show missing
+    K.logLE K.Info $ "Done"
+    pure $ FST.mapMaybe (fmap F.rcast . simplifyAgeM . addEdu4 . addRace5) withSA
 
 cachedACSByState :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSByStateR))
 cachedACSByState = K.wrapPrefix "Model.Demographic.cachedACSByState" $ do
