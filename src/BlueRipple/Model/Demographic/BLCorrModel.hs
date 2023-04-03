@@ -18,13 +18,11 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module BlueRipple.Model.Demographic.TPModel2
+module BlueRipple.Model.Demographic.BLCorrModel
   (
-    module BlueRipple.Model.Demographic.TPModel2
+    module BlueRipple.Model.Demographic.BLCorrModel
   )
 where
-
-import Relude.Extra (traverseToSnd)
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
@@ -57,6 +55,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import Control.Lens (view)
 import GHC.TypeLits (Symbol)
@@ -80,73 +79,32 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 
-productDistributionFld :: forall outerK k row .
-                          (Ord outerK)
-                       => DMS.MarginalStructure k
-                       -> (row -> outerK)
-                       -> (row -> k)
-                       -> (row -> Double)
-                       -> FL.Fold row (Map outerK (VS.Vector Double))
-productDistributionFld marginalStructure outerKey catKey count = M.fromList <$> case marginalStructure of
-  DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
-                                   MR.noUnpack
-                                   (MR.assign outerKey id)
-                                   (MR.foldAndLabel innerFld (,))
-    where
-      allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      innerFld = DTP.normalizedVec . pcF <$> DTP.labeledRowsToVecFld catKey count
+
+marginalFld :: Ord (F.Record ms) => (F.Record (rs V.++ ms) -> Int) -> FL.Fold (F.Record (rs V.++ ms)) [(F.Record rs, Map (F.Record ms) Int)]
+marginalFld countF = MR.mapReduceFold
+                     MR.noUnpack
+                     (MR.assign F.rcast (\r -> (F.rcast r, countF r)))
+                     (MR.foldAndLabel (FL.foldByKeyMap FL.sum) (,))
 
 
 
--- produce the projections of the difference bewteen the distirbution of
--- probability 1 at k and the product distribution at outerK
-rowDiffProjections ::  forall outerK k row .
-                       (Ord outerK, Show outerK, Ord k, BRK.FiniteSet k)
-                   => DTP.NullVectorProjections
-                   -> Map outerK (VS.Vector Double) -- Product Distribution
-                   -> (row -> outerK)
-                   -> (row -> k)
-                   -> row
-                   -> Either Text (VS.Vector Double)
-rowDiffProjections nvps pdMap outerKey catKey r = do
-  let ok = outerKey r
-      k = catKey r
-      catDist = VS.fromList $ M.elems (M.singleton k 1 <> DMS.zeroMap)
-  pd <- maybeToRight ("rowDiffProjections: " <> show ok <> " is missing from product structure map!") $ M.lookup ok pdMap
-  pure $ DTP.fullToProj nvps (catDist - pd)
-
-rowsWithProjectedDiffs :: (Traversable g
-                          , Ord outerK
-                          , Show outerK
-                          , Ord k
-                          , BRK.FiniteSet k)
-                       =>  DTP.NullVectorProjections
-                       -> Map outerK (VS.Vector Double) -- Product Distribution
-                       -> (F.Record rs -> outerK)
-                       -> (F.Record rs -> k)
-                       -> g (F.Record rs)
-                       -> Either Text (g (ProjDataRow rs))
-rowsWithProjectedDiffs nvps pdMap outerKey catKey =
-  fmap (fmap $ fmap (\(r, v) -> ProjDataRow r v))
-  $ traverse (traverseToSnd $ rowDiffProjections nvps pdMap outerKey catKey)
-
-data ProjDataRow rs = ProjDataRow (F.Record rs) (VS.Vector Double)
+data ProjDataRow rs = ProjDataRow (F.Record rs) [Int]
 
 projRowRec :: ProjDataRow rs -> F.Record rs
 projRowRec (ProjDataRow r _) = r
 
-projRowVec :: ProjDataRow rs -> VS.Vector Double
-projRowVec (ProjDataRow _ v) = v
+projRowCounts :: ProjDataRow rs -> [Int]
+projRowCounts (ProjDataRow _ ms) = ms
 
 instance (V.RMap rs, FS.RecFlat rs) => Flat.Flat (ProjDataRow rs) where
-  size (ProjDataRow r v) = Flat.size (FS.toS r, VS.toList v)
-  encode (ProjDataRow r v) = Flat.encode (FS.toS r, VS.toList v)
-  decode = fmap (\(sr, l) -> ProjDataRow (FS.fromS sr) (VS.fromList l)) Flat.decode
+  size (ProjDataRow r ms) = Flat.size (FS.toS r, ms)
+  encode (ProjDataRow r ms) = Flat.encode (FS.toS r, ms)
+  decode = fmap (\(sr, ms) -> ProjDataRow (FS.fromS sr) ms) Flat.decode
 
-data ProjData rs = ProjData {pdNNullVecs :: Int, pdNPredictors :: Int, pdRows :: [ProjDataRow rs]} deriving stock (Generic)
-deriving anyclass instance (Flat.Flat (ProjDataRow rs)) => Flat.Flat (ProjData rs)
+type ProjData rs = [ProjDataRow rs]
+--deriving anyclass instance (Flat.Flat (ProjDataRow rs)) => Flat.Flat (ProjData rs)
+{-
+--Figure out results section once we see if this model is well-behaved
 
 data SlopeIntercept = SlopeIntercept { siSlope :: Double, siIntercept :: Double} deriving stock (Show, Generic)
 
@@ -178,6 +136,7 @@ modelResultNVPs modelResult geoKey catKey pdF r = do
       applyTo si = applySlopeIntercept <$> si <*> pd
       betaV = VS.fromList $ fmap (getSum . foldMap Sum . applyTo) pdSIL
   pure $ VS.fromList alphaV + betaV
+-}
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
@@ -185,7 +144,7 @@ stateG = SMB.GroupTypeTag "State"
 stateGroupBuilder :: (Foldable f, Typeable rs)
                   => (F.Record rs -> Text) -> f Text -> SMB.StanGroupBuilderM (ProjData rs) () ()
 stateGroupBuilder saF states = do
-  projData <- SMB.addModelDataToGroupBuilder "ProjectionData" (SMB.ToFoldable pdRows)
+  projData <- SMB.addModelDataToGroupBuilder "CountData" (SMB.ToFoldable id)
   SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . projRowRec) states
   SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . projRowRec) states
 
@@ -193,13 +152,12 @@ data ProjModelData r =
   ProjModelData
   {
     projDataTag :: SMB.RowTypeTag (ProjDataRow r)
-  , nNullVecsE :: TE.IntE
+  , nCountsE :: TE.IntE
   , nAlphasE :: TE.IntE
   , alphasE :: TE.MatrixE
   , nPredictorsE :: TE.IntE
   , predictorsE :: TE.MatrixE
-  , projectionsE :: TE.MatrixE
-  , countsE :: TE.IntArrayE
+  , countsE :: TE.ArrayE (TE.EArray1 TE.EInt)
   }
 
 data AlphaModel = AlphaSimple | AlphaHierCentered | AlphaHierNonCentered deriving stock (Show)
@@ -209,31 +167,26 @@ alphaModelText AlphaSimple = "AS"
 alphaModelText AlphaHierCentered = "AHC"
 alphaModelText AlphaHierNonCentered = "AHNC"
 
-data Distribution = NormalDist -- | CauchyDist | StudentTDist
+--data Distribution = NormalDist -- | CauchyDist | StudentTDist
 
-distributionText :: Distribution -> Text
-distributionText NormalDist = "normal"
+--distributionText :: Distribution -> Text
+--distributionText NormalDist = "normal"
 --distributionText CauchyDist = "cauchy"
 --distributionText StudentTDist = "studentT"
 
 data ModelConfig alphaK pd where
   ModelConfig :: Traversable pd
-              => { projVecs :: DTP.NullVectorProjections
-                 , standardizeNVs :: Bool
+              => { nCounts :: Int
                  , alphaDMR :: DM.DesignMatrixRow alphaK
                  , predDMR :: DM.DesignMatrixRow (pd Double)
                  , alphaModel :: AlphaModel
-                 , distribution :: Distribution
                  } -> ModelConfig alphaK pd
 
-modelNumNullVecs :: ModelConfig alphaK md -> Int
-modelNumNullVecs mc = fst $ LA.size $ DTP.nvpProj mc.projVecs
-
 modelText :: ModelConfig alphaK md -> Text
-modelText mc = distributionText mc.distribution <> "_" <> mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_" <> alphaModelText mc.alphaModel
+modelText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_" <> alphaModelText mc.alphaModel
 
 dataText :: ModelConfig alphaK md -> Text
-dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_NV" <> show (modelNumNullVecs mc)
+dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_N" <> show (nCounts mc)
 
 projModelData :: forall pd alphaK rs . (Typeable rs)
               =>  ModelConfig alphaK pd

@@ -447,6 +447,7 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            cacheDirE
            (Right runnerInputNames)
+           Nothing
            dw
            code
            (projModelResultAction mc) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)

@@ -289,8 +289,10 @@ main = do
           marginalStructure
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
     let (projMeans, projCovariances) = FL.fold projCovariancesFld acsByPUMA
+        (eigVals, eigVecs) = LA.eigSH projCovariances
 --    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
 --    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
+    K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
     let nullSpaceVectors = DTP.nullSpaceVectorsMS marginalStructure
 --    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
     let nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
@@ -320,8 +322,8 @@ main = do
 
     K.logLE K.Info $ "Running model2, if necessary."
     let model2Config = DTM2.ModelConfig testProjections True
-                       DTM2.designMatrixRow_1_S_E_R DTM2.designMatrixRow0 DTM2.AlphaSimple DTM2.NormalDist
-    res2_C <- DTM2.runProjModel True cmdLine (DTM2.RunConfig False False) model2Config marginalStructure (const DTM2.PModel0)
+                       DTM2.designMatrixRow_1 DTM2.designMatrixRow0 DTM2.AlphaSimple DTM2.NormalDist
+    res2_C <- DTM2.runProjModel False (Just 100) cmdLine (DTM2.RunConfig False False) model2Config marginalStructure (const DTM2.PModel0)
 
     K.knitError "STOP"
     forM_ cdModelData $ \(sar, md, nVpsActual, pV, nV) -> do
@@ -703,7 +705,7 @@ distCompareChart pp pi' vc title key keyText facetB cat1M cat2M asDiffB count sc
          then FV.configuredVegaLite vc [FV.title title, facets, GV.specification (GV.asSpec [layers]), vlData]
          else FV.configuredVegaLite vc [FV.title title, layers, vlData]
 
-
+{-
 runCitizenModel :: (K.KnitEffects r, BRK.CacheEffects r)
                 => Bool
                 -> BR.CommandLine
@@ -834,7 +836,7 @@ runEduModel clearCaches cmdLine mc dmr = do
   K.logLE K.Info "eduModel run complete."
 --  K.logLE K.Info $ "result: " <> show res
   pure res
-
+-}
 
 chart :: Foldable f => FV.ViewConfig -> f DDP.ACSByStateEduMN -> GV.VegaLite
 chart vc rows =

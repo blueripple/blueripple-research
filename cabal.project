@@ -5,6 +5,8 @@ with-compiler: ghc
 allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
            , aeson, text
 
+flags: +streamly9
+
 --package hmatrix-glpk
 --  extra-include-dirs: /opt/homebrew/include
 

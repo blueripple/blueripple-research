@@ -104,6 +104,7 @@ runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
   res_C <-SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
           cacheDirE
           (Right runnerInputNames)
+          Nothing
           dw
           code
           (stateModelResultAction mcWithId dmr)

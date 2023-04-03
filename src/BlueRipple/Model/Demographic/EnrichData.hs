@@ -91,7 +91,7 @@ mapPE :: P.Member (PE.Error PA.PandocError) r => K.Sem (PE.Error EnrichDataExcep
 mapPE = PE.mapError enrichDataExceptionToPandocError
 
 prettyVector :: LA.Vector LA.R -> Text
-prettyVector = toText . LA.dispf 4 . LA.fromRows . pure
+prettyVector = toText . LA.disps 4 . LA.fromRows . pure
 
 pipelineStep :: forall ks cks outerKs ds b count rs r .
                 (EnrichDataEffects r
