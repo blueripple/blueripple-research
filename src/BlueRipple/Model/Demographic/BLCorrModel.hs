@@ -88,20 +88,20 @@ marginalFld countF = MR.mapReduceFold
 
 
 
-data ProjDataRow rs = ProjDataRow (F.Record rs) [Int]
+data DataRow rs = DataRow (F.Record rs) [Int]
 
-projRowRec :: ProjDataRow rs -> F.Record rs
-projRowRec (ProjDataRow r _) = r
+dataRowRec :: DataRow rs -> F.Record rs
+dataRowRec (DataRow r _) = r
 
-projRowCounts :: ProjDataRow rs -> [Int]
-projRowCounts (ProjDataRow _ ms) = ms
+dataRowCounts :: DataRow rs -> [Int]
+dataRowCounts (DataRow _ ms) = ms
 
-instance (V.RMap rs, FS.RecFlat rs) => Flat.Flat (ProjDataRow rs) where
-  size (ProjDataRow r ms) = Flat.size (FS.toS r, ms)
-  encode (ProjDataRow r ms) = Flat.encode (FS.toS r, ms)
-  decode = fmap (\(sr, ms) -> ProjDataRow (FS.fromS sr) ms) Flat.decode
+instance (V.RMap rs, FS.RecFlat rs) => Flat.Flat (DataRow rs) where
+  size (DataRow r ms) = Flat.size (FS.toS r, ms)
+  encode (DataRow r ms) = Flat.encode (FS.toS r, ms)
+  decode = fmap (\(sr, ms) -> DataRow (FS.fromS sr) ms) Flat.decode
 
-type ProjData rs = [ProjDataRow rs]
+type DataRows rs = [DataRow rs]
 --deriving anyclass instance (Flat.Flat (ProjDataRow rs)) => Flat.Flat (ProjData rs)
 {-
 --Figure out results section once we see if this model is well-behaved
@@ -138,41 +138,12 @@ modelResultNVPs modelResult geoKey catKey pdF r = do
   pure $ VS.fromList alphaV + betaV
 -}
 
-stateG :: SMB.GroupTypeTag Text
-stateG = SMB.GroupTypeTag "State"
-
-stateGroupBuilder :: (Foldable f, Typeable rs)
-                  => (F.Record rs -> Text) -> f Text -> SMB.StanGroupBuilderM (ProjData rs) () ()
-stateGroupBuilder saF states = do
-  projData <- SMB.addModelDataToGroupBuilder "CountData" (SMB.ToFoldable id)
-  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . projRowRec) states
-  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . projRowRec) states
-
-data ProjModelData r =
-  ProjModelData
-  {
-    projDataTag :: SMB.RowTypeTag (ProjDataRow r)
-  , nCountsE :: TE.IntE
-  , nAlphasE :: TE.IntE
-  , alphasE :: TE.MatrixE
-  , nPredictorsE :: TE.IntE
-  , predictorsE :: TE.MatrixE
-  , countsE :: TE.ArrayE (TE.EArray1 TE.EInt)
-  }
-
 data AlphaModel = AlphaSimple | AlphaHierCentered | AlphaHierNonCentered deriving stock (Show)
 
 alphaModelText :: AlphaModel -> Text
 alphaModelText AlphaSimple = "AS"
 alphaModelText AlphaHierCentered = "AHC"
 alphaModelText AlphaHierNonCentered = "AHNC"
-
---data Distribution = NormalDist -- | CauchyDist | StudentTDist
-
---distributionText :: Distribution -> Text
---distributionText NormalDist = "normal"
---distributionText CauchyDist = "cauchy"
---distributionText StudentTDist = "studentT"
 
 data ModelConfig alphaK pd where
   ModelConfig :: Traversable pd
@@ -188,119 +159,115 @@ modelText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_" <> alphaMod
 dataText :: ModelConfig alphaK md -> Text
 dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_N" <> show (nCounts mc)
 
-projModelData :: forall pd alphaK rs . (Typeable rs)
-              =>  ModelConfig alphaK pd
-              -> (F.Record rs -> alphaK)
-              -> (F.Record rs -> Int)
-              -> (F.Record rs -> pd Double)
-              -> SMB.StanBuilderM (ProjData rs) () (ProjModelData rs)
-projModelData mc catKey countF predF = do
-  projData <- SMB.dataSetTag @(ProjDataRow rs) SC.ModelData "ProjectionData"
-  let projMER :: SMB.MatrixRowFromData (ProjDataRow r) --(outerK, md Double, VS.Vector Double)
-      projMER = SMB.MatrixRowFromData "nvp" Nothing (modelNumNullVecs mc) (\(ProjDataRow _ v) -> VU.convert v)
-      -- convert is here because we want unboxed vectors for JSON but hmatix uses storable vectors for FFI
-  pmE <- SBB.add2dMatrixData projData projMER Nothing Nothing
-  let nNullVecsE' = SMB.mrfdColumnsE projMER
-      (_, nAlphasE') = DM.designMatrixColDimBinding mc.alphaDMR Nothing
+stateG :: SMB.GroupTypeTag Text
+stateG = SMB.GroupTypeTag "State"
+
+stateGroupBuilder :: (Foldable f, Typeable rs)
+                  => (F.Record rs -> Text) -> f Text -> SMB.StanGroupBuilderM (DataRows rs) () ()
+stateGroupBuilder saF states = do
+  projData <- SMB.addModelDataToGroupBuilder "CountData" (SMB.ToFoldable id)
+  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . projRowRec) states
+  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . projRowRec) states
+
+data ModelData r =
+  ModelData
+  {
+    dataTag :: SMB.RowTypeTag (DataRow r)
+  , nCatsE :: TE.IntE
+  , countsE :: TE.ArrayE (TE.EArray1 TE.EInt)
+  , nAlphasE :: TE.IntE
+  , alphasE :: TE.MatrixE
+  , nPredictorsE :: TE.IntE
+  , predictorsE :: TE.MatrixE
+  }
+
+modelData :: forall pd alphaK rs . (Typeable rs)
+          =>  ModelConfig alphaK pd
+          -> (F.Record rs -> alphaK)
+          -> (F.Record rs -> pd Double)
+          -> SMB.StanBuilderM (DataRows rs) () (ModelData rs)
+modelData mc catKey predF = do
+  dat <- SMB.dataSetTag @(DataRows rs) SC.ModelData "MarginalData"
+  (countsE', nCatsE') <- SBB.addArrayOfIntArrays  dat "MCounts" Nothing mc.nCounts dataRowCounts (Just 0) Nothing
+  let (_, nAlphasE') = DM.designMatrixColDimBinding mc.alphaDMR Nothing
   alphaDME <- if DM.rowLength mc.alphaDMR > 0
-              then DM.addDesignMatrix projData (contramap (catKey . projRowRec) mc.alphaDMR) Nothing
+              then DM.addDesignMatrix dat (contramap (catKey . projRowRec) mc.alphaDMR) Nothing
               else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
   let (_, nPredictorsE') = DM.designMatrixColDimBinding mc.predDMR Nothing
   dmE <- if DM.rowLength mc.predDMR > 0
-         then DM.addDesignMatrix projData (contramap (predF . projRowRec) mc.predDMR) Nothing
+         then DM.addDesignMatrix dat (contramap (predF . projRowRec) mc.predDMR) Nothing
          else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-  countsE' <- SBB.addCountData projData "count" (countF . projRowRec)
-  pure $ ProjModelData projData nNullVecsE' nAlphasE' alphaDME nPredictorsE' dmE pmE countsE'
+  pure $ ProjModelData dat nCatsE' countsE' nAlphasE' alphaDME nPredictorsE' dmE
 
 -- S states
--- K projections
--- C categories
+-- K categories to count
+-- C categories to use for prediction
 -- D predictors
--- either an K row-vector or S x K matrix
---data Alpha0 = SimpleAlpha0 TE.RVectorE | HierarchicalAlpha0 TE.MatrixE
--- C x K matrix or array[S] of C x K matrix
+-- M x K matrix or S array of M x K matrix. M=Number of cols is < 1 + C since we binary or one-hot encode all the categories
 data Alpha = SimpleAlpha TE.MatrixE | HierarchicalAlpha (TE.ArrayE TE.EMat)
--- D x K matrix or Nothing
+-- D X K vector or Nothing
 newtype Theta = Theta (Maybe TE.MatrixE)
--- sigma is K row-vector
-newtype Sigma = Sigma { unSigma :: TE.RVectorE }
 
-data ProjModelParameters where
-  NormalParameters :: Alpha -> Theta -> Sigma -> ProjModelParameters
+data ModelParameters where
+  ModelParameters :: Alpha -> Theta -> ModelParameters
 
-paramTheta :: ProjModelParameters -> Theta
-paramTheta (NormalParameters _ t _) = t
+paramTheta :: ModelParameters -> Theta
+paramTheta (ModelParameters _ t _) = t
 
-projModelAlpha :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () Alpha
-projModelAlpha mc pmd = do
+modelAlpha :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () Alpha
+modelAlpha mc pmd = do
   let f = DAG.parameterTagExpr
-      nStatesE = SMB.groupSizeE stateG
-      hierAlphaSpec = TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
-      hierAlphaNDS = TE.NamedDeclSpec "alpha" hierAlphaSpec
-      indexAK a k = TE.slice0 k . TE.slice0 a
-      indexSAK s a k = TE.slice0  s . indexAK a k
-      loopSAK stmtsF =
-        TE.nestedLoops (TE.vftSized "s" nStatesE :> TE.vftSized "a" pmd.nAlphasE :> TE.vftSized "k" pmd.nNullVecsE :> TNil)
-        $ \(s :> a :> k :> TNil) -> stmtsF s a k
+  -- sigma structure for each column of alpha
+  lkjCorrAlpha <- DAG.simpleParameter (TE.NamedDeclSpec "lkjAlpha" $ TE.choleskyFactorCorrSpec pmd.nAlphasE [])
+                  (TE.realE 4 :> TNil) SF.lkj_corr_cholesky
+  sigmaAlpha <- DAG.simpleParameter (TE.NamedDeclSpec "sigmaAlpha" $ TE.vectorSpec pmd.nAlphasE []) TNil SF.std_normal
 
-      diagPostMult m cv = TE.functionE SF.diagPostMultiply (m :> cv :> TNil)
-      rowsOf nRowsE rv = diagPostMult (TE.functionE SF.rep_matrix (TE.realE 1 :> nRowsE :> TE.functionE SF.size (rv :> TNil) :> TNil)) (TE.transposeE rv)
+  let nStatesE = SMB.groupSizeE stateG
+      hierAlphaSpec =  TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
+      hierAlphaNDS = TE.NamedDeclSpec "alpha" hierAlphaSpec
       hierAlphaPs = do
-        muAlphaP <- DAG.iidMatrixP
-                    (TE.NamedDeclSpec "muAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
-                    [] TNil SF.std_normal
-        sigmaAlphaP <- DAG.iidMatrixP
-                       (TE.NamedDeclSpec "sigmaAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
-                       [] TNil SF.std_normal
+        muAlphaP <- DAG.simpleParameter
+                    (TE.NamedDeclSpec "muAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
+                    TNil SF.std_normal
+        sigmaAlphaP <- simpleParameter
+                       (TE.NamedDeclSpec "sigmaAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [TE.lowerM $ TE.realE 0])
+                       TNil SF.std_normal
         pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
 
   case mc.alphaModel of
     AlphaSimple -> do
       SimpleAlpha . f
-        <$>  DAG.iidMatrixP
-        (TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
-        [] TNil SF.std_normal
+        <$>  DAG.simpleParameter
+        (TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
+        TNil SF.std_normal
     AlphaHierCentered -> do
       alphaPs <- hierAlphaPs
       fmap (HierarchicalAlpha . f)
-        $ DAG.addBuildParameter
-        $ DAG.UntransformedP hierAlphaNDS [] alphaPs
-        $ \(muAlphaE :> sigmaAlphaE :> TNil) m
-          -> TE.addStmt
-             $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m)  SF.normalS (indexAK a k muAlphaE :> indexAK a k sigmaAlphaE :> TNil)]
+        $ DAG.addCenteredHierarchical
+        hierAlphaNDS alphaPs SF.normal
     AlphaHierNonCentered -> do
       alphaPs <- hierAlphaPs
-      let rawNDS = TE.NamedDeclSpec (DAG.rawName $ TE.declName hierAlphaNDS) hierAlphaSpec
-
-      rawP <- DAG.addBuildParameter
-              $ DAG.UntransformedP rawNDS [] TNil
-              $ \_ m -> TE.addStmt $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m) SF.std_normal TNil]
+      let repMatrix v nRows = TE.functionE SF.repV_matrix (v :> nRows :> TNil)
+          diagPostMultiply m v = TE.functionE SF.diagPostMultiply (m :> v :> TNil)
       fmap (HierarchicalAlpha . f)
-        $ DAG.addBuildParameter
-        $ DAG.simpleTransformedP hierAlphaNDS [] (DAG.BuildP rawP :> alphaPs)
-        $ \(rmE :> muE :> sigmaE :> TNil) ->
-            let inner pE s a k = [indexSAK s a k pE `TE.assign` (indexAK a k muE `TE.plusE` (indexAK a k sigmaE `TE.timesE` indexSAK s a k rmE))]
-            in DAG.DeclCodeF $ TE.addStmt . loopSAK . inner
+      $ DAG.simpleNonCentered hierAlphaNDS hierAlphaSpec (TE.DensityWithArgs SF.std_normal TNil) alphaPs
+      $ \(mu :> sigma :> TNil) rawM -> repMatrix mu mStatesE `TE.plusE` diagPostMultiply rawM sigma
 
-projModelParameters :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () ProjModelParameters
-projModelParameters mc pmd = do
+modelParameters :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () ModelParameters
+modelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
       stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
       f = DAG.parameterTagExpr
       numPredictors = DM.rowLength mc.predDMR
   theta <- if numPredictors > 0 then
                (Theta . Just . f)
-               <$> DAG.iidMatrixP
-               (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nPredictorsE pmd.nNullVecsE [])
-               [] TNil
-               SF.std_normal
+               <$> DAG.simpleParameter
+               (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nPredictorsE [])
+               TNil SF.std_normal
            else pure $ Theta Nothing
-  sigma <-  (Sigma . f)
-             <$> DAG.simpleParameterWA
-             (TE.NamedDeclSpec "sigma" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
-             stdNormalDWA
+
   alpha <- projModelAlpha mc pmd
-  pure $ NormalParameters alpha theta sigma
+  pure $ NormalParameters alpha theta
 
 data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
 
@@ -310,13 +277,11 @@ projModel :: Typeable rs
           -> (F.Record rs -> Int)
           -> (F.Record rs -> pd Double)
           -> ModelConfig alphaK pd
-          -> SMB.StanBuilderM  (ProjData rs) () ()
+          -> SMB.StanBuilderM  (DataRows rs) () ()
 projModel rc alphaKey countF predF mc = do
-  mData <- projModelData mc alphaKey countF predF
-  mParams <- projModelParameters mc mData
+  mData <- modelData mc alphaKey predF
+  mParams <- modelParameters mc mData
   let betaNDS = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
-      nRowsE = SMB.dataSetSizeE mData.projDataTag
-      loopNVs = TE.loopSized mData.nNullVecsE "k" --TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
   -- transformedData
   (predM, _centerF, _mBeta) <- case paramTheta mParams of
     Theta (Just thetaE) -> do
@@ -324,23 +289,6 @@ projModel rc alphaKey countF predF mc = do
       (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (thetaE, betaNDS)
       pure (dmQ, centerF, mBeta)
     Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
-  (nvps, inverseF) <- case mc.standardizeNVs of
-    True -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-      let nvVecDS t = TE.NamedDeclSpec t $ TE.rowVectorSpec mData.nNullVecsE []
-      sds <- TE.declareNW (nvVecDS "nvpSDs")
-      stdNVPs <- TE.declareNW (TE.NamedDeclSpec "stdNVPs" $ TE.matrixSpec nRowsE mData.nNullVecsE [])
-      TE.addStmt
-        $ loopNVs
-        $ \k -> [ (sds `TE.at` k) `TE.assign` TE.functionE SF.sd (mData.projectionsE `TE.atCol` k :> TNil)
-                , stdNVPs `TE.atCol` k `TE.assign` (mData.projectionsE `TE.atCol` k `TE.divideE` (sds `TE.at` k))]
-      let inverse :: (t ~ TEO.BinaryResultT TEO.BMultiply TE.EReal t) => TE.IntE -> TE.UExpr t -> TE.UExpr t --TE.UExpr (TEO.BinaryResultT TEO.BMultiply TE.EReal t)
-          inverse k psCol = sds `TE.at` k `TE.timesE` psCol
-      pure (stdNVPs, inverse)
-    False -> pure (mData.projectionsE, const id)
-  countsVec <- SMB.inBlock SMB.SBTransformedData
-               $ SMB.addFromCodeWriter
-               $ TE.declareRHSNW (TE.NamedDeclSpec "countsV" $ TE.vectorSpec nRowsE [])
-               $ TE.functionE SF.to_vector (mData.countsE :> TNil)
   -- model
   let reIndexByState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
       -- given alpha and theta return an nData x nNullVecs matrix
