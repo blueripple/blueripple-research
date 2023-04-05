@@ -138,12 +138,17 @@ modelResultNVPs modelResult geoKey catKey pdF r = do
   pure $ VS.fromList alphaV + betaV
 -}
 
-data AlphaModel = AlphaSimple | AlphaHierCentered | AlphaHierNonCentered deriving stock (Show)
+data AlphaModel = AlphaSimple | AlphaHierCentered | AlphaHierNonCentered deriving stock (Show, Eq, Generic)
+data ParamCovarianceStructure = DiagonalCovariance | LKJCovariance Int deriving stock (Show, Eq, Generic)
 
 alphaModelText :: AlphaModel -> Text
 alphaModelText AlphaSimple = "AS"
 alphaModelText AlphaHierCentered = "AHC"
 alphaModelText AlphaHierNonCentered = "AHNC"
+
+paramCovarianceText :: ParamCovariance -> Text
+paramCovarianceText DiagonalCovariance = "diagCov"
+paramCovarianceText (LKJCovariance n) = "lkj" <> show n
 
 data ModelConfig alphaK pd where
   ModelConfig :: Traversable pd
@@ -151,10 +156,14 @@ data ModelConfig alphaK pd where
                  , alphaDMR :: DM.DesignMatrixRow alphaK
                  , predDMR :: DM.DesignMatrixRow (pd Double)
                  , alphaModel :: AlphaModel
+                 , pCov :: ParamCovariance
                  } -> ModelConfig alphaK pd
 
 modelText :: ModelConfig alphaK md -> Text
-modelText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_" <> alphaModelText mc.alphaModel
+modelText mc = mc.alphaDMR.dmName
+               <> "_" <> mc.predDMR.dmName
+               <> "_" <> alphaModelText mc.alphaModel
+               <> "_" <> alphaCovarianceText mc.alphaCov
 
 dataText :: ModelConfig alphaK md -> Text
 dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_N" <> show (nCounts mc)
@@ -213,6 +222,8 @@ data ModelParameters where
 
 paramTheta :: ModelParameters -> Theta
 paramTheta (ModelParameters _ t _) = t
+
+
 
 modelAlpha :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () Alpha
 modelAlpha mc pmd = do

@@ -202,6 +202,7 @@ basicParameters mc md = do
                  SF.normalS
     HNonCentered -> DAG.simpleNonCentered
                     (TE.NamedDeclSpec "alpha" $ TE.vectorSpec md.nStates [])
+                    DAG.TransformedParametersBlock
                     (TE.vectorSpec md.nStates [])
                     (TE.DensityWithArgs SF.normalS $ TE.realE 0 :> TE.realE 1 :> TNil)
                     (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
@@ -304,6 +305,7 @@ betaBinomialModel dmr mc = do
       eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
   phiP <- DAG.addTransformedHP
           (TE.NamedDeclSpec "phi" $ TE.vectorSpec md.nPredictors [])
+          DAG.TransformedParametersBlock
           (Just $ [TE.lowerM $ TE.realE 0, TE.upperM $ TE.realE 1]) -- constraints on phi_raw
           (TE.DensityWithArgs SF.betaS (TE.realE 99 :> TE.realE 1 :> TNil)) -- phi_raw is beta distributed
           (\t -> t `eltDivide` (TE.realE 1 `TE.minusE` t)) -- phi = phi_raw / (1 - phi_raw), component-wise
@@ -627,6 +629,7 @@ categoricalModel numInCat dmr = do
            (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nInCatE [])
            []
            (DAG.build betaRawP :> DAG.build zvP :> TNil)
+           DAG.TransformedParametersBlock
            (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
            (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
            (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
