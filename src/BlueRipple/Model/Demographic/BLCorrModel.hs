@@ -67,6 +67,7 @@ import qualified Stan.ModelConfig as SC
 import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
+import qualified Stan.ModelBuilder.BuildingBlocks.CovarianceStructure as SBC
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
@@ -138,35 +139,36 @@ modelResultNVPs modelResult geoKey catKey pdF r = do
   pure $ VS.fromList alphaV + betaV
 -}
 
-data AlphaModel = AlphaSimple | AlphaHierCentered | AlphaHierNonCentered deriving stock (Show, Eq, Generic)
-data ParamCovarianceStructure = DiagonalCovariance | LKJCovariance Int deriving stock (Show, Eq, Generic)
+data CovarianceStructure = DiagonalCovariance | LKJCovariance Int deriving stock (Show, Eq, Generic)
 
-alphaModelText :: AlphaModel -> Text
-alphaModelText AlphaSimple = "AS"
-alphaModelText AlphaHierCentered = "AHC"
-alphaModelText AlphaHierNonCentered = "AHNC"
+covarianceText :: CovarianceStructure -> Text
+covarianceText DiagonalCovariance = "diagCov"
+covarianceText (LKJCovariance n) = "lkj" <> show n
 
-paramCovarianceText :: ParamCovariance -> Text
-paramCovarianceText DiagonalCovariance = "diagCov"
-paramCovarianceText (LKJCovariance n) = "lkj" <> show n
+data BetaModel = BetaSimple | BetaHierCentered CovarianceStructure | BetaHierNonCentered CovarianceStructure deriving stock (Show, Eq, Generic)
+
+betaModelText :: BetaModel -> Text
+betaModelText BetaSimple = "BS"
+betaModelText (BetaHierCentered cs) = "BHC_" <> covarianceText cs
+betaModelText (BetaHierNonCentered cs) = "BHNC_" <> covarianceText cs
 
 data ModelConfig alphaK pd where
-  ModelConfig :: Traversable pd
+  ModelConfig :: ({-Traversable pd-})
               => { nCounts :: Int
                  , alphaDMR :: DM.DesignMatrixRow alphaK
-                 , predDMR :: DM.DesignMatrixRow (pd Double)
-                 , alphaModel :: AlphaModel
-                 , pCov :: ParamCovariance
+--                 , predDMR :: DM.DesignMatrixRow (pd Double)
+                 , betaModel :: BetaModel
                  } -> ModelConfig alphaK pd
 
 modelText :: ModelConfig alphaK md -> Text
 modelText mc = mc.alphaDMR.dmName
-               <> "_" <> mc.predDMR.dmName
-               <> "_" <> alphaModelText mc.alphaModel
-               <> "_" <> alphaCovarianceText mc.alphaCov
+--               <> "_" <> mc.predDMR.dmName
+               <> "_" <> betaModelText mc.betaModel
 
 dataText :: ModelConfig alphaK md -> Text
-dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_N" <> show (nCounts mc)
+dataText mc = mc.alphaDMR.dmName
+--              <> "_" <> mc.predDMR.dmName
+              <> "_N" <> show (nCounts mc)
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
@@ -184,12 +186,13 @@ data ModelData r =
     dataTag :: SMB.RowTypeTag (DataRow r)
   , nCatsE :: TE.IntE
   , countsE :: TE.ArrayE (TE.EArray1 TE.EInt)
-  , nAlphasE :: TE.IntE
-  , alphasE :: TE.MatrixE
-  , nPredictorsE :: TE.IntE
-  , predictorsE :: TE.MatrixE
+  , nCovariatesE :: TE.IntE
+  , covariatesE :: TE.MatrixE
+--  , nPredictorsE :: TE.IntE
+--  , predictorsE :: TE.MatrixE
   }
 
+--TODO: add predictors to alphas to make one matrix of covariates
 modelData :: forall pd alphaK rs . (Typeable rs)
           =>  ModelConfig alphaK pd
           -> (F.Record rs -> alphaK)
@@ -198,72 +201,68 @@ modelData :: forall pd alphaK rs . (Typeable rs)
 modelData mc catKey predF = do
   dat <- SMB.dataSetTag @(DataRows rs) SC.ModelData "MarginalData"
   (countsE', nCatsE') <- SBB.addArrayOfIntArrays  dat "MCounts" Nothing mc.nCounts dataRowCounts (Just 0) Nothing
-  let (_, nAlphasE') = DM.designMatrixColDimBinding mc.alphaDMR Nothing
-  alphaDME <- if DM.rowLength mc.alphaDMR > 0
-              then DM.addDesignMatrix dat (contramap (catKey . projRowRec) mc.alphaDMR) Nothing
-              else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-  let (_, nPredictorsE') = DM.designMatrixColDimBinding mc.predDMR Nothing
+  let (_, nCovariatesE') = DM.designMatrixColDimBinding mc.alphaDMR Nothing
+  covariatesDME <- if DM.rowLength mc.alphaDMR > 0
+                   then DM.addDesignMatrix dat (contramap (catKey . projRowRec) mc.alphaDMR) Nothing
+                   else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
+{-  let (_, nPredictorsE') = DM.designMatrixColDimBinding mc.predDMR Nothing
   dmE <- if DM.rowLength mc.predDMR > 0
          then DM.addDesignMatrix dat (contramap (predF . projRowRec) mc.predDMR) Nothing
          else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-  pure $ ProjModelData dat nCatsE' countsE' nAlphasE' alphaDME nPredictorsE' dmE
+-}
+  pure $ ProjModelData dat nCatsE' countsE' nCovariatesE' covariatesDME --nPredictorsE' dmE
 
 -- S states
 -- K categories to count
 -- C categories to use for prediction
--- D predictors
--- M x K matrix or S array of M x K matrix. M=Number of cols is < 1 + C since we binary or one-hot encode all the categories
-data Alpha = SimpleAlpha TE.MatrixE | HierarchicalAlpha (TE.ArrayE TE.EMat)
--- D X K vector or Nothing
-newtype Theta = Theta (Maybe TE.MatrixE)
+-- D predictors. 0 for now.
+-- M is number of one-hot encoded alphas
+-- M x K matrix or S array of M x K matrix. M=Number of cols is < 1 + C + D since we binary or one-hot encode all the categories
+data Beta = SimpleBeta TE.MatrixE | HierarchicalBeta (TE.ArrayE TE.EMat)
 
 data ModelParameters where
-  ModelParameters :: Alpha -> Theta -> ModelParameters
+  ModelParameters :: Beta -> ModelParameters
 
-paramTheta :: ModelParameters -> Theta
-paramTheta (ModelParameters _ t _) = t
-
-
-
-modelAlpha :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () Alpha
-modelAlpha mc pmd = do
-  let f = DAG.parameterTagExpr
-  -- sigma structure for each column of alpha
-  lkjCorrAlpha <- DAG.simpleParameter (TE.NamedDeclSpec "lkjAlpha" $ TE.choleskyFactorCorrSpec pmd.nAlphasE [])
-                  (TE.realE 4 :> TNil) SF.lkj_corr_cholesky
-  sigmaAlpha <- DAG.simpleParameter (TE.NamedDeclSpec "sigmaAlpha" $ TE.vectorSpec pmd.nAlphasE []) TNil SF.std_normal
-
+modelBeta :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () Beta
+modelBeta mc pmd = do
   let nStatesE = SMB.groupSizeE stateG
-      hierAlphaSpec =  TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
-      hierAlphaNDS = TE.NamedDeclSpec "alpha" hierAlphaSpec
-      hierAlphaPs = do
-        muAlphaP <- DAG.simpleParameter
-                    (TE.NamedDeclSpec "muAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
+      f = DAG.parameterTagExpr
+      toVector x = TE.functionE SF.to_vector (x :> TNil)
+      betaShape = TE.matrixSpec pmd.nAlphasE pmd.nCatsE
+      hierBetaSpec =  TE.array1Spec nStatesE $ betaShape []
+      hierBetaNDS = TE.NamedDeclSpec "beta" hierAlphaSpec
+      hierBetaPs = do
+        muBetaP <- DAG.simpleParameter
+                   (TE.NamedDeclSpec "muBeta" $ betaShape [])
+                   TNil SF.std_normal
+        tauBetaP <- simpleParameter
+                    (TE.NamedDeclSpec "tauBeta" $ betaShape [TE.lowerM $ TE.realE 0])
                     TNil SF.std_normal
-        sigmaAlphaP <- simpleParameter
-                       (TE.NamedDeclSpec "sigmaAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [TE.lowerM $ TE.realE 0])
-                       TNil SF.std_normal
-        pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
+        pure (DAG.build muBetaP :> DAG.build tauBetaP :> lkjCorrBeta :> TNil)
+      betaHier cs cent = do
+        (muBeta :> tauBeta :> TNil) <- hierBetaPs
+        case cs of
+          DiagonalCovariance -> do
+            fmap (HierarchicalBeta . DAG.parameterExpr)
+              $ SBC.matrixMultiNormalParameter SBC.Diagonal cent muBeta tauBeta
+              (TE.NamedDeclSpec "beta" $ hierBetaSpec)
+          LKJCovariance lkjPriorP -> do
+            lkjCorrBetaP <- fmap DAG.build
+                            $ DAG.simpleParameter (TE.NamedDeclSpec "lkjAlpha" $ TE.choleskyFactorCorrSpec pmd.nAlphasE [])
+                            (TE.realE lkjPriorP :> TNil) SF.lkj_corr_cholesky
+            fmap (HierarchicalBeta . DAG.parameterExpr)
+              $ SBC.matrixMultiNormalParameter (SBC.Cholesky lkjCorrBetaP) cent muBeta tauBeta
+              (TE.NamedDeclSpec "beta" $ hierBetaSpec)
+  case mc.betaModel of
+    BetaSimple -> do
+      fmap (SimpleBeta . DAG.parameterTagExpr)
+        $ DAG.addBuildParameter
+        $ DAG.UntransformedP (TE.NamedDeclSpec "beta" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
+        [] TNil (\_ muM -> TE.addStmt $ TE.sample (toVector muM) SF.std_normal TNil)
+    BetaHierCentered cs -> betaHier cs SBC.Centered
+    BetaHierNonCentered cs -> betaHier cs SBC.NonCentered
 
-  case mc.alphaModel of
-    AlphaSimple -> do
-      SimpleAlpha . f
-        <$>  DAG.simpleParameter
-        (TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nAlphasE pmd.nCatsE [])
-        TNil SF.std_normal
-    AlphaHierCentered -> do
-      alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha . f)
-        $ DAG.addCenteredHierarchical
-        hierAlphaNDS alphaPs SF.normal
-    AlphaHierNonCentered -> do
-      alphaPs <- hierAlphaPs
-      let repMatrix v nRows = TE.functionE SF.repV_matrix (v :> nRows :> TNil)
-          diagPostMultiply m v = TE.functionE SF.diagPostMultiply (m :> v :> TNil)
-      fmap (HierarchicalAlpha . f)
-      $ DAG.simpleNonCentered hierAlphaNDS hierAlphaSpec (TE.DensityWithArgs SF.std_normal TNil) alphaPs
-      $ \(mu :> sigma :> TNil) rawM -> repMatrix mu mStatesE `TE.plusE` diagPostMultiply rawM sigma
-
+{-
 modelParameters :: ModelConfig alphaK pd -> ModelData rs -> SMB.StanBuilderM (DataRows rs) () ModelParameters
 modelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
@@ -279,6 +278,7 @@ modelParameters mc pmd = do
 
   alpha <- projModelAlpha mc pmd
   pure $ NormalParameters alpha theta
+-}
 
 data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
 
