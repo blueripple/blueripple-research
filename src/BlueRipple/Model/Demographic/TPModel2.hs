@@ -324,7 +324,7 @@ projModelAlpha mc pmd = do
               $ \_ m -> TE.addStmt $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m) SF.std_normal TNil]
       fmap (HierarchicalAlpha . f)
         $ DAG.addBuildParameter
-        $ DAG.simpleTransformedP hierAlphaNDS [] (DAG.BuildP rawP :> alphaPs)
+        $ DAG.simpleTransformedP hierAlphaNDS [] (DAG.BuildP rawP :> alphaPs) DAG.TransformedParametersBlock
         $ \(rmE :> muE :> sigmaE :> TNil) ->
             let inner pE s a k = [indexSAK s a k pE `TE.assign` (indexAK a k muE `TE.plusE` (indexAK a k sigmaE `TE.timesE` indexSAK s a k rmE))]
             in DAG.DeclCodeF $ TE.addStmt . loopSAK . inner

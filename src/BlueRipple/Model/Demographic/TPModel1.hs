@@ -295,7 +295,7 @@ projModelParameters mc pmd = do
     AlphaHierNonCentered -> do
       alphaPs <- hierAlphaPs
       fmap (HierarchicalAlpha . f)
-        $ DAG.withIIDRawMatrix hierAlphaNDS Nothing stdNormalDWA alphaPs
+        $ DAG.withIIDRawMatrix hierAlphaNDS DAG.TransformedParametersBlock Nothing stdNormalDWA alphaPs
         $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPostMult rawM (TE.transposeE sigmaAlphaE)
   case mc.distribution of
     NormalDist -> pure $ NormalProjModelParameters alpha theta sigma

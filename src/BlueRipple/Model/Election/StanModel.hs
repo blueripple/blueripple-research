@@ -417,7 +417,7 @@ dsSpecific dsLabel betaSizeE dsp oM = do
       dsAlpha <- SP.addCenteredHierarchical alphaNDS ps d
       return (Just dsAlpha, Nothing)
     DSPAlphaHNC aRawSigma aps alphaF -> do
-      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps alphaF
+      dsAlpha <- SP.simpleNonCentered alphaNDS SP.TransformedParametersBlock aRawDS (aRawDensityWA aRawSigma) aps alphaF
       return (Just dsAlpha, Nothing)
     DSPAlphaHCBetaNH oM' ad aps bp -> do
       dsAlpha <- SP.addCenteredHierarchical alphaNDS aps ad
@@ -426,7 +426,7 @@ dsSpecific dsLabel betaSizeE dsp oM = do
         else pure Nothing
       return (Just dsAlpha, dsBetaM)
     DSPAlphaHNCBetaNH oM' aRawSigma aps alphaF bp -> do
-      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps alphaF
+      dsAlpha <- SP.simpleNonCentered alphaNDS SP.TransformedParametersBlock aRawDS (aRawDensityWA aRawSigma) aps alphaF
       dsBetaM <- if fromMaybe True ((/=) <$> oM <*> oM')
         then Just <$> SP.simpleParameterWA betaNDS bp
         else pure Nothing
@@ -445,8 +445,8 @@ dsSpecific dsLabel betaSizeE dsp oM = do
       dsBeta <- SP.addCenteredHierarchical betaNDS bps bd
       return (Just dsAlpha, Just dsBeta)
     DSPAlphaBetaHNC aRawSigma aps aF bRawSigma bps bF -> do
-      dsAlpha <- SP.simpleNonCentered alphaNDS aRawDS (aRawDensityWA aRawSigma) aps aF
-      dsBeta <- SP.simpleNonCentered betaNDS bRawDS (bRawDensityWA bRawSigma) bps bF
+      dsAlpha <- SP.simpleNonCentered alphaNDS SP.TransformedParametersBlock aRawDS (aRawDensityWA aRawSigma) aps aF
+      dsBeta <- SP.simpleNonCentered betaNDS SP.TransformedParametersBlock bRawDS (bRawDensityWA bRawSigma) bps bF
       return (Just dsAlpha, Just dsBeta)
 
 data CenterDM md gq where
@@ -1203,7 +1203,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
         alphaT <- do
           muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaT" $ TE.realSpec []) $ normal logitMeanTurnout 1
           sigmaPT <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
-          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaT" $ TE.vectorSpec nStatesE [])
+          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaT" $ TE.vectorSpec nStatesE []) SP.TransformedParametersBlock
             (TE.vectorSpec nStatesE [])
             (normal 0 1)
             (hfmap SP.build $ muPT :> sigmaPT :> TNil)
@@ -1215,6 +1215,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
                           $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          SP.TransformedParametersBlock
                           (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
@@ -1222,7 +1223,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDRawMatrix thetaTSpec Nothing (normal 0 0.4)
+              thetaPT <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock Nothing (normal 0 0.4)
                 (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
                 ncF
               pure $ SP.parameterTagExpr thetaPT
@@ -1230,6 +1231,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaP" $ TE.realSpec []) $ normal 0 1
           sigmaPT <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
           alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaP" $ TE.vectorSpec nStatesE [])
+            SP.TransformedParametersBlock
             (TE.vectorSpec nStatesE [])
             (normal 0 1)
             (hfmap SP.build $ muPT :> sigmaPT :> TNil)
@@ -1241,6 +1243,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           case betaType model of
             SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
                           $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
+                          SP.TransformedParametersBlock
                           (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
               tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
@@ -1248,7 +1251,7 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDRawMatrix thetaTSpec Nothing (normal 0 0.4)
+              thetaPT <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock  Nothing (normal 0 0.4)
                 (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
                 ncF
 --                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)

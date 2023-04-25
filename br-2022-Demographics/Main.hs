@@ -20,6 +20,7 @@ import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.TPModel2 as DTM2
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
+import qualified BlueRipple.Model.Demographic.BLCorrModel as DBLC
 import qualified BlueRipple.Data.Keyed as Keyed
 
 --import qualified BlueRipple.Data.ACS_PUMS as PUMS
@@ -281,6 +282,15 @@ main = do
         marginalStructure = msSER_ASR
 --    K.logLE K.Info $ "stencils=" <> show (DMS.msStencils marginalStructure)
 
+    let numBLModelCats = S.size $ Keyed.elements @DT.Age4
+        blcModelConfig :: DBLC.ModelConfig (F.Record '[GT.StateAbbreviation, GT.PUMA, DT.Education4C, DT.PWPopPerSqMile]) (Const ())
+        blcModelConfig = DBLC.ModelConfig numBLModelCats (contramap F.rcast DBLC.designMatrixRow_1_E) DBLC.BetaSimple True True
+    _ <- DBLC.runProjModel True cmdLine (DBLC.RunConfig False False)
+         blcModelConfig
+         (F.rcast @'[DT.Age4C])
+         (F.rcast @'[GT.StateAbbreviation, GT.PUMA, DT.Education4C])
+         (const $ Const ())
+    K.knitError "STOP after blCorrModel run"
     let projCovariancesFld =
           DTP.diffCovarianceFldMS
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
