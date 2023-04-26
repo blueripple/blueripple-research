@@ -69,6 +69,7 @@ import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.BuildingBlocks.CovarianceStructure as SBC
+import qualified Stan.ModelBuilder.BuildingBlocks.DirichletMultinomial as SBDM
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.Distributions as SD
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
@@ -385,27 +386,21 @@ projModel rc alphaKeyF predF mc = do
         pure ()
 
     True -> do
+      dirichlet_multinomial <- SBDM.dirichletMultinomial
       let softmax x = TE.functionE SF.softmax (x :> TNil)
           toVector x = TE.functionE SF.to_vector (x :> TNil)
       dPrecE <- fmap (DAG.parameterExpr . DAG.build)
                 $ DAG.addBuildParameter
                 $ DAG.UntransformedP
                 (TE.NamedDeclSpec "dPrec" $ TE.realSpec [TE.lowerM $ TE.realE 0]) [] TNil
-                (\_ dp -> TE.addStmt $ TE.sample dp SF.std_normal TNil)
-      thetaAE <- fmap (DAG.parameterExpr . DAG.build)
-                $ DAG.addBuildParameter
-                $ DAG.UntransformedP
-                (TE.NamedDeclSpec "theta" $ TE.array1Spec nRowsE $ TE.simplexSpec mData.nCatsE []) [] TNil
-                (\_ _ -> pure ())
---                (\_ t -> TE.addStmt $ TE.loopSized nRowsE "n" $ \nE -> [TE.sample (toVector $ t `TE.at` nE) SF.std_normal TNil])
+                (\_ dp -> TE.addStmt $ TE.sample dp SF.normal (TE.realE 5 :> TE.realE 25 :> TNil))
       SMB.inBlock SMB.SBModel
         $ SMB.addFromCodeWriter
         $ TE.addStmt
         $ TE.loopSized nRowsE "n"
         $ \nE -> TE.writerL'
                  $ (do
-                       TE.addStmt $ TE.sample (thetaAE `TE.at` nE) SF.dirichlet (dPrecE `TE.timesE` softmax (mnArgByRowE nE) :> TNil)
-                       TE.addStmt $ TE.sample (mData.countsE `TE.at` nE) SF.multinomial (thetaAE `TE.at` nE :> TNil)
+                       TE.addStmt $ TE.sample (mData.countsE `TE.at` nE) dirichlet_multinomial (dPrecE `TE.timesE` softmax (mnArgByRowE nE) :> TNil)
                    )
       pure ()
 
