@@ -203,6 +203,7 @@ modelText mc = mc.alphaDMR.dmName
 --               <> "_" <> mc.predDMR.dmName
                <> "_" <> betaModelText mc.betaModel
                <> if mc.betaLastAsZero then "_l0" else ""
+               <> if mc.dirichletPrior then "_dir" else ""
 
 dataText :: ModelConfig alphaK md -> Text
 dataText mc = mc.alphaDMR.dmName
@@ -287,22 +288,37 @@ modelBeta mc pmd = do
         hierPs <- hierBetaPs
         case hierPs of
           (muBetaP :> tauBetaP :> TNil) -> do
-            let muBetaA = TE.functionE SF.rep_array (DAG.parameterExpr muBetaP :> (nStatesE :> TNil))
-                tauBeta = DAG.parameterExpr tauBetaP
+            muBetaAP <- fmap DAG.build
+                       $ DAG.addBuildParameter
+                       $ DAG.TransformedP
+                       (TE.NamedDeclSpec ("mu" <> betaName <> "A") $ TE.array1Spec nStatesE $ betaShape [])
+                       []
+                       (muBetaP :> TNil)
+                       DAG.TransformedParametersBlock
+                       (\(muBetaE :> TNil) -> DAG.DeclRHS $ TE.functionE SF.rep_array (muBetaE :> (nStatesE :> TNil)))
+                       TNil
+                       (\_ _ -> pure ())
+
+{-
+              SMB.addFromCodeWriter
+                        $ TE.declareRHSNW (TE.NamedDeclSpec ("mu" <> betaName <> "A") $ TE.array1Spec nStatesE $ betaShape [])
+                        $ TE.functionE SF.rep_array (DAG.parameterExpr muBetaP :> (nStatesE :> TNil))
+-}
+            let tauBeta = DAG.parameterExpr tauBetaP
             case cs of
               DiagonalCovariance -> do
                 fmap HierarchicalBeta
-                  $ SBC.matrixMultiNormalParameter SBC.Diagonal cent muBetaA tauBeta
+                  $ SBC.matrixMultiNormalParameter' SBC.Diagonal cent muBetaAP tauBetaP
                   (TE.NamedDeclSpec betaName $ hierBetaSpec)
               LKJCovariance lkjPriorP -> do
                 lkjCorrBetaP <- fmap DAG.build
                                 $ DAG.simpleParameter
                                 (TE.NamedDeclSpec ("lkj" <> betaName)
-                                 $ TE.choleskyFactorCorrSpec pmd.nCovariatesE [])
+                                 $ TE.choleskyFactorCorrSpec (pmd.nCovariatesE `TE.timesE` betaColsE) [])
                                 (DAG.given (TE.realE $ realToFrac lkjPriorP) :> TNil)
                                 SF.lkj_corr_cholesky
                 fmap HierarchicalBeta
-                  $ SBC.matrixMultiNormalParameter (SBC.Cholesky lkjCorrBetaP) cent muBetaA tauBeta
+                  $ SBC.matrixMultiNormalParameter' (SBC.Cholesky lkjCorrBetaP) cent muBetaAP tauBetaP
                   (TE.NamedDeclSpec betaName $ hierBetaSpec)
           _ -> SMB.stanBuildError "BLCorrModel.modelBeta: Pattern match error in hierarchical beta paramters. Yikes."
   betaRawP <- case mc.betaModel of
@@ -338,7 +354,7 @@ modelBeta mc pmd = do
           TNil
           (\_ _ -> pure ())
 
-data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
+data RunConfig = RunConfig { rcIncludePPCheck :: Maybe Int, rcIncludeLL :: Bool }
 
 projModel :: Typeable rs
           => RunConfig
@@ -370,23 +386,30 @@ projModel rc alphaKeyF predF mc = do
         $ SMB.addFromCodeWriter
         $ TE.addStmt
         $ TE.loopSized nRowsE "n"
-  --    $ \nE -> [TE.sample (mData.countsE `TE.at` nE) SF.multinomial_logit (mnArgByRowE nE :> TNil)]
         $ \nE -> [TE.target $ TE.densityE SF.multinomial_logit_lpmf (mData.countsE `TE.at` nE) (mnArgByRowE nE :> TNil)]
 
-      when rc.rcIncludePPCheck $ do
-        _ <- SMB.inBlock SMB.SBGeneratedQuantities
-          $ SBB.generatePosteriorPrediction
-          mData.dataTag
-          (TE.NamedDeclSpec "ppCounts"
-           $ TE.array1Spec nRowsE
-           $ TE.array1Spec mData.nCatsE (TE.intSpec [])
-          )
-          SD.multinomialLogitDist
-          (pure $ \nE -> mnArgByRowE nE :> totalCountE `TE.at` nE :> TNil)
-        pure ()
+      case rc.rcIncludePPCheck of
+        Just nChoices -> do
+          let ppCheck n = SMB.inBlock SMB.SBGeneratedQuantities
+                          $ SBB.generatePosteriorPrediction'
+                          mData.dataTag
+                          (TE.NamedDeclSpec "ppCounts"
+                           $ TE.array1Spec nRowsE (TE.intSpec [])
+                          )
+                          (\f nE -> (TE.functionE SF.multinomial_logit_rng (mnArgByRowE nE :> f nE)) `TE.at` TE.intE n)
+                          (pure $ \nE -> totalCountE `TE.at` nE :> TNil)
+                          (const id)
+          mapM_ ppCheck [1..nChoices]
+        Nothing -> pure ()
+      when rc.rcIncludeLL
+        $ SBB.generateLogLikelihood
+        mData.dataTag
+        SD.multinomialLogitDist
+        (pure $ \nE -> mnArgByRowE nE :> TNil)
+        (pure $ \nE -> mData.countsE `TE.at` nE)
 
     True -> do
-      dirichlet_multinomial <- SBDM.dirichletMultinomial
+      (dirichlet_multinomial, dirichlet_multinomial_lpmf, dirichlet_multinomial_rng) <- SBDM.dirichletMultinomial @_ @TE.ECVec
       let softmax x = TE.functionE SF.softmax (x :> TNil)
           toVector x = TE.functionE SF.to_vector (x :> TNil)
       dPrecE <- fmap (DAG.parameterExpr . DAG.build)
@@ -394,17 +417,38 @@ projModel rc alphaKeyF predF mc = do
                 $ DAG.UntransformedP
                 (TE.NamedDeclSpec "dPrec" $ TE.realSpec [TE.lowerM $ TE.realE 0]) [] TNil
                 (\_ dp -> TE.addStmt $ TE.sample dp SF.normal (TE.realE 5 :> TE.realE 25 :> TNil))
+      let dmArgByRowE nE = dPrecE `TE.timesE` softmax (mnArgByRowE nE)
       SMB.inBlock SMB.SBModel
         $ SMB.addFromCodeWriter
         $ TE.addStmt
         $ TE.loopSized nRowsE "n"
         $ \nE -> TE.writerL'
                  $ (do
-                       TE.addStmt $ TE.sample (mData.countsE `TE.at` nE) dirichlet_multinomial (dPrecE `TE.timesE` softmax (mnArgByRowE nE) :> TNil)
+                       TE.addStmt $ TE.sample (mData.countsE `TE.at` nE) dirichlet_multinomial (dmArgByRowE nE :> TNil)
                    )
-      pure ()
+      case  rc.rcIncludePPCheck of
+        Just nChoices -> do
+          let ppCheck n = SMB.inBlock SMB.SBGeneratedQuantities
+                          $ SBB.generatePosteriorPrediction'
+                          mData.dataTag
+                          (TE.NamedDeclSpec ("ppCounts_" <> show n)
+                           $ TE.array1Spec nRowsE (TE.intSpec [])
+                          )
+                          (\f nE -> (TE.functionE dirichlet_multinomial_rng (dmArgByRowE nE :> f nE)) `TE.at` TE.intE n)
+                          (pure $ \nE -> totalCountE `TE.at` nE :> TNil)
+                          (const id)
+          mapM_ ppCheck [1..nChoices]
+        Nothing -> pure ()
+      when rc.rcIncludeLL
+        $ SBB.generateLogLikelihood'
+        $ SBB.addToLLSet mData.dataTag
+        (SBB.LLDetails
+         (TE.densityE dirichlet_multinomial_lpmf)
+         (pure $ \nE -> dmArgByRowE nE :> TNil)
+         (pure $ \nE -> mData.countsE `TE.at` nE)
+        )
+        SBB.emptyLLSet
 
-  pure ()
 
 -- rs is stateAbbr ++ kP ++ PWPopPerSqMile
 runProjModel :: forall kM pd kPs rs r .
@@ -452,14 +496,22 @@ runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
                        \acsByPUMA -> do
                          let mkRow acsByPUMARow = makeRowFromPD (acsByPUMARow)
                              counted = FL.fold (dataRowsFld (F.rcast @kPs) margKeyF countF mkRow) acsByPUMA
-                         K.logLE K.Info $ "counted: " <> show counted
+--                         K.logLE K.Info $ "counted: " <> show counted
                          pure counted
   states <-  FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
   (dw, code) <-  SMR.dataWranglerAndCode acsCountedByPUMA_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
                 (projModel rc id predF mc)
 
-  let unwraps = [SR.UnwrapNamed "MCounts" "yCounts"]
+  let unwraps = case rc.rcIncludePPCheck of
+        Just nChoices ->
+          let f n = SR.UnwrapExpr ("matrix(ncol="
+                                    <> show nChoices
+                                    <> ", byrow=TRUE, unlist(jsonData $ MCounts))[,"
+                                    <> show n <> "]") ("yCounts_" <> show n)
+          in fmap f [1..nChoices]
+        Nothing -> []
+--      unwraps = [SR.UnwrapNamed "MCounts" "yCounts"]
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            cacheDirE
            (Right runnerInputNames)
@@ -467,7 +519,7 @@ runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
            dw
            code
            SC.DoNothing
-           (SMR.ShinyStan unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+           (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            acsCountedByPUMA_C
            (pure ())
   K.logLE K.Info "projModel run complete."

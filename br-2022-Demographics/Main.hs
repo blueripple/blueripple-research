@@ -284,8 +284,11 @@ main = do
 
     let numBLModelCats = S.size $ Keyed.elements @DT.Age4
         blcModelConfig :: DBLC.ModelConfig (F.Record '[GT.StateAbbreviation, GT.PUMA, DT.Education4C, DT.PWPopPerSqMile]) (Const ())
-        blcModelConfig = DBLC.ModelConfig numBLModelCats (contramap F.rcast DBLC.designMatrixRow_1_E) DBLC.BetaSimple True True
-    _ <- DBLC.runProjModel True cmdLine (DBLC.RunConfig False False)
+        blcModelConfig = DBLC.ModelConfig numBLModelCats
+                         (contramap F.rcast DBLC.designMatrixRow_1_E)
+                         (DBLC.BetaHierNonCentered (DBLC.LKJCovariance 4))
+                         True True
+    _ <- DBLC.runProjModel False cmdLine (DBLC.RunConfig (Just numBLModelCats) True)
          blcModelConfig
          (F.rcast @'[DT.Age4C])
          (F.rcast @'[GT.StateAbbreviation, GT.PUMA, DT.Education4C])
