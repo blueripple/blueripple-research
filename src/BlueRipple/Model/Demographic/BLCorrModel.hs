@@ -354,7 +354,7 @@ modelBeta mc pmd = do
           TNil
           (\_ _ -> pure ())
 
-data RunConfig = RunConfig { rcIncludePPCheck :: Maybe Int, rcIncludeLL :: Bool }
+data RunConfig = RunConfig { rcIncludePPCheck :: Maybe Int, rcIncludeLL :: Bool, statesM :: Maybe (Text, [Text]) }
 
 projModel :: Typeable rs
           => RunConfig
@@ -479,15 +479,16 @@ runProjModel :: forall kM pd kPs rs r .
 runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
   let cacheRoot = "model/demographic/nullVecProjModel/"
       cacheDirE = (if clearCaches then Left else Right) cacheRoot
-      dataName = "projectionData_" <> dataText mc
+      dataName = "blCorrData_" <> dataText mc <> maybe "" fst rc.statesM
       countF r = PopAndDensity (view DT.popCount r) (view DT.pWPopPerSqMile r)
       runnerInputNames = SC.RunnerInputNames
                          ("br-2022-Demographics/stan/blCorrModel")
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSByPUMA
-  let dataCacheKey = cacheRoot <> "/acsCounts_" <> mc.alphaDMR.dmName
+      statesFilter = maybe id (\(_, sts) -> F.filterFrame ((`elem` sts) . view GT.stateAbbreviation)) rc.statesM
+  acsByPUMA_C <- fmap statesFilter <$> DDP.cachedACSByPUMA
+  let dataCacheKey = cacheRoot <> "/acsCounts_" <> mc.alphaDMR.dmName <> maybe "" fst rc.statesM
   when clearCaches $ BRK.clearIfPresentD dataCacheKey
   acsCountedByPUMA_C <- BRK.retrieveOrMakeD
                        dataCacheKey

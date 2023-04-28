@@ -283,12 +283,13 @@ main = do
 --    K.logLE K.Info $ "stencils=" <> show (DMS.msStencils marginalStructure)
 
     let numBLModelCats = S.size $ Keyed.elements @DT.Age4
+        blcRunConfig = DBLC.RunConfig (Just numBLModelCats) True (Just $ ("onlyNY", ["NY"]))
         blcModelConfig :: DBLC.ModelConfig (F.Record '[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]) (Const ())
         blcModelConfig = DBLC.ModelConfig numBLModelCats
                          (contramap F.rcast DBLC.designMatrixRow_1_S_E_R)
-                         (DBLC.BetaHierNonCentered (DBLC.DiagonalCovariance))
+                         DBLC.BetaSimple
                          True True
-    _ <- DBLC.runProjModel False  cmdLine (DBLC.RunConfig (Just numBLModelCats) True)
+    _ <- DBLC.runProjModel False  cmdLine blcRunConfig
          blcModelConfig
          (F.rcast @'[DT.Age4C])
          (F.rcast @'[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C])
