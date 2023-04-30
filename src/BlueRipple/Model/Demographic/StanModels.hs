@@ -198,14 +198,14 @@ basicParameters mc md = do
   alphaP <- case mc.alphaType of
     HCentered -> DAG.addCenteredHierarchical
                  (TE.NamedDeclSpec "alpha" $ TE.vectorSpec md.nStates [])
-                 (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
+                 (DAG.given (TE.realE 0) :> sigmaAlphaP :> TNil)
                  SF.normalS
     HNonCentered -> DAG.simpleNonCentered
                     (TE.NamedDeclSpec "alpha" $ TE.vectorSpec md.nStates [])
                     DAG.TransformedParametersBlock
                     (TE.vectorSpec md.nStates [])
                     (TE.DensityWithArgs SF.normalS $ TE.realE 0 :> TE.realE 1 :> TNil)
-                    (DAG.given (TE.realE 0) :> DAG.build sigmaAlphaP :> TNil)
+                    (DAG.given (TE.realE 0) :> sigmaAlphaP :> TNil)
                     (\(ma :> sa :> TNil) r -> ma `TE.plusE` (sa `TE.timesE` r))
 
   betaP <- DAG.simpleParameterWA
@@ -218,7 +218,7 @@ basicParameters mc md = do
                    (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
     False -> pure Nothing
 
-  let f = DAG.parameterTagExpr
+  let f = DAG.parameterExpr
       by v i = TE.indexE TEI.s0 i v
       mBetaDensityTerm = TE.timesE <$> (f <$> mBetaDensityP) <*> md.mDensity
       logitMu' = let x = (f alphaP `by` (S.byGroupIndexE md.acsDataTag stateGroup))
@@ -255,7 +255,7 @@ normalModel dmr mc = do
          (TE.NamedDeclSpec "sigma" $ TE.realSpec [TE.lowerM $ TE.realE 0])
          (TE.DensityWithArgs SF.normalS (TE.realE 0 :> TE.realE 1 :> TNil))
 
-  let sigma0 = DAG.parameterTagExpr sigmaP
+  let sigma0 = DAG.parameterExpr sigmaP
       mu = TE.functionE SF.inv_logit (bParams.logitMu :> TNil)
       sigma = TE.functionE SF.sqrt (binomialSigma2 `TE.plusE` (sigma0 `TE.timesE` sigma0) :> TNil)
       ps = mu :> sigma :> TNil
@@ -310,7 +310,7 @@ betaBinomialModel dmr mc = do
           (TE.DensityWithArgs SF.betaS (TE.realE 99 :> TE.realE 1 :> TNil)) -- phi_raw is beta distributed
           (\t -> t `eltDivide` (TE.realE 1 `TE.minusE` t)) -- phi = phi_raw / (1 - phi_raw), component-wise
 
-  let phi = DAG.parameterTagExpr phiP
+  let phi = DAG.parameterExpr phiP
       vSpec = TE.vectorSpec md.nData []
       tempPs = do
         mu <- TE.declareRHSNW (TE.NamedDeclSpec "muV" vSpec) $ TE.functionE SF.inv_logit (bParams.logitMu :> TNil)
@@ -589,8 +589,6 @@ type AgeStateModelResult = ModelResult Text [DT.CitizenC, DT.SexC, DT.Education4
 type EduStateModelResult = ModelResult Text [DT.Age4C, DT.SexC, DT.Race5C]
 
 
-
-
 logDensityDMRP :: F.ElemOf rs DT.PWPopPerSqMile => DM.DesignMatrixRowPart (F.Record rs)
 logDensityDMRP = DM.DesignMatrixRowPart "Density" 1 DDP.logDensityPredictor
 
@@ -628,13 +626,13 @@ categoricalModel numInCat dmr = do
            $ DAG.TransformedP
            (TE.NamedDeclSpec "beta" $ TE.matrixSpec nPredictorsE nInCatE [])
            []
-           (DAG.build betaRawP :> DAG.build zvP :> TNil)
+           (betaRawP :> zvP :> TNil)
            DAG.TransformedParametersBlock
            (\ps -> DAG.DeclRHS $ TE.functionE SF.append_col ps)
            (DAG.given (TE.realE 0) :> DAG.given (TE.realE 2) :> TNil)
            (\normalPS x -> TE.addStmt $ TE.sample (TE.functionE SF.to_vector (x :> TNil)) SF.normalS normalPS)
 
-  let betaE = DAG.parameterTagExpr betaP
+  let betaE = DAG.parameterExpr betaP
       betaXD = TE.declareRHSNW
                (TE.NamedDeclSpec "beta_x" $ TE.matrixSpec nDataE nInCatE [])
                (acsMatE `TE.timesE` betaE)

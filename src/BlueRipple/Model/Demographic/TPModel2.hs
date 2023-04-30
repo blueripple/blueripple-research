@@ -266,11 +266,11 @@ projModelData mc catKey countF predF = do
 -- either an K row-vector or S x K matrix
 --data Alpha0 = SimpleAlpha0 TE.RVectorE | HierarchicalAlpha0 TE.MatrixE
 -- C x K matrix or array[S] of C x K matrix
-data Alpha = SimpleAlpha TE.MatrixE | HierarchicalAlpha (TE.ArrayE TE.EMat)
+data Alpha = SimpleAlpha (DAG.Parameter TE.EMat) | HierarchicalAlpha (DAG.Parameter (TE.EArray1 TE.EMat))
 -- D x K matrix or Nothing
-newtype Theta = Theta (Maybe TE.MatrixE)
+newtype Theta = Theta (Maybe (DAG.Parameter TE.EMat))
 -- sigma is K row-vector
-newtype Sigma = Sigma { unSigma :: TE.RVectorE }
+newtype Sigma = Sigma { unSigma :: DAG.Parameter TE.ERVec }
 
 data ProjModelParameters where
   NormalParameters :: Alpha -> Theta -> Sigma -> ProjModelParameters
@@ -280,8 +280,7 @@ paramTheta (NormalParameters _ t _) = t
 
 projModelAlpha :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () Alpha
 projModelAlpha mc pmd = do
-  let f = DAG.parameterTagExpr
-      nStatesE = SMB.groupSizeE stateG
+  let nStatesE = SMB.groupSizeE stateG
       hierAlphaSpec = TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
       hierAlphaNDS = TE.NamedDeclSpec "alpha" hierAlphaSpec
       indexAK a k = TE.slice0 k . TE.slice0 a
@@ -299,17 +298,17 @@ projModelAlpha mc pmd = do
         sigmaAlphaP <- DAG.iidMatrixP
                        (TE.NamedDeclSpec "sigmaAlpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
                        [] TNil SF.std_normal
-        pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
+        pure (muAlphaP :> sigmaAlphaP :> TNil)
 
   case mc.alphaModel of
     AlphaSimple -> do
-      SimpleAlpha . f
-        <$>  DAG.iidMatrixP
+      fmap SimpleAlpha
+        $  DAG.iidMatrixP
         (TE.NamedDeclSpec "alpha" $ TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
         [] TNil SF.std_normal
     AlphaHierCentered -> do
       alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha . f)
+      fmap HierarchicalAlpha
         $ DAG.addBuildParameter
         $ DAG.UntransformedP hierAlphaNDS [] alphaPs
         $ \(muAlphaE :> sigmaAlphaE :> TNil) m
@@ -322,9 +321,9 @@ projModelAlpha mc pmd = do
       rawP <- DAG.addBuildParameter
               $ DAG.UntransformedP rawNDS [] TNil
               $ \_ m -> TE.addStmt $ loopSAK $ \s a k -> [TE.sample (indexSAK s a k m) SF.std_normal TNil]
-      fmap (HierarchicalAlpha . f)
+      fmap HierarchicalAlpha
         $ DAG.addBuildParameter
-        $ DAG.simpleTransformedP hierAlphaNDS [] (DAG.BuildP rawP :> alphaPs) DAG.TransformedParametersBlock
+        $ DAG.simpleTransformedP hierAlphaNDS [] (rawP :> alphaPs) DAG.TransformedParametersBlock
         $ \(rmE :> muE :> sigmaE :> TNil) ->
             let inner pE s a k = [indexSAK s a k pE `TE.assign` (indexAK a k muE `TE.plusE` (indexAK a k sigmaE `TE.timesE` indexSAK s a k rmE))]
             in DAG.DeclCodeF $ TE.addStmt . loopSAK . inner
@@ -333,17 +332,16 @@ projModelParameters :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuil
 projModelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
       stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
-      f = DAG.parameterTagExpr
       numPredictors = DM.rowLength mc.predDMR
   theta <- if numPredictors > 0 then
-               (Theta . Just . f)
-               <$> DAG.iidMatrixP
+             fmap (Theta . Just)
+               $ DAG.iidMatrixP
                (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nPredictorsE pmd.nNullVecsE [])
                [] TNil
                SF.std_normal
            else pure $ Theta Nothing
-  sigma <-  (Sigma . f)
-             <$> DAG.simpleParameterWA
+  sigma <-  fmap Sigma
+             $ DAG.simpleParameterWA
              (TE.NamedDeclSpec "sigma" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
              stdNormalDWA
   alpha <- projModelAlpha mc pmd
@@ -364,11 +362,12 @@ projModel rc alphaKey countF predF mc = do
   let betaNDS = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
       nRowsE = SMB.dataSetSizeE mData.projDataTag
       loopNVs = TE.loopSized mData.nNullVecsE "k" --TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
+      pExpr = DAG.parameterExpr
   -- transformedData
   (predM, _centerF, _mBeta) <- case paramTheta mParams of
-    Theta (Just thetaE) -> do
+    Theta (Just thetaP) -> do
       (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "DM"
-      (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (thetaE, betaNDS)
+      (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (pExpr thetaP, betaNDS)
       pure (dmQ, centerF, mBeta)
     Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
   (nvps, inverseF) <- case mc.standardizeNVs of
@@ -393,26 +392,26 @@ projModel rc alphaKey countF predF mc = do
       -- given alpha and theta return an nData x nNullVecs matrix
       muE :: Alpha -> Theta -> SMB.StanBuilderM (ProjData r) () TE.MatrixE
       muE a t = SMB.addFromCodeWriter $ do
-        let mTheta = case t of
-              Theta x -> fmap (\t -> predM `TE.timesE` t) x
+        let mThetaE = case t of
+              Theta x -> fmap (\t -> predM `TE.timesE` (pExpr t)) $ x
             muSpec = TE.NamedDeclSpec "mu" $ TE.matrixSpec nRowsE mData.nNullVecsE []
         case a of
-          SimpleAlpha alpha -> case mTheta of
-            Nothing -> TE.declareRHSNW muSpec (alphasE mData `TE.timesE` alpha)
-            Just x -> TE.declareRHSNW muSpec (alphasE mData `TE.timesE` alpha `TE.plusE` x)
-          HierarchicalAlpha alpha -> do
+          SimpleAlpha alphaP -> case mThetaE of
+            Nothing -> TE.declareRHSNW muSpec (alphasE mData `TE.timesE` pExpr alphaP)
+            Just x -> TE.declareRHSNW muSpec (alphasE mData `TE.timesE` pExpr alphaP `TE.plusE` x)
+          HierarchicalAlpha alphaP -> do
             mu <- TE.declareNW muSpec
             TE.addStmt $ TE.loopSized nRowsE "n" $ \n ->
               [(mu `TE.atRow` n)
                 `TE.assign`
-                (case mTheta of
-                    Nothing -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState alpha) `TE.at` n)
-                    Just mt -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState alpha) `TE.at` n) `TE.plusE` (mt `TE.atRow` n)
+                (case mThetaE of
+                    Nothing -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState $ pExpr alphaP) `TE.at` n)
+                    Just mt -> (mData.alphasE `TE.atRow` n) `TE.timesE` ((reIndexByState $ pExpr alphaP) `TE.at` n) `TE.plusE` (mt `TE.atRow` n)
                 )]
             pure mu
 
       sigmaE :: Sigma -> TE.IntE -> TE.VectorE
-      sigmaE s k = TE.functionE SF.rep_vector (unSigma s `TE.at` k :> nRowsE :> TNil)
+      sigmaE s k = TE.functionE SF.rep_vector (pExpr (unSigma s) `TE.at` k :> nRowsE :> TNil)
 
       ppF :: TE.MatrixE
           -> Int

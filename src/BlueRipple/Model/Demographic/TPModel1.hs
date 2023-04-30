@@ -225,13 +225,13 @@ projModelData mc = do
 -- given K null vectors, S states, and D predictors
 -- alpha, theta, sigma
 -- alpha is a K row-vector or S x K matrix
-data Alpha = SimpleAlpha TE.RVectorE | HierarchicalAlpha TE.MatrixE
+data Alpha = SimpleAlpha (DAG.Parameter TE.ERVec) | HierarchicalAlpha (DAG.Parameter TE.EMat)
 -- theta is a D x K matrix (or Nothing)
-newtype Theta = Theta (Maybe TE.MatrixE)
+newtype Theta = Theta (Maybe (DAG.Parameter TE.EMat))
 -- sigma is a K row-vector
-newtype Sigma = Sigma {unSigma :: TE.RVectorE }
+newtype Sigma = Sigma {unSigma :: DAG.Parameter TE.ERVec }
 
-newtype Nu = Nu { unNu :: TE.RVectorE }
+newtype Nu = Nu { unNu :: DAG.Parameter TE.ERVec }
 
 data ProjModelParameters where
   NormalProjModelParameters :: Alpha -> Theta -> Sigma -> ProjModelParameters
@@ -247,19 +247,18 @@ projModelParameters :: ModelConfig md -> ProjModelData outerK md -> SMB.StanBuil
 projModelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
       stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
-      f = DAG.parameterTagExpr
       numPredictors = DM.rowLength mc.designMatrixRow
   -- for now all the thetas are iid std normals
 
   theta <- if numPredictors > 0 then
-               (Theta . Just . f)
-               <$> DAG.iidMatrixP
+               fmap (Theta . Just)
+               $ DAG.iidMatrixP
                (TE.NamedDeclSpec "theta" $ TE.matrixSpec pmd.nPredictorsE pmd.nNullVecsE [])
                [] TNil
                SF.std_normal
              else pure $ Theta Nothing
-  sigma <-  (Sigma . f)
-             <$> DAG.simpleParameterWA
+  sigma <-  fmap Sigma
+             $ DAG.simpleParameterWA
              (TE.NamedDeclSpec "sigma" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
              stdNormalDWA
   let nStatesE = SMB.groupSizeE stateG
@@ -276,16 +275,16 @@ projModelParameters mc pmd = do
         sigmaAlphaP <-  DAG.simpleParameterWA
                         (TE.NamedDeclSpec "sigmaAlpha" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
                         stdNormalDWA
-        pure (DAG.build muAlphaP :> DAG.build sigmaAlphaP :> TNil)
+        pure (muAlphaP :> sigmaAlphaP :> TNil)
   alpha <- case mc.alphaModel of
     AlphaSimple -> do
-      SimpleAlpha . f
-        <$> DAG.simpleParameterWA
+      fmap SimpleAlpha
+        $ DAG.simpleParameterWA
            (TE.NamedDeclSpec "alpha" $ TE.rowVectorSpec pmd.nNullVecsE [])
            stdNormalDWA
     AlphaHierCentered -> do
       alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha . f)
+      fmap HierarchicalAlpha
         $ DAG.addBuildParameter
         $ DAG.UntransformedP hierAlphaNDS [] alphaPs
         $ \(muAlphaE :> sigmaAlphaE :> TNil) m
@@ -294,7 +293,7 @@ projModelParameters mc pmd = do
              $ \k -> [TE.sample (m `fstI` k) SF.normalS (muAlphaE `fstI` k :> sigmaAlphaE `fstI` k :> TNil)]
     AlphaHierNonCentered -> do
       alphaPs <- hierAlphaPs
-      fmap (HierarchicalAlpha . f)
+      fmap HierarchicalAlpha
         $ DAG.withIIDRawMatrix hierAlphaNDS DAG.TransformedParametersBlock Nothing stdNormalDWA alphaPs
         $ \(muAlphaE :> sigmaAlphaE :> TNil) rawM -> rowsOf nStatesE muAlphaE `TE.plusE` diagPostMult rawM (TE.transposeE sigmaAlphaE)
   case mc.distribution of
@@ -302,8 +301,8 @@ projModelParameters mc pmd = do
     CauchyDist -> pure $ CauchyProjModelParameters alpha theta sigma
     StudentTDist -> do
       let kVectorOf x = TE.functionE SF.rep_row_vector (TE.realE x :> pmd.nNullVecsE :> TNil)
-      nu <-  (Nu . f)
-             <$> DAG.simpleParameterWA
+      nu <-  fmap Nu
+             $ DAG.simpleParameterWA
              (TE.NamedDeclSpec "nu" $ TE.rowVectorSpec pmd.nNullVecsE [TE.lowerM $ TE.realE 0])
              (TE.DensityWithArgs SF.gamma (kVectorOf 2 :> kVectorOf 0.1 :> TNil))
       pure $ StudentTProjModelParameters alpha theta sigma nu
@@ -316,15 +315,16 @@ projModel :: (Typeable outerK, Typeable md)
 projModel rc mc = do
   mData <- projModelData mc
   mParams <- projModelParameters mc mData
+  let pExpr = DAG.parameterExpr
   let betaNDS = TE.NamedDeclSpec "beta" $ TE.matrixSpec mData.nPredictorsE mData.nNullVecsE []
       nRowsE = SMB.dataSetSizeE mData.projDataTag
       fstI x k = TE.sliceE TEI.s0 k x
       sndI x k = TE.sliceE TEI.s1 k x
       loopNVs = TE.for "k" (TE.SpecificNumbered (TE.intE 1) mData.nNullVecsE)
   (predM, _centerF, _mBeta) <- case paramTheta mParams of
-    Theta (Just thetaE) -> do
+    Theta (Just thetaP) -> do
       (centeredPredictorsE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.predictorsE Nothing "DM"
-      (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (thetaE, betaNDS)
+      (dmQ, _, _, mBeta) <- DM.thinQR centeredPredictorsE "DM" $ Just (pExpr thetaP, betaNDS)
       pure (dmQ, centerF, mBeta)
     Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
   (nvps, inverseF) <- case mc.standardizeNVs of
@@ -348,14 +348,14 @@ projModel rc mc = do
   let reIndexByState = TE.indexE TEI.s0 (SMB.byGroupIndexE mData.projDataTag stateG)
       muE :: Alpha -> Theta -> TE.IntE -> TE.VectorE
       muE a t k =  case a of
-       SimpleAlpha alpha -> case t of
-         Theta Nothing -> TE.functionE SF.rep_vector (alpha `fstI` k :> nRowsE :> TNil)
-         Theta (Just theta) -> alpha `fstI` k `TE.plusE` (predM `TE.timesE` (theta `sndI` k))
-       HierarchicalAlpha alpha -> case t of
-         Theta Nothing -> reIndexByState (alpha `sndI` k)
-         Theta (Just theta) -> reIndexByState (alpha `sndI` k) `TE.plusE` (predM `TE.timesE` (theta `sndI` k))
+       SimpleAlpha alphaP -> case t of
+         Theta Nothing -> TE.functionE SF.rep_vector (pExpr alphaP `fstI` k :> nRowsE :> TNil)
+         Theta (Just thetaP) -> pExpr alphaP `fstI` k `TE.plusE` (predM `TE.timesE` (pExpr thetaP `sndI` k))
+       HierarchicalAlpha alphaP -> case t of
+         Theta Nothing -> reIndexByState (pExpr alphaP `sndI` k)
+         Theta (Just thetaP) -> reIndexByState (pExpr alphaP `sndI` k) `TE.plusE` (predM `TE.timesE` (pExpr thetaP `sndI` k))
       sigmaE :: Sigma -> TE.IntE -> TE.VectorE
-      sigmaE s k = TE.functionE SF.rep_vector (unSigma s `fstI` k :> nRowsE :> TNil)
+      sigmaE s k = TE.functionE SF.rep_vector (pExpr (unSigma s) `fstI` k :> nRowsE :> TNil)
 
   let ppF :: Int
           -> ((TE.IntE -> TE.ExprList xs) -> TE.IntE -> TE.UExpr TE.EReal)
@@ -381,7 +381,7 @@ projModel rc mc = do
           in (ssF, \n -> ppF n rF rpF)
         StudentTProjModelParameters a t s n ->
           let nu :: Nu -> TE.IntE -> TE.VectorE
-              nu n' k = TE.functionE SF.rep_vector (unNu n' `fstI` k :> nRowsE :> TNil)
+              nu n' k = TE.functionE SF.rep_vector (pExpr (unNu n') `fstI` k :> nRowsE :> TNil)
               ssF e k = TE.sample e SF.student_t (nu n k :> muE a t k :> sigmaE s k :> TNil)
               rF f nE = TE.functionE SF.student_t_rng (f nE)
               rpF k  = pure $ \nE -> nu n k `fstI` nE :> muE a t k `fstI` nE :> sigmaE s k `fstI` nE :>  TNil

@@ -222,6 +222,7 @@ library
                  , BlueRipple.Model.Demographic.TableProducts
                  , BlueRipple.Model.Demographic.TPModel1
                  , BlueRipple.Model.Demographic.TPModel2
+                 , BlueRipple.Model.Demographic.TPModel3
                  , BlueRipple.Model.Demographic.BLCorrModel
                  , BlueRipple.Model.Demographic.MarginalStructure
                  , BlueRipple.Model.Demographic.EnrichCensus
