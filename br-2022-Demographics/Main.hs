@@ -19,6 +19,7 @@ import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.TPModel2 as DTM2
+import qualified BlueRipple.Model.Demographic.TPModel2 as DTM3
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Model.Demographic.BLCorrModel as DBLC
 import qualified BlueRipple.Data.Keyed as Keyed
@@ -280,8 +281,7 @@ main = do
                     $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.Age4C]
                     DMS.identityMarginalStructure DMS.identityMarginalStructure
         marginalStructure = msSER_ASR
---    K.logLE K.Info $ "stencils=" <> show (DMS.msStencils marginalStructure)
-
+{-
     let numBLModelCats = S.size $ Keyed.elements @DT.Age4
         blcRunConfig = DBLC.RunConfig (Just numBLModelCats) True (Just $ ("onlyNY", ["NY"]))
         blcModelConfig :: DBLC.ModelConfig (F.Record '[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]) (Const ())
@@ -295,6 +295,7 @@ main = do
          (F.rcast @'[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C])
          (const $ Const ())
     K.knitError "STOP after blCorrModel run"
+-}
     let projCovariancesFld =
           DTP.diffCovarianceFldMS
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
@@ -313,6 +314,11 @@ main = do
         testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
         cMatrix = DED.mMatrix (DMS.msNumCategories marginalStructure) (DMS.msStencils marginalStructure)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
+
+    let tp3RunConfig = DTM3.RunConfig 1 True True Nothing
+        tp3ModelConfig = DTM3.ModelConfig testProjections True DTM3.dmr "SER" (Set.size $ BRK)
+
+
     acsByCD_C <- DDP.cachedACSByCD
     acsByCD <-  K.ignoreCacheTime acsByCD_C
 --    BRK.logFrame acsByCD

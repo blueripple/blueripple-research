@@ -272,24 +272,23 @@ modelBeta mc pmd = do
       hierBetaSpec =  TE.array1Spec nStatesE $ betaShape []
       hierBetaPs :: SMB.StanBuilderM (DataRows rs) () (DAG.Parameters [TE.EMat, TE.EMat])
       hierBetaPs = do
-        muBetaPT <- DAG.addBuildParameter
+        muBetaP <- DAG.addBuildParameter
                     $ DAG.UntransformedP
                     (TE.NamedDeclSpec ("mu" <> betaName) $ betaShape [])
                     [] TNil
                     (\_ p -> TE.addStmt $ TE.sample (toVector p) SF.std_normal TNil)
 
-        tauBetaPT <- DAG.addBuildParameter
+        tauBetaP <- DAG.addBuildParameter
                      $ DAG.UntransformedP
                      (TE.NamedDeclSpec ("tau" <> betaName) $ betaShape [TE.lowerM $ TE.realE 0])
                      [] TNil
                      (\_ p -> TE.addStmt $ TE.sample (toVector p) SF.std_normal TNil)
-        pure (DAG.build muBetaPT :> DAG.build tauBetaPT :> TNil)
+        pure (muBetaP :> tauBetaP :> TNil)
       betaHier cs cent = do
         hierPs <- hierBetaPs
         case hierPs of
           (muBetaP :> tauBetaP :> TNil) -> do
-            muBetaAP <- fmap DAG.build
-                       $ DAG.addBuildParameter
+            muBetaAP <- DAG.addBuildParameter
                        $ DAG.TransformedP
                        (TE.NamedDeclSpec ("mu" <> betaName <> "A") $ TE.array1Spec nStatesE $ betaShape [])
                        []
@@ -311,8 +310,7 @@ modelBeta mc pmd = do
                   $ SBC.matrixMultiNormalParameter' SBC.Diagonal cent muBetaAP tauBetaP
                   (TE.NamedDeclSpec betaName $ hierBetaSpec)
               LKJCovariance lkjPriorP -> do
-                lkjCorrBetaP <- fmap DAG.build
-                                $ DAG.simpleParameter
+                lkjCorrBetaP <- DAG.simpleParameter
                                 (TE.NamedDeclSpec ("lkj" <> betaName)
                                  $ TE.choleskyFactorCorrSpec (pmd.nCovariatesE `TE.timesE` betaColsE) [])
                                 (DAG.given (TE.realE $ realToFrac lkjPriorP) :> TNil)
@@ -322,7 +320,7 @@ modelBeta mc pmd = do
                   (TE.NamedDeclSpec betaName $ hierBetaSpec)
           _ -> SMB.stanBuildError "BLCorrModel.modelBeta: Pattern match error in hierarchical beta paramters. Yikes."
   betaRawP <- case mc.betaModel of
-    BetaSimple -> fmap (SimpleBeta . DAG.build)
+    BetaSimple -> fmap SimpleBeta
                   $ DAG.addBuildParameter
                   $ DAG.UntransformedP (TE.NamedDeclSpec betaName $ TE.matrixSpec pmd.nCovariatesE betaColsE [])
                   [] TNil (\_ muM -> TE.addStmt $ TE.sample (toVector muM) SF.std_normal TNil)
@@ -336,7 +334,7 @@ modelBeta mc pmd = do
           appendZeroCol m = TE.functionE SF.append_col (m :> zeroCol :> TNil)
       case betaRawP of
         SimpleBeta brP ->
-          fmap (SimpleBeta . DAG.build)
+          fmap SimpleBeta
           $ DAG.addBuildParameter
           $ DAG.TransformedP (TE.NamedDeclSpec "beta" $ fullBetaShape []) []
           (brP :> TNil) DAG.TransformedParametersBlock
@@ -344,7 +342,7 @@ modelBeta mc pmd = do
           TNil
           (\_ _ -> pure ())
         HierarchicalBeta brP ->
-          fmap (HierarchicalBeta . DAG.build)
+          fmap HierarchicalBeta
           $ DAG.addBuildParameter
           $ DAG.TransformedP (TE.NamedDeclSpec "beta" $ TE.array1Spec nStatesE $ fullBetaShape []) []
           (brP :> TNil) DAG.TransformedParametersBlock
@@ -412,7 +410,7 @@ projModel rc alphaKeyF predF mc = do
       (dirichlet_multinomial, dirichlet_multinomial_lpmf, dirichlet_multinomial_rng) <- SBDM.dirichletMultinomial @_ @TE.ECVec
       let softmax x = TE.functionE SF.softmax (x :> TNil)
           toVector x = TE.functionE SF.to_vector (x :> TNil)
-      dPrecE <- fmap (DAG.parameterExpr . DAG.build)
+      dPrecE <- fmap DAG.parameterExpr
                 $ DAG.addBuildParameter
                 $ DAG.UntransformedP
                 (TE.NamedDeclSpec "dPrec" $ TE.realSpec [TE.lowerM $ TE.realE 0]) [] TNil

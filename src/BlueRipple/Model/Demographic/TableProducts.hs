@@ -21,15 +21,10 @@ module BlueRipple.Model.Demographic.TableProducts
   )
 where
 
-import qualified BlueRipple.Configuration as BR
-import qualified BlueRipple.Utilities.KnitUtils as BRKU
-import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 
 import qualified BlueRipple.Data.Keyed as BRK
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.GeographicTypes as GT
 
 import qualified Knit.Report as K
 import qualified Polysemy.Error as PE

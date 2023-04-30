@@ -357,7 +357,7 @@ dsAlphaBeta :: Text
             -> TE.IntE
             -> TE.DensityWithArgs TE.EReal
             -> TE.DensityWithArgs TE.ECVec
-            -> SB.StanBuilderM md gq (TE.ParameterTag TE.EReal, TE.ParameterTag TE.ECVec)
+            -> SB.StanBuilderM md gq (TE.Parameter TE.EReal, TE.Parameter TE.ECVec)
 dsAlphaBeta dsLabel betaSizeE alphaPrior betaPrior = do
   alphaP <- TE.simpleParameterWA
             (TE.NamedDeclSpec ("alpha_" <> dsLabel) $ TE.realSpec [])
@@ -399,7 +399,7 @@ dsAlphaGroup dsLabel gtt muPrior sigmaPrior = do
 -}
 
 dsSpecific :: Text -> TE.IntE -> DSSpecificWithPriors -> Maybe ET.OfficeT
-           -> SB.StanBuilderM md gq (Maybe (TE.ParameterTag TE.EReal), Maybe (TE.ParameterTag TE.ECVec))
+           -> SB.StanBuilderM md gq (Maybe (TE.Parameter TE.EReal), Maybe (TE.Parameter TE.ECVec))
 dsSpecific dsLabel betaSizeE dsp oM = do
   let alphaNDS = TE.NamedDeclSpec ("alpha_" <> dsLabel) $ TE.realSpec []
       aRawDS = TE.realSpec []
@@ -636,7 +636,7 @@ addBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr alpha be
   let dmName' = dataSetLabel <> "_DM"
   (dmC, centerF) <- centerIf dm  dmName' centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR dmName' qr dmC beta
-  let muE' dm' = indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha dm' beta
+  let muE' dm' = indexedMuE (TE.parameterExpr <$> dsAlphaM) (TE.parameterExpr <$> dsBetaM) alpha dm' beta
       muE'' = muE' dmQR
       dist = SD.binomialLogitDist
       stateByDataIndexE = TE.namedE (SB.dataByGroupIndexName rtt stateGroup) TE.sIntArray
@@ -677,7 +677,7 @@ addBBLModelForDataSet dataSetLabel includePP dataSetupM dsSp centerDM qr countSc
   let dmName' = dataSetLabel <> "_DM"
   (dmC, centerF) <- centerIf dm dmName' centerDM --Nothing centerM
   (dmQR, retQR) <- handleQR dmName' qr dmC beta
-  let muE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsAlphaM) (TE.parameterTagExpr <$> dsBetaM) alpha mE beta si k
+  let muE' mE si k = invLogit $ indexedMuE (TE.parameterExpr <$> dsAlphaM) (TE.parameterExpr <$> dsBetaM) alpha mE beta si k
       muE'' = muE' dmQR
       bA si kE = betaWidth `TE.timesE` muE'' si kE
       bB si kE = betaWidth `TE.timesE` (TE.realE 1 `TE.minusE` muE'' si kE)
@@ -921,8 +921,8 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
                           $ elexPSFunction (officeText office)
                           rttPS rttElex stateGroup wgtsV
-                          (addIf (TE.parameterTagExpr <$> dsTAlphaM) alphaT) (addIf (repM . TE.parameterTagExpr <$> dsTBetaM) betaT) dmTQR
-                          (addIf (TE.parameterTagExpr <$> dsPAlphaM) alphaP) (addIf (repM . TE.parameterTagExpr <$> dsPBetaM) betaP) dmPQR
+                          (addIf (TE.parameterExpr <$> dsTAlphaM) alphaT) (addIf (repM . TE.parameterExpr <$> dsTBetaM) betaT) dmTQR
+                          (addIf (TE.parameterExpr <$> dsPAlphaM) alphaP) (addIf (repM . TE.parameterExpr <$> dsPBetaM) betaP) dmPQR
   let distV :: SD.SimpleDist (TE.EArray1 TE.EInt) [TE.EArray1 TE.EInt, TE.ECVec]
       distV = SD.binomialDist' True
       distS :: SD.SimpleDist TE.EInt [TE.EInt, TE.EReal]
@@ -938,8 +938,8 @@ addBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP d
     _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure $ indexedParamsT
     _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure $ indexedParamsS
     pure ()
-  let pTE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsTAlphaM) (TE.parameterTagExpr <$> dsTBetaM) alphaT mE betaT si k
-      pPE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsPAlphaM) (TE.parameterTagExpr <$> dsPBetaM) alphaP mE betaP si k
+  let pTE' mE si k = invLogit $ indexedMuE (TE.parameterExpr <$> dsTAlphaM) (TE.parameterExpr <$> dsTBetaM) alphaT mE betaT si k
+      pPE' mE si k = invLogit $ indexedMuE (TE.parameterExpr <$> dsPAlphaM) (TE.parameterExpr <$> dsPBetaM) alphaP mE betaP si k
   return (CenterWith centerTF, CenterWith centerPF
          , retQRT, retQRP, llSet', applyQR dmNameT retQRT pTE', applyQR dmNameP retQRP pPE')
 
@@ -1032,8 +1032,8 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
   (pTByElex, pSByElex) <- SB.inBlock SB.SBTransformedParameters
                           $ elexPSFunction (officeText office)
                           rttPS rttElex stateGroup wgtsV
-                          (addIf (TE.parameterTagExpr <$> dsTAlphaM) alphaT) (addIf (repM . TE.parameterTagExpr <$> dsTBetaM) betaT) dmTQR
-                          (addIf (TE.parameterTagExpr <$> dsPAlphaM) alphaP) (addIf (repM . TE.parameterTagExpr <$> dsPBetaM) betaP) dmPQR
+                          (addIf (TE.parameterExpr <$> dsTAlphaM) alphaT) (addIf (repM . TE.parameterExpr <$> dsTBetaM) betaT) dmTQR
+                          (addIf (TE.parameterExpr <$> dsPAlphaM) alphaP) (addIf (repM . TE.parameterExpr <$> dsPBetaM) betaP) dmPQR
   let f x w = if countScaled then x `TE.divideE` w else w `TE.timesE` x
       oneMinusVec v = TE.realE 1 `TE.minusE` v
       bAT pt = f pt scaleT
@@ -1057,8 +1057,8 @@ addBBLModelsForElex' includePP vst eScale officeRow centerTDM centerPDM qrT qrP 
     _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "_Votes") rttElex distS $ pure indexedParamsT
     _ <- addPosteriorPredictiveCheck ("PP_Election_" <> officeText office <> "DvotesInRace") rttElex distS $ pure indexedParamsS
     pure ()
-  let pTE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsTAlphaM) (TE.parameterTagExpr <$> dsTBetaM) alphaT mE betaT si k
-      pPE' mE si k = invLogit $ indexedMuE (TE.parameterTagExpr <$> dsPAlphaM) (TE.parameterTagExpr <$> dsPBetaM) alphaP mE betaP si k
+  let pTE' mE si k = invLogit $ indexedMuE (TE.parameterExpr <$> dsTAlphaM) (TE.parameterExpr <$> dsTBetaM) alphaT mE betaT si k
+      pPE' mE si k = invLogit $ indexedMuE (TE.parameterExpr <$> dsPAlphaM) (TE.parameterExpr <$> dsPBetaM) alphaP mE betaP si k
 --  let probT = applyQR retQRT $ fmap (\mu' -> invLogit $ mu' dsTAlphaM dsTBetaM alphaT betaT) . indexedMuE3
 --      probP = applyQR retQRP $ fmap (\mu' -> invLogit $ mu' dsPAlphaM dsPBetaM alphaP betaP) . indexedMuE3
   return (CenterWith  centerTF, CenterWith centerPF
@@ -1201,61 +1201,61 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             initialQRP = NoQR --DoQR $ TE.NamedDeclSpec "betaP" $ TE.matrixSpec colsPE (SB.groupSizeE stateGroup) []
         elexData <- SB.dataSetTag @(F.Record StateElectionR) SC.ModelData "Elections_President"
         alphaT <- do
-          muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaT" $ TE.realSpec []) $ normal logitMeanTurnout 1
-          sigmaPT <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
-          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaT" $ TE.vectorSpec nStatesE []) SP.TransformedParametersBlock
+          muP <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaT" $ TE.realSpec []) $ normal logitMeanTurnout 1
+          sigmaP <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
+          alphaP <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaT" $ TE.vectorSpec nStatesE []) SP.TransformedParametersBlock
             (TE.vectorSpec nStatesE [])
             (normal 0 1)
-            (hfmap SP.build $ muPT :> sigmaPT :> TNil)
+            (muP :> sigmaP :> TNil)
             (\(mu :> (sd :: TE.RealE) :> TNil) rE -> mu `TE.plusE` (sd  `TE.timesE` rE))
-          pure $ SP.parameterTagExpr alphaPT
+          pure $ SP.parameterExpr alphaP
         thetaT <- do
-          muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muThetaT" $ TE.vectorSpec colsTE []) $ normal 0 1
+          muP <- SP.simpleParameterWA (TE.NamedDeclSpec "muThetaT" $ TE.vectorSpec colsTE []) $ normal 0 1
           let thetaTSpec =  TE.NamedDeclSpec "thetaT" $ TE.matrixSpec colsTE nStatesE []
           case betaType model of
-            SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
-                          $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
+            SingleBeta -> fmap SP.parameterExpr $ SP.addBuildParameter
+                          $ SP.simpleTransformedP thetaTSpec [] (muP :> TNil)
                           SP.TransformedParametersBlock
                           (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
-              tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
-              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrT" $ TE.choleskyFactorCorrSpec colsTE [])
+              tauP <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaT" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
+              corrP <- SP.simpleParameterWA (TE.NamedDeclSpec "corrT" $ TE.choleskyFactorCorrSpec colsTE [])
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock Nothing (normal 0 0.4)
-                (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
+              thetaP <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock Nothing (normal 0 0.4)
+                (muP :> tauP :> corrP :> TNil)
                 ncF
-              pure $ SP.parameterTagExpr thetaPT
+              pure $ SP.parameterExpr thetaP
         alphaP <- do
-          muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaP" $ TE.realSpec []) $ normal 0 1
-          sigmaPT <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
-          alphaPT <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaP" $ TE.vectorSpec nStatesE [])
+          muP <- SP.simpleParameterWA (TE.NamedDeclSpec "muAlphaP" $ TE.realSpec []) $ normal 0 1
+          sigmaP <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
+          alphaP <- SP.simpleNonCentered (TE.NamedDeclSpec "alphaP" $ TE.vectorSpec nStatesE [])
             SP.TransformedParametersBlock
             (TE.vectorSpec nStatesE [])
             (normal 0 1)
-            (hfmap SP.build $ muPT :> sigmaPT :> TNil)
+            (muP :> sigmaP :> TNil)
             (\(mu :> (sd :: TE.RealE) :> TNil) rE -> mu `TE.plusE` (sd  `TE.timesE` rE))
-          pure $ SP.parameterTagExpr alphaPT
+          pure $ SP.parameterExpr alphaP
         thetaP <- do
-          muPT <- SP.simpleParameterWA (TE.NamedDeclSpec "muThetaP" $ TE.vectorSpec colsPE []) $ normal 0 1
+          muP <- SP.simpleParameterWA (TE.NamedDeclSpec "muThetaP" $ TE.vectorSpec colsPE []) $ normal 0 1
           let thetaTSpec =  TE.NamedDeclSpec "thetaP" $ TE.matrixSpec colsPE nStatesE []
           case betaType model of
-            SingleBeta -> fmap SP.parameterTagExpr $ SP.addBuildParameter
-                          $ SP.simpleTransformedP thetaTSpec [] (TE.build muPT :> TNil)
+            SingleBeta -> fmap SP.parameterExpr $ SP.addBuildParameter
+                          $ SP.simpleTransformedP thetaTSpec [] (muP :> TNil)
                           SP.TransformedParametersBlock
                           (\(muE' :> TNil) -> TE.DeclRHS $ muThetaMat muE')
             HierarchicalBeta -> do
-              tauPT <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
-              corrPT <- SP.simpleParameterWA (TE.NamedDeclSpec "corrP" $ TE.choleskyFactorCorrSpec colsPE [])
+              tauP <- SP.simpleParameterWA (TE.NamedDeclSpec "tauThetaP" $ TE.vectorSpec colsPE [TE.lowerM $ TE.realE 0]) $ normal 0 0.4
+              corrP <- SP.simpleParameterWA (TE.NamedDeclSpec "corrP" $ TE.choleskyFactorCorrSpec colsPE [])
                 $ TE.DensityWithArgs TE.lkj_corr_cholesky (TE.realE 1 :> TNil)
               let ncF :: TE.ExprList [TE.ECVec, TE.ECVec, TE.ESqMat] -> TE.MatrixE -> TE.MatrixE
                   ncF (mu :> tau :> corr :> TNil) rawE = muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              thetaPT <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock  Nothing (normal 0 0.4)
-                (hfmap SP.build $ muPT :> tauPT :> corrPT :> TNil)
+              thetaP <- SP.withIIDRawMatrix thetaTSpec SP.TransformedParametersBlock  Nothing (normal 0 0.4)
+                (muP :> tauP :> corrP :> TNil)
                 ncF
 --                $ \(mu :> tau :> corr :> TNil) rawE -> muThetaMat mu `TE.plusE` (TE.functionE TE.diag_pre_multiply (tau :> corr :> TNil) `TE.timesE` rawE)
-              pure $ SP.parameterTagExpr thetaPT
+              pure $ SP.parameterExpr thetaP
 {-
         SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "alphaT="
                                                               :> alphaT
@@ -1276,8 +1276,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
           DSAlphaHC -> do
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaAlphaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
-            let dssT = DSPAlphaHC TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaTDS :> TNil)
-                dssP = DSPAlphaHC TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaPDS :> TNil)
+            let dssT = DSPAlphaHC TE.normal (SP.given (TE.realE 0) :> sigmaAlphaTDS :> TNil)
+                dssP = DSPAlphaHC TE.normal (SP.given (TE.realE 0) :> sigmaAlphaPDS :> TNil)
             return (dssT, dssP)
           DSAlphaHNC -> do
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
@@ -1289,20 +1289,20 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                                                                  :> TE.parameterTagExpr sigmaAlphaPDS
                                                                  :> TNil)
 -}
-            let dssT = DSPAlphaHNC 1 (SP.build sigmaAlphaTDS :> TNil) multP
-                dssP = DSPAlphaHNC 1 (SP.build sigmaAlphaPDS :> TNil) multP
+            let dssT = DSPAlphaHNC 1 (sigmaAlphaTDS :> TNil) multP
+                dssP = DSPAlphaHNC 1 (sigmaAlphaPDS :> TNil) multP
             return (dssT, dssP)
           DSAlphaHCBetaNH oM -> do
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaAlphaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
-            let dssT = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaTDS :> TNil) $ normal 0 0.5
-                dssP = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> SP.build sigmaAlphaPDS :> TNil) $ normal 0 0.5
+            let dssT = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> sigmaAlphaTDS :> TNil) $ normal 0 0.5
+                dssP = DSPAlphaHCBetaNH oM TE.normal (SP.given (TE.realE 0) :> sigmaAlphaPDS :> TNil) $ normal 0 0.5
             return (dssT, dssP)
           DSAlphaHNCBetaNH oM -> do
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaAlphaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
-            let dssT = DSPAlphaHNCBetaNH oM 1 (SP.build sigmaAlphaTDS :> TNil) multP $ normal 0 0.5
-                dssP = DSPAlphaHNCBetaNH oM 1 (SP.build sigmaAlphaPDS :> TNil) multP $ normal 0 0.5
+            let dssT = DSPAlphaHNCBetaNH oM 1 (sigmaAlphaTDS :> TNil) multP $ normal 0 0.5
+                dssP = DSPAlphaHNCBetaNH oM 1 (sigmaAlphaPDS :> TNil) multP $ normal 0 0.5
             return (dssT, dssP)
 --          DSAlphaGroup gtt -> let x = DSPAlphaGroup gtt (normal 0 0.5) (normal 0 0.4) in return (x, x)
           DSAlphaBetaNH oM -> pure (DSPAlphaBetaNH oM (normal 0 0.5) (normal 0 0.5), DSPAlphaBetaNH oM (normal 0 0.5) (normal 0 0.5))
@@ -1310,13 +1310,13 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
             sigmaAlphaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaT_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaBetaTDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaThetaT_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             let wpt = DSPAlphaBetaHC
-                      (TE.given (TE.realE 0) :> TE.build sigmaAlphaTDS :> TNil) TE.normal
-                      (TE.given (repVec colsTE $ TE.realE 0) :> TE.build sigmaBetaTDS :> TNil) TE.normal
+                      (TE.given (TE.realE 0) :> sigmaAlphaTDS :> TNil) TE.normal
+                      (TE.given (repVec colsTE $ TE.realE 0) :> sigmaBetaTDS :> TNil) TE.normal
             sigmaAlphaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaAlphaP_DS" $ TE.realSpec [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             sigmaBetaPDS <- SP.simpleParameterWA (TE.NamedDeclSpec "sigmaThetaP_DS" $ TE.vectorSpec colsTE [TE.lowerM $ TE.realE 0]) $ normal 0 0.5
             let wpp = DSPAlphaBetaHC
-                      (TE.given (TE.realE 0) :> TE.build sigmaAlphaPDS :> TNil) TE.normal
-                      (TE.given (repVec colsPE $ TE.realE 0) :> TE.build sigmaBetaPDS :> TNil) TE.normal
+                      (TE.given (TE.realE 0) :> sigmaAlphaPDS :> TNil) TE.normal
+                      (TE.given (repVec colsPE $ TE.realE 0) :> sigmaBetaPDS :> TNil) TE.normal
             return (wpt, wpp)
           DSAlphaBetaHNC -> do
 --            let vecT =  (SB.StanVector $ SB.NamedDim dmColIndexT)
@@ -1329,8 +1329,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 ncFS (s :> TNil) r = s `TE.timesE` r
                 ncFV :: TE.ExprList '[TE.ECVec] -> TE.VectorE -> TE.VectorE
                 ncFV (s :> TNil) r = TE.binaryOpE (TE.SElementWise TE.SMultiply) s r
-                forT = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaTDS :> TNil) ncFS 1 (SP.build sigmaBetaTDS :> TNil) ncFV
-                forP = DSPAlphaBetaHNC 1 (SP.build sigmaAlphaPDS :> TNil) ncFS 1 (SP.build sigmaBetaPDS :> TNil) ncFV
+                forT = DSPAlphaBetaHNC 1 (sigmaAlphaTDS :> TNil) ncFS 1 (sigmaBetaTDS :> TNil) ncFV
+                forP = DSPAlphaBetaHNC 1 (sigmaAlphaPDS :> TNil) ncFS 1 (sigmaBetaPDS :> TNil) ncFV
             return (forT, forP)
           DSAlphaGroup _ -> error "electionModelDM: Unhandled case DSAlphaGroup."
 --        (acsRowTag, acsPSWgts, acsDMT, acsDMPs) <- setupACSPSRows model densityMatrixRowPart incF -- incF but for which office?
@@ -1354,8 +1354,8 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
                 let lnPriorMu = 2 * realToFrac (round @_ @Int $ Numeric.log $ realToFrac @Int @Double n)
                     betaWidthPrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
 --                      SB.UnVectorized $ SB.function "lognormal"  (SB.scalar (show lnPriorMu) :| [SB.scalar "1"])
-                betaWidthT <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthT" $ TE.realSpec [TE.lowerM $ TE.realE 1]) betaWidthPrior
-                betaWidthP <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthP" $ TE.realSpec [TE.lowerM $ TE.realE 1]) betaWidthPrior
+                betaWidthT <- TE.parameterExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthT" $ TE.realSpec [TE.lowerM $ TE.realE 1]) betaWidthPrior
+                betaWidthP <- TE.parameterExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaWidthP" $ TE.realSpec [TE.lowerM $ TE.realE 1]) betaWidthPrior
 {-
                 SB.inBlock SB.SBModel $ TE.addStmtToCode $ TE.print (TE.stringE "betaWidthT="
                                                                       :> betaWidthT
@@ -1380,9 +1380,9 @@ electionModelDM clearCaches cmdLine includePP mStanParams modelDir model datYear
               CountScaledBB n -> do
                 let lnPriorMu = realToFrac $ (round @_ @Int $ Numeric.log $ realToFrac @Int @Double n) `div` 2
                     scalePrior = TE.DensityWithArgs TE.lognormal (TE.realE lnPriorMu :> TE.realE 1 :> TNil)
-                scaleT <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaScaleT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
+                scaleT <- TE.parameterExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaScaleT" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
 --                  SMP.addParameter "betaScaleT" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
-                scaleP <- TE.parameterTagExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaScaleP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
+                scaleP <- TE.parameterExpr <$> SP.simpleParameterWA (TE.NamedDeclSpec "betaScaleP" $ TE.realSpec [TE.lowerM $ TE.realE 0]) scalePrior
 --                  SMP.addParameter "betaScaleP" SB.StanReal ("<lower=1, upper=" <> show n <> ">") scalePrior
                 let eF (centerTFM, centerPFM, qrT, qrP, llS) office
                       = addBBLModelsForElex (votesFrom model) includePP (voteShareType model) (electionScale model)
