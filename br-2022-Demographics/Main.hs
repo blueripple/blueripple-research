@@ -19,7 +19,7 @@ import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.TPModel2 as DTM2
-import qualified BlueRipple.Model.Demographic.TPModel2 as DTM3
+import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Model.Demographic.BLCorrModel as DBLC
 import qualified BlueRipple.Data.Keyed as Keyed
@@ -315,9 +315,15 @@ main = do
         cMatrix = DED.mMatrix (DMS.msNumCategories marginalStructure) (DMS.msStencils marginalStructure)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
 
-    let tp3RunConfig = DTM3.RunConfig 1 True True Nothing
-        tp3ModelConfig = DTM3.ModelConfig testProjections True DTM3.dmr "SER" (Set.size $ BRK)
+    let keyFunction = F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]
+        tp3NumKeys = S.size $ Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C])
+        tp3RunConfig = DTM3.RunConfig 1 True True Nothing
+        tp3ModelConfig = DTM3.ModelConfig testProjections True (DTM3.dmr "SER" tp3NumKeys)
+                         DTM3.AlphaSimple DTM3.NormalDist
+    res_C <- DTM3.runProjModel True cmdLine tp3RunConfig tp3ModelConfig marginalStructure
+             (DTM3.keyedInnerFldLogit 1e-8 keyFunction)
 
+    K.knitError "STOP"
 
     acsByCD_C <- DDP.cachedACSByCD
     acsByCD <-  K.ignoreCacheTime acsByCD_C
