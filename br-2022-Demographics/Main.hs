@@ -315,13 +315,18 @@ main = do
         cMatrix = DED.mMatrix (DMS.msNumCategories marginalStructure) (DMS.msStencils marginalStructure)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
 
-    let keyFunction = F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]
-        tp3NumKeys = S.size $ Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C])
+    let serKeyFunction = F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]
+        asrKeyFunction = F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]
+        tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
+                     +  S.size (Keyed.elements @(F.Record [DT.Age4C, DT.SexC, DT.Race5C]))
+        tp3InnerFld = DTM3.mergeInnerFlds [DTM3.keyedInnerFldLogit 1e-8 serKeyFunction
+                                          , DTM3.keyedInnerFldLogit 1e-8 asrKeyFunction
+                                          ]
         tp3RunConfig = DTM3.RunConfig 1 True True Nothing
-        tp3ModelConfig = DTM3.ModelConfig testProjections True (DTM3.dmr "SER" tp3NumKeys)
-                         DTM3.AlphaSimple DTM3.NormalDist
-    res_C <- DTM3.runProjModel True cmdLine tp3RunConfig tp3ModelConfig marginalStructure
-             (DTM3.keyedInnerFldLogit 1e-8 keyFunction)
+        tp3ModelConfig = DTM3.ModelConfig testProjections True (DTM3.dmr "SER_ASR" tp3NumKeys)
+                         DTM3.AlphaHierNonCentered DTM3.NormalDist
+
+    res_C <- DTM3.runProjModel True cmdLine tp3RunConfig tp3ModelConfig marginalStructure tp3InnerFld
 
     K.knitError "STOP"
 
