@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
@@ -44,6 +45,7 @@ import qualified Colonnade as C
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
+import qualified Data.Vector as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
@@ -108,19 +110,11 @@ updateCWDCount n (CountWithDensity _ d) = CountWithDensity n d
 --type InputFrame ks = F.FrameRec (ks V.++ '[DT.PopCount, DT.PWPopPerSqMile])
 type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
 
+data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text}
 
-data MethodResults ks =
-  MethodResults
-  { mrActual :: ResultFrame ks
-  , mrProduct :: Maybe (ResultFrame ks)
-  , mrProductWithNS :: Maybe (ResultFrame ks)
-  , mrModel :: Maybe (ResultFrame ks)
-  , mrModelWithCO :: Maybe (ResultFrame ks)
-  }
-
-
-compareResults :: forall ks key colKey rowKey r .
+compareResults :: forall ks key colKey rowKey r f .
                   (K.KnitOne r
+                  , Traversable f
                   , Keyed.FiniteSet colKey
                   , Show colKey
                   , Ord colKey
@@ -148,9 +142,10 @@ compareResults :: forall ks key colKey rowKey r .
                -> (F.Record ks -> Text)
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
-               -> MethodResults ks
+               -> ResultFrame ks
+               -> f (MethodResult ks)
                -> K.Sem r ()
-compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM results = do
+compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM actual results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -189,7 +184,7 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
                   asDiffB
                   ((if ls then logF else id) . realToFrac . view DT.popCount)
                   (if pctPop then (Just (DDP.districtKeyT, cdPopMap)) else Nothing)
-                  ("Actual ACS", ff $ mrActual results)
+                  ("Actual ACS", ff actual)
                   (l, ff f)
             _ <- K.addHvega Nothing Nothing vl
             pure ()
@@ -205,20 +200,10 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
           tableTextMF t rfM = whenJust rfM $ \rf -> K.logLE K.Info $ t <> "\n" <> tableText (ff rf)
           stTitle x = title x <> ": " <> sa
       K.logLE K.Info $ "Example State=" <> sa
-      tableTextMF "Actual" (Just $ mrActual results)
-      tableTextMF "Product" (mrProduct results)
-      tableTextMF "Product + NS" (mrProductWithNS results)
-      tableTextMF "ModelOnly" (mrModel results)
-      tableTextMF "Model + CO" (mrModelWithCO results)
+      traverse (\mr -> maybe (pure ()) (\t -> tableTextMF t (Just $ mr.mrResult)) $ mr.mrChartTitle) results
       K.logLE K.Info "Building example state charts."
-      compChartM ff False False (stTitle "Marginal Product") "Marginal Product" $ mrProduct results
-      compChartM ff False False (stTitle "MP_NSM") "MP_NSM" $ mrProductWithNS results
-      compChartM ff False False (stTitle "ModelOnly") "ModelOnly" $ mrModel results
-      compChartM ff False False (stTitle "ModelWithCO") "ModelWithCO" $ mrModelWithCO results
-      compChartM ff False True (stTitle "Marginal Product") "Marginal Product" $ mrProduct results
-      compChartM ff False True (stTitle "MP_NSM") "MP_NSM" $ mrProductWithNS results
-      compChartM ff False True (stTitle "ModelOnly") "ModelOnly" $ mrModel results
-      compChartM ff False True (stTitle "ModelWithCO") "ModelWithCO" $ mrModelWithCO results
+      traverse (\mr -> maybe (pure ()) (\t -> compChartM ff False False (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+      traverse (\mr -> maybe (pure ()) (\t -> compChartM ff False True (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
       pure ()
 
   -- compute KL divergences
@@ -237,15 +222,8 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
 -}
 --  _ <- compChart True "Actual" $ mrActual results
   K.logLE K.Info "Building national charts."
-  compChartM id False False (title "Marginal Product") "Marginal Product" $ mrProduct results
-  compChartM id False False (title "MP_NSM") "MP_NSM" $ mrProductWithNS results
-  compChartM id False False (title "ModelOnly") "ModelOnly" $ mrModel results
-  compChartM id False False (title "ModelWithCO") "ModelWithCO" $ mrModelWithCO results
-  compChartM id False True (title "Marginal Product") "Marginal Product" $ mrProduct results
-  compChartM id False True (title "MP_NSM") "MP_NSM" $ mrProductWithNS results
-  compChartM id False True (title "ModelOnly") "ModelOnly" $ mrModel results
-  compChartM id False True (title "ModelWithCO") "ModelWithCO" $ mrModelWithCO results
-
+  traverse (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+  traverse (\mr -> maybe (pure ()) (\t -> compChartM id False True (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   pure ()
 
 type SER = [DT.SexC, DT.Education4C, DT.Race5C]
@@ -310,53 +288,84 @@ main = do
     K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
     let nullSpaceVectors = DTP.nullSpaceVectorsMS marginalStructure
 --    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
-    let nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
+    let numNullSpaceVectors = VS.length projMeans
+        nvProjections = DTP.uncorrelatedNullVecsMS marginalStructure projCovariances
         testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
         cMatrix = DED.mMatrix (DMS.msNumCategories marginalStructure) (DMS.msStencils marginalStructure)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
 
-    let serKeyFunction = F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]
-        asrKeyFunction = F.rcast @[DT.Age4C, DT.SexC, DT.Race5C]
-        tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
+    let tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
                      +  S.size (Keyed.elements @(F.Record [DT.Age4C, DT.SexC, DT.Race5C]))
-        tp3InnerFld = DTM3.mergeInnerFlds [DTM3.keyedInnerFldLogit 1e-8 serKeyFunction
-                                          , DTM3.keyedInnerFldLogit 1e-8 asrKeyFunction
+        tp3InnerFld ::  (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.Age4C, F.ElemOf rs DT.SexC, F.ElemOf rs DT.Education4C, F.ElemOf rs DT.Race5C)
+                    => FL.Fold (F.Record rs) (VS.Vector Double)
+        tp3InnerFld = DTM3.mergeInnerFlds [DTM3.keyedInnerFldLogit 1e-8 (F.rcast  @[DT.SexC, DT.Education4C, DT.Race5C])
+                                          , DTM3.keyedInnerFldLogit 1e-8 ( F.rcast @[DT.Age4C, DT.SexC, DT.Race5C])
                                           ]
-        tp3RunConfig = DTM3.RunConfig 1 True True Nothing
+        tp3RunConfig n = DTM3.RunConfig n False False Nothing
         tp3ModelConfig = DTM3.ModelConfig testProjections True (DTM3.dmr "SER_ASR" tp3NumKeys)
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
+        modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig marginalStructure tp3InnerFld
 
-    res_C <- DTM3.runProjModel True cmdLine tp3RunConfig tp3ModelConfig marginalStructure tp3InnerFld
-
-    K.knitError "STOP"
+    K.logLE K.Info "Running marginals as covariates model, if necessary."
+    model3Res_C <- sequenceA <$> mapM modelOne [0..(numNullSpaceVectors - 1)]
+    model3Result <- K.ignoreCacheTime model3Res_C
 
     acsByCD_C <- DDP.cachedACSByCD
-    acsByCD <-  K.ignoreCacheTime acsByCD_C
+    acsByCD :: F.FrameRec DDP.ACSByCDR <-  K.ignoreCacheTime acsByCD_C
+    let cdModelData3 = FL.fold
+                       (DTM3.nullVecProjectionsModelDataFldCheck
+                        marginalStructure
+                         testProjections
+                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
+                         (F.rcast @ASER)
+                         (realToFrac . view DT.popCount)
+                         tp3InnerFld
+                       )
+                       acsByCD
+    let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
+        prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)
+
+        smcRowToProdAndModeled3 (ok, md, _, pV, _) = do
+          let n = VS.sum pV
+          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result (view GT.stateAbbreviation ok) md)
+          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
+--            simplexNVPs = DTP.fullToProj testProjections simplexFull
+--          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
+          let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
+          pure (ok, pV, mV)
+    prodAndModeled3 <- traverse smcRowToProdAndModeled3 cdModelData3
+    let (_, productNS3_SER_ASR) =
+          first (F.toFrame . concat)
+          $ second (F.toFrame . concat)
+          $ unzip
+          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record ASER))) prodAndModeled3
 --    BRK.logFrame acsByCD
 --    K.knitError "STOP"
     let cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByCD
-    let cdModelData = FL.fold
-                      (DTM1.nullVecProjectionsModelDataFldCheck
+    let cdModelData1 = FL.fold
+                       (DTM1.nullVecProjectionsModelDataFldCheck
                         marginalStructure
-                        testProjections
-                        (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
-                        (F.rcast @ASER)
-                        (realToFrac . view DT.popCount)
-                        DTM1.aserModelDatFld
-                      )
-                      acsByCD
-    K.logLE K.Info $ "Running model, if necessary."
+                         testProjections
+                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
+                         (F.rcast @ASER)
+                         (realToFrac . view DT.popCount)
+                         DTM1.aserModelDatFld
+                       )
+                       acsByCD
+
+    K.logLE K.Info $ "Running model summary stats as covariates model, if necessary."
     let modelConfig = DTM1.ModelConfig testProjections True
                       DTM1.designMatrixRowASER DTM1.AlphaHierNonCentered DTM1.NormalDist DTM1.aserModelFuncs
     res_C <- DTM1.runProjModel @ASER False cmdLine (DTM1.RunConfig False False) modelConfig marginalStructure DTM1.aserModelDatFld
     modelRes <- K.ignoreCacheTime res_C
-
+{-
     K.logLE K.Info $ "Running model2, if necessary."
     let model2Config = DTM2.ModelConfig testProjections True
                        DTM2.designMatrixRow_1 DTM2.designMatrixRow0 DTM2.AlphaSimple DTM2.NormalDist
     res2_C <- DTM2.runProjModel False (Just 100) cmdLine (DTM2.RunConfig False False) model2Config marginalStructure (const DTM2.PModel0)
-
-    K.knitError "STOP"
+-}
+--    K.knitError "STOP"
+{-
     forM_ cdModelData $ \(sar, md, nVpsActual, pV, nV) -> do
       let keyT = DDP.districtKeyT sar
           n = VS.sum pV
@@ -375,9 +384,8 @@ main = do
 --        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
         K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs
         K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector (VS.map (* VS.sum pV) simplexFull)
-
-    let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
-        smcRowToProdAndModeled (ok, md, _, pV, _) = do
+-}
+    let smcRowToProdAndModeled1 (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
           nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
           let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
@@ -385,13 +393,12 @@ main = do
 --          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
           let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
           pure (ok, pV, mV)
-    prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
-    let prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)
-        (product_SER_ASR, productNS_SER_ASR) =
+    prodAndModeled1 <- traverse smcRowToProdAndModeled1 cdModelData1
+    let (product_SER_ASR, productNS1_SER_ASR) =
           first (F.toFrame . concat)
           $ second (F.toFrame . concat)
           $ unzip
-          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record ASER))) prodAndModeled
+          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record ASER))) prodAndModeled1
         addSimpleAge r = FT.recordSingleton @DT.SimpleAgeC (DT.age4ToSimple $ r ^. DT.age4C) F.<+> r
         aggregateAge = FMR.concatFold
                        $ FMR.mapReduceFold
@@ -400,7 +407,8 @@ main = do
                          @'[DT.PopCount])
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
         product_SER_A2SR = FL.fold aggregateAge product_SER_ASR
-        productNS_SER_A2SR = FL.fold aggregateAge productNS_SER_ASR
+        productNS1_SER_A2SR = FL.fold aggregateAge productNS1_SER_ASR
+        productNS3_SER_A2SR = FL.fold aggregateAge productNS3_SER_ASR
 --      smcToProdFrame ks (ok, _, _, pv, nv) = zip
 --      productFrame = F.toFrame $ fmap (
 
@@ -548,17 +556,6 @@ main = do
                                    ((,) <$> serToA2SER_PC True <*> acsSampleSER_C)
                                    $ \(p, d) -> DED.mapPE $ p d
 
-    let mResultsA2 :: MethodResults [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
-        mResultsA2 = MethodResults
-                     (fmap toOutputRow2 acsSampleA2SER)
-                     (Just product_SER_A2SR)
-                     (Just productNS_SER_A2SR)
-                     (Just modelA2SERFromSER)
-                     (Just modelCO_A2SERFromSER)
-
-    let mResults :: MethodResults [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
-        mResults = MethodResults (fmap toOutputRow acsSampleASER) (Just product_SER_ASR) (Just productNS_SER_ASR) Nothing Nothing
-
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
     synthModelPaths <- postPaths "SynthModel" cmdLine
     BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
@@ -566,24 +563,38 @@ main = do
           edOrder =  show <$> S.toList (Keyed.elements @DT.Education4)
           ageOrder = show <$> S.toList (Keyed.elements @DT.Age4)
           simpleAgeOrder = show <$> S.toList (Keyed.elements @DT.SimpleAge)
-      compareResults synthModelPaths postInfo cdPopMap (Just "NY")
+      compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
+        synthModelPaths postInfo cdPopMap (Just "NY")
         (F.rcast @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.simpleAgeC, r ^. DT.education4C))
         showCellKeyA2
         (Just ("Education", show . view DT.education4C, Just edOrder))
         (Just ("SimpleAge", show . view DT.simpleAgeC, Just simpleAgeOrder))
-        mResultsA2
+        (fmap toOutputRow2 acsSampleA2SER)
+        [MethodResult (fmap toOutputRow2 acsSampleA2SER) (Just "Actual") Nothing
+        ,MethodResult product_SER_A2SR (Just "Product") (Just "Marginal Product")
+        ,MethodResult productNS1_SER_A2SR (Just "Null-Space v1") (Just "Null-Space v1")
+        ,MethodResult productNS3_SER_A2SR (Just "Null-Space v3") (Just "Null-Space v3")
+        ,MethodResult modelA2SERFromSER (Just "Model Only") (Just "Model Only")
+        ,MethodResult modelCO_A2SERFromSER (Just "Model+CO") (Just "Model+CO")
+        ]
 
       let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.age4C, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
-      compareResults synthModelPaths postInfo cdPopMap (Just "NY")
+      compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
+        synthModelPaths postInfo cdPopMap (Just "NY")
         (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.age4C, r ^. DT.education4C))
         showCellKey
         (Just ("Education", show . view DT.education4C, Just edOrder))
         (Just ("Age", show . view DT.age4C, Just ageOrder))
-        mResults
+        (fmap toOutputRow acsSampleASER)
+        [MethodResult (fmap toOutputRow acsSampleASER) (Just "Actual") Nothing
+        ,MethodResult product_SER_ASR (Just "Product") (Just "Marginal Product")
+        ,MethodResult productNS1_SER_ASR (Just "Null-Space v1") (Just "Null-Space v1")
+        ,MethodResult productNS3_SER_ASR (Just "Null-Space v3") (Just "Null-Space v3")
+        ]
 
 
     pure ()
