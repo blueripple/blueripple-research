@@ -118,8 +118,8 @@ type LoadedCensusTablesByLD
   = CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
 censusTablesByDistrict  :: (K.KnitEffects r
-                              , BR.CacheEffects r)
-                           => [(BRC.TableYear, Text)] -> Text -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+                           , BR.CacheEffects r)
+                        => [(BRC.TableYear, Text)] -> Text -> K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
 censusTablesByDistrict filesByYear cacheName = do
   let tableDescriptions ty = KT.allTableDescriptions BRC.sexByAge (BRC.sexByAgePrefix ty)
                              <> KT.allTableDescriptions BRC.sexByCitizenship (BRC.sexByCitizenshipPrefix ty)
@@ -245,19 +245,107 @@ type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Educ
 type CensusRecodedR  = BRC.LDLocationR
                        V.++ BRC.ExtensiveDataR
                        V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount, DT.PopPerSqMile]
+
+-- add density to these folds
+-- If counts compose as C = f(C1, C2) then pw densities compose as d = f(C1 * d1, C2 * d2)/f(C1, C2)
+-- NB: if f(C1, C2) = 0, this blows up but only in an empty cell. So we need to do something here
+-- but it won't matter what.
+
+reToR4HFld ::  FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.RaceAlone4C, DT.HispC, DT.PopCount])
+reToR4HFld =
+  let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+      wFld = withRE BRC.R_White
+      bFld = withRE BRC.R_Black
+      aFld = withRE BRC.R_Asian
+      oFld = withRE BRC.R_Other
+      hFld = withRE BRC.E_Hispanic
+      wnhFld = withRE BRC.E_WhiteNonHispanic
+      makeRec :: DT.RaceAlone4 -> DT.Hisp -> Int -> F.Record [DT.RaceAlone4C, DT.HispC, DT.PopCount]
+      makeRec ra4 e c = ra4 F.&: e F.&: c F.&: V.RNil
+      recode w b a o h wnh =
+        let wh = w - wnh
+            oh = min o (h - wh) --assumes most Hispanic people who don't choose white, choose "other"
+            onh = o - oh
+            bh = h - wh - oh
+            bnh = b - bh
+        in F.toFrame
+           [
+             makeRec DT.RA4_White DT.Hispanic wh
+           , makeRec DT.RA4_White DT.NonHispanic wnh
+           , makeRec DT.RA4_Black DT.Hispanic bh
+           , makeRec DT.RA4_Black DT.NonHispanic bnh
+           , makeRec DT.RA4_Asian DT.Hispanic 0
+           , makeRec DT.RA4_Asian DT.NonHispanic a
+           , makeRec DT.RA4_Other DT.Hispanic oh
+           , makeRec DT.RA4_Other DT.NonHispanic onh
+           ]
+  in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
+
+reToR5Fld :: FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.Race5C, DT.PopCount])
+reToR5Fld =
+  let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+      wFld = withRE BRC.R_White
+      bFld = withRE BRC.R_Black
+      aFld = withRE BRC.R_Asian
+      oFld = withRE BRC.R_Other
+      hFld = withRE BRC.E_Hispanic
+      wnhFld = withRE BRC.E_WhiteNonHispanic
+      makeRec :: DT.Race5 -> Int -> F.Record [DT.Race5C, DT.PopCount]
+      makeRec r5 c = r5 F.&: c F.&: V.RNil
+      recode w b a o h wnh =
+        let wh = w - wnh
+            oh = min o (h - wh) --assumes most Hispanic people who don't choose white, choose "other"
+            onh = o - oh
+            bh = h - wh - oh
+            bnh = b - bh
+        in F.toFrame
+           [
+             makeRec DT.R5_Other onh
+           , makeRec DT.R5_Black bnh
+           , makeRec DT.R5_Asian a
+           , makeRec DT.R5_Hispanic (wh + bh + oh)
+           , makeRec DT.R5_WhiteNonHispanic wnh
+           ]
+  in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
+
+
+age14ToAge5FFld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount]) (F.FrameRec [DT.Age5FC, DT.PopCount])
+age14ToAge5FFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
+  where
+    ageAggF :: BRK.AggF Bool DT.Age5F BRC.Age14 = BRK.AggF g
+    g :: DT.Age5F -> BRC.Age14 -> Bool
+    g a5f a14 = BRC.age14ToAge5F a14 == a5f
+    ageAggFRec = BRK.toAggFRec ageAggF
+    collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @DT.PopCount) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+
+
+edToCGFld :: FL.Fold (F.Record [DT.Education4C, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, DT.PopCount])
+edToCGFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad DT.Education4 = BRK.AggF g where
+                   g DT.Grad DT.E4_CollegeGrad = True
+                   g DT.NonGrad DT.E4_SomeCollege = True
+                   g DT.NonGrad DT.E4_NonHSGrad = True
+                   g DT.NonGrad DT.E4_HSGrad = True
+                   g _ _ = False
+                 edAggFRec = BRK.toAggFRec edAggF
+--                 raceAggFRec :: BRK.AggFRec Bool '[BRC.RaceEthnicityC] '[BRC.RaceEthnicityC] = BRK.toAggFRec BRK.aggFId
+--                 aggFRec = BRK.aggFProductRec edAggFRec raceAggFRec
+                 collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @DT.PopCount) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+         in fmap F.toFrame $ BRK.aggFoldAllRec edAggFRec collapse
+
+
 censusDemographicsRecode :: F.FrameRec CensusSERR -> F.FrameRec CensusRecodedR
 censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC]))
-             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const edFld)
+             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, BRC.RaceEthnicityC]))
+             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const edToCGFld)
       fld2 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
-             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reFld)
-
+             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reToR4HFld)
+{-
       edFld :: FL.Fold (F.Record [DT.Education4C, BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, DT.PopCount])
       edFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad DT.Education4 = BRK.AggF g where
                      g DT.Grad DT.E4_CollegeGrad = True
@@ -270,35 +358,7 @@ censusDemographicsRecode rows =
                    aggFRec = BRK.aggFProductRec edAggFRec raceAggFRec
                    collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @DT.PopCount) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
                in fmap F.toFrame $ BRK.aggFoldAllRec aggFRec collapse
-      reFld ::  FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.RaceAlone4C, DT.HispC, DT.PopCount])
-      reFld =
-        let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
-            wFld = withRE BRC.R_White
-            bFld = withRE BRC.R_Black
-            aFld = withRE BRC.R_Asian
-            oFld = withRE BRC.R_Other
-            hFld = withRE BRC.E_Hispanic
-            wnhFld = withRE BRC.E_WhiteNonHispanic
-            makeRec :: DT.RaceAlone4 -> DT.Hisp -> Int -> F.Record [DT.RaceAlone4C, DT.HispC, DT.PopCount]
-            makeRec ra4 e c = ra4 F.&: e F.&: c F.&: V.RNil
-            recode w b a o h wnh =
-              let wh = w - wnh
-                  oh = min o (h - wh) --assumes most Hispanic people who don't choose white, choose "other"
-                  onh = o - oh
-                  bh = h - wh - oh
-                  bnh = b - bh
-              in F.toFrame
-                 [
-                   makeRec DT.RA4_White DT.Hispanic wh
-                 , makeRec DT.RA4_White DT.NonHispanic wnh
-                 , makeRec DT.RA4_Black DT.Hispanic bh
-                 , makeRec DT.RA4_Black DT.NonHispanic bnh
-                 , makeRec DT.RA4_Asian DT.Hispanic 0
-                 , makeRec DT.RA4_Asian DT.NonHispanic a
-                 , makeRec DT.RA4_Other DT.Hispanic oh
-                 , makeRec DT.RA4_Other DT.NonHispanic onh
-                 ]
-        in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
+-}
       addDensity r = FT.recordSingleton @DT.PopPerSqMile $ F.rgetField @DT.PWPopPerSqMile r
   in fmap (F.rcast . FT.mutate addDensity) $ FL.fold fld2 (FL.fold fld1 rows)
 ---

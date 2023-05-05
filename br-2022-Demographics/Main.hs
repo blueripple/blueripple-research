@@ -42,6 +42,7 @@ import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
@@ -110,11 +111,12 @@ updateCWDCount n (CountWithDensity _ d) = CountWithDensity n d
 --type InputFrame ks = F.FrameRec (ks V.++ '[DT.PopCount, DT.PWPopPerSqMile])
 type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
 
-data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text}
+data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text, mrKLHeader :: Maybe Text}
 
 compareResults :: forall ks key colKey rowKey r f .
                   (K.KnitOne r
                   , Traversable f
+                  , Ord key
                   , Keyed.FiniteSet colKey
                   , Show colKey
                   , Ord colKey
@@ -135,6 +137,7 @@ compareResults :: forall ks key colKey rowKey r f .
                => BR.PostPaths Path.Abs
                -> BR.PostInfo
                -> Map Text Int -- populations
+               -> (F.Record ks -> Text) -- region label
                -> Maybe Text
                -> (F.Record (ks V.++ '[DT.PopCount]) -> key)
                -> (F.Record (ks V.++ '[DT.PopCount]) -> rowKey)
@@ -145,7 +148,7 @@ compareResults :: forall ks key colKey rowKey r f .
                -> ResultFrame ks
                -> f (MethodResult ks)
                -> K.Sem r ()
-compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey colorM shapeM actual results = do
+compareResults pp pi' regionPopMap regionKey exampleStateM catKey rowKey colKey showCellKey colorM shapeM actual results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -155,11 +158,9 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
                                        )
                              d
                            )
-      allCDs = M.keys cdPopMap
-      numRows = length $ Keyed.elements @rowKey
-      numCols = length $ Keyed.elements @colKey
+      allRegions = M.keys regionPopMap
       facetB = True
-      asDiffB = False
+      asDiffB = True
       aspect = if asDiffB then 1.33 else 1
       hvHeight = if facetB then 100 else 500
       hvWidth = aspect * hvHeight
@@ -183,7 +184,7 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
                   shapeM
                   asDiffB
                   ((if ls then logF else id) . realToFrac . view DT.popCount)
-                  (if pctPop then (Just (DDP.districtKeyT, cdPopMap)) else Nothing)
+                  (if pctPop then (Just (regionKey, regionPopMap)) else Nothing)
                   ("Actual ACS", ff actual)
                   (l, ff f)
             _ <- K.addHvega Nothing Nothing vl
@@ -207,24 +208,32 @@ compareResults pp pi' cdPopMap exampleStateM catKey rowKey colKey showCellKey co
       pure ()
 
   -- compute KL divergences
-{-
+  K.logLE K.Info "Computing KL Divergences:"
   let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
-      computeKL d cd = DED.klDiv' acsV dV where
-        acsV = toVecF $ F.filterFrame ((== cd) . DDP.districtKeyT) (mrActual results)
-        dV = toVecF $ F.filterFrame ((== cd) . DDP.districtKeyT) d
-  let prodKLs = computeKL (mrProduct results) <$> allCDs
-      prodNSKLs = computeKL (mrProductWithNS results) <$> allCDs
-      modelKLs = computeKL (mrModel results) <$> allCDs
-      modelCOKLs = computeKL (mrModelWithCO results) <$> allCDs
-      forKLsTable = L.zip5 allCDs prodKLs prodNSKLs modelKLs modelCOKLs
+      computeKL d rk = DED.klDiv' acsV dV where
+        acsV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) actual
+        dV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) d
+      klCol mr = case mr.mrKLHeader of
+        Just h -> Just $ (h, computeKL mr.mrResult <$> allRegions)
+        Nothing -> Nothing
+      klCols = catMaybes $ FL.fold FL.list $ fmap klCol results
+      klColHeaders = fst <$> klCols
+      klTableRows = zipWith (\region kls -> KLTableRow region kls) allRegions (transp $ fmap snd klCols)
+
   K.logLE K.Info "Divergence Table:"
-  K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnade) forKLsTable)
--}
+  K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnadeFlex klColHeaders "Region") klTableRows)
 --  _ <- compChart True "Actual" $ mrActual results
   K.logLE K.Info "Building national charts."
   traverse (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   traverse (\mr -> maybe (pure ()) (\t -> compChartM id False True (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   pure ()
+
+transp :: [[a]] -> [[a]]
+transp = go [] where
+  go x [] = fmap reverse x
+  go [] (r : rs) = go (fmap (: []) r) rs
+  go x (r :rs) = go (List.zipWith (:) r x) rs
+
 
 type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type ASR = [DT.Age4C, DT.SexC, DT.Race5C]
@@ -342,6 +351,7 @@ main = do
 --    BRK.logFrame acsByCD
 --    K.knitError "STOP"
     let cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByCD
+    let statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsByCD
     let cdModelData1 = FL.fold
                        (DTM1.nullVecProjectionsModelDataFldCheck
                         marginalStructure
@@ -564,7 +574,7 @@ main = do
           ageOrder = show <$> S.toList (Keyed.elements @DT.Age4)
           simpleAgeOrder = show <$> S.toList (Keyed.elements @DT.SimpleAge)
       compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
-        synthModelPaths postInfo cdPopMap (Just "NY")
+        synthModelPaths postInfo cdPopMap DDP.districtKeyT (Just "NY")
         (F.rcast @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.simpleAgeC, r ^. DT.education4C))
@@ -572,17 +582,16 @@ main = do
         (Just ("Education", show . view DT.education4C, Just edOrder))
         (Just ("SimpleAge", show . view DT.simpleAgeC, Just simpleAgeOrder))
         (fmap toOutputRow2 acsSampleA2SER)
-        [MethodResult (fmap toOutputRow2 acsSampleA2SER) (Just "Actual") Nothing
-        ,MethodResult product_SER_A2SR (Just "Product") (Just "Marginal Product")
-        ,MethodResult productNS1_SER_A2SR (Just "Null-Space v1") (Just "Null-Space v1")
-        ,MethodResult productNS3_SER_A2SR (Just "Null-Space v3") (Just "Null-Space v3")
-        ,MethodResult modelA2SERFromSER (Just "Model Only") (Just "Model Only")
-        ,MethodResult modelCO_A2SERFromSER (Just "Model+CO") (Just "Model+CO")
+        [MethodResult (fmap toOutputRow2 acsSampleA2SER) (Just "Actual") Nothing Nothing
+        ,MethodResult product_SER_A2SR (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult productNS3_SER_A2SR (Just "Null-Space") (Just "Null-Space") (Just "Null-space")
+        ,MethodResult modelA2SERFromSER (Just "Model Only") (Just "Model Only") (Just "Model Only")
+        ,MethodResult modelCO_A2SERFromSER (Just "Model+CO") (Just "Model+CO") (Just "Model+CO")
         ]
 
       let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.age4C, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
       compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
-        synthModelPaths postInfo cdPopMap (Just "NY")
+        synthModelPaths postInfo statePopMap (view GT.stateAbbreviation) (Just "NY")
         (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.age4C, r ^. DT.education4C))
@@ -590,10 +599,9 @@ main = do
         (Just ("Education", show . view DT.education4C, Just edOrder))
         (Just ("Age", show . view DT.age4C, Just ageOrder))
         (fmap toOutputRow acsSampleASER)
-        [MethodResult (fmap toOutputRow acsSampleASER) (Just "Actual") Nothing
-        ,MethodResult product_SER_ASR (Just "Product") (Just "Marginal Product")
-        ,MethodResult productNS1_SER_ASR (Just "Null-Space v1") (Just "Null-Space v1")
-        ,MethodResult productNS3_SER_ASR (Just "Null-Space v3") (Just "Null-Space v3")
+        [MethodResult (fmap toOutputRow acsSampleASER) (Just "Actual") Nothing Nothing
+        ,MethodResult product_SER_ASR (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult productNS3_SER_ASR (Just "Null-Space") (Just "Null-Space") (Just "Null-Space")
         ]
 
 
@@ -602,6 +610,24 @@ main = do
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+
+data KLTableRow = KLTableRow { kltrLabel :: Text, kltrKLs :: [Double] }
+
+-- This function expects the same length list in the table row as is provided in the col headders argument
+klColonnadeFlex :: Foldable f => f Text -> Text -> C.Colonnade C.Headed KLTableRow Text
+klColonnadeFlex colHeaders regionName =
+  C.headed regionName kltrLabel
+  <> mconcat (fmap cols [0..(length chList - 1)])
+  where
+    chList = FL.fold FL.list colHeaders
+    klT :: Double -> Text
+    klT x = toText @String $ PF.printf "%2.2e" x
+    errT :: Double -> Text
+    errT x =  toText @String . PF.printf "%2.0g" . (100 *) . sqrt $ 2 * x
+    klCol n = C.headed (chList List.!! n) (klT . (List.!! n) . kltrKLs)
+    errCol n =  C.headed "Error (%)" (errT . (List.!! n) . kltrKLs)
+    cols n = klCol n <> errCol n
 
 klColonnade :: C.Colonnade C.Headed (Text, Double, Double, Double, Double) Text
 klColonnade =
