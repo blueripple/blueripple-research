@@ -281,42 +281,45 @@ reToR4HFld =
            ]
   in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
 
-reToR5Fld :: FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.Race5C, DT.PopCount])
+reToR5Fld :: FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Race5C, DT.PopCount, DT.PWPopPerSqMile])
 reToR5Fld =
-  let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+  let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rcast @[DT.PopCount, DT.PWPopPerSqMile]) DT.pwDensityAndPopFldRec
       wFld = withRE BRC.R_White
       bFld = withRE BRC.R_Black
       aFld = withRE BRC.R_Asian
       oFld = withRE BRC.R_Other
       hFld = withRE BRC.E_Hispanic
       wnhFld = withRE BRC.E_WhiteNonHispanic
-      makeRec :: DT.Race5 -> Int -> F.Record [DT.Race5C, DT.PopCount]
-      makeRec r5 c = r5 F.&: c F.&: V.RNil
       recode w b a o h wnh =
-        let wh = w - wnh
-            oh = min o (h - wh) --assumes most Hispanic people who don't choose white, choose "other"
-            onh = o - oh
-            bh = h - wh - oh
-            bnh = b - bh
+        let combineDiff _ _ x y = x - y
+            combineSum _ _ x y = x + y
+            combineMin n1 n2 x1 x2 = if n1 < n2 then x1 else x2
+            wh = DT.combinePWDRecs combineDiff w wnh
+            nwh = DT.combinePWDRecs combineDiff h wh
+            oh = DT.combinePWDRecs combineMin o nwh
+            onh = DT.combinePWDRecs combineDiff o oh
+            bh = DT.combinePWDRecs combineDiff nwh oh
+            bnh = DT.combinePWDRecs combineDiff b bh
+            h = DT.combinePWDRecs combineSum wh (DT.combinePWDRecs combineSum bh oh)
         in F.toFrame
            [
-             makeRec DT.R5_Other onh
-           , makeRec DT.R5_Black bnh
-           , makeRec DT.R5_Asian a
-           , makeRec DT.R5_Hispanic (wh + bh + oh)
-           , makeRec DT.R5_WhiteNonHispanic wnh
+             DT.R5_Other F.&: onh
+           , DT.R5_Black F.&: bnh
+           , DT.R5_Asian F.&: a
+           , DT.R5_Hispanic F.&: h
+           , DT.R5_WhiteNonHispanic F.&: wnh
            ]
   in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
 
 
-age14ToAge5FFld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount]) (F.FrameRec [DT.Age5FC, DT.PopCount])
+age14ToAge5FFld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Age5FC, DT.PopCount, DT.PWPopPerSqMile])
 age14ToAge5FFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
   where
     ageAggF :: BRK.AggF Bool DT.Age5F BRC.Age14 = BRK.AggF g
     g :: DT.Age5F -> BRC.Age14 -> Bool
     g a5f a14 = BRC.age14ToAge5F a14 == a5f
     ageAggFRec = BRK.toAggFRec ageAggF
-    collapse = BRK.dataFoldCollapseBool $ fmap (FT.recordSingleton @DT.PopCount) $ FL.premap (F.rgetField @DT.PopCount) FL.sum
+    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
 
 
 edToCGFld :: FL.Fold (F.Record [DT.Education4C, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, DT.PopCount])

@@ -76,35 +76,37 @@ msSER_ASR = DMS.reKeyMarginalStructure
             DMS.identityMarginalStructure DMS.identityMarginalStructure
 
 
+type LDRecoded ks = BRDF.Year ': BRC.LDLocationR V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
+
 recodeASR :: F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [BRC.Age14C, DT.SexC, BRC.RaceEthnicityC])
-          -> F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.Age5FC, DT.SexC, DT.Race5C])
+          -> F.FrameRec (LDRecoded ASR)
 recodeASR = fmap F.rcast . FL.fold reFld . FL.fold ageFld
   where
     ageFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, BRC.RaceEthnicityC]))
+             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ '[DT.SexC, BRC.RaceEthnicityC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.age14ToAge5FFld)
     reFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.Age5FC]))
+             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ '[DT.SexC, DT.Age5FC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
 
 recodeSER ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC])
-          -> F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Education4C, DT.Race5C])
+          -> F.FrameRec (LDRecoded SER)
 recodeSER = fmap F.rcast . FL.fold reFld
   where
     reFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.Education4C]))
+             (FMR.assignKeysAndData @(BRDF.Year ': BRC.LDLocationR V.++ '[DT.SexC, DT.Education4C]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
 
 
-
+{-
 censusASR_SER_Products :: K.Sem r
                        => Text
                        -> K.ActionWithCacheTime r (BRC.CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC DT.Education4C BRC.RaceEthnicityC)
@@ -131,7 +133,7 @@ censusASR_SER_Products cacheKey censusTables_C = BRK.retrieveOrMakeFrame cacheKe
           keyF = F.rcast @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.PWPopPerSqMile]
           asrF = F.rcast @[DT.Age5FC, DT.SexC, DT.Race5C, DT.PopCount]
 
-
+-}
 {-
 type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
 type CensusASERRecodedR = BRC.LDLocationR

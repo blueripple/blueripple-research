@@ -13,6 +13,7 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE TypeOperators     #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE RankNTypes #-}
 module BlueRipple.Data.DemographicTypes
   (
     module BlueRipple.Data.DemographicTypes
@@ -25,6 +26,7 @@ import qualified BlueRipple.Data.DataFrames    as BR
 import qualified BlueRipple.Data.Keyed         as K
 
 import qualified Control.Foldl                 as FL
+import Control.Lens (view, (^.))
 import qualified Control.MapReduce             as MR
 import qualified Data.Array                    as A
 --import qualified Data.Binary as B
@@ -104,6 +106,46 @@ FTH.declareColumn "PopCount" ''Int
 --type PopPerSqMile = "PopPerSqMile" F.:-> Double
 FTH.declareColumn "PopPerSqMile" ''Double
 FTH.declareColumn "PWPopPerSqMile" ''Double
+
+
+-- the following folds are required a lot
+-- what follows assumes that the set of records being folded comprise people living in the
+-- same area, so the sq-distance denominator of all the densities is the same
+densityAndPopFld :: (r -> Double) -> (r -> Int) -> (r -> Double) -> FL.Fold r (Int, Double)
+densityAndPopFld linearCombinationWgtF numPeopleF densityF = (,) <$> pplFld <*> wgtdFld
+  where
+    wgt r = linearCombinationWgtF r * realToFrac (numPeopleF r)
+    pplFld = FL.premap numPeopleF FL.sum
+    wgtFld = FL.premap wgt FL.sum
+    safeDiv x y = if y == 0 then 0 else x / y
+    wgtdFld = safeDiv <$> FL.premap (\r -> wgt r * densityF r) FL.sum <*> wgtFld
+{-# INLINEABLE densityAndPopFld #-}
+
+pwDensityAndPopFldRecG :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+pwDensityAndPopFldRecG = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld fst (view popCount . snd) (view pWPopPerSqMile . snd)
+{-# INLINEABLE pwDensityAndPopFldRecG #-}
+
+pwDensityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+pwDensityAndPopFldRec = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld (const 1) (view popCount) (view pWPopPerSqMile)
+{-# INLINEABLE pwDensityAndPopFldRec #-}
+
+densityAndPopFldRecG :: (F.ElemOf rs PopCount, F.ElemOf rs PopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+densityAndPopFldRecG = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld fst (view popCount . snd) (view popPerSqMile . snd)
+{-# INLINEABLE densityAndPopFldRecG #-}
+
+densityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PopPerSqMile) => FL.Fold (F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+densityAndPopFldRec = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld (const 1) (view popCount) (view popPerSqMile)
+{-# INLINEABLE densityAndPopFldRec #-}
+
+combinePWDensities :: (Int -> Int -> (forall a. Num a => a -> a -> a)) -> (Int, Double) -> (Int, Double) -> (Int, Double)
+combinePWDensities f (n1, pwd1) (n2, pwd2) = (f n1 n2 n1 n2, f n1 n2 (realToFrac n1 * pwd1) (realToFrac n2 * pwd2))
+{-# INLINEABLE combinePWDensities #-}
+
+combinePWDRecs :: (Int -> Int -> (forall a. Num a => a -> a -> a))
+               -> F.Record [PopCount, PWPopPerSqMile]
+               -> F.Record [PopCount, PWPopPerSqMile] -> F.Record [PopCount, PWPopPerSqMile]
+combinePWDRecs f r1 r2 = (\(x, y) -> x F.&: y F.&: V.RNil) $ combinePWDensities f (r1 ^. popCount, r1 ^. pWPopPerSqMile) (r2 ^. popCount, r2 ^. pWPopPerSqMile)
+{-# INLINEABLE combinePWDRecs #-}
 
 data Sex = Female | Male deriving stock (Enum, Bounded, Eq, Ord, A.Ix, Show, Generic)
 deriving anyclass instance Hashable Sex
