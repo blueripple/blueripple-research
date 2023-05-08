@@ -43,6 +43,7 @@ import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Control.Foldl as FL
 import qualified Frames as F
+import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.MapReduce as FMR
@@ -64,6 +65,7 @@ type CensusASERR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTy
 3. Model runner (when necessary), along with correct design-matrix and ACS row-fold(s).
 4. Model applier to recoded census (cached model-results + cached recoded-district-demographics -> cached enriched district demographics)
 -}
+type SR = [DT.SexC, DT.Race5C]
 type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type ASR = [DT.Age5FC, DT.SexC, DT.Race5C]
 type ASER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
@@ -106,6 +108,14 @@ recodeSER = fmap F.rcast . FL.fold reFld
 
 
 
+ser_asr_tableProductWithDensity :: F.FrameRec (LDRecoded SER) -> F.FrameRec (LDRecoded ASR) -> F.FrameRec (LDRecoded ASER)
+ser_asr_tableProductWithDensity ser asr = DMS.tableProductWithData 1 serWD asrWD
+  where
+    tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.TableCellWithData
+    tcwd r = TableCellWithData (view DT.popCount r) (VU.singleton $ view DT.pWPopPerSqMile r)
+    serWD = FL.fold (FL.premap (\r -> (F.rcast @SR r, tcwd r)) FL.map) ser
+    asrWD = FL.fold (FL.premap (\r -> (F.rcast @SR r, tcwd r)) FL.map) asr
+    reFrame (outer, )
 {-
 censusASR_SER_Products :: K.Sem r
                        => Text
@@ -113,26 +123,18 @@ censusASR_SER_Products :: K.Sem r
                        -> K.ActionWithCacheTime r (F.FrameRec CensusASERR)
 censusASR_SER_Products cacheKey censusTables_C = BRK.retrieveOrMakeFrame cacheKey censusTables_C f
   where
-
     f (BRC.CensusTables asr _ ser _) = do
-      let recodedASR = fmap F.rcast @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName
-                                     , DT.Age5FC, DT.SexC, DT.Race5C, DT.PWPopPerSqMile, DT.PopCount
-                                     ]
-                       $ recodeASR asr
-
-          recodedSER =  fmap F.rcast @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName
-                                      , DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile, DT.PopCount
-                                      ]
-                        $ recodeSER ser
-
-          toMap kF dF = M.fromList
+      let toMap kF dF = M.fromList
                         <$> MR.mapReduceFold
                         MR.noUnpack
                         (MR.assign kF dF)
                         (MR.foldAndLabel F.toFrame (,))
-          keyF = F.rcast @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.PWPopPerSqMile]
-          asrF = F.rcast @[DT.Age5FC, DT.SexC, DT.Race5C, DT.PopCount]
-
+          keyF = F.rcast @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
+          asrF = F.rcast @[DT.Age5FC, DT.SexC, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
+          serF = F.rcast @[DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile]
+          asrMap = toMap keyF asrF (recodeASR asr)
+          serMap = toMap keyF asrF (recodeSER ser)
+      whenMatchedF k asr ser =
 -}
 {-
 type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
