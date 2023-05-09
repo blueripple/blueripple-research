@@ -364,7 +364,7 @@ diffCovarianceFld wl outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRo
     wgtVec = VS.fromList . fmap (view wl)
     pcF :: [w] -> VS.Vector Double
     pcF = wgtVec . prodTableF . zip (S.toList allKs)
-    projections ws = let ws' = DMS.normalize wl ws in nullVecs' LA.#> (wgtVec ws' - pcF ws)
+    projections ws = let ws' = DMS.normalize wl ws in nullVecs' LA.#> (wgtVec ws' - pcF ws')
     innerFld = projections <$> labeledRowsToListFld fst snd
     vecsFld = MR.mapReduceFold
               MR.noUnpack

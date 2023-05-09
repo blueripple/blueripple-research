@@ -52,7 +52,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Control.Lens (view)
+import Control.Lens (Lens', view, over)
 import GHC.TypeLits (Symbol)
 
 import qualified CmdStan as CS
@@ -79,26 +79,28 @@ data ProjDataRow outerK =
 
 -- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
 -- the eigenvectors of the covariance
-nullVecProjectionsModelDataFld ::  forall outerK k row .
+nullVecProjectionsModelDataFld ::  forall outerK k row w .
                                    (Ord outerK)
-                               => DMS.MarginalStructure k
+                               => Lens' w Double
+                               -> DMS.MarginalStructure w k
                                -> DTP.NullVectorProjections
                                -> (row -> outerK)
                                -> (row -> k)
-                               -> (row -> LA.R)
+                               -> (row -> w)
                                -> FL.Fold row (VS.Vector Double) -- covariates
                                -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double)]
-nullVecProjectionsModelDataFld ms nvps outerKey catKey count datFold = case ms of
+nullVecProjectionsModelDataFld wl ms nvps outerKey catKey datF datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                  MR.noUnpack
                                  (MR.assign outerKey id)
                                  (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
     where
       allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      projections v = let w = DTP.normalizedVec v in DTP.fullToProj nvps (w - pcF w)
-      projFld = fmap projections $ DTP.labeledRowsToVecFld catKey count
+      wgtVec = VS.fromList . fmap (view wl)
+      pcF :: [w] -> VS.Vector Double
+      pcF =  wgtVec . FL.fold ptFld . zip (S.toList allKs)
+      projections ws = let ws' = DMS.normalize wl ws in DTP.fullToProj nvps (wgtVec ws' - pcF ws')
+      projFld = fmap projections $ DTP.labeledRowsToListFld catKey datF
       innerFld = (,) <$> datFold <*> projFld
 
 newtype NVProjectionRowData ks =
@@ -140,28 +142,32 @@ dmr t n = DM.DesignMatrixRow t [DM.DesignMatrixRowPart t n VU.convert]
 
 -- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
 -- the eigenvectors of the covariance
-nullVecProjectionsModelDataFldCheck ::  forall outerK k row.
+nullVecProjectionsModelDataFldCheck ::  forall outerK k row w .
                                         (Ord outerK)
-                                    => DMS.MarginalStructure k
+                                    => Lens' w Double
+                                    -> DMS.MarginalStructure w k
                                     -> DTP.NullVectorProjections
                                     -> (row -> outerK)
                                     -> (row -> k)
-                                    -> (row -> Double)
-                                    -> FL.Fold row (VS.Vector Double)
+                                    -> (row -> w)
+                                    -> FL.Fold row (VS.Vector Double) -- covariates
                                     -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double, VS.Vector Double, VS.Vector Double)]
-nullVecProjectionsModelDataFldCheck ms nvps outerKey catKey count datFold = case ms of
+nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey count datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                    MR.noUnpack
                                    (MR.assign outerKey id)
                                    (MR.foldAndLabel innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
     where
       allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      results v = let w = DTP.normalizedVec v -- normalized original probs
-                      nSum = VS.sum v -- num of people
-
-                  in (DTP.fullToProj nvps (w - pcF w), VS.map (* nSum) (pcF v), v)
+      wgtVec = VS.fromList . fmap (view wl)
+      pcF :: [w] -> VS.Vector Double
+      pcF =  wgtVec . FL.fold ptFld . zip (S.toList allKs)
+      results ws = let ws' = DMS.normalize wl ws -- normalized original probs
+                       nSum = FL.fold (FL.premap (view wl) FL.sum) ws -- num of people
+                   in (DTP.fullToProj nvps (wgtVec ws' - pcF ws')
+                      , VS.map (* nSum) (pcF v)
+                      , VS.toList $ fmap (view wl) ws
+                      )
       projFld = fmap results $ DTP.labeledRowsToVecFld catKey count
       innerFld = (,) <$> datFold <*> projFld
 

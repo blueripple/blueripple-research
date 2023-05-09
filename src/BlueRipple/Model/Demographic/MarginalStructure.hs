@@ -22,7 +22,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 
 
 import qualified Control.Foldl as FL
-import Control.Lens (Lens', Traversal, view, set, over)
+import Control.Lens (Lens', Traversal, view, set, over, lens)
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Profunctor as PF
@@ -253,12 +253,12 @@ innerProductSum ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- fracs mb]
 {-# INLINEABLE innerProductSum #-}
 
 data CellWithDensity = CellWithDensity { cwdWgt :: !Double, cwdDensity :: !Double }
-updateWgt :: (Double -> Double) -> CellWithDensity -> CellWithDensity
-updateWgt f (CellWithDensity x wd) = CellWithDensity (f x) wd
+updateWgt :: CellWithDensity -> Double -> CellWithDensity
+updateWgt (CellWithDensity _ wd) x = CellWithDensity x wd
 {-# INLINE updateWgt #-}
 
-tcwdWgtLens :: (CellWithDensity -> Double, (Double -> Double) -> CellWithDensity -> CellWithDensity)
-tcwdWgtLens = (cwdWgt, updateWgt)
+cwdWgtLens :: Lens' CellWithDensity Double --(CellWithDensity -> Double, (Double -> Double) -> CellWithDensity -> CellWithDensity)
+cwdWgtLens = lens cwdWgt updateWgt
 
 instance Semigroup CellWithDensity where
   (CellWithDensity x xwd) <> (CellWithDensity y ywd) =
@@ -270,6 +270,8 @@ instance Semigroup CellWithDensity => Monoid CellWithDensity where
   mempty = CellWithDensity 0 0
   mappend = (<>)
 
+updateWeightCWD :: Double -> CellWithDensity -> CellWithDensity
+updateWeightCWD x (CellWithDensity wgt pwDensity) = CellWithDensity x (pwDensity * x / wgt)
 
 innerProductCWD :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
