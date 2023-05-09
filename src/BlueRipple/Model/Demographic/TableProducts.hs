@@ -139,7 +139,7 @@ projToFull nvps v = v LA.<# fullToProjM nvps
 fullToProj :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R
 fullToProj nvps v = fullToProjM nvps LA.#> v
 
-baseNullVectorProjections :: DMS.MarginalStructure k -> NullVectorProjections
+baseNullVectorProjections :: DMS.MarginalStructure w k -> NullVectorProjections
 baseNullVectorProjections ms = NullVectorProjections nullVecs (LA.ident nNullVecs)
   where
     nullVecs = nullSpaceVectors (DMS.msNumCategories ms) (DMS.msStencils ms)
@@ -213,7 +213,7 @@ applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
 labeledRowsToVecFld key dat = VS.fromList . M.elems <$> (FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld)
 
-labeledRowsToNormalizedTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
+labeledRowsToNormalizedTableMapFld :: forall a outerK row w . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK, Monoid w)
                                    => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
 labeledRowsToNormalizedTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
   keyF row = (outerKey row, innerKey row)
@@ -272,7 +272,7 @@ applyNSPWeightsFld logM nvps nsWsFldF =
         (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
         (FMR.ReduceFoldM $ \k -> F.toFrame <$> innerFld k)
 
-nullSpaceVectorsMS :: forall k . DMS.MarginalStructure k -> LA.Matrix LA.R
+nullSpaceVectorsMS :: forall k w . DMS.MarginalStructure w k -> LA.Matrix LA.R
 nullSpaceVectorsMS = \cases
   (DMS.MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
 
@@ -306,12 +306,12 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
     totalWeight = FL.fold (FL.premap (popWeightF . fst) FL.sum) m / realToFrac (M.size m)
     weight (n, v) = VS.map (* popWeightF n) v
 
-diffCovarianceFldMS :: forall outerK k row .
+diffCovarianceFldMS :: forall outerK k row w .
                        (Ord outerK)
                     => (row -> outerK)
                     -> (row -> k)
                     -> (row -> LA.R)
-                    -> DMS.MarginalStructure k
+                    -> DMS.MarginalStructure w k
                     -> FL.Fold row (LA.Vector LA.R, LA.Herm LA.R)
 diffCovarianceFldMS outerKey catKey dat = \cases
   (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld outerKey catKey dat sts (fmap snd . FL.fold ptFld)
@@ -340,7 +340,7 @@ diffCovarianceFld outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRows 
 
 
 significantNullVecsMS :: Double
-                      -> DMS.MarginalStructure k
+                      -> DMS.MarginalStructure w k
                       -> LA.Herm LA.R
                       -> NullVectorProjections
 significantNullVecsMS fracCovToInclude ms cov = significantNullVecs fracCovToInclude (nullSpaceVectorsMS ms) cov
@@ -357,7 +357,7 @@ significantNullVecs fracCovToInclude nullVecs cov = NullVectorProjections (LA.tr
     sigEVecs = LA.takeColumns nSig eigVecs
 
 
-uncorrelatedNullVecsMS :: DMS.MarginalStructure k -> LA.Herm LA.R -> NullVectorProjections
+uncorrelatedNullVecsMS :: DMS.MarginalStructure w k -> LA.Herm LA.R -> NullVectorProjections
 uncorrelatedNullVecsMS ms = uncorrelatedNullVecs (nullSpaceVectorsMS ms)
 
 uncorrelatedNullVecs :: LA.Matrix LA.R

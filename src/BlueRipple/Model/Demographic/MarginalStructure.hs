@@ -22,6 +22,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 
 
 import qualified Control.Foldl as FL
+import Control.Lens (Lens', Traversal, view, set, over)
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Profunctor as PF
@@ -33,8 +34,8 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 
-normalize :: (Functor f, Foldable f) => (a -> Double, (Double -> Double) -> a -> a) -> f a -> f a
-normalize (getWgt, modifyWgt) xs = let s = FL.fold (FL.premap getWgt FL.sum) xs in fmap (modifyWgt (/ s)) xs
+normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
+normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
 
 reKeyMarginalStructure :: (Ord k2, BRK.FiniteSet k2) => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
@@ -57,7 +58,7 @@ expandStencil f st = DED.Stencil dil
 
 combineMarginalStructures :: forall ok ka kb w .
                              (Ord ok, BRK.FiniteSet ok, Ord ka, BRK.FiniteSet ka, Ord kb, BRK.FiniteSet kb, Monoid w)
-                          => (w -> Double, (Double -> Double) -> w -> w)
+                          => Lens' w Double
                           -> (Map ka w -> Map kb w -> Map (ka, kb) w)
                           -> MarginalStructure w (ok, ka) -> MarginalStructure w (ok, kb) -> MarginalStructure w (ok, ka, kb)
 combineMarginalStructures wgtLens ip = combineMarginalStructures' wgtLens ip (\(ok, ka, _) -> (ok, ka)) id (\(ok, _, kb) -> (ok, kb)) id id
@@ -79,7 +80,7 @@ combineMarginalStructuresF :: forall k ka kb w .
                               , (k V.++ (ka V.++ kb)) ~ ((k V.++ ka) V.++ kb)
                               , Monoid w
                               )
-                           => (w -> Double, (Double -> Double) -> w -> w)
+                           => Lens' w Double
                            -> (Map (F.Record ka) w -> Map (F.Record kb) w -> Map (F.Record ka, F.Record kb) w)
                            -> MarginalStructure w (F.Record (k V.++ ka))
                            -> MarginalStructure w (F.Record (k V.++ kb))
@@ -100,7 +101,7 @@ combineMarginalStructures' :: forall k ka kb ok ika ikb w .
                              , Ord ika, BRK.FiniteSet ika
                              , Ord ikb, BRK.FiniteSet ikb
                              , Monoid w)
-                           => (w -> Double, (Double -> Double) -> w -> w)
+                           => Lens' w Double
                            -> (Map ika w -> Map ikb w -> Map (ika, ikb) w)
                            -> (k -> ka) -> (ka -> (ok, ika))
                            -> (k -> kb) -> (kb -> (ok, ikb))
@@ -120,7 +121,7 @@ combineMarginalStructures' wgtLens innerProduct kaF expandA kbF expandB collapse
 {-# INLINEABLE combineMarginalStructures' #-}
 
 identityMarginalStructure :: forall k w . (Ord k, BRK.FiniteSet k, Monoid w)
-                          => (w -> Double, (Double -> Double) -> w -> w) -> MarginalStructure w k
+                          => Lens' w Double -> MarginalStructure w k
 identityMarginalStructure wgtLens = MarginalStructure (fmap (DED.Stencil . pure) $ [0..(numCats-1)] ) (M.toList <$> normalizeAndFillMapFld wgtLens)
   where
     numCats = S.size $ BRK.elements @k
@@ -150,29 +151,29 @@ zeroMap :: (Monoid w, BRK.FiniteSet k, Ord k, Num a) => Map k w
 zeroMap = constMap mempty
 {-# INLINEABLE zeroMap #-}
 {-# SPECIALIZE zeroMap :: (BRK.FiniteSet k, Ord k, Num b) => Map k (Sum b) #-}
-{-# SPECIALIZE zeroMap :: (BRK.FiniteSet k, Ord k) => Map k TableCellWithData #-}
+{-# SPECIALIZE zeroMap :: (BRK.FiniteSet k, Ord k) => Map k CellWithDensity #-}
 
 summedMap :: (Monoid b, Ord a) => FL.Fold (a, b) (Map a b)
 summedMap = FL.foldByKeyMap FL.mconcat --fmap getSum <$> FL.premap (second Sum) appendingMap
 {-# INLINE summedMap #-}
 {-# SPECIALIZE summedMap :: (Ord a, Num b) => FL.Fold (a, Sum b) (Map a (Sum b)) #-}
-{-# SPECIALIZE summedMap :: Ord a => FL.Fold (a, TableCellWithData ) (Map a TableCellWithData) #-}
+{-# SPECIALIZE summedMap :: Ord a => FL.Fold (a, CellWithDensity ) (Map a CellWithDensity) #-}
 
 zeroFillSummedMapFld :: (BRK.FiniteSet k, Ord k, Monoid a) => FL.Fold (k, a) (Map k a)
 zeroFillSummedMapFld = fmap (<> zeroMap) summedMap
 {-# INLINEABLE zeroFillSummedMapFld #-}
 {-# SPECIALIZE zeroFillSummedMapFld ::  (BRK.FiniteSet k, Ord k, Num b) => FL.Fold (k, Sum b) (Map k (Sum b)) #-}
-{-# SPECIALIZE zeroFillSummedMapFld ::  (BRK.FiniteSet k, Ord k) => FL.Fold (k, TableCellWithData) (Map k TableCellWithData) #-}
+{-# SPECIALIZE zeroFillSummedMapFld ::  (BRK.FiniteSet k, Ord k) => FL.Fold (k, CellWithDensity) (Map k CellWithDensity) #-}
 
 --normalized :: (Foldable f, Functor f, Normalizable c) => f Double -> f Double
 --normalized xs = let s = FL.fold FL.sum xs in fmap ( / s) xs
 
-normalizeMapFld :: (Ord k, Monoid w) =>  (w -> Double, (Double -> Double) -> w -> w) -> FL.Fold (k, w) (Map k w)
+normalizeMapFld :: (Ord k, Monoid w) =>  Lens' w Double -> FL.Fold (k, w) (Map k w)
 normalizeMapFld wgtLens = normalize wgtLens <$> summedMap
 {-# INLINEABLE normalizeMapFld #-}
 
 normalizeAndFillMapFld :: (BRK.FiniteSet k, Ord k, Monoid w)
-                       => (w -> Double, (Double -> Double) -> w -> w) -> FL.Fold (k, w) (Map k w)
+                       => Lens' w Double -> FL.Fold (k, w) (Map k w)
 normalizeAndFillMapFld wgtLens = normalize wgtLens <$> zeroFillSummedMapFld
 {-# INLINEABLE normalizeAndFillMapFld #-}
 
@@ -188,15 +189,22 @@ tableMapFld = FL.premap keyPreMap $ fmap (<> constMap zeroMap) (FL.foldByKeyMap 
 {-# INLINEABLE tableMapFld #-}
 
 
-mapWgtLens :: (w -> Double, (Double -> Double) -> w -> w) -> (Map x w -> Double, (Double -> Double) -> Map x w -> Map x w)
-mapWgtLens (getWgt, modWgt) = (FL.fold (FL.premap getWgt FL.sum), fmap . modWgt)
-
+--mapWgtLens :: (w -> Double, (Double -> Double) -> w -> w) -> (Map x w -> Double, (Double -> Double) -> Map x w -> Map x w)
+--mapWgtLens (getWgt, modWgt) = (FL.fold (FL.premap getWgt FL.sum), fmap . modWgt)
+{-
+mapWgtLens' :: Ord x => Traversal w w Double Double -> Traversal (Map x w) (Map x w) Double Double
+mapWgtLens' l afa mxw = s2
+  where
+    s1 = fmap (\w -> (w, afa $ view l w)) mxw
+    s2 = traverse (\(w, fx) -> fmap (\x -> set l x w) fx) s1
+-}
 normalizedTableMapFld :: forall outerK x w . (BRK.FiniteSet outerK, Ord outerK, BRK.FiniteSet x, Ord x, Monoid w)
-                      =>  (w -> Double, (Double -> Double) -> w -> w) -> FL.Fold ((outerK, x), w) (Map outerK (Map x w))
-normalizedTableMapFld wgtLens = FL.premap keyPreMap $ fmap (normalize (mapWgtLens wgtLens) . (<> constMap zeroMap)) (FL.foldByKeyMap zeroFillSummedMapFld) where
+                      =>  Lens' w Double -> FL.Fold ((outerK, x), w) (Map outerK (Map x w))
+normalizedTableMapFld wgtLens = FL.premap keyPreMap $ fmap (normalizeMap . (<> constMap zeroMap)) (FL.foldByKeyMap zeroFillSummedMapFld)
+  where
     keyPreMap ((o, k), n) = (o, (k, n))
---    sum' mm = FL.fold FL.sum $ fmap (FL.fold FL.sum) mm
---    normalizeMap mm = fmap (fmap ( / sum' mm)) mm
+    sum' mm = FL.fold FL.sum $ fmap (FL.fold (FL.premap (view wgtLens) FL.sum)) mm
+    normalizeMap mm = fmap (fmap (over wgtLens (/ sum' mm))) mm
 {-# INLINEABLE normalizedTableMapFld #-}
 
 
@@ -244,41 +252,37 @@ innerProductSum ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- fracs mb]
         fracs m = let s = getSum (FL.fold FL.mconcat m) in M.toList $ if s == 0 then m else fmap (Sum . (/ s) . getSum) m
 {-# INLINEABLE innerProductSum #-}
 
-data TableCellWithData = TableCellWithData { tcwdWgt :: !Double, tcwdWgtd :: !(VU.Vector Double), tcwdUnwgtd :: !(VU.Vector Double) }
-updateWgt :: (Double -> Double) -> TableCellWithData -> TableCellWithData
-updateWgt f (TableCellWithData x xW xU) = TableCellWithData (f x) xW xU
+data CellWithDensity = CellWithDensity { cwdWgt :: !Double, cwdDensity :: !Double }
+updateWgt :: (Double -> Double) -> CellWithDensity -> CellWithDensity
+updateWgt f (CellWithDensity x wd) = CellWithDensity (f x) wd
 {-# INLINE updateWgt #-}
 
-tcwdWgtLens :: (TableCellWithData -> Double, (Double -> Double) -> TableCellWithData -> TableCellWithData)
-tcwdWgtLens = (tcwdWgt, updateWgt)
+tcwdWgtLens :: (CellWithDensity -> Double, (Double -> Double) -> CellWithDensity -> CellWithDensity)
+tcwdWgtLens = (cwdWgt, updateWgt)
 
-instance Semigroup TableCellWithData where
-  (TableCellWithData x xW xU) <> (TableCellWithData y yW yU) =
-    TableCellWithData
+instance Semigroup CellWithDensity where
+  (CellWithDensity x xwd) <> (CellWithDensity y ywd) =
+    CellWithDensity
     (x + y)
-    (VU.zipWith (+) (VU.map (* (x / (x + y))) xW) (VU.map (* (y / (x + y))) yW))
-    (VU.zipWith (+) xU yU)
+    ((x * xwd + y * ywd) / (x + y))
 
-instance Semigroup TableCellWithData => Monoid TableCellWithData where
-  mempty = TableCellWithData 0 VU.empty VU.empty
+instance Semigroup CellWithDensity => Monoid CellWithDensity where
+  mempty = CellWithDensity 0 0
   mappend = (<>)
 
 
-innerProductTWCD :: (Ord a, Ord b) => Int -> Map a TableCellWithData -> Map b TableCellWithData -> Map (a, b) TableCellWithData
-innerProductTWCD numWgtd ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
+innerProductCWD :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
+innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
   where
-    f (a, TableCellWithData x xW xU) (b, TableCellWithData y' yW' _) =
-      ((a, b), TableCellWithData (x * y') (VU.zipWith (*) xW yW') (VU.map (* y') xU))
-    forProd :: Map x TableCellWithData -> [(x, TableCellWithData)]
+    f (a, CellWithDensity xw xwd) (b, (yw', ywd')) = ((a, b), CellWithDensity (xw * yw') (xwd * ywd'))
+    forProd :: Map x CellWithDensity -> [(x, (Double, Double))]
     forProd m =
-      let sumWgtFld = FL.premap tcwdWgt FL.sum
-          eachWgtdFld n = FL.premap (\t -> tcwdWgt t * tcwdWgtd t VU.! n) FL.sum
-          eachWgtdVFld = fmap VU.fromList $ traverse eachWgtdFld [0..numWgtd]
-          (sumWgts, wgtdSumWgtsV) = FL.fold ((,) <$> sumWgtFld <*> eachWgtdVFld) m
-          g (TableCellWithData x xWgtd xUnwgtdV) = if sumWgts == 0 then mempty
-                                                       else TableCellWithData (x / sumWgts) (VU.zipWith (/) xWgtd wgtdSumWgtsV) xUnwgtdV
+      let sumWgtFld = FL.premap cwdWgt FL.sum
+          wgtdDensityFld = FL.premap (\t -> cwdWgt t * cwdDensity t) FL.sum
+          (sumWgts, sumWgtdDensities) = FL.fold ((,) <$> sumWgtFld <*> wgtdDensityFld) m
+          g (CellWithDensity x xwd) = if sumWgts == 0 then (x, 0) else (x / sumWgts, xwd / sumWgtdDensities)
       in M.toList $ fmap g m
-{-# INLINEABLE innerProductTWCD #-}
+{-# INLINEABLE innerProductCWD #-}
 
 {-
 -- given a k2 product fold and a map (k1 -> k2) we can generate a k1 product zero-info product fold by assuming every k1 which maps to a k2
