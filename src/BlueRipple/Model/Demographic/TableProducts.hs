@@ -55,25 +55,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Control.Lens (view)
-import GHC.TypeLits (Symbol)
-
-import qualified CmdStan as CS
-import qualified Stan.ModelBuilder as SMB
-import qualified Stan.ModelRunner as SMR
-import qualified Stan.ModelConfig as SC
-import qualified Stan.Parameters as SP
-import qualified Stan.RScriptBuilder as SR
-import qualified Stan.ModelBuilder.BuildingBlocks as SBB
-import qualified Stan.ModelBuilder.DesignMatrix as DM
-import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
-import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
-import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
-import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
-import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
-import qualified Flat
+import Control.Lens (Lens', view, over, lens)
 
 normalizedVec :: VS.Vector Double -> VS.Vector Double
 normalizedVec v = VS.map (/ VS.sum v) v
@@ -210,29 +192,42 @@ applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
   where f oWs = applyNSPWeights nvps oWs pV
 
 -- this aggregates over cells with the same given key
-labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable a, Num a) => (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector a)
-labeledRowsToVecFld key dat = VS.fromList . M.elems <$> (FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld)
+labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable x, Num x, Monoid a) => Lens' a x -> (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector x)
+labeledRowsToVecFld wgtLens key dat
+  = VS.fromList . fmap getSum . M.elems <$> (FL.premap (\r -> (key r, Sum $ view wgtLens $ dat r)) DMS.zeroFillSummedMapFld)
+{-# SPECIALIZE labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, Monoid a) => Lens' a Double -> (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector Double) #-}
+
+labeledRowsToListFld :: (Ord k, BRK.FiniteSet k, Monoid w) => (row -> k) -> (row -> w) -> FL.Fold row [w]
+labeledRowsToListFld key dat = M.elems <$> (FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld)
+
 
 labeledRowsToNormalizedTableMapFld :: forall a outerK row w . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK, Monoid w)
-                                   => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
-labeledRowsToNormalizedTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
+                                   => Lens' w Double -> (row -> outerK) -> (row -> a) -> (row -> w) -> FL.Fold row (Map outerK (Map a w))
+labeledRowsToNormalizedTableMapFld wgtLens outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
   keyF row = (outerKey row, innerKey row)
-  f :: [((outerK, a), Double)] -> Map outerK (Map a Double)
-  f = FL.fold DMS.normalizedTableMapFld
+  f :: [((outerK, a), w)] -> Map outerK (Map a w)
+  f = FL.fold (DMS.normalizedTableMapFld wgtLens)
 
-labeledRowsToTableMapFld :: forall a outerK row . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK)
-                         => (row -> outerK) -> (row -> a) -> (row -> Double) -> FL.Fold row (Map outerK (Map a Double))
+labeledRowsToTableMapFld :: forall a outerK row w . (Ord a, BRK.FiniteSet a, Ord outerK, BRK.FiniteSet outerK, Monoid w)
+                         => (row -> outerK) -> (row -> a) -> (row -> w) -> FL.Fold row (Map outerK (Map a w))
 labeledRowsToTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld keyF nF where
   keyF row = (outerKey row, innerKey row)
-  f :: [((outerK, a), Double)] -> Map outerK (Map a Double)
+  f :: [((outerK, a), w)] -> Map outerK (Map a w)
   f = FL.fold DMS.tableMapFld
 
-labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, Num a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
+labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, Monoid a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
 labeledRowsToKeyedListFld key dat =  M.toList <$> FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld
   -- fmap (zip (S.toList BRK.elements) . VS.toList) $ labeledRowsToVecFld key dat
 
-labeledRowsToVec :: (Ord k, BRK.FiniteSet k, VS.Storable a, Foldable f, Num a) => (row -> k) -> (row -> a) -> f row -> VS.Vector a
-labeledRowsToVec key dat = FL.fold (labeledRowsToVecFld key dat)
+labeledRowsToVec :: (Ord k, BRK.FiniteSet k, VS.Storable x, Num x, Foldable f, Monoid a)
+                 => Lens' a x -> (row -> k) -> (row -> a) -> f row -> VS.Vector x
+labeledRowsToVec wl key dat = FL.fold (labeledRowsToVecFld wl key dat)
+
+labeledRowsToList :: (Ord k, BRK.FiniteSet k, Foldable f, Monoid w) => (row -> k) -> (row -> w) -> f row -> [w]
+labeledRowsToList key dat = FL.fold (labeledRowsToListFld key dat)
+
+sumLens :: Lens' (Sum x) x
+sumLens = lens getSum (\sx x -> Sum x)
 
 applyNSPWeightsFld :: forall outerKs ks count rs r .
                       ( DED.EnrichDataEffects r
@@ -250,14 +245,14 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       )
                    => (F.Record outerKs -> Maybe Text)
                    -> NullVectorProjections
-                   -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R))
+                   -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector Double))
                    -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
 applyNSPWeightsFld logM nvps nsWsFldF =
   let keysL = S.toList $ BRK.elements @(F.Record ks) -- these are the same for each outerK
       precomputeFld :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R, Double, LA.Vector LA.R)
       precomputeFld ok =
         let sumFld = FL.generalize $ FL.premap (realToFrac . F.rgetField @count) FL.sum
-            vecFld = FL.generalize $ labeledRowsToVecFld (F.rcast @ks) (realToFrac . F.rgetField @count)
+            vecFld = FL.generalize $ labeledRowsToVecFld sumLens (F.rcast @ks) (Sum . realToFrac . F.rgetField @count)
         in (,,) <$> nsWsFldF ok <*> sumFld <*> vecFld
       compute :: F.Record outerKs -> (LA.Vector LA.R, Double, LA.Vector LA.R) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
       compute ok (nsWs, vSum, v) = do
@@ -272,6 +267,42 @@ applyNSPWeightsFld logM nvps nsWsFldF =
         (FMR.generalizeAssign $ FMR.assignKeysAndData @outerKs @(ks V.++ '[count]))
         (FMR.ReduceFoldM $ \k -> F.toFrame <$> innerFld k)
 
+
+applyNSPWeightsFldG :: forall outerK k w r .
+                      ( DED.EnrichDataEffects r
+                      , Monoid w
+                      , BRK.FiniteSet k
+                      , Ord k
+                      , Ord outerK
+                      )
+                    => Lens' w Double
+                    -> (Double -> w -> w) -- not sure if I can make this update follow lens laws
+                    -> (outerK -> Maybe Text)
+                    -> NullVectorProjections
+                    -> (outerK -> FL.FoldM (K.Sem r) (k, w) (LA.Vector Double))
+                    -> FL.FoldM (K.Sem r) (outerK, k, w) [(outerK, k, w)]
+applyNSPWeightsFldG wl updateW logM nvps nsWsFldF =
+  let keysL = S.toList $ BRK.elements @k -- these are the same for each outerK
+      okF (ok, _, _) = ok
+      kwF (_, k, w) = (k, w)
+      precomputeFld :: outerK -> FL.FoldM (K.Sem r) (k, w) (LA.Vector Double, Double, [w])
+      precomputeFld ok =
+        let sumFld = FL.generalize $ FL.premap (view wl . snd) FL.sum
+            vecFld = FL.generalize $ labeledRowsToListFld fst snd
+        in (,,) <$> nsWsFldF ok <*> sumFld <*> vecFld
+      compute :: outerK -> (LA.Vector LA.R, Double, [w]) -> K.Sem r [(outerK, k, w)]
+      compute ok (nsWs, vSum, ws) = do
+        maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
+        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights nvps nsWs $ VS.fromList $ fmap ((/ vSum) . view wl) ws
+--        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
+        pure $ List.zipWith3 (\k c w -> (ok, k, updateW c w)) keysL (VS.toList optimalV) ws
+      innerFldM ok = FMR.postMapM (compute ok) (precomputeFld ok)
+  in  MR.concatFoldM
+        $ MR.mapReduceFoldM
+        (MR.generalizeUnpack MR.noUnpack)
+        (MR.generalizeAssign $ MR.assign okF kwF)
+        (FMR.ReduceFoldM innerFldM)
+
 nullSpaceVectorsMS :: forall k w . DMS.MarginalStructure w k -> LA.Matrix LA.R
 nullSpaceVectorsMS = \cases
   (DMS.MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
@@ -283,22 +314,21 @@ nullSpaceProjections :: (Ord k, Ord outerK, Show outerK, DED.EnrichDataEffects r
                             => LA.Matrix LA.R
                             -> (row -> outerK)
                             -> (row -> k)
-                            -> (row -> Int)
+                            -> (row -> Double)
                             -> f row
                             -> f row
                             -> K.Sem r (Map outerK (Double, LA.Vector LA.R))
-nullSpaceProjections nullVs outerKey key count actuals products = do
+nullSpaceProjections nullVs outerKey key wgt actuals products = do
   let normalizedVec' m s = VS.fromList $ (/ s)  <$> M.elems m
       mapData m s = (s, normalizedVec' m s)
       toDatFld = mapData <$> FL.map <*> FL.premap snd FL.sum
-      toMapFld = FL.premap (\r -> (outerKey r, (key r, realToFrac (count r)))) $ FL.foldByKeyMap toDatFld
+      toMapFld = FL.premap (\r -> (outerKey r, (key r, wgt r))) $ FL.foldByKeyMap toDatFld
       actualM = FL.fold toMapFld actuals
       prodM = FL.fold toMapFld products
       whenMatchedF _ (na, aV) (_, pV) = pure (na, nullVs LA.#> (aV - pV))
       whenMissingAF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing actuals for outerKey=" <> show outerK
       whenMissingPF outerK _ = PE.throw $ DED.TableMatchingException $ "averageNullSpaceProjections: Missing product for outerKey=" <> show outerK
   MM.mergeA (MM.traverseMissing whenMissingAF) (MM.traverseMissing whenMissingPF) (MM.zipWithAMatched whenMatchedF) actualM prodM
-
 
 avgNullSpaceProjections :: (Double -> Double) -> Map a (Double, LA.Vector LA.R) -> LA.Vector LA.R
 avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fmap (FL.fold FL.mean . VS.toList) . LA.toColumns . LA.fromRows . fmap weight $ M.elems m
@@ -308,36 +338,38 @@ avgNullSpaceProjections popWeightF m = VS.map (/ totalWeight) . VS.fromList . fm
 
 diffCovarianceFldMS :: forall outerK k row w .
                        (Ord outerK)
-                    => (row -> outerK)
+                    => Lens' w Double
+                    -> (row -> outerK)
                     -> (row -> k)
-                    -> (row -> LA.R)
+                    -> (row -> w)
                     -> DMS.MarginalStructure w k
-                    -> FL.Fold row (LA.Vector LA.R, LA.Herm LA.R)
-diffCovarianceFldMS outerKey catKey dat = \cases
-  (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld outerKey catKey dat sts (fmap snd . FL.fold ptFld)
+                    -> FL.Fold row (LA.Vector Double, LA.Herm Double)
+diffCovarianceFldMS wl outerKey catKey dat = \cases
+  (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld wl outerKey catKey dat sts (fmap snd . FL.fold ptFld)
 
-diffCovarianceFld :: forall outerK k row .
-                     (Ord outerK, Ord k, BRK.FiniteSet k)
-                  => (row -> outerK)
+diffCovarianceFld :: forall outerK k row w .
+                     (Ord outerK, Ord k, BRK.FiniteSet k, Monoid w)
+                  => Lens' w Double
+                  -> (row -> outerK)
                   -> (row -> k)
-                  -> (row -> LA.R)
+                  -> (row -> w)
                   -> [DED.Stencil Int]
-                  -> ([(k, Double)] -> [Double])
+                  -> ([(k, w)] -> [w])
                   -> FL.Fold row (LA.Vector LA.R, LA.Herm LA.R)
-diffCovarianceFld outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRows <$> vecsFld
+diffCovarianceFld wl outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRows <$> vecsFld
   where
     allKs :: Set k = BRK.elements
     n = S.size allKs
     nullVecs' = nullSpaceVectors n sts
-    pcF :: VS.Vector Double -> VS.Vector Double
-    pcF = VS.fromList . prodTableF . zip (S.toList allKs) . VS.toList
-    projections v = let w = normalizedVec v in nullVecs' LA.#> (w - pcF w)
-    innerFld = projections <$> labeledRowsToVecFld fst snd
+    wgtVec = VS.fromList . fmap (view wl)
+    pcF :: [w] -> VS.Vector Double
+    pcF = wgtVec . prodTableF . zip (S.toList allKs)
+    projections ws = let ws' = DMS.normalize wl ws in nullVecs' LA.#> (wgtVec ws' - pcF ws)
+    innerFld = projections <$> labeledRowsToListFld fst snd
     vecsFld = MR.mapReduceFold
               MR.noUnpack
               (MR.assign outerKey (\row -> (catKey row, dat row)))
               (MR.foldAndLabel innerFld (\_ v -> v))
-
 
 significantNullVecsMS :: Double
                       -> DMS.MarginalStructure w k
