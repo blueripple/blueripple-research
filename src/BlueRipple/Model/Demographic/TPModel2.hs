@@ -447,8 +447,8 @@ projModel rc alphaKey countF predF mc = do
 runProjModel :: forall (ksO :: [(Symbol, Type)]) ksM pd r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
-                , ksM F.⊆ DDP.ACSByPUMAR
-                , ksO F.⊆ DDP.ACSByPUMAR
+                , ksM F.⊆ DDP.ACSa4ByPUMAR
+                , ksO F.⊆ DDP.ACSa4ByPUMAR
                 , Typeable pd
                 , Ord (F.Record ksO)
                 , BRK.FiniteSet (F.Record ksO)
@@ -460,7 +460,7 @@ runProjModel :: forall (ksO :: [(Symbol, Type)]) ksM pd r .
              -> RunConfig
              -> ModelConfig (F.Record ksM) pd
              -> DMS.MarginalStructure (Sum Double) (F.Record ksO)
-             -> (F.Record DDP.ACSByPUMAR -> pd Double)
+             -> (F.Record DDP.ACSa4ByPUMAR -> pd Double)
              -> K.Sem r (K.ActionWithCacheTime r ())
 runProjModel clearCaches thinM _cmdLine rc mc ms predF = do
   let cacheRoot = "model/demographic/nullVecProjModel/"
@@ -471,7 +471,7 @@ runProjModel clearCaches thinM _cmdLine rc mc ms predF = do
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSByPUMA
+  acsByPUMA_C <- DDP.cachedACSa4ByPUMA
   let outerKey :: ([GT.StateAbbreviation, GT.PUMA] F.⊆ qs) => F.Record qs -> F.Record [GT.StateAbbreviation, GT.PUMA]
       outerKey = F.rcast
       catKeyO :: (ksO F.⊆ qs) => F.Record qs -> F.Record ksO

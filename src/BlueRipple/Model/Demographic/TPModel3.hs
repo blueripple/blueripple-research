@@ -452,14 +452,14 @@ projModel rc mc = do
 runProjModel :: forall (ks :: [(Symbol, Type)]) r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
-                , ks F.⊆ DDP.ACSByPUMAR
+                , ks F.⊆ DDP.ACSa5ByPUMAR
                 )
              => Bool
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
-             -> FL.Fold (F.Record DDP.ACSByPUMAR) (VS.Vector Double)
+             -> FL.Fold (F.Record DDP.ACSa5ByPUMAR) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text))
 runProjModel clearCaches _cmdLine rc mc ms datFld = do
   let cacheRoot = "model/demographic/nullVecProjModel/"
@@ -470,7 +470,7 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSByPUMA
+  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
   let nvpDataCacheKey = cacheRoot <> "nvpRowData" <> dataText mc <> ".bin"
       outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
