@@ -52,7 +52,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Control.Lens (Lens', view, over)
+import Control.Lens (Lens', view, over, (^.), _2)
 import GHC.TypeLits (Symbol)
 
 import qualified CmdStan as CS
@@ -91,16 +91,18 @@ nullVecProjectionsModelDataFld ::  forall outerK k row w .
                                -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double)]
 nullVecProjectionsModelDataFld wl ms nvps outerKey catKey datF datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
-                                 MR.noUnpack
-                                 (MR.assign outerKey id)
-                                 (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+                                   MR.noUnpack
+                                   (MR.assign outerKey id)
+                                   (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
     where
-      allKs :: Set k = BRK.elements
+{-      allKs :: Set k = BRK.elements
       wgtVec = VS.fromList . fmap (view wl)
       pcF :: [w] -> VS.Vector Double
-      pcF =  wgtVec . FL.fold ptFld . zip (S.toList allKs)
+      pcF =  wgtVec . fmap snd . FL.fold ptFld . zip (S.toList allKs)
       projections ws = let ws' = DMS.normalize wl ws in DTP.fullToProj nvps (wgtVec ws' - pcF ws')
       projFld = fmap projections $ DTP.labeledRowsToListFld catKey datF
+-}
+      projFld = DTP.diffProjectionsFromJointFld ms wl (DTP.fullToProj nvps) catKey datF
       innerFld = (,) <$> datFold <*> projFld
 
 newtype NVProjectionRowData ks =
@@ -114,25 +116,32 @@ instance (FS.RecFlat ok, Vinyl.RMap ok) => Flat.Flat (NVProjectionRowData ok) wh
 toProjDataRow :: Int -> (k, VS.Vector Double, VS.Vector Double) -> ProjDataRow k
 toProjDataRow n (k, covariates, projections) = ProjDataRow k covariates (projections VS.! n)
 
-keyedInnerFld ::  (Ord k, BRK.FiniteSet k, F.ElemOf rs DT.PopCount)
-              => (F.Record rs -> k)
-              -> FL.Fold (F.Record rs) (VS.Vector Double)
-keyedInnerFld = fldOne
+cwdInnerFld :: (Ord k, BRK.FiniteSet k)
+            => (F.Record rs -> k)
+            -> (F.Record rs -> DMS.CellWithDensity)
+            -> FL.Fold (F.Record rs) [DMS.CellWithDensity]
+cwdInnerFld keyF datF = fmap M.elems $ marginalVecFld keyF
   where
-    fldOne f = fmap (VS.fromList . M.elems)
-               $ FL.premap (\r -> (f r, realToFrac $ view DT.popCount r)) DMS.normalizeAndFillMapFld
-
+    marginalVecFld f = FL.premap (\r -> (f r, datF r)) (DMS.normalizeAndFillMapFld DMS.cwdWgtLens)
+-- fmap (VS.fromList . fmap DMS.cwdWgt . M.elems)
 
 bLogit :: Double -> Double -> Double
 bLogit eps x
   | x < eps = Numeric.log eps
   | x > 1 - eps = Numeric.log (1 / eps)
   | otherwise = Numeric.log (x / (1 - x))
-keyedInnerFldLogit ::  (Ord k, BRK.FiniteSet k, F.ElemOf rs DT.PopCount)
-                   => Double
-                   -> (F.Record rs -> k)
-                   -> FL.Fold (F.Record rs) (VS.Vector Double)
-keyedInnerFldLogit eps f = fmap (VS.map $ bLogit eps) $ keyedInnerFld f
+
+cwdListToLogitVec :: [DMS.CellWithDensity] -> VS.Vector Double
+cwdListToLogitVec = VS.fromList . fmap (bLogit 1e-10 . DMS.cwdWgt)
+
+cwdListToPWDensity :: [DMS.CellWithDensity] -> Double
+cwdListToPWDensity = FL.fold ((/) <$> FL.premap (\cw -> DMS.cwdWgt cw * DMS.cwdDensity cw) FL.sum <*> FL.premap DMS.cwdWgt FL.sum)
+
+cwdCovariatesFld :: (Ord k, BRK.FiniteSet k)
+                 => (F.Record rs -> k)
+                 -> (F.Record rs -> DMS.CellWithDensity)
+                 -> FL.Fold (F.Record rs) (VS.Vector Double)
+cwdCovariatesFld keyF datF = fmap (\cws -> VS.concat [VS.singleton (cwdListToPWDensity cws), cwdListToLogitVec cws]) $ cwdInnerFld keyF datF
 
 mergeInnerFlds :: [FL.Fold (F.Record rs) (VS.Vector Double)] -> FL.Fold (F.Record rs) (VS.Vector Double)
 mergeInnerFlds = fmap VS.concat . sequenceA
@@ -152,7 +161,7 @@ nullVecProjectionsModelDataFldCheck ::  forall outerK k row w .
                                     -> (row -> w)
                                     -> FL.Fold row (VS.Vector Double) -- covariates
                                     -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double, VS.Vector Double, VS.Vector Double)]
-nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey count datFold = case ms of
+nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey datF datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                    MR.noUnpack
                                    (MR.assign outerKey id)
@@ -160,15 +169,16 @@ nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey count datFold = c
     where
       allKs :: Set k = BRK.elements
       wgtVec = VS.fromList . fmap (view wl)
-      pcF :: [w] -> VS.Vector Double
-      pcF =  wgtVec . FL.fold ptFld . zip (S.toList allKs)
-      results ws = let ws' = DMS.normalize wl ws -- normalized original probs
-                       nSum = FL.fold (FL.premap (view wl) FL.sum) ws -- num of people
-                   in (DTP.fullToProj nvps (wgtVec ws' - pcF ws')
-                      , VS.map (* nSum) (pcF v)
-                      , VS.toList $ fmap (view wl) ws
+      pcF :: [(k, w)] -> VS.Vector Double
+      pcF =  wgtVec . fmap snd . FL.fold ptFld
+      results kws = let kws' = DMS.normalize (_2 . wl) kws -- normalized original probs
+                        nSum = FL.fold (FL.premap (view $ _2 . wl) FL.sum) kws -- num of people
+                    in (DTP.diffProjectionsFromJointKeyedList ms wl (DTP.fullToProj nvps) kws'
+--DTP.fullToProj nvps (wgtVec ws' - pcF ws')
+                      , VS.map (* nSum) (pcF kws')
+                      , VS.fromList $ fmap (view $ _2 . wl) kws
                       )
-      projFld = fmap results $ DTP.labeledRowsToVecFld catKey count
+      projFld = fmap results $ DTP.labeledRowsToKeyedListFld catKey datF
       innerFld = (,) <$> datFold <*> projFld
 
 data ProjData outerK =
@@ -448,7 +458,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) r .
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig
-             -> DMS.MarginalStructure (F.Record ks)
+             -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text))
 runProjModel clearCaches _cmdLine rc mc ms datFld = do
@@ -464,11 +474,11 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
   let nvpDataCacheKey = cacheRoot <> "nvpRowData" <> dataText mc <> ".bin"
       outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
-      count = realToFrac . view DT.popCount
+      datF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
   nvpData_C <- fmap (fmap (fmap unNVProjectionRowData))
                $ BRKU.retrieveOrMakeD nvpDataCacheKey acsByPUMA_C
                $ \acsByPUMA -> (do
-                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld ms mc.projVecs outerKey catKey count datFld) acsByPUMA
+                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms mc.projVecs outerKey catKey datF datFld) acsByPUMA
                                    pure $ fmap NVProjectionRowData rawRows
                                )
   let statesFilter = maybe id (\(_, sts) -> filter ((`elem` sts) . view GT.stateAbbreviation . pdKey)) rc.statesM

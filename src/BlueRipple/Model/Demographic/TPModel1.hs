@@ -50,7 +50,7 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 
-import Control.Lens (view)
+import Control.Lens (view, _2)
 import GHC.TypeLits (Symbol)
 
 import qualified CmdStan as CS
@@ -74,7 +74,7 @@ import qualified Flat
 -- the eigenvectors of the covariance
 nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                    (Ord outerK)
-                               => DMS.MarginalStructure k
+                               => DMS.MarginalStructure (Sum Double) k
                                -> DTP.NullVectorProjections
                                -> (row -> outerK)
                                -> (row -> k)
@@ -82,23 +82,19 @@ nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                -> FL.Fold row md
                                -> FL.Fold row [(outerK, md, LA.Vector LA.R)]
 nullVecProjectionsModelDataFld ms nvps outerKey catKey count datFold = case ms of
-  DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
-                                 MR.noUnpack
-                                 (MR.assign outerKey id)
-                                 (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+  DMS.MarginalStructure _ _ -> MR.mapReduceFold
+                                   MR.noUnpack
+                                   (MR.assign outerKey id)
+                                   (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
     where
-      allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      projections v = let w = DTP.normalizedVec v in DTP.fullToProj nvps (w - pcF w)
-      projFld = fmap projections $ DTP.labeledRowsToVecFld catKey count
+      projFld = DTP.diffProjectionsFromJointFld ms DTP.sumLens (DTP.fullToProj nvps) catKey (Sum . count)
       innerFld = (,) <$> datFold <*> projFld
 
 -- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
 -- the eigenvectors of the covariance
 nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
                                         (Ord outerK)
-                                    => DMS.MarginalStructure k
+                                    => DMS.MarginalStructure (Sum Double) k
                                     -> DTP.NullVectorProjections
                                     -> (row -> outerK)
                                     -> (row -> k)
@@ -111,14 +107,16 @@ nullVecProjectionsModelDataFldCheck ms nvps outerKey catKey count datFold = case
                                    (MR.assign outerKey id)
                                    (MR.foldAndLabel innerFld (\ok (d, (v, pv, nv)) -> (ok, d, v, pv, nv)))
     where
-      allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      results v = let w = DTP.normalizedVec v -- normalized original probs
-                      nSum = VS.sum v -- num of people
-
-                  in (DTP.fullToProj nvps (w - pcF w), VS.map (* nSum) (pcF v), v)
-      projFld = fmap results $ DTP.labeledRowsToVecFld catKey count
+--      allKs :: Set k = BRK.elements
+      pcF :: [(k, Sum Double)] -> VS.Vector Double
+      pcF =  VS.fromList . fmap (getSum . snd) . FL.fold ptFld
+      results kws = let kws' = DMS.normalize (_2 . DTP.sumLens) kws --DTP.normalizedVec v -- normalized original probs
+                        nSum = FL.fold (FL.premap (view $ _2 . DTP.sumLens) FL.sum) kws --VS.sum v -- num of people
+                    in (DTP.diffProjectionsFromJointKeyedList ms DTP.sumLens (DTP.fullToProj nvps) kws' -- DTP.fullToProj nvps (w - pcF w)
+                       , VS.map (* nSum) (pcF kws')
+                       , VS.fromList $ fmap (view $ _2 . DTP.sumLens) kws
+                       )
+      projFld = fmap results $ DTP.labeledRowsToKeyedListFld catKey (Sum . count)
       innerFld = (,) <$> datFold <*> projFld
 
 
@@ -405,7 +403,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig md
-             -> DMS.MarginalStructure (F.Record ks)
+             -> DMS.MarginalStructure (Sum Double) (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
 runProjModel clearCaches _cmdLine rc mc ms datFld = do

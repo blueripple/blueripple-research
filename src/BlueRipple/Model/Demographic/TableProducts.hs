@@ -215,7 +215,7 @@ labeledRowsToTableMapFld outerKey innerKey nF = f <$> labeledRowsToKeyedListFld 
   f :: [((outerK, a), w)] -> Map outerK (Map a w)
   f = FL.fold DMS.tableMapFld
 
-labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, Monoid a) => (row -> k) -> (row -> a) -> FL.Fold row [(k, a)]
+labeledRowsToKeyedListFld :: (Ord k, BRK.FiniteSet k, Monoid w) => (row -> k) -> (row -> w) -> FL.Fold row [(k, w)]
 labeledRowsToKeyedListFld key dat =  M.toList <$> FL.premap (\r -> (key r, dat r)) DMS.zeroFillSummedMapFld
   -- fmap (zip (S.toList BRK.elements) . VS.toList) $ labeledRowsToVecFld key dat
 
@@ -225,6 +225,36 @@ labeledRowsToVec wl key dat = FL.fold (labeledRowsToVecFld wl key dat)
 
 labeledRowsToList :: (Ord k, BRK.FiniteSet k, Foldable f, Monoid w) => (row -> k) -> (row -> w) -> f row -> [w]
 labeledRowsToList key dat = FL.fold (labeledRowsToListFld key dat)
+
+productFromJointFld :: DMS.MarginalStructure w k -> (row -> k) -> (row -> w) -> FL.Fold row [(k, w)]
+productFromJointFld ms keyF datF = case ms of
+  DMS.MarginalStructure _ ptFld -> FL.fold ptFld . M.toList <$> FL.premap (\r -> (keyF r, datF r)) DMS.zeroFillSummedMapFld
+
+productVecFromJointFld :: DMS.MarginalStructure w k -> Lens' w Double -> (row -> k) -> (row -> w) -> FL.Fold row (VS.Vector Double)
+productVecFromJointFld ms wl keyF datF = fmap (VS.fromList . fmap (view wl . snd)) $ productFromJointFld ms keyF datF
+
+diffProjectionsFromJointKeyedList :: forall k w . DMS.MarginalStructure w k
+                                -> Lens' w Double
+                                -> (VS.Vector Double -> VS.Vector Double)
+                                -> [(k, w)]
+                                -> VS.Vector Double
+diffProjectionsFromJointKeyedList ms wl projDiff kl = projDiff (wgtVec kl - prodWeights kl)
+  where
+    wgtVec = VS.fromList . fmap (view wl . snd)
+    prodWeights :: [(k, w)] -> VS.Vector Double
+    prodWeights x = case ms of
+      DMS.MarginalStructure _ ptFld -> wgtVec $ FL.fold ptFld x
+
+diffProjectionsFromJointFld :: forall row k w . (BRK.FiniteSet k, Ord k, Monoid w)
+                               => DMS.MarginalStructure w k
+                               -> Lens' w Double
+                               -> (VS.Vector Double -> VS.Vector Double)
+                               -> (row -> k)
+                               -> (row -> w)
+                               -> FL.Fold row (VS.Vector Double)
+diffProjectionsFromJointFld ms wl projDiff keyF datF = fmap (diffProjectionsFromJointKeyedList ms wl projDiff . M.toList)
+                                                       $ FL.premap (\r -> (keyF r, datF r)) DMS.zeroFillSummedMapFld
+
 
 sumLens :: Lens' (Sum x) x
 sumLens = lens getSum (\sx x -> Sum x)

@@ -58,7 +58,7 @@ import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
 
-import Control.Lens (view)
+import Control.Lens (view, Lens')
 import GHC.TypeLits (Symbol)
 
 import qualified CmdStan as CS
@@ -80,23 +80,22 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 
-productDistributionFld :: forall outerK k row .
+productDistributionFld :: forall outerK k row w .
                           (Ord outerK)
-                       => DMS.MarginalStructure k
+                       => DMS.MarginalStructure w k
+                       -> Lens' w Double
                        -> (row -> outerK)
                        -> (row -> k)
-                       -> (row -> Double)
+                       -> (row -> w)
                        -> FL.Fold row (Map outerK (VS.Vector Double))
-productDistributionFld marginalStructure outerKey catKey count = M.fromList <$> case marginalStructure of
+productDistributionFld marginalStructure wl outerKey catKey datF = M.fromList <$> case marginalStructure of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                    MR.noUnpack
                                    (MR.assign outerKey id)
                                    (MR.foldAndLabel innerFld (,))
     where
-      allKs :: Set k = BRK.elements
-      pcF :: VS.Vector Double -> VS.Vector Double
-      pcF =  VS.fromList . fmap snd . FL.fold ptFld . zip (S.toList allKs) . VS.toList
-      innerFld = DTP.normalizedVec . pcF <$> DTP.labeledRowsToVecFld catKey count
+      pcF =  VS.fromList . fmap (view wl . snd) . FL.fold ptFld
+      innerFld = DTP.normalizedVec . pcF <$> DTP.labeledRowsToKeyedListFld catKey datF
 
 
 
@@ -113,7 +112,7 @@ rowDiffProjections ::  forall outerK k row .
 rowDiffProjections nvps pdMap outerKey catKey r = do
   let ok = outerKey r
       k = catKey r
-      catDist = VS.fromList $ M.elems (M.singleton k 1 <> DMS.zeroMap)
+      catDist = VS.fromList $ fmap getSum $ M.elems (M.singleton k (Sum 1) <> DMS.zeroMap)
   pd <- maybeToRight ("rowDiffProjections: " <> show ok <> " is missing from product structure map!") $ M.lookup ok pdMap
   pure $ DTP.fullToProj nvps (catDist - pd)
 
@@ -460,7 +459,7 @@ runProjModel :: forall (ksO :: [(Symbol, Type)]) ksM pd r .
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig (F.Record ksM) pd
-             -> DMS.MarginalStructure (F.Record ksO)
+             -> DMS.MarginalStructure (Sum Double) (F.Record ksO)
              -> (F.Record DDP.ACSByPUMAR -> pd Double)
              -> K.Sem r (K.ActionWithCacheTime r ())
 runProjModel clearCaches thinM _cmdLine rc mc ms predF = do
@@ -480,11 +479,12 @@ runProjModel clearCaches thinM _cmdLine rc mc ms predF = do
       catKeyM :: (ksM F.⊆ qs) => F.Record qs -> F.Record ksM
       catKeyM = F.rcast
       count = view DT.popCount
+      countS = Sum . realToFrac . count
       takeEach n = fmap snd . List.filter ((== 0) . flip mod n . fst) . zip [0..]
       thin = maybe id takeEach thinM
       dataCacheKey = cacheRoot <> "/projModelData.bin"
   let projDataF acsByPUMA = do
-        let pdByPUMA = FL.fold (productDistributionFld ms outerKey catKeyO (realToFrac . count)) acsByPUMA
+        let pdByPUMA = FL.fold (productDistributionFld ms DTP.sumLens outerKey catKeyO countS) acsByPUMA
         projRows <- K.knitEither $ rowsWithProjectedDiffs mc.projVecs pdByPUMA outerKey catKeyO $ thin $ FL.fold FL.list acsByPUMA
         pure $ ProjData (modelNumNullVecs mc) (DM.rowLength mc.predDMR) projRows
   when clearCaches $ BRK.clearIfPresentD dataCacheKey

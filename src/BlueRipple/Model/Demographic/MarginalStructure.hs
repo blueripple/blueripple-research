@@ -127,6 +127,8 @@ identityMarginalStructure wgtLens = MarginalStructure (fmap (DED.Stencil . pure)
     numCats = S.size $ BRK.elements @k
 {-# INLINEABLE identityMarginalStructure #-}
 
+
+
 data MarginalStructure w k where
   MarginalStructure :: (Monoid w, BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, w) [(k, w)]-> MarginalStructure w k
 
@@ -259,6 +261,8 @@ updateWgt (CellWithDensity _ wd) x = CellWithDensity x wd
 
 cwdWgtLens :: Lens' CellWithDensity Double --(CellWithDensity -> Double, (Double -> Double) -> CellWithDensity -> CellWithDensity)
 cwdWgtLens = lens cwdWgt updateWgt
+
+
 
 instance Semigroup CellWithDensity where
   (CellWithDensity x xwd) <> (CellWithDensity y ywd) =

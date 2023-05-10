@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -49,7 +50,7 @@ import qualified Frames.Streamly.Transform as FST
 import qualified Frames.MapReduce as FMR
 import qualified Control.MapReduce as MR
 
-import Control.Lens (view)
+import Control.Lens (view, Lens')
 import BlueRipple.Model.Demographic.TPModel3 (ModelConfig(distribution))
 
 type CensusASERR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName
@@ -70,13 +71,15 @@ type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type ASR = [DT.Age5FC, DT.SexC, DT.Race5C]
 type ASER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
 
-msSER_ASR :: DMS.MarginalStructure (F.Record ASER)
-msSER_ASR = DMS.reKeyMarginalStructure
-            (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age5FC])
-            (F.rcast @ASER)
-            $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.Age5FC]
-            DMS.identityMarginalStructure DMS.identityMarginalStructure
-
+msSER_ASR :: Monoid w
+          => Lens' w Double
+          -> (Map (F.Record '[DT.Education4C]) w -> Map (F.Record '[DT.Age5FC]) w -> Map (F.Record '[DT.Education4C], F.Record '[DT.Age5FC]) w)
+          -> DMS.MarginalStructure w (F.Record ASER)
+msSER_ASR wl innerProduct = DMS.reKeyMarginalStructure
+                            (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age5FC])
+                            (F.rcast @ASER)
+                            $ DMS.combineMarginalStructuresF @'[DT.SexC, DT.Race5C]
+                            wl innerProduct (DMS.identityMarginalStructure wl) (DMS.identityMarginalStructure wl)
 
 type LDRecoded ks = BRDF.Year ': BRC.LDLocationR V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
@@ -107,7 +110,7 @@ recodeSER = fmap F.rcast . FL.fold reFld
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
 
-
+{-
 ser_asr_tableProductWithDensity :: F.FrameRec (LDRecoded SER) -> F.FrameRec (LDRecoded ASR) -> F.FrameRec (LDRecoded ASER)
 ser_asr_tableProductWithDensity ser asr = DMS.tableProductWithData 1 serWD asrWD
   where
@@ -116,6 +119,7 @@ ser_asr_tableProductWithDensity ser asr = DMS.tableProductWithData 1 serWD asrWD
     serWD = FL.fold (FL.premap (\r -> (F.rcast @SR r, tcwd r)) FL.map) ser
     asrWD = FL.fold (FL.premap (\r -> (F.rcast @SR r, tcwd r)) FL.map) asr
     reFrame (outer, )
+-}
 {-
 censusASR_SER_Products :: K.Sem r
                        => Text
