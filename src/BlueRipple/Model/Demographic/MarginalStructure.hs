@@ -254,7 +254,7 @@ innerProductSum ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- fracs mb]
         fracs m = let s = getSum (FL.fold FL.mconcat m) in M.toList $ if s == 0 then m else fmap (Sum . (/ s) . getSum) m
 {-# INLINEABLE innerProductSum #-}
 
-data CellWithDensity = CellWithDensity { cwdWgt :: !Double, cwdDensity :: !Double }
+data CellWithDensity = CellWithDensity { cwdWgt :: !Double, cwdDensity :: !Double } deriving (Show)
 updateWgt :: CellWithDensity -> Double -> CellWithDensity
 updateWgt (CellWithDensity _ wd) x = CellWithDensity x wd
 {-# INLINE updateWgt #-}
@@ -262,13 +262,14 @@ updateWgt (CellWithDensity _ wd) x = CellWithDensity x wd
 cwdWgtLens :: Lens' CellWithDensity Double --(CellWithDensity -> Double, (Double -> Double) -> CellWithDensity -> CellWithDensity)
 cwdWgtLens = lens cwdWgt updateWgt
 
-
+safeDiv :: Double -> Double -> Double
+safeDiv x y = if y /= 0 then x / y else 0
 
 instance Semigroup CellWithDensity where
   (CellWithDensity x xwd) <> (CellWithDensity y ywd) =
     CellWithDensity
     (x + y)
-    ((x * xwd + y * ywd) / (x + y))
+    ((x * xwd + y * ywd) `safeDiv` (x + y))
 
 instance Semigroup CellWithDensity => Monoid CellWithDensity where
   mempty = CellWithDensity 0 0

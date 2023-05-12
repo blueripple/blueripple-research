@@ -77,8 +77,8 @@ runModel :: forall ks l r .
          => Bool
          -> BR.CommandLine
          -> ModelConfig ()
-         -> (Text, F.Record DDP.ACSa4ByStateR -> l)
-         -> (Text, F.Record DDP.ACSa4ByStateR -> F.Record ks, DM.DesignMatrixRow (F.Record ks))
+         -> (Text, F.Record DDP.ACSa5ByStateR -> l)
+         -> (Text, F.Record DDP.ACSa5ByStateR -> F.Record ks, DM.DesignMatrixRow (F.Record ks))
          -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text ks))
 runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
   let cacheDirE = let k = ("model/demographic/" <> modeledT <> "/") in if clearCaches then Left k else Right k
@@ -90,7 +90,7 @@ runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
                          dataName
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --  _ageModelPaths <- postPaths ("Model" cmdLine
-  acs_C <- DDP.cachedACSa4ByState
+  acs_C <- DDP.cachedACSa5ByState
 --  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap (DDP.acsByStateMN cKey modeledK) acs_C
@@ -359,9 +359,9 @@ stateGroup :: S.GroupTypeTag Text
 stateGroup = S.GroupTypeTag "State"
 
 dmrS_ER :: forall rs . (F.ElemOf rs DT.Education4C
-                           , F.ElemOf rs DT.SexC
-                           , F.ElemOf rs DT.Race5C
-                           )
+                       , F.ElemOf rs DT.SexC
+                       , F.ElemOf rs DT.Race5C
+                       )
                         => DM.DesignMatrixRow (F.Record rs)
 dmrS_ER = DM.DesignMatrixRow "S_ER" [sexRP, raceEduRP]
   where

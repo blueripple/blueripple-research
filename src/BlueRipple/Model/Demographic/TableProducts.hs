@@ -253,7 +253,7 @@ diffProjectionsFromJointFld :: forall row k w . (BRK.FiniteSet k, Ord k, Monoid 
                                -> (row -> w)
                                -> FL.Fold row (VS.Vector Double)
 diffProjectionsFromJointFld ms wl projDiff keyF datF = fmap (diffProjectionsFromJointKeyedList ms wl projDiff . M.toList)
-                                                       $ FL.premap (\r -> (keyF r, datF r)) DMS.zeroFillSummedMapFld
+                                                       $ FL.premap (\r -> (keyF r, datF r)) (DMS.normalizeAndFillMapFld wl)
 
 
 sumLens :: Lens' (Sum x) x

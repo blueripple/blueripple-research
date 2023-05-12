@@ -337,7 +337,7 @@ type ACSByStateCitizenMN = (F.Record ACSByStateCitizenMNR, VU.Vector Int)
 type ACSByStateAgeMNR =  [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]
 type ACSByStateAgeMN = (F.Record ACSByStateAgeMNR, VU.Vector Int)
 
-type ACSByStateEduMNR = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C, DT.PWPopPerSqMile]
+type ACSByStateEduMNR = [BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS, DT.CitizenC, DT.Age5FC, DT.SexC, DT.Race5C, DT.PWPopPerSqMile]
 type ACSByStateEduMN = (F.Record ACSByStateEduMNR, VU.Vector Int)
 
 wgtdDensityF :: FL.Fold (F.Record [DT.PopCount, DT.PWPopPerSqMile]) (F.Record '[DT.PWPopPerSqMile])
@@ -367,7 +367,7 @@ type ACSByStateMNT ks = (F.Record (ACSByStateMNR ks), VU.Vector Int)
 acsByStateMN :: forall ks l . (Ord (F.Record ks), Enum l, Bounded l, Ord l
 --                              , ks F.⊆ ACSByStateR
                               )
-             =>  (F.Record ACSa4ByStateR -> F.Record ks) -> (F.Record ACSa4ByStateR -> l) -> F.FrameRec ACSa4ByStateR -> [ACSByStateMNT ks]
+             =>  (F.Record ACSa5ByStateR -> F.Record ks) -> (F.Record ACSa5ByStateR -> l) -> F.FrameRec ACSa5ByStateR -> [ACSByStateMNT ks]
 acsByStateMN cKey label = filterZeroes .
                           FL.fold (forMultinomial @([BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] V.++ ks)
                                    (\r -> F.rcast @[BRDF.Year, GT.StateAbbreviation, BRDF.StateFIPS] r F.<+> cKey r)
@@ -376,15 +376,15 @@ acsByStateMN cKey label = filterZeroes .
                                    wgtdDensityF
                                   )
 
-acsByStateCitizenMN :: F.FrameRec ACSa4ByStateR -> [ACSByStateCitizenMN]
+acsByStateCitizenMN :: F.FrameRec ACSa5ByStateR -> [ACSByStateCitizenMN]
 acsByStateCitizenMN = acsByStateMN (F.rcast @[DT.SexC, DT.Education4C, DT.Race5C]) (view DT.citizenC)
 
-acsByStateAgeMN :: F.FrameRec ACSa4ByStateR -> [ACSByStateAgeMN]
-acsByStateAgeMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) (view DT.age4C)
+acsByStateAgeMN :: F.FrameRec ACSa5ByStateR -> [ACSByStateAgeMN]
+acsByStateAgeMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.SexC, DT.Education4C, DT.Race5C]) (view DT.age5FC)
 
 
-acsByStateEduMN :: F.FrameRec ACSa4ByStateR -> [ACSByStateEduMN]
-acsByStateEduMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Race5C]) ((== DT.Grad) . DT.education4ToCollegeGrad . view DT.education4C)
+acsByStateEduMN :: F.FrameRec ACSa5ByStateR -> [ACSByStateEduMN]
+acsByStateEduMN = acsByStateMN (F.rcast @[DT.CitizenC, DT.Age5FC, DT.SexC, DT.Race5C]) ((== DT.Grad) . DT.education4ToCollegeGrad . view DT.education4C)
 
 
 collegeGrad :: (F.ElemOf rs DT.EducationC, F.ElemOf rs DT.InCollege) => F.Record rs -> Bool

@@ -395,7 +395,7 @@ projModel rc mc = do
 runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
-                , ks F.⊆ DDP.ACSa4ByPUMAR
+                , ks F.⊆ DDP.ACSa5ByPUMAR
                 , Typeable md
                 , Flat.Flat (md [(Double, Double)])
                 )
@@ -404,17 +404,17 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              -> RunConfig
              -> ModelConfig md
              -> DMS.MarginalStructure (Sum Double) (F.Record ks)
-             -> FL.Fold (F.Record DDP.ACSa4ByPUMAR) (md Double)
+             -> FL.Fold (F.Record DDP.ACSa5ByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
 runProjModel clearCaches _cmdLine rc mc ms datFld = do
-  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel/"
+  let cacheDirE = (if clearCaches then Left else Right) "model/demographic/nullVecProjModel1_A5/"
       dataName = "projectionData_" <> dataText mc
       runnerInputNames = SC.RunnerInputNames
-                         ("br-2022-Demographics/stan/nullVecProj")
+                         ("br-2022-Demographics/stan/nullVecProj_M1_A5")
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSa4ByPUMA
+  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
 --  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
   let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
@@ -507,14 +507,14 @@ data ASERModelP a = ASERModelP { mASER_PWLogDensity :: a, mASER_FracOver45 :: a,
   deriving stock (Show, Generic)
   deriving anyclass Flat.Flat
 
-aserModelDatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                   , F.ElemOf rs DT.Age4C
-                   , F.ElemOf rs DT.Education4C
-                   , F.ElemOf rs DT.Race5C
-                   , F.ElemOf rs DT.PopCount
+a4serModelDatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                    , F.ElemOf rs DT.Age4C
+                    , F.ElemOf rs DT.Education4C
+                    , F.ElemOf rs DT.Race5C
+                    , F.ElemOf rs DT.PopCount
                    )
-             => FL.Fold (F.Record rs) (ASERModelP Double)
-aserModelDatFld = ASERModelP <$> dFld <*> aFld <*> gFld <*> rFld <*> wngFld
+                 => FL.Fold (F.Record rs) (ASERModelP Double)
+a4serModelDatFld = ASERModelP <$> dFld <*> aFld <*> gFld <*> rFld <*> wngFld
   where
     nPeople = realToFrac . view DT.popCount
     dens r = let x = view DT.pWPopPerSqMile r in if x > 1 then Numeric.log x else 0
@@ -522,6 +522,31 @@ aserModelDatFld = ASERModelP <$> dFld <*> aFld <*> gFld <*> rFld <*> wngFld
     wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
     dFld = wgtdFld dens
     over45 = (`elem` [DT.A4_45To64, DT.A4_65AndOver]) . view DT.age4C
+    grad = (== DT.E4_CollegeGrad) . view DT.education4C
+    ofColor = (/= DT.R5_WhiteNonHispanic) . view DT.race5C
+    fracFld f = safeDiv <$> FL.prefilter f wgtFld <*> wgtFld
+    wng x = not (ofColor x) && not (grad x)
+    aFld = fracFld over45
+    gFld = fracFld grad
+    rFld = fracFld ofColor
+    wngFld = fracFld wng
+
+a5serModelDatFld :: (F.ElemOf rs DT.PWPopPerSqMile
+                    , F.ElemOf rs DT.Age5FC
+                    , F.ElemOf rs DT.Education4C
+                    , F.ElemOf rs DT.Race5C
+                    , F.ElemOf rs DT.PopCount
+                    )
+                 => FL.Fold (F.Record rs) (ASERModelP Double)
+a5serModelDatFld = ASERModelP <$> fmap safeLog dFld <*> aFld <*> gFld <*> rFld <*> wngFld
+  where
+    nPeople = realToFrac . view DT.popCount
+    safeLog x = if x > 1 then Numeric.log x else 0
+    dens = view DT.pWPopPerSqMile --let x = view DT.pWPopPerSqMile r in
+    wgtFld = FL.premap nPeople FL.sum
+    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
+    dFld = wgtdFld dens
+    over45 = (`elem` [DT.A5F_45To64, DT.A5F_65AndOver]) . view DT.age5FC
     grad = (== DT.E4_CollegeGrad) . view DT.education4C
     ofColor = (/= DT.R5_WhiteNonHispanic) . view DT.race5C
     fracFld f = safeDiv <$> FL.prefilter f wgtFld <*> wgtFld
@@ -616,7 +641,7 @@ model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
     wgtFld = FL.premap nPeople FL.sum
     wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
     dFld = wgtdFld dens
-    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
+    fracFld f = safeDiv <$> FL.prefilter f wgtFld <*> wgtFld
     cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
     gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
     rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
