@@ -67,6 +67,23 @@ data CensusTables p d a s e r c l
                  , sexRaceEmployment ::  F.FrameRec (CensusRow p d [s, r, l])
                  } deriving stock Generic
 
+filterCensusTables :: forall p d a s e r c l . (FI.RecVec (CensusRow p d [a, s, r])
+                                               , FI.RecVec (CensusRow p d [s, r, c])
+                                               , FI.RecVec (CensusRow p d [s, e, r])
+                                               , FI.RecVec (CensusRow p d [s, r, l])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [a, s, r])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [s, r, c])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [s, e, r])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [s, r, l])
+                                               )
+                   =>  (F.Record (p V.++ d) -> Bool) -> CensusTables p d a s e r c l -> CensusTables p d a s e r c l
+filterCensusTables g (CensusTables a b c d) = CensusTables (f @[a, s, r] a) (f @[s, r, c] b) (f @[s, e, r] c) (f @[s, r ,l] d) where
+  f :: forall ks . (FI.RecVec (CensusRow p d ks)
+                   ,((p V.++ d) F.⊆ CensusRow p d ks )
+                    )
+    => F.FrameRec (CensusRow p d ks) -> F.FrameRec (CensusRow p d ks)
+  f = F.filterFrame (g . F.rcast)
+
 instance Semigroup (CensusTables p d a s e r c l) where
   (CensusTables a1 a2 a3 a4) <> (CensusTables b1 b2 b3 b4) = CensusTables (a1 <> b1) (a2 <> b2) (a3 <> b3) (a4 <> b4)
 

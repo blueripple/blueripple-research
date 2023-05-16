@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -21,11 +22,14 @@ import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.TPModel2 as DTM2
 import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
+import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Model.Demographic.BLCorrModel as DBLC
 import qualified BlueRipple.Data.Keyed as Keyed
 
 --import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.CensusLoaders as BRC
+import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -263,6 +267,12 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
+    K.logLE K.Info "Building SLD-level product tables"
+    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
+    sldASERProducts <- DMC.censusASR_SER_Products "model/demographic/test/sld2022ASERProducts_MA.bin"
+                       $ fmap (BRC.filterCensusTables ((== 25) . view GT.stateFIPS)) sld2022CensusTables_C
+
+    K.knitError "STOP"
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
     acsA5ByPUMA <-  K.ignoreCacheTime acsA5ByPUMA_C

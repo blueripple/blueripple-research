@@ -206,7 +206,7 @@ normalizedTableMapFld wgtLens = FL.premap keyPreMap $ fmap (normalizeMap . (<> c
   where
     keyPreMap ((o, k), n) = (o, (k, n))
     sum' mm = FL.fold FL.sum $ fmap (FL.fold (FL.premap (view wgtLens) FL.sum)) mm
-    normalizeMap mm = fmap (fmap (over wgtLens  (/ sum' mm))) mm
+    normalizeMap mm = let mmSum = sum' mm in fmap (fmap (over wgtLens (/ mmSum))) mm
 {-# INLINEABLE normalizedTableMapFld #-}
 
 

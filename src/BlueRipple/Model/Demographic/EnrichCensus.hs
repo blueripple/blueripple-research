@@ -147,10 +147,11 @@ censusASR_SER_Products :: (K.KnitEffects r, BRK.CacheEffects r)
                        => Text
                        -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusASERR))
-censusASR_SER_Products cacheKey censusTables_C = BRK.retrieveOrMakeFrame cacheKey censusTables_C f
-  where
+censusASR_SER_Products cacheKey censusTables_C = do
+  let
     f :: K.KnitEffects r => BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusASERR)
     f (BRC.CensusTables asr _ ser _) = do
+      K.logLE K.Info "censusASE_SER_Products.f called"
       let --toMapFld :: (row -> k) -> (row -> F.Record ds) -> FL.Fold row (Map k (F.FrameRec ds))
           toMapFld kF dF = fmap M.fromList
                            (MR.mapReduceFold
@@ -175,7 +176,11 @@ censusASR_SER_Products cacheKey censusTables_C = BRK.retrieveOrMakeFrame cacheKe
                     (MM.zipWithAMatched whenMatchedF)
                     asrMap
                     serMap
+      K.logLE K.Info "censusASE_SER_Products.productMap built"
       pure $ mconcat $ fmap (\(k, fr) -> fmap (k F.<+>) fr) $ M.toList productMap
+  K.logLE K.Info "censusASE_SER_Products called"
+  BRK.retrieveOrMakeFrame cacheKey censusTables_C f
+
 
 {-
 type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
