@@ -76,6 +76,9 @@ type ASER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
 type LDKey ks = BRDF.Year ': BRC.LDLocationR V.++ ks
 type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
+
+
+
 msSER_ASR :: Monoid w
           => Lens' w Double
           -> (Map (F.Record '[DT.Education4C]) w -> Map (F.Record '[DT.Age5FC]) w -> Map (F.Record '[DT.Education4C], F.Record '[DT.Age5FC]) w)
@@ -114,8 +117,6 @@ recodeSER = fmap F.rcast . FL.fold reFld
              (FMR.assignKeysAndData @(LDKey [DT.SexC, DT.Education4C]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
-
-
 ser_asr_tableProductWithDensity :: F.FrameRec (KeysWD SER) -> F.FrameRec (KeysWD ASR) -> F.FrameRec (KeysWD ASER)
 ser_asr_tableProductWithDensity ser asr = F.toFrame $ fmap toRecord $ concat $ fmap pushOuterIn $ M.toList $ fmap M.toList
                                           $ DMS.tableProduct DMS.innerProductCWD serMap asrMap
@@ -125,7 +126,7 @@ ser_asr_tableProductWithDensity ser asr = F.toFrame $ fmap toRecord $ concat $ f
     tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
     tcwd r = DMS.CellWithDensity (realToFrac $ view DT.popCount r) (view DT.pWPopPerSqMile r)
     okF :: (SR F.⊆ rs) => F.Record rs -> F.Record SR
-    okF = F.rcast @SR
+    okF = F.rcast
     serTMFld :: FL.Fold (F.Record (KeysWD SER)) (Map (F.Record SR) (Map (F.Record '[DT.Education4C]) DMS.CellWithDensity))
     serTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Education4C] r), tcwd r)) $ DMS.normalizedTableMapFld DMS.cwdWgtLens
     asrTMFld :: FL.Fold (F.Record (KeysWD ASR)) (Map (F.Record SR) (Map (F.Record '[DT.Age5FC]) DMS.CellWithDensity))
@@ -152,7 +153,7 @@ censusASR_SER_Products cacheKey censusTables_C = do
     f :: K.KnitEffects r => BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusASERR)
     f (BRC.CensusTables asr _ ser _) = do
       K.logLE K.Info "censusASE_SER_Products.f called"
-      let --toMapFld :: (row -> k) -> (row -> F.Record ds) -> FL.Fold row (Map k (F.FrameRec ds))
+      let toMapFld :: (FSI.RecVec ds, Ord k) => (row -> k) -> (row -> F.Record ds) -> FL.Fold row (Map k (F.FrameRec ds))
           toMapFld kF dF = fmap M.fromList
                            (MR.mapReduceFold
                               MR.noUnpack
@@ -167,7 +168,7 @@ censusASR_SER_Products cacheKey censusTables_C = do
           serF = F.rcast
           asrMap = FL.fold (toMapFld keyF asrF) $ recodeASR asr
           serMap = FL.fold (toMapFld keyF serF) $ recodeSER ser
-          whenMatchedF k asr' ser' = pure $ ser_asr_tableProductWithDensity ser' asr'
+          whenMatchedF k asr' ser' = pure (ser_asr_tableProductWithDensity ser' asr')
           whenMissingASRF k _ = K.knitError $ "Missing ASR table for k=" <> show k
           whenMissingSERF k _ = K.knitError $ "Missing SER table for k=" <> show k
       productMap <- MM.mergeA
@@ -180,6 +181,8 @@ censusASR_SER_Products cacheKey censusTables_C = do
       pure $ mconcat $ fmap (\(k, fr) -> fmap (k F.<+>) fr) $ M.toList productMap
   K.logLE K.Info "censusASE_SER_Products called"
   BRK.retrieveOrMakeFrame cacheKey censusTables_C f
+
+
 
 
 {-

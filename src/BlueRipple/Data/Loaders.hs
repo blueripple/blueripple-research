@@ -26,7 +26,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import BlueRipple.Data.LoadersCore
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
-import Control.Lens ((%~))
+import Control.Lens ((%~), view)
 import qualified Data.Map as M
 import qualified Data.Sequence as Sequence
 import Data.Serialize.Text ()
@@ -36,11 +36,13 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.OrMissing as FS
+import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Melt as F
 import qualified Frames.MaybeUtils as FM
 import qualified Frames.Serialize as FS
 import qualified Frames.Transform as FT
 import qualified Knit.Report as K
+import qualified Knit.Utilities.Streamly as KS
 
 localDataDir :: Text
 localDataDir :: Text = "../data-sets/data/"
@@ -320,6 +322,20 @@ stateAbbrCrosswalkLoader = do
   BR.retrieveOrMakeFrame "data/stateAbbr.bin" statesRaw_C $ \fRaw ->
     K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
 {-# INLINEABLE stateAbbrCrosswalkLoader #-}
+
+addStateAbbrUsingFIPS ::  (K.KnitEffects r, BR.CacheEffects r, F.ElemOf rs GT.StateFIPS, FI.RecVec rs)
+                      => F.FrameRec rs -> K.Sem r (F.FrameRec (GT.StateAbbreviation ': rs))
+addStateAbbrUsingFIPS rs = do
+  stateAbbrCrosswalk <- K.ignoreCacheTimeM stateAbbrCrosswalkLoader
+  let assoc r = (view GT.stateFIPS r, view GT.stateAbbreviation r)
+      m = FL.fold (FL.premap assoc FL.map) stateAbbrCrosswalk
+      lookupAndAdd r = do
+        let fips = view GT.stateFIPS r
+        case M.lookup fips m of
+          Nothing -> KS.errStreamly $ "addStateAbbrUsingFIPS: missing FIPS=" <> show fips <> " in stateAbbrCrosswalk."
+          Just sa -> pure $ sa F.&: r
+  KS.streamlyToKnit $ FST.concurrentMapM lookupAndAdd rs
+{-# INLINEABLE addStateAbbrUsingFIPS #-}
 
 parseCensusRegion :: T.Text -> Either Text GT.CensusRegion
 parseCensusRegion "Northeast" = Right GT.Northeast

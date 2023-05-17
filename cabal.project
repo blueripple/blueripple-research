@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
@@ -45,10 +45,10 @@ source-repository-package
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: b1b8eb577f1a615e0de33b57d726950db639536a
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: b1b8eb577f1a615e0de33b57d726950db639536a
 
 source-repository-package
   type: git

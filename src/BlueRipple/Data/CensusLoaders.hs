@@ -317,13 +317,13 @@ reToR5Fld =
             onh = DT.combinePWDRecs combineDiff o oh
             bh = DT.combinePWDRecs combineDiff nwh oh
             bnh = DT.combinePWDRecs combineDiff b bh
-            h = DT.combinePWDRecs combineSum wh (DT.combinePWDRecs combineSum bh oh)
+            rh = DT.combinePWDRecs combineSum wh (DT.combinePWDRecs combineSum bh oh)
         in F.toFrame
            [
              DT.R5_Other F.&: onh
            , DT.R5_Black F.&: bnh
            , DT.R5_Asian F.&: a
-           , DT.R5_Hispanic F.&: h
+           , DT.R5_Hispanic F.&: rh
            , DT.R5_WhiteNonHispanic F.&: wnh
            ]
   in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
