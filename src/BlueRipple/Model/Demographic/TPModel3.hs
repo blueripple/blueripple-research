@@ -135,12 +135,18 @@ cwdListToLogitVec :: [DMS.CellWithDensity] -> VS.Vector Double
 cwdListToLogitVec = VS.fromList . fmap (bLogit 1e-10 . DMS.cwdWgt)
 
 cwdListToLogPWDensity :: [DMS.CellWithDensity] -> Double
-cwdListToLogPWDensity = FL.fold (safeLogDiv <$> FL.premap (\cw -> DMS.cwdWgt cw * DMS.cwdDensity cw) FL.sum <*> FL.premap DMS.cwdWgt FL.sum)
+cwdListToLogPWDensity = --FL.fold (safeLogDiv <$> FL.premap (\cw -> DMS.cwdWgt cw * DMS.cwdDensity cw) FL.sum <*> FL.premap DMS.cwdWgt FL.sum)
+  posLog . snd . FL.fold (DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity)
 
+posLog :: Double -> Double
+posLog z = if z < 1 then 0 else Numeric.log z
+
+{-
 safeLogDiv :: Double -> Double -> Double
 safeLogDiv x y = if y < 1e-10 then 0
                  else let z = x / y
                       in if z < 1 then 0 else Numeric.log z
+-}
 {-
 cwdCovariatesFld :: (Ord k, BRK.FiniteSet k)
                  => (F.Record rs -> k)
@@ -195,17 +201,22 @@ data ProjData outerK =
   , pdRows :: [ProjDataRow outerK]
   }
 
-data ModelResult g =
-  ModelResult { mrGeoAlpha :: Map g Double
-              , mrSI :: V.Vector (Double, Double)
-              }
+data ComponentPredictor g =
+  ComponentPredictor { mrGeoAlpha :: Map g Double
+                     , mrSI :: V.Vector (Double, Double)
+                     }
   deriving stock (Generic)
 
 
-deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ModelResult g)
+deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
+
+data Predictor g = Predictor {predNVP :: DTP.NullVectorProjections, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
+
+deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (Predictor g)
+
 
 modelResultNVP :: (Show g, Ord g)
-               => ModelResult g
+               => ComponentPredictor g
                -> g
               -> VS.Vector Double
                -> Either Text Double
@@ -216,8 +227,8 @@ modelResultNVP mr g md = do
         beta = V.sum $ V.zipWith applyOne (VS.convert md) (mrSI mr)
     pure $ geoAlpha + beta
 
-modelResultNVPs :: (Show g, Ord g, Traversable f) => f (ModelResult g) -> g -> VS.Vector Double -> Either Text (f Double)
-modelResultNVPs mrs g cvs = traverse (\mr -> modelResultNVP mr g cvs) mrs
+modelResultNVPs :: (Show g, Ord g) => Predictor g -> g -> VS.Vector Double -> Either Text [Double]
+modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
@@ -255,8 +266,7 @@ distributionText StudentTDist = "studentT"
 data ModelConfig =
   ModelConfig
   {
-    projVecs :: DTP.NullVectorProjections
-  , standardizeNVs :: Bool
+    standardizeNVs :: Bool
   , designMatrixRow :: DM.DesignMatrixRow (VS.Vector Double)
   , alphaModel :: AlphaModel
   , distribution :: Distribution
@@ -468,10 +478,12 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) r .
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig
+             -> K.ActionWithCacheTime r (F.FrameRec DDP.ACSa5ByPUMAR)
+             -> K.ActionWithCacheTime r DTP.NullVectorProjections
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSa5ByPUMAR) (VS.Vector Double)
-             -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text))
-runProjModel clearCaches _cmdLine rc mc ms datFld = do
+             -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
+runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   let cacheRoot = "model/demographic/nullVecProjModel3_A5/"
       cacheDirE = (if clearCaches then Left else Right) cacheRoot
       dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
@@ -480,15 +492,16 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
+--  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
   let nvpDataCacheKey = cacheRoot <> "nvpRowData" <> dataText mc <> ".bin"
       outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
 --      datF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
+      nvpDeps = (,) <$> acs_C <*>  nvps_C
   nvpData_C <- fmap (fmap (fmap unNVProjectionRowData))
-               $ BRKU.retrieveOrMakeD nvpDataCacheKey acsByPUMA_C
-               $ \acsByPUMA -> (do
-                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms mc.projVecs outerKey catKey cwdF datFld) acsByPUMA
+               $ BRKU.retrieveOrMakeD nvpDataCacheKey nvpDeps
+               $ \(acsByPUMA, nvps) -> (do
+                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms nvps outerKey catKey cwdF datFld) acsByPUMA
                                    pure $ fmap NVProjectionRowData rawRows
                                )
   let statesFilter = maybe id (\(_, sts) -> filter ((`elem` sts) . view GT.stateAbbreviation . pdKey)) rc.statesM
@@ -500,7 +513,7 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
   modelData <- K.ignoreCacheTime modelData_C
   let meanSD = FL.fold (FL.premap pdCoeff meanSDFld) $ pdRows modelData
   K.logLE K.Info $ "meanSD=" <> show meanSD
-  states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acsByPUMA_C
+  states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
                 (projModel rc mc)
@@ -526,7 +539,7 @@ projModelResultAction :: forall outerK r .
                          , Typeable outerK
                          )
                       => ModelConfig
-                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ModelResult Text)
+                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor Text)
 projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
@@ -556,7 +569,7 @@ projModelResultAction mc = SC.UseSummary f where
       p -> do
         betaV <- getVector "beta"
         pure $ V.fromList $ zip (fmap rescaleAlphaBeta $ V.toList betaV) mdMeansL
-    pure $ ModelResult geoMap betaSI
+    pure $ ComponentPredictor geoMap betaSI
 
 {-
 data ASERModelP a = ASERModelP { mASER_PWLogDensity :: a, mASER_FracOver45 :: a, mASER_FracGrad :: a, mASER_FracOfColor :: a , mASER_FracWNG :: a  }

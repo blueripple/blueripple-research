@@ -111,14 +111,19 @@ FTH.declareColumn "PWPopPerSqMile" ''Double
 -- the following folds are required a lot
 -- what follows assumes that the set of records being folded comprise people living in the
 -- same area, so the sq-distance denominator of all the densities is the same
-densityAndPopFld :: (r -> Double) -> (r -> Int) -> (r -> Double) -> FL.Fold r (Int, Double)
-densityAndPopFld linearCombinationWgtF numPeopleF densityF = (,) <$> pplFld <*> wgtdFld
+densityAndPopFld' :: (r -> Double) -> (r -> Double) -> (r -> Double) -> FL.Fold r (Double, Double)
+densityAndPopFld' linearCombinationWgtF pplWgtF densityF = (,) <$> pplFld <*> wgtdFld
   where
-    wgt r = linearCombinationWgtF r * realToFrac (numPeopleF r)
-    pplFld = FL.premap numPeopleF FL.sum
+    wgt r = linearCombinationWgtF r * pplWgtF r
+    pplFld = FL.premap pplWgtF FL.sum
     wgtFld = FL.premap wgt FL.sum
     safeDiv x y = if y == 0 then 0 else x / y
     wgtdFld = safeDiv <$> FL.premap (\r -> wgt r * densityF r) FL.sum <*> wgtFld
+{-# INLINEABLE densityAndPopFld' #-}
+
+
+densityAndPopFld :: (r -> Double) -> (r -> Int) -> (r -> Double) -> FL.Fold r (Int, Double)
+densityAndPopFld linearCombinationWgtF numPeopleF densityF = fmap (first round) $ densityAndPopFld' linearCombinationWgtF (realToFrac . numPeopleF) densityF
 {-# INLINEABLE densityAndPopFld #-}
 
 pwDensityAndPopFldRecG :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])

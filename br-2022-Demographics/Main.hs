@@ -316,18 +316,21 @@ main = do
           (F.rcast @A5SER)
           DTM3.cwdF
           msSER_A5SR_cwd
-    K.logLE K.Info $ "Computing covariance matrix of projected differences."
-    let (projMeans, projCovariances) = FL.fold projCovariancesFld acsA5ByPUMA
-        (eigVals, eigVecs) = LA.eigSH projCovariances
+    nullVectorProjections_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs.bin" acsA5ByPUMA_C
+      $ \acsA5ByPUMA -> do
+
+      K.logLE K.Info $ "Computing covariance matrix of projected differences."
+      let (projMeans, projCovariances) = FL.fold projCovariancesFld acsA5ByPUMA
+          (eigVals, eigVecs) = LA.eigSH projCovariances
 --    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
 --    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
-    K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
-    let nullSpaceVectors = DTP.nullSpaceVectorsMS msSER_A5SR_cwd
+      K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
+--      let nullSpaceVectors = DTP.nullSpaceVectorsMS msSER_A5SR_cwd
 --    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
-    let numNullSpaceVectors = VS.length projMeans
-        nvProjections = DTP.uncorrelatedNullVecsMS msSER_A5SR_cwd projCovariances
-        testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
-        cMatrix = DED.mMatrix (DMS.msNumCategories msSER_A5SR_cwd) (DMS.msStencils msSER_A5SR_cwd)
+--      let numNullSpaceVectors = VS.length projMeans
+      pure $ DTP.uncorrelatedNullVecsMS msSER_A5SR_cwd projCovariances
+--        testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
+    let cMatrix = DED.mMatrix (DMS.msNumCategories msSER_A5SR_cwd) (DMS.msStencils msSER_A5SR_cwd)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
 
     let tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
@@ -340,23 +343,30 @@ main = do
                                           , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast  @[DT.Age5FC, DT.SexC, DT.Race5C]) DTM3.cwdF
                                           ]
         tp3RunConfig n = DTM3.RunConfig n False False Nothing
-        tp3ModelConfig = DTM3.ModelConfig testProjections True (DTM3.dmr "SER_ASR" (tp3NumKeys + 1)) -- +1 for pop density
+        tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "SER_ASR" (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
-        modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig msSER_A5SR_cwd tp3InnerFld
+        modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msSER_A5SR_cwd tp3InnerFld
 
     K.logLE K.Info "Running marginals as covariates model, if necessary."
-    model3Res_C <- sequenceA <$> mapM modelOne [0..(numNullSpaceVectors - 1)]
+    let modelResultDeps = (,) <$> acsA5ByPUMA_C <*> nullVectorProjections_C
+    model3Res_C <- BRK.retrieveOrMakeD "model/demographic/nsMarginalsResult.bin" modelResultDeps
+                   $ \(_, nvps) -> (do
+                                       cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
+                                       modelResults <- K.ignoreCacheTime cachedModelResults
+                                       pure $ DTM3.Predictor nvps modelResults
+                                   )
     model3Result <- K.ignoreCacheTime model3Res_C
 
     acsA5ByCD_C <- DDP.cachedACSa5ByCD
     acsA5ByCD :: F.FrameRec DDP.ACSa5ByCDR <-  K.ignoreCacheTime acsA5ByCD_C
 --    BRK.logFrame $ F.filterFrame (\r -> (r ^. GT.stateAbbreviation == "WI") && (r ^. GT.congressionalDistrict == 5)) $ acsA5ByCD
 --    K.knitError "STOP"
+    let nullVectorProjections = DTM3.predNVP model3Result
     let cdModelData3 = FL.fold
                        (DTM3.nullVecProjectionsModelDataFldCheck
                          DMS.cwdWgtLens
                          msSER_A5SR_cwd
-                         testProjections
+                         nullVectorProjections
                          (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
                          (F.rcast @A5SER)
                          DTM3.cwdF
@@ -369,7 +379,7 @@ main = do
         smcRowToProdAndModeled3 (ok, md, _, pV, _, _) = do
           let n = VS.sum pV
           nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result (view GT.stateAbbreviation ok) md)
-          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
+          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ n) pV)
 --            simplexNVPs = DTP.fullToProj testProjections simplexFull
 --          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
           let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
@@ -381,10 +391,11 @@ main = do
 
       when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
 --        K.logLE K.Info $ keyT <> " nvps (actual) =" <> DED.prettyVector nVpsActual
+        projections <- K.ignoreCacheTime nullVectorProjections_C
         let showSum v = " (" <> show (VS.sum v) <> ")"
         K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
         K.logLE K.Info $ keyT <> " prod    counts=" <> DED.prettyVector pV <> showSum pV
-        let nvpsV = DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV
+        let nvpsV = DTP.applyNSPWeights projections (VS.map (* n) nVpsActual) pV
         K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector nvpsV <> showSum nvpsV
         let cCheckV = cMatrix LA.#> (nV - pV)
         K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
@@ -392,8 +403,8 @@ main = do
         K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
         nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result (view GT.stateAbbreviation sar) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
-        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
-            simplexNVPs = DTP.fullToProj testProjections simplexFull
+        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights projections nvpsModeled (VS.map (/ n) pV)
+            simplexNVPs = DTP.fullToProj projections simplexFull
 --        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
         K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs <> showSum simplexNVPs
         let modeledCountsV = VS.map (* n) simplexFull
@@ -414,7 +425,7 @@ main = do
     let cdModelData1 = FL.fold
                        (DTM1.nullVecProjectionsModelDataFldCheck
                          msSER_A5SR_sd
-                         testProjections
+                         nullVectorProjections
                          (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
                          (F.rcast @A5SER)
                          (realToFrac . view DT.popCount)
@@ -423,7 +434,7 @@ main = do
                        acsA5ByCD
 
     K.logLE K.Info $ "Running model summary stats as covariates model, if necessary."
-    let modelConfig = DTM1.ModelConfig testProjections True
+    let modelConfig = DTM1.ModelConfig nullVectorProjections True
                       DTM1.designMatrixRowASER DTM1.AlphaHierNonCentered DTM1.NormalDist DTM1.aserModelFuncs
     res_C <- DTM1.runProjModel @A5SER False cmdLine (DTM1.RunConfig False False) modelConfig msSER_A5SR_sd DTM1.a5serModelDatFld
     modelRes <- K.ignoreCacheTime res_C
@@ -443,13 +454,13 @@ main = do
 --        K.logLE K.Info $ keyT <> " nvps (actual) =" <> DED.prettyVector nVpsActual
         K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> " (" <> show (VS.sum nV) <> ")"
         K.logLE K.Info $ keyT <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
-        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights testProjections (VS.map (* n) nVpsActual) pV)
+        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights nullVectorProjections (VS.map (* n) nVpsActual) pV)
         K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
         K.logLE K.Info $ keyT <> " predictors: " <> show md
         nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled
-        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ VS.sum pV) pV)
-            simplexNVPs = DTP.fullToProj testProjections simplexFull
+        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ VS.sum pV) pV)
+            simplexNVPs = DTP.fullToProj nullVectorProjections simplexFull
 --        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
         K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs
         K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector (VS.map (* VS.sum pV) simplexFull)
@@ -458,7 +469,7 @@ main = do
     let smcRowToProdAndModeled1 (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
           nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
-          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights testProjections nvpsModeled (VS.map (/ n) pV)
+          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ n) pV)
 --            simplexNVPs = DTP.fullToProj testProjections simplexFull
 --          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
           let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV

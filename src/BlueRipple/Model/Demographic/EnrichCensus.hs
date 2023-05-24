@@ -22,6 +22,7 @@ import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
+import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
 
 import qualified BlueRipple.Data.Keyed as Keyed
 
@@ -38,13 +39,16 @@ import qualified Knit.Utilities.Streamly as KS
 
 import qualified Stan.ModelRunner as SMR
 
+import Control.Lens (view, (^.))
+import qualified Control.Foldl as FL
+
 import qualified Data.Map as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
-import qualified Control.Foldl as FL
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
@@ -52,13 +56,11 @@ import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.MapReduce as FMR
 import qualified Control.MapReduce as MR
+import qualified Numeric.LinearAlgebra as LA
+
 
 import Control.Lens (view, Lens')
 import BlueRipple.Model.Demographic.TPModel3 (ModelConfig(distribution))
-
-type CensusASERR = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName
-                   , DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile
-                   ]
 
 
 {-
@@ -76,7 +78,8 @@ type ASER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
 type LDKey ks = BRDF.Year ': BRC.LDLocationR V.++ ks
 type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
-
+type ASERDataR =   [DT.PopCount, DT.PWPopPerSqMile]
+type CensusASERR = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName] V.++ ASER V.++ ASERDataR
 
 
 msSER_ASR :: Monoid w
@@ -152,7 +155,7 @@ censusASR_SER_Products cacheKey censusTables_C = do
   let
     f :: K.KnitEffects r => BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusASERR)
     f (BRC.CensusTables asr _ ser _) = do
-      K.logLE K.Info "censusASE_SER_Products.f called"
+      K.logLE K.Info "Building/re-building censusASR_SER products"
       let toMapFld :: (FSI.RecVec ds, Ord k) => (row -> k) -> (row -> F.Record ds) -> FL.Fold row (Map k (F.FrameRec ds))
           toMapFld kF dF = fmap M.fromList
                            (MR.mapReduceFold
@@ -177,10 +180,53 @@ censusASR_SER_Products cacheKey censusTables_C = do
                     (MM.zipWithAMatched whenMatchedF)
                     asrMap
                     serMap
-      K.logLE K.Info "censusASE_SER_Products.productMap built"
       pure $ mconcat $ fmap (\(k, fr) -> fmap (k F.<+>) fr) $ M.toList productMap
-  K.logLE K.Info "censusASE_SER_Products called"
   BRK.retrieveOrMakeFrame cacheKey censusTables_C f
+
+covariates :: Map (F.Record ASER) DMS.CellWithDensity -> VS.Vector Double
+covariates m =
+  let serInASER :: F.Record ASER -> F.Record SER
+      serInASER = F.rcast
+      asrInASER :: F.Record ASER -> F.Record ASR
+      asrInASER = F.rcast
+      serInASER_stencils = fmap (DMS.expandStencil serInASER)
+                           $ DMS.msStencils
+                           $ DMS.identityMarginalStructure @(F.Record SER) DMS.cwdWgtLens
+      asrInASER_stencils = fmap (DMS.expandStencil asrInASER)
+                           $ DMS.msStencils
+                           $ DMS.identityMarginalStructure @(F.Record SER) DMS.cwdWgtLens
+      cMatrix = DED.mMatrix (S.size $ Keyed.elements @(F.Record ASER)) (serInASER_stencils <> asrInASER_stencils)
+      vec = VS.fromList . fmap DMS.cwdWgt . M.elems
+      marginals m = VS.map (DTM3.bLogit 1e-10) $ (cMatrix LA.#> vec m)
+      pwDensity = snd . FL.fold (DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity)
+  in VS.concat [VS.singleton (pwDensity m), marginals m]
+
+modeledCensusASER :: (K.KnitEffects r, BRK.CacheEffects r)
+                  => Bool
+                  -> Text
+                  -> K.ActionWithCacheTime r (DTM3.Predictor Text)
+                  -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
+                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusASERR))
+modeledCensusASER rebuild cacheRoot modelResult_C censusTables_C = do
+  let productCacheKey = cacheRoot <> "_products.bin"
+      modeledCacheKey = cacheRoot <> "_modeled.bin"
+  when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD modeledCacheKey
+  products_C <- censusASR_SER_Products productCacheKey censusTables_C
+  let modeled nvps sa product = do
+        let key = F.rcast @ASER
+            w r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
+            g r = (key r, w r)
+            prodMap = FL.fold (FL.premap g $ DMS.normalizedTableMapFld) product
+            pV = VS.fromList $ fmap DMS.cwdWgt $ M.elems prodMap
+            covs = covariates prodMap
+            n =
+        let (productVec, n) = FL.fold ()
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result sa covariates)
+        let simplexFull = VS.map
+  let f :: K.KnitEffects r
+        => DTM3.Predictor Text -> F.FrameRec CensusASERR -> K.Sem r (F.FrameRec CensusASERR)
+      f (DTM3.Predictor nvp cps) products = do
+
 
 
 

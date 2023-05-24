@@ -57,6 +57,9 @@ import qualified Data.Vector.Unboxed as VU
 
 import Control.Lens (Lens', view, over, lens)
 
+import qualified Flat
+import Flat.Instances.Vector()
+
 normalizedVec :: VS.Vector Double -> VS.Vector Double
 normalizedVec v = VS.map (/ VS.sum v) v
 
@@ -108,6 +111,14 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 
 data NullVectorProjections =
   NullVectorProjections { nvpProj :: LA.Matrix LA.R, nvpRot :: LA.Matrix LA.R }
+
+instance Flat.Flat NullVectorProjections where
+  size (NullVectorProjections p r) = Flat.size (LA.toRows p, LA.toRows r)
+  encode (NullVectorProjections p r) = Flat.encode (LA.toRows p, LA.toRows r)
+  decode = (\(pVs, rVs) -> NullVectorProjections (LA.fromRows pVs) (LA.fromRows rVs)) <$> Flat.decode
+
+numProjections :: NullVectorProjections -> Int
+numProjections (NullVectorProjections p _) = fst $ LA.size p
 
 fullToProjM :: NullVectorProjections -> LA.Matrix LA.R
 fullToProjM (NullVectorProjections pM rM) = LA.tr rM LA.<> pM
