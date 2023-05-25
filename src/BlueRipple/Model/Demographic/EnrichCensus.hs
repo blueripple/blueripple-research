@@ -129,19 +129,18 @@ ser_asr_tableProductWithDensity ser asr = F.toFrame $ fmap toRecord $ concat $ f
                                           $ DMS.tableProduct DMS.innerProductCWD serMap asrMap
   where
     pushOuterIn (o, xs) = fmap (o,) xs
-    n = FL.fold (FL.premap (view DT.popCount) FL.sum) ser
     tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
     tcwd r = DMS.CellWithDensity (realToFrac $ view DT.popCount r) (view DT.pWPopPerSqMile r)
     okF :: (SR F.⊆ rs) => F.Record rs -> F.Record SR
     okF = F.rcast
     serTMFld :: FL.Fold (F.Record (KeysWD SER)) (Map (F.Record SR) (Map (F.Record '[DT.Education4C]) DMS.CellWithDensity))
-    serTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Education4C] r), tcwd r)) $ DMS.normalizedTableMapFld DMS.cwdWgtLens
+    serTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Education4C] r), tcwd r)) DMS.tableMapFld
     asrTMFld :: FL.Fold (F.Record (KeysWD ASR)) (Map (F.Record SR) (Map (F.Record '[DT.Age5FC]) DMS.CellWithDensity))
-    asrTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Age5FC] r), tcwd r)) $ DMS.normalizedTableMapFld DMS.cwdWgtLens
+    asrTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Age5FC] r), tcwd r)) DMS.tableMapFld
     serMap = FL.fold serTMFld ser
     asrMap = FL.fold asrTMFld asr
     cwdToRec :: DMS.CellWithDensity -> F.Record [DT.PopCount, DT.PWPopPerSqMile]
-    cwdToRec cwd = round (realToFrac n * DMS.cwdWgt cwd) F.&: DMS.cwdDensity cwd F.&: V.RNil
+    cwdToRec cwd = round (DMS.cwdWgt cwd) F.&: DMS.cwdDensity cwd F.&: V.RNil
     toRecord :: (F.Record SR
                 , ((F.Record '[DT.Education4C], F.Record '[DT.Age5FC]), DMS.CellWithDensity)
                 )
@@ -174,8 +173,12 @@ censusASR_SER_Products cacheKey censusTables_C = do
           asrF = F.rcast
           serF :: ((KeysWD SER) F.⊆ rs) => F.Record rs -> F.Record (KeysWD SER)
           serF = F.rcast
-          asrMap = FL.fold (toMapFld keyF asrF) $ recodeASR asr
-          serMap = FL.fold (toMapFld keyF serF) $ recodeSER ser
+          recodedASR = recodeASR asr
+          recodedSER = recodeSER ser
+      BRK.logFrame recodedASR
+      BRK.logFrame recodedSER
+      let asrMap = FL.fold (toMapFld keyF asrF) $ recodedASR
+          serMap = FL.fold (toMapFld keyF serF) $ recodedSER
           whenMatchedF k asr' ser' = pure (ser_asr_tableProductWithDensity ser' asr')
           whenMissingASRF k _ = K.knitError $ "Missing ASR table for k=" <> show k
           whenMissingSERF k _ = K.knitError $ "Missing SER table for k=" <> show k
@@ -226,7 +229,7 @@ predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
       logitMarginals' = logitMarginals logitMarginalsCMatrix
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- censusASR_SER_Products productCacheKey censusTables_C
-  K.ignoreCacheTime products_C >>= BRK.logFrame
+--  K.ignoreCacheTime products_C >>= BRK.logFrame
   K.knitError "STOP"
   let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD ASER)) (F.FrameRec (KeysWD ASER))
       predictFld predictor sa =

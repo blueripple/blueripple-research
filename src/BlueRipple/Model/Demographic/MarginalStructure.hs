@@ -286,11 +286,12 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
     forProd m =
       let evenFrac = 1 / realToFrac (M.size m)
           sumWgtFld = FL.premap cwdWgt FL.sum
-          wgtdDensityFld = FL.premap (\t -> cwdWgt t * cwdDensity t) FL.sum
-          (sumWgts, sumWgtdDensities) = FL.fold ((,) <$> sumWgtFld <*> wgtdDensityFld) m
-          g (CellWithDensity x xwd) = if sumWgts == 0 then (evenFrac, evenFrac) else
-                                        if sumWgtdDensities == 0 then (x / sumWgts, evenFrac)
-                                        else (x / sumWgts, xwd / sumWgtdDensities)
+          sumWgtdDensityFld = FL.premap (\t -> cwdWgt t * cwdDensity t) FL.sum
+          (sumWgts, sumWgtdDensities) = FL.fold ((,) <$> sumWgtFld <*> sumWgtdDensityFld) m
+          g (CellWithDensity x xwd)
+            | sumWgts == 0 = (evenFrac, evenFrac)
+            | sumWgtdDensities == 0 = (x / sumWgts, evenFrac)
+            | otherwise = (x / sumWgts, x * xwd / sumWgtdDensities)
       in M.toList $ fmap g m
 {-# INLINEABLE innerProductCWD #-}
 
