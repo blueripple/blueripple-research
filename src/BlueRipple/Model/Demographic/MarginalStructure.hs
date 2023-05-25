@@ -276,7 +276,7 @@ instance Semigroup CellWithDensity => Monoid CellWithDensity where
   mappend = (<>)
 
 updateWeightCWD :: Double -> CellWithDensity -> CellWithDensity
-updateWeightCWD x (CellWithDensity wgt pwDensity) = CellWithDensity x (pwDensity * x / wgt)
+updateWeightCWD x (CellWithDensity wgt pwDensity) = CellWithDensity x (pwDensity * if wgt == 0 then 1 else x / wgt)
 
 innerProductCWD :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
@@ -284,10 +284,13 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
     f (a, CellWithDensity xw xwd) (b, (yw', ywd')) = ((a, b), CellWithDensity (xw * yw') (xwd * ywd'))
     forProd :: Map x CellWithDensity -> [(x, (Double, Double))]
     forProd m =
-      let sumWgtFld = FL.premap cwdWgt FL.sum
+      let evenFrac = 1 / realToFrac (M.size m)
+          sumWgtFld = FL.premap cwdWgt FL.sum
           wgtdDensityFld = FL.premap (\t -> cwdWgt t * cwdDensity t) FL.sum
           (sumWgts, sumWgtdDensities) = FL.fold ((,) <$> sumWgtFld <*> wgtdDensityFld) m
-          g (CellWithDensity x xwd) = if sumWgts == 0 then (x, 0) else (x / sumWgts, xwd / sumWgtdDensities)
+          g (CellWithDensity x xwd) = if sumWgts == 0 then (evenFrac, evenFrac) else
+                                        if sumWgtdDensities == 0 then (x / sumWgts, evenFrac)
+                                        else (x / sumWgts, xwd / sumWgtdDensities)
       in M.toList $ fmap g m
 {-# INLINEABLE innerProductCWD #-}
 

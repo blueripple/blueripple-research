@@ -323,6 +323,12 @@ stateAbbrCrosswalkLoader = do
     K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
 {-# INLINEABLE stateAbbrCrosswalkLoader #-}
 
+stateAbbrFromFIPSMapLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Int Text)
+stateAbbrFromFIPSMapLoader = do
+  stateAbbrCrosswalk <- K.ignoreCacheTimeM stateAbbrCrosswalkLoader
+  let assoc r = (view GT.stateFIPS r, view GT.stateAbbreviation r)
+  pure $ FL.fold (FL.premap assoc FL.map) stateAbbrCrosswalk
+
 addStateAbbrUsingFIPS ::  (K.KnitEffects r, BR.CacheEffects r, F.ElemOf rs GT.StateFIPS, FI.RecVec rs)
                       => F.FrameRec rs -> K.Sem r (F.FrameRec (GT.StateAbbreviation ': rs))
 addStateAbbrUsingFIPS rs = do

@@ -218,7 +218,7 @@ deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (Predictor g)
 modelResultNVP :: (Show g, Ord g)
                => ComponentPredictor g
                -> g
-              -> VS.Vector Double
+               -> VS.Vector Double
                -> Either Text Double
 modelResultNVP mr g md = do
     geoAlpha <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g) $ M.lookup g mr.mrGeoAlpha
@@ -229,6 +229,24 @@ modelResultNVP mr g md = do
 
 modelResultNVPs :: (Show g, Ord g) => Predictor g -> g -> VS.Vector Double -> Either Text [Double]
 modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
+
+-- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
+predictedJoint :: forall g k w . (Show g, Ord g)
+               => Lens' w Double
+               -> (Double -> w -> w) -- this might not be the lens update
+               -> Predictor g
+               -> g
+               -> VS.Vector Double
+               -> [(k, w)]
+               -> Either Text [(k, w)]
+predictedJoint wgtLens updateWgt p gk covariates keyedProduct = do
+  let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
+      prodV = VS.fromList $ fmap (view wgtLens . snd) keyedProduct
+  nvpsPrediction <- VS.fromList <$> modelResultNVPs p gk covariates
+  let onSimplex = DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
+      newWeights = VS.map (* n) onSimplex
+      f (newWgt, (k, w)) = (k, updateWgt newWgt w)
+  pure $ fmap f $ zip (VS.toList newWeights) keyedProduct
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"

@@ -268,11 +268,8 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
     K.logLE K.Info "Building SLD-level product tables"
-    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
-    sldASERProducts <- DMC.censusASR_SER_Products "model/demographic/test/sld2022ASERProducts_MA.bin"
-                       $ fmap (BRC.filterCensusTables ((== 25) . view GT.stateFIPS)) sld2022CensusTables_C
 
-    K.knitError "STOP"
+--    K.knitError "STOP"
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
     acsA5ByPUMA <-  K.ignoreCacheTime acsA5ByPUMA_C
@@ -356,6 +353,12 @@ main = do
                                        pure $ DTM3.Predictor nvps modelResults
                                    )
     model3Result <- K.ignoreCacheTime model3Res_C
+    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
+    let filteredCensusTables_C = fmap (BRC.filterCensusTables ((== 25) . view GT.stateFIPS)) sld2022CensusTables_C
+    testPredicted_C <- DMC.predictedCensusASER True "model/demographic/test/predictedMA" model3Res_C filteredCensusTables_C
+    K.ignoreCacheTime testPredicted_C >>= BRK.logFrame
+    K.knitError "STOP"
+
 
     acsA5ByCD_C <- DDP.cachedACSa5ByCD
     acsA5ByCD :: F.FrameRec DDP.ACSa5ByCDR <-  K.ignoreCacheTime acsA5ByCD_C
