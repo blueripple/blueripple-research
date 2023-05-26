@@ -102,6 +102,7 @@ instance FV.ToVLDataValue (F.ElField PopCountOf) where
 
 --type PopCount = "PopCount" F.:-> Int
 FTH.declareColumn "PopCount" ''Int
+FTH.declareColumn "TotalPopCount" ''Int
 
 --type PopPerSqMile = "PopPerSqMile" F.:-> Double
 FTH.declareColumn "PopPerSqMile" ''Double
@@ -111,14 +112,17 @@ FTH.declareColumn "PWPopPerSqMile" ''Double
 -- the following folds are required a lot
 -- what follows assumes that the set of records being folded comprise people living in the
 -- same area, so the sq-distance denominator of all the densities is the same
+safeDiv :: Double -> Double -> Double
+safeDiv x y = if y == 0 then 0 else x / y
+
 densityAndPopFld' :: (r -> Double) -> (r -> Double) -> (r -> Double) -> FL.Fold r (Double, Double)
-densityAndPopFld' linearCombinationWgtF pplWgtF densityF = (,) <$> pplFld <*> wgtdFld
+densityAndPopFld' linearCombinationWgtF pplF densityF = (,) <$> pplFld <*> wgtdDensFld
   where
-    wgt r = linearCombinationWgtF r * pplWgtF r
-    pplFld = FL.premap pplWgtF FL.sum
-    wgtFld = FL.premap wgt FL.sum
-    safeDiv x y = if y == 0 then 0 else x / y
-    wgtdFld = safeDiv <$> FL.premap (\r -> wgt r * densityF r) FL.sum <*> wgtFld
+    wgt r = linearCombinationWgtF r * pplF r
+--    pplFld = FL.premap pplWgtF FL.sum
+    pplFld = FL.premap wgt FL.sum
+
+    wgtdDensFld = safeDiv <$> (FL.premap (\r -> wgt r * densityF r) FL.sum) <*> pplFld
 {-# INLINEABLE densityAndPopFld' #-}
 
 
@@ -134,6 +138,7 @@ pwDensityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => F
 pwDensityAndPopFldRec = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld (const 1) (view popCount) (view pWPopPerSqMile)
 {-# INLINEABLE pwDensityAndPopFldRec #-}
 
+{-
 densityAndPopFldRecG :: (F.ElemOf rs PopCount, F.ElemOf rs PopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
 densityAndPopFldRecG = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld fst (view popCount . snd) (view popPerSqMile . snd)
 {-# INLINEABLE densityAndPopFldRecG #-}
@@ -141,9 +146,12 @@ densityAndPopFldRecG = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld
 densityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PopPerSqMile) => FL.Fold (F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
 densityAndPopFldRec = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld (const 1) (view popCount) (view popPerSqMile)
 {-# INLINEABLE densityAndPopFldRec #-}
+-}
 
 combinePWDensities :: (Int -> Int -> (forall a. Num a => a -> a -> a)) -> (Int, Double) -> (Int, Double) -> (Int, Double)
-combinePWDensities f (n1, pwd1) (n2, pwd2) = (f n1 n2 n1 n2, f n1 n2 (realToFrac n1 * pwd1) (realToFrac n2 * pwd2))
+combinePWDensities f (n1, pwd1) (n2, pwd2) =
+  let wgt = f n1 n2 n1 n2
+  in  (wgt, f n1 n2 (realToFrac n1 * pwd1) (realToFrac n2 * pwd2) `safeDiv` realToFrac wgt)
 {-# INLINEABLE combinePWDensities #-}
 
 combinePWDRecs :: (Int -> Int -> (forall a. Num a => a -> a -> a))

@@ -34,6 +34,9 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 
+import qualified Numeric.LinearAlgebra as LA
+import qualified Data.Vector.Storable as VS
+
 normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
 normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
@@ -294,6 +297,21 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
             | otherwise = (x / sumWgts, x * xwd / sumWgtdDensities)
       in M.toList $ fmap g m
 {-# INLINEABLE innerProductCWD #-}
+
+innerProductCWD' :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
+innerProductCWD' ma mb =
+  let na = FL.fold (FL.premap cwdWgt FL.sum) ma
+      nb = FL.fold (FL.premap cwdWgt FL.sum) mb -- this should be the same and maybe we shoudl check?
+      ma' = fmap (over cwdWgtLens $ (/ na)) ma
+      mb' = fmap (over cwdWgtLens $ (/ nb)) mb
+      pab = [(a, b) | a <- M.toList ma', b <- M.toList mb']
+      vecA x =  VS.fromList $ fmap (\((a, aw), (b, bw)) -> if x == a then cwdWgt bw else 0) pab
+      vecB x = VS.fromList $ fmap (\((a, aw), (b, bw)) -> if x == b then cwdWgt aw else 0) pab
+      rows = (fmap vecA $ M.keys ma') <> (fmap vecB $ M.keys mb')
+      m = LA.fromRows rows
+      rhs = VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')
+
+{-# INLINEABLE innerProductCWD' #-}
 
 {-
 -- given a k2 product fold and a map (k1 -> k2) we can generate a k1 product zero-info product fold by assuming every k1 which maps to a k2

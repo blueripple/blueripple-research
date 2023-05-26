@@ -30,6 +30,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Loaders as BR
 
 import qualified Control.Foldl as FL
+import Control.Lens (view, (^.))
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.Vinyl as V
@@ -58,7 +59,8 @@ censusDataDir = "../bigData/Census"
 -- p is location prefix
 -- d is per-location data
 -- ks is table key
-type CensusRow p d ks = '[BR.Year] V.++ p V.++ d V.++ ks V.++ '[DT.PopCount]
+type CensusRowUC p d ks = '[BR.Year] V.++ p V.++ d V.++ ks
+type CensusRow p d ks = CensusRowUC p d ks V.++ '[DT.PopCount]
 
 data CensusTables p d a s e r c l
   = CensusTables { ageSexRace :: F.FrameRec (CensusRow p d [a, s, r])
@@ -132,7 +134,7 @@ instance (FieldC Flat.Flat a
 --type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[DT.PopCount]
 
 type LoadedCensusTablesByLD
-  = CensusTables BRC.LDLocationR BRC.ExtensiveDataR BRC.Age14C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
+  = CensusTables BRC.LDLocationR BRC.CensusDataR BRC.Age14C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                            , BR.CacheEffects r)
@@ -144,7 +146,8 @@ censusTablesByDistrict filesByYear cacheName = do
                              <> KT.allTableDescriptions BRC.sexByAgeByEmployment (BRC.sexByAgeByEmploymentPrefix ty)
       makeConsolidatedFrame ty tableDF prefixF keyRec vTableRows = do
         vTRs <- K.knitEither $ traverse (KT.consolidateTables tableDF (prefixF ty)) vTableRows
-        return $ frameFromTableRows BRC.unLDPrefix keyRec (BRC.tableYear ty) vTRs
+        let frame = frameFromTableRows BRC.unLDPrefix keyRec (BRC.tableYear ty) vTRs
+        pure frame
       doOneYear (ty, f) = do
         (_, vTableRows) <- K.knitEither =<< (K.liftKnit $ KT.decodeCSVTablesFromFile @BRC.LDPrefix (tableDescriptions ty) $ toString f)
         K.logLE K.Diagnostic $ "Loaded and parsed \"" <> f <> "\" for " <> show (BRC.tableYear ty) <> "."
@@ -159,7 +162,7 @@ censusTablesByDistrict filesByYear cacheName = do
         let fldSumAges = FMR.concatFold
                        $ FMR.mapReduceFold
                        FMR.noUnpack
-                       (FMR.assignKeysAndData @(CensusRow BRC.LDLocationR BRC.ExtensiveDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[DT.PopCount])
+                       (FMR.assignKeysAndData @(CensusRowUC BRC.LDLocationR BRC.CensusDataR [BRC.RaceEthnicityC, DT.SexC, BRC.EmploymentC]) @'[DT.PopCount])
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
         return $ CensusTables
@@ -258,9 +261,9 @@ checkAllCongressionalAndConvert rs = do
 
 
 
-type CensusSERR = CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
+type CensusSERR = CensusRow BRC.LDLocationR BRC.CensusDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
 type CensusRecodedR  = BRC.LDLocationR
-                       V.++ BRC.ExtensiveDataR
+                       V.++ BRC.CensusDataR
                        V.++ [DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount, DT.PopPerSqMile]
 
 -- add density to these folds
@@ -300,7 +303,7 @@ reToR4HFld =
 
 reToR5Fld :: FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Race5C, DT.PopCount, DT.PWPopPerSqMile])
 reToR5Fld =
-  let withRE re = FL.prefilter ((== re) . F.rgetField @BRC.RaceEthnicityC) $ FL.premap (F.rcast @[DT.PopCount, DT.PWPopPerSqMile]) DT.pwDensityAndPopFldRec
+  let withRE re = FL.prefilter ((== re) . view BRC.raceEthnicityC) $ FL.premap (F.rcast @[DT.PopCount, DT.PWPopPerSqMile]) DT.pwDensityAndPopFldRec
       wFld = withRE BRC.R_White
       bFld = withRE BRC.R_Black
       aFld = withRE BRC.R_Asian
@@ -309,7 +312,7 @@ reToR5Fld =
       wnhFld = withRE BRC.E_WhiteNonHispanic
       recode w b a o h wnh =
         let combineDiff _ _ x y = x - y
-            combineSum _ _ x y = x + y
+--            combineSum _ _ x y = x + y
             combineMin n1 n2 x1 x2 = if n1 < n2 then x1 else x2
             wh = DT.combinePWDRecs combineDiff w wnh
             nwh = DT.combinePWDRecs combineDiff h wh
@@ -317,16 +320,17 @@ reToR5Fld =
             onh = DT.combinePWDRecs combineDiff o oh
             bh = DT.combinePWDRecs combineDiff nwh oh
             bnh = DT.combinePWDRecs combineDiff b bh
-            rh = DT.combinePWDRecs combineSum wh (DT.combinePWDRecs combineSum bh oh)
+--            rh = DT.combinePWDRecs combineSum wh (DT.combinePWDRecs combineSum bh oh)
         in F.toFrame
            [
              DT.R5_Other F.&: onh
            , DT.R5_Black F.&: bnh
            , DT.R5_Asian F.&: a
-           , DT.R5_Hispanic F.&: rh
+           , DT.R5_Hispanic F.&: h
            , DT.R5_WhiteNonHispanic F.&: wnh
            ]
-  in recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
+  in --recode <$> bFld <*> bFld <*> bFld <*> bFld <*> bFld <*> bFld
+    recode <$> wFld <*> bFld <*> aFld <*> oFld <*> hFld <*> wnhFld
 
 
 age14ToAge5FFld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Age5FC, DT.PopCount, DT.PWPopPerSqMile])
@@ -358,12 +362,12 @@ censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, BRC.RaceEthnicityC]))
+             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.CensusDataR V.++ '[DT.SexC, BRC.RaceEthnicityC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const edToCGFld)
       fld2 = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.ExtensiveDataR V.++ '[DT.SexC, DT.CollegeGradC]))
+             (FMR.assignKeysAndData @(BRC.LDLocationR V.++ BRC.CensusDataR V.++ '[DT.SexC, DT.CollegeGradC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const reToR4HFld)
 {-
       edFld :: FL.Fold (F.Record [DT.Education4C, BRC.RaceEthnicityC, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, BRC.RaceEthnicityC, DT.PopCount])
@@ -419,19 +423,19 @@ raceBySexByAgeByEmploymentKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.EmpAge, BRC
 raceBySexByAgeByEmploymentKeyRec (r, (s, a, l)) = s F.&: r F.&: a F.&: l F.&: V.RNil
 {-# INLINE raceBySexByAgeByEmploymentKeyRec #-}
 
-type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.ExtensiveDataR V.++ '[DT.PopCount])
-                                   , ((ks V.++ p) V.++ (BRC.ExtensiveDataR V.++ '[DT.PopCount])) F.⊆ CensusRow p BRC.ExtensiveDataR ks
-                                   , CensusRow p' BRC.ExtensiveDataR ks F.⊆ ((BR.Year ': (ks V.++ p')) V.++ (BRC.ExtensiveDataR V.++ '[DT.PopCount]))
+type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.CensusDataR V.++ '[DT.PopCount])
+                                   , ((ks V.++ p) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])) F.⊆ CensusRow p BRC.CensusDataR ks
+                                   , CensusRow p' BRC.CensusDataR ks F.⊆ ((BR.Year ': (ks V.++ p')) V.++ (BRC.CensusDataR V.++ '[DT.PopCount]))
 --                                      , ((p' V.++ ks) V.++ (ed V.++ '[DT.PopCount])) F.⊆ (BR.Year ': ((ks V.++ p') V.++ (ed V.++ '[DT.PopCount])))
---                                      , FF.ConstrainedFoldable Num (BRC.ExtensiveDataR V.++ '[DT.PopCount])
+--                                      , FF.ConstrainedFoldable Num (BRC.CensusDataR V.++ '[DT.PopCount])
                                       )
 
 aggregateCensusTableByPrefixF :: forall ks p p'. AggregateByPrefixC ks p p'
                               => (F.Record p -> F.Record p')
-                              -> FL.Fold (F.Record (CensusRow p BRC.ExtensiveDataR ks)) (F.FrameRec (CensusRow p' BRC.ExtensiveDataR ks))
+                              -> FL.Fold (F.Record (CensusRow p BRC.CensusDataR ks)) (F.FrameRec (CensusRow p' BRC.CensusDataR ks))
 aggregateCensusTableByPrefixF mapP =
   K.dimap F.rcast (fmap F.rcast)
-  $ FA.aggregateFold @(BR.Year ': ks) @p @p' @(BRC.ExtensiveDataR V.++ '[DT.PopCount]) mapP (FF.foldAllConstrained @Num FL.sum)
+  $ FA.aggregateFold @(BR.Year ': ks) @p @p' @(BRC.CensusDataR V.++ '[DT.PopCount]) mapP (FF.foldAllConstrained @Num FL.sum)
 
 aggregateCensusTablesByPrefix :: forall p p' a s e r c l.
                                  ( AggregateByPrefixC [a, s, r] p p'
@@ -440,8 +444,8 @@ aggregateCensusTablesByPrefix :: forall p p' a s e r c l.
                                  , AggregateByPrefixC [s, r, l] p p'
                                  )
                               => (F.Record p -> F.Record p')
-                              -> CensusTables p BRC.ExtensiveDataR a s e r c l
-                              -> CensusTables p' BRC.ExtensiveDataR a s e r c l
+                              -> CensusTables p BRC.CensusDataR a s e r c l
+                              -> CensusTables p' BRC.CensusDataR a s e r c l
 aggregateCensusTablesByPrefix f (CensusTables t1 t2 t3 t4) =
   CensusTables
   (FL.fold (aggregateCensusTableByPrefixF @[a, s, r] f) t1)

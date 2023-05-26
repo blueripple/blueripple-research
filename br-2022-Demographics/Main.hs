@@ -354,7 +354,8 @@ main = do
                                    )
     model3Result <- K.ignoreCacheTime model3Res_C
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
-    let filteredCensusTables_C = fmap (BRC.filterCensusTables ((== 25) . view GT.stateFIPS)) sld2022CensusTables_C
+    let censusTableCond r = r ^. GT.stateFIPS == 25 && r ^. GT.districtName == "SUFFOLK8"
+        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
     testPredicted_C <- DMC.predictedCensusASER True "model/demographic/test/predictedMA" model3Res_C filteredCensusTables_C
     K.ignoreCacheTime testPredicted_C >>= BRK.logFrame
     K.knitError "STOP"

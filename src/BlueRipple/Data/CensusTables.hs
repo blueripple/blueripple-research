@@ -40,8 +40,8 @@ F.declareColumn "PerCapitaIncome" ''Double
 F.declareColumn "TotalIncome" ''Double
 
 type LDLocationR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
-type LDPrefixR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.PopCount, DT.PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
-type ExtensiveDataR = [DT.PopCount, SqMiles, TotalIncome, DT.PWPopPerSqMile]
+type LDPrefixR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.TotalPopCount, DT.PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
+type CensusDataR = [SqMiles, TotalIncome, DT.PWPopPerSqMile]
 
 {-
 --newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }

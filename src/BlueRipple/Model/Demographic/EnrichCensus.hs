@@ -98,7 +98,7 @@ msSER_ASR wl innerProduct = DMS.reKeyMarginalStructure
 
 type LDRecoded ks = LDKey ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
-recodeASR :: F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [BRC.Age14C, DT.SexC, BRC.RaceEthnicityC])
+recodeASR :: F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [BRC.Age14C, DT.SexC, BRC.RaceEthnicityC])
           -> F.FrameRec (LDRecoded ASR)
 recodeASR = fmap F.rcast . FL.fold reFld . FL.fold ageFld
   where
@@ -114,7 +114,7 @@ recodeASR = fmap F.rcast . FL.fold reFld . FL.fold ageFld
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
 
-recodeSER ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC])
+recodeSER ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC])
           -> F.FrameRec (LDRecoded SER)
 recodeSER = fmap F.rcast . FL.fold reFld
   where
@@ -175,8 +175,8 @@ censusASR_SER_Products cacheKey censusTables_C = do
           serF = F.rcast
           recodedASR = recodeASR asr
           recodedSER = recodeSER ser
-      BRK.logFrame recodedASR
-      BRK.logFrame recodedSER
+--      BRK.logFrame ser
+--      BRK.logFrame recodedSER
       let asrMap = FL.fold (toMapFld keyF asrF) $ recodedASR
           serMap = FL.fold (toMapFld keyF serF) $ recodedSER
           whenMatchedF k asr' ser' = pure (ser_asr_tableProductWithDensity ser' asr')
@@ -229,7 +229,7 @@ predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
       logitMarginals' = logitMarginals logitMarginalsCMatrix
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- censusASR_SER_Products productCacheKey censusTables_C
---  K.ignoreCacheTime products_C >>= BRK.logFrame
+  K.ignoreCacheTime products_C >>= BRK.logFrame
   K.knitError "STOP"
   let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD ASER)) (F.FrameRec (KeysWD ASER))
       predictFld predictor sa =
@@ -268,9 +268,9 @@ predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
 
 
 {-
-type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.ExtensiveDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
+type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
 type CensusASERRecodedR = BRC.LDLocationR
-                          V.++ BRC.ExtensiveDataR
+                          V.++ BRC.CensusDataR
                           V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount, DT.PopPerSqMile]
 -}
 

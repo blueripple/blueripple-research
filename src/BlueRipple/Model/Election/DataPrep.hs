@@ -685,10 +685,10 @@ type SenateRaceKeyR = [BR.Year, GT.StateAbbreviation, BR.Special, BR.Stage]
 type ElexDataR = [ET.Office, BR.Stage, BR.Runoff, BR.Special, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]
 
 type HouseModelCensusTablesByCD =
-  Census.CensusTables Census.LDLocationR Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
+  Census.CensusTables Census.LDLocationR Census.CensusDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
 
 type HouseModelCensusTablesByState =
-  Census.CensusTables '[BR.StateFips] Census.ExtensiveDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
+  Census.CensusTables '[BR.StateFips] Census.CensusDataR DT.Age5FC DT.SexC DT.CollegeGradC Census.RaceEthnicityC DT.CitizenC Census.EmploymentC
 
 pumsByPUMA
   ∷ (F.Record PUMS.PUMS → Bool)
