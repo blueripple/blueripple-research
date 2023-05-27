@@ -126,7 +126,7 @@ recodeSER = fmap F.rcast . FL.fold reFld
 
 ser_asr_tableProductWithDensity :: F.FrameRec (KeysWD SER) -> F.FrameRec (KeysWD ASR) -> F.FrameRec (KeysWD ASER)
 ser_asr_tableProductWithDensity ser asr = F.toFrame $ fmap toRecord $ concat $ fmap pushOuterIn $ M.toList $ fmap M.toList
-                                          $ DMS.tableProduct DMS.innerProductCWD serMap asrMap
+                                          $ DMS.tableProduct DMS.innerProductCWD' serMap asrMap
   where
     pushOuterIn (o, xs) = fmap (o,) xs
     tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity

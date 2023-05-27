@@ -298,19 +298,28 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
       in M.toList $ fmap g m
 {-# INLINEABLE innerProductCWD #-}
 
-innerProductCWD' :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
+innerProductCWD' :: (BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD' ma mb =
   let na = FL.fold (FL.premap cwdWgt FL.sum) ma
       nb = FL.fold (FL.premap cwdWgt FL.sum) mb -- this should be the same and maybe we shoudl check?
       ma' = fmap (over cwdWgtLens $ (/ na)) ma
       mb' = fmap (over cwdWgtLens $ (/ nb)) mb
-      pab = [(a, b) | a <- M.toList ma', b <- M.toList mb']
-      vecA x =  VS.fromList $ fmap (\((a, aw), (b, bw)) -> if x == a then cwdWgt bw else 0) pab
-      vecB x = VS.fromList $ fmap (\((a, aw), (b, bw)) -> if x == b then cwdWgt aw else 0) pab
+      countAB ((a, wa), (b, wb)) = ((a, b), realToFrac na * cwdWgt wa * cwdWgt wb)
+      gmDens ((_, wa), (_, wb)) = sqrt $ cwdDensity wa * cwdDensity wb
+      ab = [(a, b) | a <- M.toList ma', b <- M.toList mb']
+      countsAB = fmap countAB ab
+      gmDensV = VS.fromList $ fmap gmDens ab
+      vecA x =  VS.fromList $ fmap (\((a, _), (_, bw)) -> if x == a then cwdWgt bw else 0) ab
+      vecB x = VS.fromList $ fmap (\((_, aw), (b, _)) -> if x == b then cwdWgt aw else 0) ab
       rows = (fmap vecA $ M.keys ma') <> (fmap vecB $ M.keys mb')
-      m = LA.fromRows rows
-      rhs = VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')
-
+      m = let x = LA.fromRows rows in trace ("m=" ++ toString (LA.dispf 2 x)) x
+      rhsV = let x = (VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')) - m LA.#> gmDensV
+             in trace ("rhs=" ++ toString (DED.prettyVector x)) x
+      solM = LA.linearSolveSVD m $ LA.fromColumns [rhsV]
+      solV = let x = List.head $ LA.toColumns $ solM in trace ("sol" ++ toString (DED.prettyVector x)) x
+      solL = VS.toList $ solV + gmDensV
+      mkAssoc (k, wgt) d = (k, CellWithDensity wgt d)
+  in M.fromList $ zipWith mkAssoc countsAB solL
 {-# INLINEABLE innerProductCWD' #-}
 
 {-
