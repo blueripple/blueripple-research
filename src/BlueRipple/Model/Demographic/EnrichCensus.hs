@@ -22,6 +22,7 @@ import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
+import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
 
 import qualified BlueRipple.Data.Keyed as Keyed
@@ -63,6 +64,7 @@ import qualified Numeric.LinearAlgebra as LA
 import Control.Lens (view, Lens')
 import BlueRipple.Model.Demographic.TPModel3 (ModelConfig(distribution))
 import qualified BlueRipple.Data.Loaders as BRDF
+import qualified BlueRipple.Configuration as BR
 
 
 {-
@@ -179,7 +181,12 @@ censusASR_SER_Products cacheKey censusTables_C = do
 --      BRK.logFrame recodedSER
       let asrMap = FL.fold (toMapFld keyF asrF) $ recodedASR
           serMap = FL.fold (toMapFld keyF serF) $ recodedSER
-          whenMatchedF k asr' ser' = pure (ser_asr_tableProductWithDensity ser' asr')
+          checkFrames k ta tb = do
+            let na = FL.fold (FL.premap (view DT.popCount) FL.sum) ta
+                nb = FL.fold (FL.premap (view DT.popCount) FL.sum) tb
+            when (na /= nb) $ K.logLE K.Error $ "Mismatched ASR/SER tables at k=" <> show k
+            pure ()
+          whenMatchedF k asr' ser' = checkFrames k asr' ser' >> pure (ser_asr_tableProductWithDensity ser' asr')
           whenMissingASRF k _ = K.knitError $ "Missing ASR table for k=" <> show k
           whenMissingSERF k _ = K.knitError $ "Missing SER table for k=" <> show k
       productMap <- MM.mergeA
@@ -222,15 +229,13 @@ predictedCensusASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     -> Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
-                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusASERR))
+                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusASERR), K.ActionWithCacheTime r (F.FrameRec CensusASERR))
 predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_modeled.bin"
       logitMarginals' = logitMarginals logitMarginalsCMatrix
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- censusASR_SER_Products productCacheKey censusTables_C
-  K.ignoreCacheTime products_C >>= BRK.logFrame
-  K.knitError "STOP"
   let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD ASER)) (F.FrameRec (KeysWD ASER))
       predictFld predictor sa =
         let key = F.rcast @ASER
@@ -247,7 +252,7 @@ predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
             predict pm = let (n, pwD) = popAndPWDensity pm
                              pV = prodV pm
                              pDV = VS.map (/ n) pV
-                         in F.toFrame . fmap toRec <$> DTM3.predictedJoint DMS.cwdWgtLens DMS.updateWeightCWD predictor sa (covariates pwD pDV) (M.toList pm)
+                         in F.toFrame . fmap toRec <$> DTM3.predictedJoint DMS.cwdWgtLens predictor sa (covariates pwD pDV) (M.toList pm)
         in FMR.postMapM predict $ FL.generalize prodMapFld
   let f :: DTM3.Predictor Text -> F.FrameRec CensusASERR -> K.Sem r (F.FrameRec CensusASERR)
       f predictor products = do
@@ -261,11 +266,66 @@ predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
         K.logLE K.Info "Building/re-building censusASER predictions"
         FL.foldM fldM products
       predictionDeps = (,) <$> predictor_C <*> products_C
-  BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
+  predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
+  pure (predicted_C, products_C)
 
 
+predictorModel3 :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
+                => Bool
+                -> BR.CommandLine
+                -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
+predictorModel3 clearCache cmdLine = do
+  acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
+  let nvpsCacheKey = "model/demographic/ser_asr_aserNVPs.bin"
+      predictorCacheKey = "model/demographic/ser_asr_aserPredictor.bin"
+  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
+  let msSER_A5SR_cwd = DMS.reKeyMarginalStructure
+                         (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age5FC])
+                         (F.rcast @ASER)
+                         $ DMS.combineMarginalStructuresF  @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.Age5FC]
+                         DMS.cwdWgtLens DMS.innerProductCWD'
+                         (DMS.identityMarginalStructure DMS.cwdWgtLens)
+                          (DMS.identityMarginalStructure DMS.cwdWgtLens)
+  let projCovariancesFld =
+        DTP.diffCovarianceFldMS
+        DMS.cwdWgtLens
+        (F.rcast @[GT.StateAbbreviation, GT.PUMA])
+        (F.rcast @ASER)
+        DTM3.cwdF
+        msSER_A5SR_cwd
+  nullVectorProjections_C <- BRK.retrieveOrMakeD nvpsCacheKey acsA5ByPUMA_C
+                             $ \acsA5ByPUMA -> do
+    K.logLE K.Info $ "Computing covariance matrix of projected differences."
+    let (projMeans, projCovariances) = FL.fold projCovariancesFld acsA5ByPUMA
+        (eigVals, _) = LA.eigSH projCovariances
+    K.logLE K.Diagnostic
+      $ "mean=" <> toText (DED.prettyVector projMeans)
+      <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
+      <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
+    pure $ DTP.uncorrelatedNullVecsMS msSER_A5SR_cwd projCovariances
+  let tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
+                   +  S.size (Keyed.elements @(F.Record [DT.Age5FC, DT.SexC, DT.Race5C]))
+      tp3InnerFld ::  (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
+                      , F.ElemOf rs DT.Age5FC, F.ElemOf rs DT.SexC, F.ElemOf rs DT.Education4C, F.ElemOf rs DT.Race5C)
+                  => FL.Fold (F.Record rs) (VS.Vector Double)
+      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast  @[DT.SexC, DT.Education4C, DT.Race5C]) DTM3.cwdF
+                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast  @[DT.SexC, DT.Education4C, DT.Race5C]) DTM3.cwdF
+                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast  @[DT.Age5FC, DT.SexC, DT.Race5C]) DTM3.cwdF
+                                        ]
+      tp3RunConfig n = DTM3.RunConfig n False False Nothing
+      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "SER_ASR" (tp3NumKeys + 1)) -- +1 for pop density
+                         DTM3.AlphaHierNonCentered DTM3.NormalDist
+      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msSER_A5SR_cwd tp3InnerFld
 
-
+  K.logLE K.Info "Running marginals as covariates model, if necessary."
+  let modelResultDeps = (,) <$> acsA5ByPUMA_C <*> nullVectorProjections_C
+  model3Res_C <- BRK.retrieveOrMakeD predictorCacheKey modelResultDeps
+                 $ \(_, nvps) -> (do
+                                     cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
+                                     modelResults <- K.ignoreCacheTime cachedModelResults
+                                     pure $ DTM3.Predictor nvps modelResults
+                                 )
+  pure model3Res_C
 
 {-
 type CensusCASERR = BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, BRC.RaceEthnicityC]

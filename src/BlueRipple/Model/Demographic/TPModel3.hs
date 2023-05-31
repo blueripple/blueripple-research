@@ -233,19 +233,19 @@ modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 -- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
 predictedJoint :: forall g k w . (Show g, Ord g)
                => Lens' w Double
-               -> (Double -> w -> w) -- this might not be the lens update
+--               -> (Double -> w -> w) -- this might not be the lens update
                -> Predictor g
                -> g
                -> VS.Vector Double
                -> [(k, w)]
                -> Either Text [(k, w)]
-predictedJoint wgtLens updateWgt p gk covariates keyedProduct = do
+predictedJoint wgtLens {- updateWgt -} p gk covariates keyedProduct = do
   let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
       prodV = VS.fromList $ fmap (view wgtLens . snd) keyedProduct
   nvpsPrediction <- VS.fromList <$> modelResultNVPs p gk covariates
   let onSimplex = DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
       newWeights = VS.map (* n) onSimplex
-      f (newWgt, (k, w)) = (k, updateWgt newWgt w)
+      f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
   pure $ fmap f $ zip (VS.toList newWeights) keyedProduct
 
 stateG :: SMB.GroupTypeTag Text

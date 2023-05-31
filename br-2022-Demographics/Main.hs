@@ -267,9 +267,16 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
 --    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
-    K.logLE K.Info "Building SLD-level product tables"
+--    K.logLE K.Info "Building SLD-level product tables"
 
 --    K.knitError "STOP"
+    K.logLE K.Info "Building dsitrict-level ASER joint distributions"
+    predictor_C <- DMC.predictorModel3 False cmdLine
+    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
+    let censusTableCond r = r ^. GT.stateFIPS == 56 -- && r ^. GT.districtName == "10"
+        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
+    predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusASER True "model/demographic/test/svdBug" predictor_C filteredCensusTables_C
+
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
     acsA5ByPUMA <-  K.ignoreCacheTime acsA5ByPUMA_C
@@ -345,19 +352,22 @@ main = do
         modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msSER_A5SR_cwd tp3InnerFld
 
     K.logLE K.Info "Running marginals as covariates model, if necessary."
-    let modelResultDeps = (,) <$> acsA5ByPUMA_C <*> nullVectorProjections_C
+{-    let modelResultDeps = (,) <$> acsA5ByPUMA_C <*> nullVectorProjections_C
     model3Res_C <- BRK.retrieveOrMakeD "model/demographic/nsMarginalsResult.bin" modelResultDeps
                    $ \(_, nvps) -> (do
                                        cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
                                        modelResults <- K.ignoreCacheTime cachedModelResults
                                        pure $ DTM3.Predictor nvps modelResults
                                    )
-    model3Result <- K.ignoreCacheTime model3Res_C
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
     let censusTableCond r = r ^. GT.stateFIPS == 25 && r ^. GT.districtName == "SUFFOLK8"
         filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
     testPredicted_C <- DMC.predictedCensusASER True "model/demographic/test/predictedMA" model3Res_C filteredCensusTables_C
-    K.ignoreCacheTime testPredicted_C >>= BRK.logFrame
+-}
+    model3Result <- K.ignoreCacheTime predictor_C
+
+--    K.ignoreCacheTime testPredicted_C >>= BRK.logFrame
+
     K.knitError "STOP"
 
 

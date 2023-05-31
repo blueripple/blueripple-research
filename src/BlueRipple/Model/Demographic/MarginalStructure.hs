@@ -278,8 +278,10 @@ instance Semigroup CellWithDensity => Monoid CellWithDensity where
   mempty = CellWithDensity 0 0
   mappend = (<>)
 
+{-
 updateWeightCWD :: Double -> CellWithDensity -> CellWithDensity
 updateWeightCWD x (CellWithDensity wgt pwDensity) = CellWithDensity x (pwDensity * if wgt == 0 then 1 else x / wgt)
+-}
 
 innerProductCWD :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
@@ -298,10 +300,10 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
       in M.toList $ fmap g m
 {-# INLINEABLE innerProductCWD #-}
 
-innerProductCWD' :: (BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
+innerProductCWD' :: (BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b, Show a, Show b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD' ma mb =
-  let na = FL.fold (FL.premap cwdWgt FL.sum) ma
-      nb = FL.fold (FL.premap cwdWgt FL.sum) mb -- this should be the same and maybe we shoudl check?
+  let na = let x = FL.fold (FL.premap cwdWgt FL.sum) ma in trace (show ma) x
+      nb = let x = FL.fold (FL.premap cwdWgt FL.sum) mb in trace (show mb) x -- this should be the same and maybe we shoudl check?
       ma' = fmap (over cwdWgtLens $ (/ na)) ma
       mb' = fmap (over cwdWgtLens $ (/ nb)) mb
       countAB ((a, wa), (b, wb)) = ((a, b), realToFrac na * cwdWgt wa * cwdWgt wb)
@@ -313,10 +315,10 @@ innerProductCWD' ma mb =
       vecB x = VS.fromList $ fmap (\((_, aw), (b, _)) -> if x == b then cwdWgt aw else 0) ab
       rows = (fmap vecA $ M.keys ma') <> (fmap vecB $ M.keys mb')
       m = let x = LA.fromRows rows in trace ("m=" ++ toString (LA.dispf 2 x)) x
-      rhsV = let x = (VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')) - m LA.#> gmDensV
-             in trace ("rhs=" ++ toString (DED.prettyVector x)) x
+      rhsV = let x = (VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')) - m LA.#> gmDensV in x
+--             in trace ("rhs=" ++ toString (DED.prettyVector x)) x
       solM = LA.linearSolveSVD m $ LA.fromColumns [rhsV]
-      solV = let x = List.head $ LA.toColumns $ solM in trace ("sol" ++ toString (DED.prettyVector x)) x
+      solV = let x = List.head $ LA.toColumns $ solM in x -- trace ("sol" ++ toString (DED.prettyVector x)) x
       solL = VS.toList $ solV + gmDensV
       mkAssoc (k, wgt) d = (k, CellWithDensity wgt d)
   in M.fromList $ zipWith mkAssoc countsAB solL
