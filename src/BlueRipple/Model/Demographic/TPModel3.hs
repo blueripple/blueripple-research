@@ -487,19 +487,23 @@ projModel rc mc = do
 cwdF :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
 cwdF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
 
-runProjModel :: forall (ks :: [(Symbol, Type)]) r .
+runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
-                , ks F.⊆ DDP.ACSa5ByPUMAR
+                , ks F.⊆ rs
+                , F.ElemOf rs GT.PUMA
+                , F.ElemOf rs GT.StateAbbreviation
+                , F.ElemOf rs DT.PopCount
+                , F.ElemOf rs DT.PWPopPerSqMile
                 )
              => Bool
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig
-             -> K.ActionWithCacheTime r (F.FrameRec DDP.ACSa5ByPUMAR)
+             -> K.ActionWithCacheTime r (F.FrameRec rs)
              -> K.ActionWithCacheTime r DTP.NullVectorProjections
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
-             -> FL.Fold (F.Record DDP.ACSa5ByPUMAR) (VS.Vector Double)
+             -> FL.Fold (F.Record rs) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
 runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   let cacheRoot = "model/demographic/nullVecProjModel3_A5/"

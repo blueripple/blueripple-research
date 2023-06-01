@@ -273,7 +273,7 @@ main = do
     K.logLE K.Info "Building dsitrict-level ASER joint distributions"
     predictor_C <- DMC.predictorModel3 False cmdLine
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
-    let censusTableCond r = r ^. GT.stateFIPS == 56 -- && r ^. GT.districtName == "10"
+    let censusTableCond r = r ^. GT.stateFIPS == 9 && r ^. GT.districtTypeC == GT.StateUpper -- && r ^. GT.districtName == "10"
         filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
     predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusASER True "model/demographic/test/svdBug" predictor_C filteredCensusTables_C
 
@@ -296,6 +296,15 @@ main = do
                          DMS.cwdWgtLens DMS.innerProductCWD
                          (DMS.identityMarginalStructure DMS.cwdWgtLens)
                           (DMS.identityMarginalStructure DMS.cwdWgtLens)
+
+
+    let msASE_ASR_cwd = DMS.reKeyMarginalStructure
+                         (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])
+                         (F.rcast @ASER)
+                         $ DMS.combineMarginalStructuresF  @'[DT.Age4C, DT.SexC] @'[DT.Education4C] @'[DT.Race5C]
+                         DMS.cwdWgtLens DMS.innerProductCWD
+                         (DMS.identityMarginalStructure DMS.cwdWgtLens)
+                          (DMS.identityMarginalStructure DMS.cwdWgtLens)
 --        marginalStructure = msSER_A5SR
 
 {-
@@ -313,18 +322,18 @@ main = do
          (const $ Const ())
     K.knitError "STOP after blCorrModel run"
 -}
-    let projCovariancesFld =
+    let projCovariancesFld_SER_A5SR =
           DTP.diffCovarianceFldMS
           DMS.cwdWgtLens
           (F.rcast @[GT.StateAbbreviation, GT.PUMA])
           (F.rcast @A5SER)
           DTM3.cwdF
           msSER_A5SR_cwd
-    nullVectorProjections_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs.bin" acsA5ByPUMA_C
-      $ \acsA5ByPUMA -> do
+    nullVectorProjections_SER_A5SR_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs_SER_A5SR.bin" acsA5ByPUMA_C
+      $ \acsByPUMA -> do
 
       K.logLE K.Info $ "Computing covariance matrix of projected differences."
-      let (projMeans, projCovariances) = FL.fold projCovariancesFld acsA5ByPUMA
+      let (projMeans, projCovariances) = FL.fold projCovariancesFld_SER_A5SR acsByPUMA
           (eigVals, eigVecs) = LA.eigSH projCovariances
 --    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
 --    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
@@ -333,8 +342,30 @@ main = do
 --    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
 --      let numNullSpaceVectors = VS.length projMeans
       pure $ DTP.uncorrelatedNullVecsMS msSER_A5SR_cwd projCovariances
+
+    let projCovariancesFld_ASE_ASR =
+          DTP.diffCovarianceFldMS
+          DMS.cwdWgtLens
+          (F.rcast @[GT.StateAbbreviation, GT.PUMA])
+          (F.rcast @ASER)
+          DTM3.cwdF
+          msASE_ASR_cwd
+    nullVectorProjections_ASE_ASR_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs_ASE_ASR.bin" acsA4ByPUMA_C
+      $ \acsByPUMA -> do
+
+      K.logLE K.Info $ "Computing covariance matrix of projected differences."
+      let (projMeans, projCovariances) = FL.fold projCovariancesFld_ASE_ASR acsByPUMA
+          (eigVals, eigVecs) = LA.eigSH projCovariances
+--    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
+--    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
+      K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
+--      let nullSpaceVectors = DTP.nullSpaceVectorsMS msSER_A5SR_cwd
+--    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
+--      let numNullSpaceVectors = VS.length projMeans
+      pure $ DTP.uncorrelatedNullVecsMS msASE_ASR_cwd projCovariances
 --        testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
-    let cMatrix = DED.mMatrix (DMS.msNumCategories msSER_A5SR_cwd) (DMS.msStencils msSER_A5SR_cwd)
+    let cMatrix_SER_A5SR = DED.mMatrix (DMS.msNumCategories msSER_A5SR_cwd) (DMS.msStencils msSER_A5SR_cwd)
+        cMatrix_ASE_ASR = DED.mMatrix (DMS.msNumCategories msASE_ASR_cwd) (DMS.msStencils msASE_ASR_cwd)
 --    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
 
     let tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
