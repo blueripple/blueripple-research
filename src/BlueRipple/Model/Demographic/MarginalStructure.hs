@@ -30,21 +30,24 @@ import qualified Data.Set as S
 import Data.Type.Equality (type (~))
 
 import qualified Data.List as List
+import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 
 import qualified Numeric.LinearAlgebra as LA
 import qualified Data.Vector.Storable as VS
+import qualified BlueRipple.Data.DemographicTypes as DT
 
 normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
 normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
 
-reKeyMarginalStructure :: (Ord k2, BRK.FiniteSet k2) => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
+reKeyMarginalStructure :: forall k1 k2 w . (Ord k2, BRK.FiniteSet k2, BRK.FiniteSet k1)
+                       => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
 reKeyMarginalStructure f21 f12 ms = case ms of
   MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
-    sts' = fmap (expandStencil f21) sts
+    sts' = fmap snd . sortOn fst . fmap (first f12) $ zip (S.toList $ BRK.elements @k1) (fmap (expandStencil f21) sts)
     ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
 
 -- given a k2 stencil and a map (k1 -> k2), we can generate a k1 stencil by testing each k1 to see if it maps to a k2 which
@@ -283,6 +286,9 @@ updateWeightCWD :: Double -> CellWithDensity -> CellWithDensity
 updateWeightCWD x (CellWithDensity wgt pwDensity) = CellWithDensity x (pwDensity * if wgt == 0 then 1 else x / wgt)
 -}
 
+cwdToRec :: CellWithDensity -> F.Record [DT.PopCount, DT.PWPopPerSqMile]
+cwdToRec (CellWithDensity p d) = round p F.&: d F.&: V.RNil
+
 innerProductCWD :: (Ord a, Ord b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd mb]
   where
@@ -302,10 +308,12 @@ innerProductCWD ma mb = M.fromList [f ae be | ae <- M.toList ma, be <- forProd m
 
 innerProductCWD' :: (BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b, Show a, Show b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
 innerProductCWD' ma mb =
-  let na = let x = FL.fold (FL.premap cwdWgt FL.sum) ma in trace (show ma) x
-      nb = let x = FL.fold (FL.premap cwdWgt FL.sum) mb in trace (show mb) x -- this should be the same and maybe we shoudl check?
-      ma' = fmap (over cwdWgtLens $ (/ na)) ma
-      mb' = fmap (over cwdWgtLens $ (/ nb)) mb
+  let la = FL.fold FL.length ma
+      lb = FL.fold FL.length mb
+      na = let x = FL.fold (FL.premap cwdWgt FL.sum) ma in x -- trace (show ma) x
+      nb = let x = FL.fold (FL.premap cwdWgt FL.sum) mb in x -- trace (show mb) x -- this should be the same and maybe we shoudl check?
+      ma' = let f = if na == 0 then (const $ 1 / realToFrac la) else (/ na) in fmap (over cwdWgtLens f) ma
+      mb' = let f = if nb == 0 then (const $ 1 / realToFrac lb) else (/ nb) in fmap (over cwdWgtLens f) mb
       countAB ((a, wa), (b, wb)) = ((a, b), realToFrac na * cwdWgt wa * cwdWgt wb)
       gmDens ((_, wa), (_, wb)) = sqrt $ cwdDensity wa * cwdDensity wb
       ab = [(a, b) | a <- M.toList ma', b <- M.toList mb']
@@ -314,7 +322,7 @@ innerProductCWD' ma mb =
       vecA x =  VS.fromList $ fmap (\((a, _), (_, bw)) -> if x == a then cwdWgt bw else 0) ab
       vecB x = VS.fromList $ fmap (\((_, aw), (b, _)) -> if x == b then cwdWgt aw else 0) ab
       rows = (fmap vecA $ M.keys ma') <> (fmap vecB $ M.keys mb')
-      m = let x = LA.fromRows rows in trace ("m=" ++ toString (LA.dispf 2 x)) x
+      m = let x = LA.fromRows rows in x --trace ("m=" ++ toString (LA.dispf 2 x)) x
       rhsV = let x = (VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb')) - m LA.#> gmDensV in x
 --             in trace ("rhs=" ++ toString (DED.prettyVector x)) x
       solM = LA.linearSolveSVD m $ LA.fromColumns [rhsV]

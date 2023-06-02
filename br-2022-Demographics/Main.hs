@@ -20,25 +20,16 @@ import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
-import qualified BlueRipple.Model.Demographic.TPModel2 as DTM2
 import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
-import qualified BlueRipple.Model.Demographic.BLCorrModel as DBLC
 import qualified BlueRipple.Data.Keyed as Keyed
 
---import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.CensusLoaders as BRC
-import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
-
-import qualified Stan.ModelBuilder.DesignMatrix as DM
-import qualified Stan.ModelConfig as SC
-import qualified Stan.ModelRunner as SMR
-import qualified Stan.RScriptBuilder as SR
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
@@ -46,11 +37,13 @@ import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
+import GHC.TypeLits (Symbol)
+
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
+import Data.Type.Equality (type (~))
 import qualified Data.Set as S
-import qualified Data.Vector as Vec
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
@@ -64,9 +57,9 @@ import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Transform as FT
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
+import qualified Frames.Serialize as FS
 
-
-import Control.Lens (view, (^.))
+import Control.Lens (view, (^.), _2)
 
 import Path (Dir, Rel)
 import qualified Path
@@ -247,6 +240,131 @@ type ASER = [DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
 type A5SR = [DT.Age5FC, DT.SexC, DT.Race5C]
 type A5SER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
 
+type CDRow ks = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ DMC.KeysWD ks
+
+-- NB: as ks - first component and bs is ks - second
+-- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
+testProductNS_CDs :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
+                     (K.KnitEffects r, BRK.CacheEffects r
+                     , qs ~ F.RDeleteAll (as V.++ bs) ks
+                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+                     , Ord (F.Record ks)
+                     , Keyed.FiniteSet (F.Record ks)
+                     , ((qs V.++ as) V.++ bs) F.⊆ ks
+                     , ks F.⊆ ((qs V.++ as) V.++ bs)
+                     , Ord (F.Record qs)
+                     , Ord (F.Record as)
+                     , Ord (F.Record bs)
+                     , Ord (F.Record (qs V.++ as))
+                     , Ord (F.Record (qs V.++ bs))
+                     , Ord (F.Record ((qs V.++ as) V.++ bs))
+                     , Keyed.FiniteSet (F.Record qs)
+                     , Keyed.FiniteSet (F.Record as)
+                     , Keyed.FiniteSet (F.Record bs)
+                     , Keyed.FiniteSet (F.Record (qs V.++ as))
+                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
+                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+                     , as F.⊆ (qs V.++ as)
+                     , bs F.⊆ (qs V.++ bs)
+                     , qs F.⊆ (qs V.++ as)
+                     , qs F.⊆ (qs V.++ bs)
+                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+                     , qs V.++ as F.⊆ DMC.PUMARowR ks
+                     , qs V.++ bs F.⊆ DMC.PUMARowR ks
+                     , ks F.⊆ DMC.PUMARowR ks
+                     , V.RMap as
+                     , V.ReifyConstraint Show F.ElField as
+                     , V.RecordToList as
+                     , V.RMap bs
+                     , V.ReifyConstraint Show F.ElField bs
+                     , V.RecordToList bs
+                     , F.ElemOf (DMC.KeysWD ks) DT.PopCount
+                     , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
+                     , ks F.⊆ CDRow ks
+                     , qs V.++ as F.⊆ CDRow ks
+                     , qs V.++ bs F.⊆ CDRow ks
+                     , FSI.RecVec (DMC.KeysWD ks)
+                     , V.RMap (DMC.KeysWD ks)
+                     , V.ReifyConstraint Show F.ElField (DMC.KeysWD ks)
+                     , V.RecordToList (DMC.KeysWD ks)
+                     , FS.RecFlat (DMC.KeysWD ks)
+                     )
+                  => Bool
+                  -> Text
+                  -> Text
+                  -> BR.CommandLine
+                  -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
+                  -> K.ActionWithCacheTime r (F.FrameRec (CDRow ks))
+                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks)))
+testProductNS_CDs clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
+  let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
+  when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
+  (predictor_C, nvps_C) <- DMC.predictorModel3 @as @bs @ks @qs (Right cachePrefix) modelId cmdLine byPUMA_C
+  let ms = DMC.marginalStructure @ks @as @bs @DMS.CellWithDensity DMS.cwdWgtLens DMS.innerProductCWD'
+  byCD <- K.ignoreCacheTime byCD_C
+  nvps <- K.ignoreCacheTime nvps_C
+  let cdModelData = FL.fold
+        (DTM3.nullVecProjectionsModelDataFldCheck
+         DMS.cwdWgtLens
+         ms
+         nvps
+         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict])
+         (F.rcast @ks)
+         DTM3.cwdF
+         (DMC.innerFoldWD @(qs V.++ bs) @(qs V.++ as) @(CDRow ks) (F.rcast @(qs V.++ bs )) (F.rcast @(qs V.++ as)))
+        )
+        byCD
+      productFrameDeps = (,) <$> nvps_C <*> predictor_C
+  BRK.retrieveOrMakeFrame productFrameCacheKey productFrameDeps $ \(nvps', predictor) -> do
+    let vecToFrame ok kws = fmap (\(k, w) -> ok F.<+> k F.<+> DMS.cwdToRec w) kws
+        prodAndModeledToFrames (ok, pKWs, mKWs) = (vecToFrame ok pKWs, vecToFrame ok mKWs)
+
+        smcRowToProdAndModeled (ok, _, _, pKWs, oKWs) = do
+          let pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
+          mKWs <- K.knitEither
+                $ DTM3.predictedJoint DMS.cwdWgtLens predictor (ok ^. GT.stateAbbreviation) pV oKWs
+          pure (ok, pKWs, mKWs)
+
+    let cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
+
+    forM_ cdModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
+      let keyT = DDP.districtKeyT sar
+          pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
+          nV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) oKWs
+          n = VS.sum pV
+
+      when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
+        let showSum v = " (" <> show (VS.sum v) <> ")"
+        K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
+        K.logLE K.Info $ keyT <> " prod counts=" <> DED.prettyVector pV <> showSum pV
+        let nvpsV = DTP.applyNSPWeights nvps' (VS.map (* n) nVpsActual) pV
+        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector nvpsV <> showSum nvpsV
+        let cCheckV = cMatrix LA.#> (nV - pV)
+        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
+        K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs predictor (view GT.stateAbbreviation sar) md)
+        K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
+        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nvps' nvpsModeled (VS.map (/ n) pV)
+            simplexNVPs = DTP.fullToProj nvps' simplexFull
+        K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs <> showSum simplexNVPs
+        let modeledCountsV = VS.map (* n) simplexFull
+        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
+
+    prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
+    pure $ F.toFrame . concat
+         $ fmap snd
+         $ fmap prodAndModeledToFrames prodAndModeled
+
+compareCSR_A5SR :: (K.KnitOne r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+compareCSR_A5SR cmdLine = do
+    K.logLE K.Info "Building test CD-level products for CSR x A5SR -> CA5SR"
+    byPUMA_C <- fmap (fmap $ F.rcast @(DMC.PUMARowR DMC.CA5SR)) <$> DDP.cachedACSa5ByPUMA
+    byCD_C <- fmap (fmap $ F.rcast @(CDRow DMC.CA5SR)) <$> DDP.cachedACSa5ByCD
+    productCSR_A5SR <- testProductNS_CDs @DMC.CA5SR @'[DT.CitizenC] @'[DT.Age5FC] False "model/demographic/csr_a5sr" "CSR_A5SR" cmdLine
+                       byPUMA_C byCD_C
+    pure ()
+
 main :: IO ()
 main = do
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
@@ -266,20 +384,17 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
---    eduModelResult <- runEduModel False cmdLine (SM.ModelConfig () False SM.HCentered False) $ SM.designMatrixRowEdu
---    K.logLE K.Info "Building SLD-level product tables"
-
---    K.knitError "STOP"
-    K.logLE K.Info "Building dsitrict-level ASER joint distributions"
+{-
+    K.logLE K.Info "Building district-level ASER joint distributions"
     predictor_C <- DMC.predictorModel3 False cmdLine
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
     let censusTableCond r = r ^. GT.stateFIPS == 9 && r ^. GT.districtTypeC == GT.StateUpper -- && r ^. GT.districtName == "10"
         filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
     predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusASER True "model/demographic/test/svdBug" predictor_C filteredCensusTables_C
-
+-}
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
-    acsA5ByPUMA <-  K.ignoreCacheTime acsA5ByPUMA_C
+
     let msSER_A5SR_sd = DMS.reKeyMarginalStructure
                         (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age5FC])
                         (F.rcast @A5SER)
@@ -287,190 +402,33 @@ main = do
                         DTP.sumLens DMS.innerProductSum
                         (DMS.identityMarginalStructure DTP.sumLens)
                         (DMS.identityMarginalStructure DTP.sumLens)
---        marginalStructure = msSER_A5SR
 
-    let msSER_A5SR_cwd = DMS.reKeyMarginalStructure
-                         (F.rcast @[DT.SexC, DT.Race5C, DT.Education4C, DT.Age5FC])
-                         (F.rcast @A5SER)
-                         $ DMS.combineMarginalStructuresF  @'[DT.SexC, DT.Race5C] @'[DT.Education4C] @'[DT.Age5FC]
-                         DMS.cwdWgtLens DMS.innerProductCWD
-                         (DMS.identityMarginalStructure DMS.cwdWgtLens)
-                          (DMS.identityMarginalStructure DMS.cwdWgtLens)
-
-
-    let msASE_ASR_cwd = DMS.reKeyMarginalStructure
-                         (F.rcast @[DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C])
-                         (F.rcast @ASER)
-                         $ DMS.combineMarginalStructuresF  @'[DT.Age4C, DT.SexC] @'[DT.Education4C] @'[DT.Race5C]
-                         DMS.cwdWgtLens DMS.innerProductCWD
-                         (DMS.identityMarginalStructure DMS.cwdWgtLens)
-                          (DMS.identityMarginalStructure DMS.cwdWgtLens)
---        marginalStructure = msSER_A5SR
-
-{-
-    let numBLModelCats = S.size $ Keyed.elements @DT.Age4
-        blcRunConfig = DBLC.RunConfig (Just numBLModelCats) True (Just $ ("onlyNY", ["NY"]))
-        blcModelConfig :: DBLC.ModelConfig (F.Record '[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C, DT.PWPopPerSqMile]) (Const ())
-        blcModelConfig = DBLC.ModelConfig numBLModelCats
-                         (contramap F.rcast DBLC.designMatrixRow_1_S_E_R)
-                         DBLC.BetaSimple
-                         True True
-    _ <- DBLC.runProjModel False  cmdLine blcRunConfig
-         blcModelConfig
-         (F.rcast @'[DT.Age4C])
-         (F.rcast @'[GT.StateAbbreviation, GT.PUMA, DT.SexC, DT.Education4C, DT.Race5C])
-         (const $ Const ())
-    K.knitError "STOP after blCorrModel run"
--}
-    let projCovariancesFld_SER_A5SR =
-          DTP.diffCovarianceFldMS
-          DMS.cwdWgtLens
-          (F.rcast @[GT.StateAbbreviation, GT.PUMA])
-          (F.rcast @A5SER)
-          DTM3.cwdF
-          msSER_A5SR_cwd
-    nullVectorProjections_SER_A5SR_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs_SER_A5SR.bin" acsA5ByPUMA_C
-      $ \acsByPUMA -> do
-
-      K.logLE K.Info $ "Computing covariance matrix of projected differences."
-      let (projMeans, projCovariances) = FL.fold projCovariancesFld_SER_A5SR acsByPUMA
-          (eigVals, eigVecs) = LA.eigSH projCovariances
---    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
---    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
-      K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
---      let nullSpaceVectors = DTP.nullSpaceVectorsMS msSER_A5SR_cwd
---    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
---      let numNullSpaceVectors = VS.length projMeans
-      pure $ DTP.uncorrelatedNullVecsMS msSER_A5SR_cwd projCovariances
-
-    let projCovariancesFld_ASE_ASR =
-          DTP.diffCovarianceFldMS
-          DMS.cwdWgtLens
-          (F.rcast @[GT.StateAbbreviation, GT.PUMA])
-          (F.rcast @ASER)
-          DTM3.cwdF
-          msASE_ASR_cwd
-    nullVectorProjections_ASE_ASR_C <- BRK.retrieveOrMakeD "model/demographic/covNVPs_ASE_ASR.bin" acsA4ByPUMA_C
-      $ \acsByPUMA -> do
-
-      K.logLE K.Info $ "Computing covariance matrix of projected differences."
-      let (projMeans, projCovariances) = FL.fold projCovariancesFld_ASE_ASR acsByPUMA
-          (eigVals, eigVecs) = LA.eigSH projCovariances
---    K.logLE K.Info $ "mean=" <> toText (DED.prettyVector projMeans)
---    K.logLE K.Info $ "cov=" <> toText (LA.disps 3 $ LA.unSym $ projCovariances)
-      K.logLE K.Info $ "covariance eigenValues: " <> DED.prettyVector eigVals
---      let nullSpaceVectors = DTP.nullSpaceVectorsMS msSER_A5SR_cwd
---    K.logLE K.Info $ "nullSpaceVectors=" <> toText (LA.dispf 4 nullSpaceVectors)
---      let numNullSpaceVectors = VS.length projMeans
-      pure $ DTP.uncorrelatedNullVecsMS msASE_ASR_cwd projCovariances
---        testProjections  = nvProjections --DTP.baseNullVectorProjections marginalStructure
-    let cMatrix_SER_A5SR = DED.mMatrix (DMS.msNumCategories msSER_A5SR_cwd) (DMS.msStencils msSER_A5SR_cwd)
-        cMatrix_ASE_ASR = DED.mMatrix (DMS.msNumCategories msASE_ASR_cwd) (DMS.msStencils msASE_ASR_cwd)
---    K.logLE K.Info $ "nvpProj=" <> toText (LA.disps 3 $ DTP.nvpProj nvProjections) <> "\nnvpRotl=" <> toText (LA.disps 3 $ DTP.nvpRot nvProjections)
-
-    let tp3NumKeys = S.size (Keyed.elements @(F.Record [DT.SexC, DT.Education4C, DT.Race5C]))
-                     +  S.size (Keyed.elements @(F.Record [DT.Age5FC, DT.SexC, DT.Race5C]))
-        tp3InnerFld ::  (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
-                        , F.ElemOf rs DT.Age5FC, F.ElemOf rs DT.SexC, F.ElemOf rs DT.Education4C, F.ElemOf rs DT.Race5C)
-                    => FL.Fold (F.Record rs) (VS.Vector Double)
-        tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast  @[DT.SexC, DT.Education4C, DT.Race5C]) DTM3.cwdF
-                                          , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast  @[DT.SexC, DT.Education4C, DT.Race5C]) DTM3.cwdF
-                                          , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast  @[DT.Age5FC, DT.SexC, DT.Race5C]) DTM3.cwdF
-                                          ]
-        tp3RunConfig n = DTM3.RunConfig n False False Nothing
-        tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "SER_ASR" (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
-        modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msSER_A5SR_cwd tp3InnerFld
-
-    K.logLE K.Info "Running marginals as covariates model, if necessary."
-{-    let modelResultDeps = (,) <$> acsA5ByPUMA_C <*> nullVectorProjections_C
-    model3Res_C <- BRK.retrieveOrMakeD "model/demographic/nsMarginalsResult.bin" modelResultDeps
-                   $ \(_, nvps) -> (do
-                                       cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
-                                       modelResults <- K.ignoreCacheTime cachedModelResults
-                                       pure $ DTM3.Predictor nvps modelResults
-                                   )
-    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
-    let censusTableCond r = r ^. GT.stateFIPS == 25 && r ^. GT.districtName == "SUFFOLK8"
-        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
-    testPredicted_C <- DMC.predictedCensusASER True "model/demographic/test/predictedMA" model3Res_C filteredCensusTables_C
--}
-    model3Result <- K.ignoreCacheTime predictor_C
-
---    K.ignoreCacheTime testPredicted_C >>= BRK.logFrame
-
+        msSER_A5SR_sd' = DMC.marginalStructure @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] DTP.sumLens DMS.innerProductSum
+    let eqStencils = DMS.msStencils msSER_A5SR_sd == DMS.msStencils msSER_A5SR_sd'
+    K.logLE K.Info $ "Stencils are == ?" <> show eqStencils
+    when (not eqStencils) $ K.logLE K.Info $ "orig=" <> show (DMS.msStencils msSER_A5SR_sd) <> "\nnew=" <> show (DMS.msStencils msSER_A5SR_sd')
     K.knitError "STOP"
-
-
     acsA5ByCD_C <- DDP.cachedACSa5ByCD
-    acsA5ByCD :: F.FrameRec DDP.ACSa5ByCDR <-  K.ignoreCacheTime acsA5ByCD_C
---    BRK.logFrame $ F.filterFrame (\r -> (r ^. GT.stateAbbreviation == "WI") && (r ^. GT.congressionalDistrict == 5)) $ acsA5ByCD
---    K.knitError "STOP"
-    let nullVectorProjections = DTM3.predNVP model3Result
-    let cdModelData3 = FL.fold
-                       (DTM3.nullVecProjectionsModelDataFldCheck
-                         DMS.cwdWgtLens
-                         msSER_A5SR_cwd
-                         nullVectorProjections
-                         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
-                         (F.rcast @A5SER)
-                         DTM3.cwdF
-                         tp3InnerFld
-                       )
-                       acsA5ByCD
+    acsA5ByCD <- K.ignoreCacheTime acsA5ByCD_C
+    productNS3_SER_A5SR_C <- testProductNS_CDs @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] True "model/demographic/ser_a5sr" "SER_A5SR" cmdLine
+                             (fmap (fmap F.rcast) acsA5ByPUMA_C)
+                             (fmap (fmap F.rcast) acsA5ByCD_C)
+    productNS3_SER_A5SR <- fmap (fmap F.rcast) $ K.ignoreCacheTime productNS3_SER_A5SR_C
+
     let vecToFrame ok ks v = fmap (\(k, c) -> ok F.<+> k F.<+> FT.recordSingleton @DT.PopCount (round c)) $ zip ks (VS.toList v)
         prodAndModeledToFrames ks (ok, pv, mv) = (vecToFrame ok ks pv, vecToFrame ok ks mv)
 
-        smcRowToProdAndModeled3 (ok, md, _, pV, _, _) = do
-          let n = VS.sum pV
-          nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result (view GT.stateAbbreviation ok) md)
-          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ n) pV)
---            simplexNVPs = DTP.fullToProj testProjections simplexFull
---          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
-          let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
-          pure (ok, pV, mV)
 
-    forM_ cdModelData3 $ \(sar, md, nVpsActual, pV, nV, ws) -> do
-      let keyT = DDP.districtKeyT sar
-          n = VS.sum pV
-
-      when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
---        K.logLE K.Info $ keyT <> " nvps (actual) =" <> DED.prettyVector nVpsActual
-        projections <- K.ignoreCacheTime nullVectorProjections_C
-        let showSum v = " (" <> show (VS.sum v) <> ")"
-        K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
-        K.logLE K.Info $ keyT <> " prod    counts=" <> DED.prettyVector pV <> showSum pV
-        let nvpsV = DTP.applyNSPWeights projections (VS.map (* n) nVpsActual) pV
-        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector nvpsV <> showSum nvpsV
-        let cCheckV = cMatrix LA.#> (nV - pV)
-        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
---        K.logLE K.Info $ keyT <> " ws=" <> show ws
-        K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
-        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs model3Result (view GT.stateAbbreviation sar) md)
-        K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
-        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights projections nvpsModeled (VS.map (/ n) pV)
-            simplexNVPs = DTP.fullToProj projections simplexFull
---        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
-        K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs <> showSum simplexNVPs
-        let modeledCountsV = VS.map (* n) simplexFull
-        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
---    K.knitError "STOP"
-
-
-    prodAndModeled3 <- traverse smcRowToProdAndModeled3 cdModelData3
-    let (_, productNS3_SER_A5SR) =
-          first (F.toFrame . concat)
-          $ second (F.toFrame . concat)
-          $ unzip
-          $ fmap (prodAndModeledToFrames (S.toList $ Keyed.elements @(F.Record A5SER))) prodAndModeled3
---    BRK.logFrame acsByCD
---    K.knitError "STOP"
-    let cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsA5ByCD
-    let statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsA5ByCD
-    let cdModelData1 = FL.fold
+    let ms_SER_A5SR = DMC.marginalStructure @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] DMS.cwdWgtLens DMS.innerProductCWD'
+    nvps_SER_A5SR_C <- DMC.cachedNVProjections "model/demographic/ser_a5sr_NVPs.bin" ms_SER_A5SR acsA5ByPUMA_C
+    nvps_SER_A5SR <- K.ignoreCacheTime nvps_SER_A5SR_C
+    let cMatrix_SER_A5SR = DED.mMatrix (DMS.msNumCategories ms_SER_A5SR) (DMS.msStencils ms_SER_A5SR)
+        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsA5ByCD
+        statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) acsA5ByCD
+        cdModelData1 = FL.fold
                        (DTM1.nullVecProjectionsModelDataFldCheck
                          msSER_A5SR_sd
-                         nullVectorProjections
+                         nvps_SER_A5SR
                          (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict])
                          (F.rcast @A5SER)
                          (realToFrac . view DT.popCount)
@@ -479,17 +437,10 @@ main = do
                        acsA5ByCD
 
     K.logLE K.Info $ "Running model summary stats as covariates model, if necessary."
-    let modelConfig = DTM1.ModelConfig nullVectorProjections True
+    let modelConfig = DTM1.ModelConfig nvps_SER_A5SR True
                       DTM1.designMatrixRowASER DTM1.AlphaHierNonCentered DTM1.NormalDist DTM1.aserModelFuncs
     res_C <- DTM1.runProjModel @A5SER False cmdLine (DTM1.RunConfig False False) modelConfig msSER_A5SR_sd DTM1.a5serModelDatFld
     modelRes <- K.ignoreCacheTime res_C
-{-
-    K.logLE K.Info $ "Running model2, if necessary."
-    let model2Config = DTM2.ModelConfig testProjections True
-                       DTM2.designMatrixRow_1 DTM2.designMatrixRow0 DTM2.AlphaSimple DTM2.NormalDist
-    res2_C <- DTM2.runProjModel False (Just 100) cmdLine (DTM2.RunConfig False False) model2Config marginalStructure (const DTM2.PModel0)
--}
---    K.knitError "STOP"
 
     forM_ cdModelData1 $ \(sar, md, nVpsActual, pV, nV) -> do
       let keyT = DDP.districtKeyT sar
@@ -499,13 +450,13 @@ main = do
 --        K.logLE K.Info $ keyT <> " nvps (actual) =" <> DED.prettyVector nVpsActual
         K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> " (" <> show (VS.sum nV) <> ")"
         K.logLE K.Info $ keyT <> " prod    counts=" <> DED.prettyVector pV <> " (" <> show (VS.sum pV) <> ")"
-        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights nullVectorProjections (VS.map (* n) nVpsActual) pV)
-        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix LA.#> (nV - pV))
+        K.logLE K.Info $ keyT <> " nvps counts   =" <> DED.prettyVector (DTP.applyNSPWeights nvps_SER_A5SR (VS.map (* n) nVpsActual) pV)
+        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector (cMatrix_SER_A5SR LA.#> (nV - pV))
         K.logLE K.Info $ keyT <> " predictors: " <> show md
         nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (sar ^. GT.stateAbbreviation) md)
         K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled
-        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ VS.sum pV) pV)
-            simplexNVPs = DTP.fullToProj nullVectorProjections simplexFull
+        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nvps_SER_A5SR nvpsModeled (VS.map (/ VS.sum pV) pV)
+            simplexNVPs = DTP.fullToProj nvps_SER_A5SR simplexFull
 --        nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
         K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs
         K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector (VS.map (* VS.sum pV) simplexFull)
@@ -514,7 +465,7 @@ main = do
     let smcRowToProdAndModeled1 (ok, md, _, pV, _) = do
           let n = VS.sum pV --realToFrac $ DMS.msNumCategories marginalStructure
           nvpsModeled <-  VS.fromList <$> (K.knitEither $ DTM1.modelResultNVPs DTM1.aserModelFuncs modelRes (view GT.stateAbbreviation ok) md)
-          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nullVectorProjections nvpsModeled (VS.map (/ n) pV)
+          let simplexFull = VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nvps_SER_A5SR nvpsModeled (VS.map (/ n) pV)
 --            simplexNVPs = DTP.fullToProj testProjections simplexFull
 --          nvpsOptimal <- DED.mapPE $ DTP.optimalWeights testProjections nvpsModeled (VS.map (/ n) pV)
           let mV = simplexFull --DTP.applyNSPWeights testProjections (VS.map (* n) nvpsOptimal) pV
@@ -536,33 +487,9 @@ main = do
         product_SER_A2SR = FL.fold aggregateAge product_SER_A5SR
         productNS1_SER_A2SR = FL.fold aggregateAge productNS1_SER_A5SR
         productNS3_SER_A2SR = FL.fold aggregateAge productNS3_SER_A5SR
---      smcToProdFrame ks (ok, _, _, pv, nv) = zip
---      productFrame = F.toFrame $ fmap (
-
---    K.ignoreCacheTime res_C >>= \r -> K.logLE K.Info ("result=" <> show r)
-
-
---    K.knitEither $ Left "Stopping before products, etc."
 
     K.logLE K.Info $ "Loading ACS data and building marginal distributions (SER, ASR, CSR) for each CD" <> show cmdLine
---    acsA4ByCD_C <- DDP.cachedACSa4ByCD
---    acsA4ByCD :: F.FrameRec DDP.ACSa4ByCDR <-  K.ignoreCacheTime acsA4ByCD_C
     let zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
-{-        acsSampleWZ_C = fmap (FL.fold
-                              (FMR.concatFold
-                               $ FMR.mapReduceFold
-                               FMR.noUnpack
-                               (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict]
-                                @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount, DT.PWPopPerSqMile])
-                               (FMR.foldAndLabel
-                                (Keyed.addDefaultRec @[DT.CitizenC, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C] zc)
-                                (\k r -> fmap (k F.<+>) r)
-                               )
-                              )
-                             )
-                      $ acsA4ByCD_C
-    acsSampleWZ <- K.ignoreCacheTime acsSampleWZ_C
--}
     let acsA5SampleWZ_C = fmap (FL.fold
                                 (FMR.concatFold
                                  $ FMR.mapReduceFold
@@ -592,18 +519,6 @@ main = do
                     => F.Record rs -> F.Record [BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
         toOutputRow2 = F.rcast
     -- actual
-{-
-    let acsSampleASER_C = F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age4C, DT.SexC, DT.Education4C, DT.Race5C]
-                                     @'[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSampleWZ_C
-    acsSampleASER <- K.ignoreCacheTime acsSampleASER_C
--}
     let acsSampleA5SER_C = F.toFrame
                            . FL.fold (FMR.concatFold
                                       $ FMR.mapReduceFold
@@ -636,19 +551,6 @@ main = do
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
                          <$> acsA5SampleWZ_C
-    acsSampleSER <- K.ignoreCacheTime acsSampleSER_C
-{-
-    let acsSampleCSR_C = F.toFrame
-                         . FL.fold (FMR.concatFold
-                                    $ FMR.mapReduceFold
-                                    FMR.noUnpack
-                                    (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.CitizenC, DT.SexC, DT.Race5C]
-                                     @[DT.PopCount, DT.PWPopPerSqMile])
-                                    (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
-                                   )
-                         <$> acsSampleWZ_C
-    acsSampleCSR <- K.ignoreCacheTime acsSampleCSR_C
--}
     let acsSampleASR_C = F.toFrame
                          . FL.fold (FMR.concatFold
                                     $ FMR.mapReduceFold
@@ -658,7 +560,6 @@ main = do
                                     (FMR.foldAndAddKey DDP.aggregatePeopleAndDensityF)
                                    )
                          <$> acsA5SampleWZ_C
-    acsSampleASR <- K.ignoreCacheTime acsSampleASR_C
 
     -- model & match pipeline
     a2FromSER_C <- SM.runModel

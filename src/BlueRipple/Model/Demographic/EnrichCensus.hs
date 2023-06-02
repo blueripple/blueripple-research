@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -15,10 +16,13 @@ module BlueRipple.Model.Demographic.EnrichCensus
   )
 where
 
+import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
-import qualified BlueRipple.Model.Demographic.StanModels as SM
+import BlueRipple.Model.Demographic.TPModel3 (ModelConfig(distribution))
+import qualified BlueRipple.Data.Loaders as BRDF
+
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
@@ -30,23 +34,17 @@ import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Data.CensusTables as BRC
 
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 
 import qualified Knit.Report as K
-import qualified Knit.Utilities.Streamly as KS
 
-import qualified Stan.ModelRunner as SMR
-
-import Control.Lens (view, (^.))
+import Control.Lens (Lens',view, (^.))
 import qualified Control.Foldl as FL
 
+import Data.Type.Equality (type (~))
 import qualified Data.Map as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as S
-import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
@@ -60,11 +58,7 @@ import qualified Control.MapReduce as MR
 import qualified Numeric
 import qualified Numeric.LinearAlgebra as LA
 
-
-import Control.Lens (view, Lens')
-import BlueRipple.Model.Demographic.TPModel3 (ModelConfig(distribution))
-import qualified BlueRipple.Data.Loaders as BRDF
-import qualified BlueRipple.Configuration as BR
+import GHC.TypeLits (Symbol)
 
 
 {-
@@ -93,8 +87,48 @@ type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
 --type ASERDataR =   [DT.PopCount, DT.PWPopPerSqMile]
 type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
+type PUMAOuterKeyR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
+type PUMARowR ks = PUMAOuterKeyR V.++ KeysWD ks
 type CensusASERR = CensusOuterKeyR V.++ KeysWD ASER
 type CensusA5SERR = CensusOuterKeyR V.++ KeysWD A5SER
+
+marginalStructure :: forall ks as bs w qs .
+                     (Monoid w
+                     , qs ~ F.RDeleteAll (as V.++ bs) ks
+                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+                     , Ord (F.Record ks)
+                     , Keyed.FiniteSet (F.Record ks)
+                     , ((qs V.++ as) V.++ bs) F.⊆ ks
+                     , ks F.⊆ ((qs V.++ as) V.++ bs)
+                     , Ord (F.Record qs)
+                     , Ord (F.Record as)
+                     , Ord (F.Record bs)
+                     , Ord (F.Record (qs V.++ as))
+                     , Ord (F.Record (qs V.++ bs))
+                     , Ord (F.Record ((qs V.++ as) V.++ bs))
+                     , Keyed.FiniteSet (F.Record qs)
+                     , Keyed.FiniteSet (F.Record as)
+                     , Keyed.FiniteSet (F.Record bs)
+                     , Keyed.FiniteSet (F.Record (qs V.++ as))
+                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
+                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+                     , as F.⊆ (qs V.++ as)
+                     , bs F.⊆ (qs V.++ bs)
+                     , qs F.⊆ (qs V.++ as)
+                     , qs F.⊆ (qs V.++ bs)
+                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+                     )
+                 => Lens' w Double
+                 -> (Map (F.Record as) w -> Map (F.Record bs) w -> Map (F.Record as, F.Record bs) w)
+                 -> DMS.MarginalStructure w (F.Record ks)
+marginalStructure wl innerProduct =  DMS.reKeyMarginalStructure
+                                     (F.rcast @(qs V.++ as V.++ bs))
+                                     (F.rcast @ks)
+                                     $ DMS.combineMarginalStructuresF @qs
+                                     wl innerProduct
+                                     (DMS.identityMarginalStructure @(F.Record (qs V.++ as)) wl)
+                                     (DMS.identityMarginalStructure @(F.Record (qs V.++ bs)) wl)
 
 
 msSER_A5SR :: Monoid w
@@ -349,13 +383,26 @@ cachedNVProjections cacheKey ms cachedDataRows = do
       <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
     pure $ DTP.uncorrelatedNullVecsMS ms projCovariances
 
+innerFoldWD :: forall as bs rs . (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
+                                 , Ord (F.Record as), Keyed.FiniteSet (F.Record as)
+                                 , Ord (F.Record bs), Keyed.FiniteSet (F.Record bs)
+                                 )
+            => (F.Record rs -> F.Record as)
+            -> (F.Record rs -> F.Record bs)
+            -> FL.Fold (F.Record rs) (VS.Vector Double)
+innerFoldWD toAs toBs = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld toAs DTM3.cwdF
+                                            , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld toAs DTM3.cwdF
+                                            , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld toBs DTM3.cwdF
+                                            ]
 
 runAllModels :: (K.KnitEffects r, BRK.CacheEffects r)
              => Text
              -> (Int -> K.Sem r (K.ActionWithCacheTime r (DTM3.ComponentPredictor Text)))
              -> K.ActionWithCacheTime r (F.FrameRec rs)
              -> K.ActionWithCacheTime r DTP.NullVectorProjections
-             -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
+             -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text)
+                        , K.ActionWithCacheTime r DTP.NullVectorProjections
+                        )
 runAllModels cacheKey modelOne cachedDataRows cachedNVPs = do
   K.logLE K.Info "Running marginals as covariates model, if necessary."
   let modelResultDeps = (,) <$> cachedDataRows <*> cachedNVPs
@@ -365,157 +412,74 @@ runAllModels cacheKey modelOne cachedDataRows cachedNVPs = do
                                      modelResults <- K.ignoreCacheTime cachedModelResults
                                      pure $ DTM3.Predictor nvps modelResults
                                  )
-  pure model3Res_C
+  pure (model3Res_C, cachedNVPs)
 
-predictorModel3_SER_A5SR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                         => Bool
-                         -> BR.CommandLine
-                         -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
-predictorModel3_SER_A5SR clearCache cmdLine = do
-  acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
-  let nvpsCacheKey = "model/demographic/ser_a5sr_a5serNVPs.bin"
-      predictorCacheKey = "model/demographic/ser_a5sr_a5serPredictor.bin"
-  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
-  let msSER_A5SR_cwd = msSER_A5SR DMS.cwdWgtLens DMS.innerProductCWD'
-  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey msSER_A5SR_cwd acsA5ByPUMA_C
 
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record SER)) + S.size (Keyed.elements @(F.Record A5SR))
-      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast @SER) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @SER) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @A5SR) DTM3.cwdF
-                                        ]
+predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks qs r
+                   . (K.KnitEffects r, BRK.CacheEffects r
+                     , qs ~ F.RDeleteAll (as V.++ bs) ks
+                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+                     , Ord (F.Record ks)
+                     , V.RMap as
+                     , V.ReifyConstraint Show F.ElField as
+                     , V.RecordToList as
+                     , V.RMap bs
+                     , V.ReifyConstraint Show F.ElField bs
+                     , V.RecordToList bs
+                     , ks F.⊆ PUMARowR ks
+                     , Keyed.FiniteSet (F.Record ks)
+                     , ((qs V.++ as) V.++ bs) F.⊆ ks
+                     , ks F.⊆ ((qs V.++ as) V.++ bs)
+                     , Ord (F.Record qs)
+                     , Ord (F.Record as)
+                     , Ord (F.Record bs)
+                     , Ord (F.Record (qs V.++ as))
+                     , Ord (F.Record (qs V.++ bs))
+                     , Ord (F.Record ((qs V.++ as) V.++ bs))
+                     , Keyed.FiniteSet (F.Record qs)
+                     , Keyed.FiniteSet (F.Record as)
+                     , Keyed.FiniteSet (F.Record bs)
+                     , Keyed.FiniteSet (F.Record (qs V.++ as))
+                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
+                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+                     , as F.⊆ (qs V.++ as)
+                     , bs F.⊆ (qs V.++ bs)
+                     , qs F.⊆ (qs V.++ as)
+                     , qs F.⊆ (qs V.++ bs)
+                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+                     , F.ElemOf (KeysWD ks) DT.PopCount
+                     , F.ElemOf (KeysWD ks) DT.PWPopPerSqMile
+                     , qs V.++ as F.⊆ PUMARowR ks
+                     , qs V.++ bs F.⊆ PUMARowR ks
+                     )
+                => Either Text Text
+                -> Text
+                -> BR.CommandLine
+                -> K.ActionWithCacheTime r (F.FrameRec (PUMARowR ks))
+                -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text)
+                           , K.ActionWithCacheTime r DTP.NullVectorProjections
+                           )
+predictorModel3 cachePrefixE modelId cmdLine acs_C = do
+  (ckp, clearCaches) <- case cachePrefixE of
+    Left ck -> pure (ck, True)
+    Right ck -> pure (ck, False)
+  let
+    nvpsCacheKey = ckp <> "_NVPs.bin"
+    predictorCacheKey = ckp <> "_Predictor.bin"
+  when clearCaches $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
+  let ms = marginalStructure @ks @as @bs @DMS.CellWithDensity @qs DMS.cwdWgtLens DMS.innerProductCWD'
+  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey ms acs_C
+
+  let tp3NumKeys = S.size (Keyed.elements @(F.Record (qs V.++ bs))) + S.size (Keyed.elements @(F.Record (qs V.++ as)))
+      tp3InnerFld = innerFoldWD @(qs V.++ bs) @(qs V.++ as) @(PUMARowR ks) (F.rcast @(qs V.++ bs)) (F.rcast @(qs V.++ as))
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
-      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "SER_A5SR" (tp3NumKeys + 1)) -- +1 for pop density
+      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msSER_A5SR_cwd tp3InnerFld
-  runAllModels predictorCacheKey modelOne acsA5ByPUMA_C nullVectorProjections_C
-
-predictorModel3_CSR_A5SR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                         => Bool
-                         -> BR.CommandLine
-                         -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
-predictorModel3_CSR_A5SR clearCache cmdLine = do
-  acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
-  let nvpsCacheKey = "model/demographic/csr_a5sr_a5serNVPs.bin"
-      predictorCacheKey = "model/demographic/csr_a5sr_a5serPredictor.bin"
-  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
-  let msCSR_A5SR_cwd = msSER_A5SR DMS.cwdWgtLens DMS.innerProductCWD'
-  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey msCSR_A5SR_cwd acsA5ByPUMA_C
-
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record CSR)) + S.size (Keyed.elements @(F.Record A5SR))
-      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast @CSR) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @CSR) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @A5SR) DTM3.cwdF
-                                        ]
-      tp3RunConfig n = DTM3.RunConfig n False False Nothing
-      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "CSR_A5SR" (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msCSR_A5SR_cwd tp3InnerFld
-  runAllModels predictorCacheKey modelOne acsA5ByPUMA_C nullVectorProjections_C
-
-predictorModel3_ASE_CASR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                         => Bool
-                         -> BR.CommandLine
-                         -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
-predictorModel3_ASE_CASR clearCache cmdLine = do
-  acsA4ByPUMA_C <- DDP.cachedACSa4ByPUMA
-  let nvpsCacheKey = "model/demographic/ase_casr_a5serNVPs.bin"
-      predictorCacheKey = "model/demographic/ase_casr_a5serPredictor.bin"
-  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
-  let msASE_CASR_cwd = msASE_CASR DMS.cwdWgtLens DMS.innerProductCWD'
-  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey msASE_CASR_cwd acsA4ByPUMA_C
-
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record ASE)) + S.size (Keyed.elements @(F.Record CASR))
-      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast @ASE) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @ASE) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @CASR) DTM3.cwdF
-                                        ]
-      tp3RunConfig n = DTM3.RunConfig n False False Nothing
-      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "ASE_CASR" (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA4ByPUMA_C nullVectorProjections_C msASE_CASR_cwd tp3InnerFld
-  runAllModels predictorCacheKey modelOne acsA4ByPUMA_C nullVectorProjections_C
+      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) clearCaches cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
+  runAllModels predictorCacheKey modelOne acs_C nullVectorProjections_C
 
 
-{-
-predictorModel3_CSR_A5SR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                         => Bool
-                         -> BR.CommandLine
-                         -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
-predictorModel3_CSR_A5SR clearCache cmdLine = do
-  acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
-  let nvpsCacheKey = "model/demographic/csr_a5sr_a5serNVPs.bin"
-      predictorCacheKey = "model/demographic/csr_a5sr_a5serPredictor.bin"
-  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
-  let msCSR_A5SR_cwd = msSER_A5SR DMS.cwdWgtLens DMS.innerProductCWD'
-  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey msCSR_A5SR_cwd acsA5ByPUMA_C
-
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record CSR)) + S.size (Keyed.elements @(F.Record A5SR))
-      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast @CSR) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @CSR) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @A5SR) DTM3.cwdF
-                                        ]
-      tp3RunConfig n = DTM3.RunConfig n False False Nothing
-      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "CSR_A5SR" (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA5ByPUMA_C nullVectorProjections_C msCSR_A5SR_cwd tp3InnerFld
-  runAllModels predictorCacheKey modelOne acsA5ByPUMA_C nullVectorProjections_C
--}
-
-
-{-
-predictorModel3_ASE_ASR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                         => Bool
-                         -> BR.CommandLine
-                         -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text))
-predictorModel3_ASE_ASR clearCache cmdLine = do
-  acsA4ByPUMA_C <- DDP.cachedACSa4ByPUMA
-  let nvpsCacheKey = "model/demographic/ase_asr_aserNVPs.bin"
-      predictorCacheKey = "model/demographic/ase_asr_aserPredictor.bin"
-  when clearCache $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
-  let msASE_ASR_cwd = msASE_ASR DMS.cwdWgtLens DMS.innerProductCWD'
-  let projCovariancesFld :: FL.Fold (F.Record )
-      projCovariancesFld =
-        DTP.diffCovarianceFldMS
-        DMS.cwdWgtLens
-        (F.rcast @[GT.StateAbbreviation, GT.PUMA])
-        (F.rcast @ASER)
-        DTM3.cwdF
-        msASE_ASR_cwd
-  nullVectorProjections_C <- BRK.retrieveOrMakeD nvpsCacheKey acsA4ByPUMA_C
-                             $ \acsByPUMA -> do
-    K.logLE K.Info $ "Computing covariance matrix of projected differences."
-    let (projMeans, projCovariances) = FL.fold projCovariancesFld acsByPUMA
-        (eigVals, _) = LA.eigSH projCovariances
-    K.logLE K.Diagnostic
-      $ "mean=" <> toText (DED.prettyVector projMeans)
-      <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym projCovariances)
-      <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
-    pure $ DTP.uncorrelatedNullVecsMS msASE_ASR_cwd projCovariances
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record ASE))
-                   +  S.size (Keyed.elements @(F.Record ASR))
-      tp3InnerFld ::  (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
-                      , F.ElemOf rs DT.Age4C, F.ElemOf rs DT.SexC, F.ElemOf rs DT.Education4C, F.ElemOf rs DT.Race5C)
-                  => FL.Fold (F.Record rs) (VS.Vector Double)
-      tp3InnerFld = DTM3.mergeInnerFlds [VS.singleton . DTM3.cwdListToLogPWDensity <$> DTM3.cwdInnerFld (F.rcast @ASE) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @ASE) DTM3.cwdF
-                                        , DTM3.cwdListToLogitVec <$> DTM3.cwdInnerFld (F.rcast @ASR) DTM3.cwdF
-                                        ]
-      tp3RunConfig n = DTM3.RunConfig n False False Nothing
-      tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr "SER_ASR" (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel False cmdLine (tp3RunConfig n) tp3ModelConfig acsA4ByPUMA_C nullVectorProjections_C msASE_ASR_cwd tp3InnerFld
-
-  K.logLE K.Info "Running marginals as covariates model, if necessary."
-  let modelResultDeps = (,) <$> acsA4ByPUMA_C <*> nullVectorProjections_C
-  model3Res_C <- BRK.retrieveOrMakeD predictorCacheKey modelResultDeps
-                 $ \(_, nvps) -> (do
-                                     cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
-                                     modelResults <- K.ignoreCacheTime cachedModelResults
-                                     pure $ DTM3.Predictor nvps modelResults
-                                 )
-  pure model3Res_C
--}
 subsetsMapFld :: (Monoid w, Ord k) => (row -> (k, w)) -> FL.Fold row (Map k w)
 subsetsMapFld f = fmap M.fromList
                        $ MR.mapReduceFold

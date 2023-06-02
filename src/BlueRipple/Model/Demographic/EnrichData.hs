@@ -365,11 +365,11 @@ nearestCountsProp dRowSums oCounts = do
 
 -- represents various positions in the list of numbers
 newtype Stencil a = Stencil { stencilIndexes :: [a] }
-  deriving stock Show
+  deriving stock (Show, Eq)
   deriving newtype Functor
 
 data StencilSum b a = StencilSum { stPositions :: Stencil a, stSum :: b }
-  deriving stock (Show, Functor)
+  deriving stock (Show, Functor, Eq)
 --  deriving newtype (Functor)
 
 mapStencilSum :: (b -> c) -> StencilSum b a -> StencilSum c a

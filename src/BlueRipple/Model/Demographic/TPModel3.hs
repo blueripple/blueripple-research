@@ -172,24 +172,24 @@ nullVecProjectionsModelDataFldCheck ::  forall outerK k row w .
                                     -> (row -> k)
                                     -> (row -> w)
                                     -> FL.Fold row (VS.Vector Double) -- covariates
-                                    -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double, VS.Vector Double, VS.Vector Double, [w])]
+                                    -> FL.Fold row [(outerK
+                                                    , VS.Vector Double -- covariates
+                                                    , VS.Vector Double -- nvProjections
+                                                    , [(k, w)] -- product table
+                                                    , [(k, w)] -- orig table
+                                                    )]
 nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey datF datFold = case ms of
   DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
                                    MR.noUnpack
                                    (MR.assign outerKey id)
-                                   (MR.foldAndLabel innerFld (\ok (d, (v, pv, nv, ws)) -> (ok, d, v, pv, nv, ws)))
+                                   (MR.foldAndLabel innerFld (\ok (d, (v, pKWs, oKWs)) -> (ok, d, v, pKWs, oKWs)))
     where
-      allKs :: Set k = BRK.elements
-      wgtVec = VS.fromList . fmap (view wl)
-      pcF :: [(k, w)] -> VS.Vector Double
-      pcF =  wgtVec . fmap snd . FL.fold ptFld
+      pcF :: [(k, w)] -> [(k, w)]
+      pcF =  FL.fold ptFld
       results kws = let kws' = DMS.normalize (_2 . wl) kws -- normalized original probs
-                        nSum = FL.fold (FL.premap (view $ _2 . wl) FL.sum) kws -- num of people
                     in (DTP.diffProjectionsFromJointKeyedList ms wl (DTP.fullToProj nvps) kws'
---DTP.fullToProj nvps (wgtVec ws' - pcF ws')
-                      , VS.map (* nSum) (pcF kws')
-                      , VS.fromList $ fmap (view $ _2 . wl) kws
-                      , fmap snd kws
+                      , pcF kws
+                      , kws
                       )
       projFld = fmap results $ DTP.labeledRowsToKeyedListFld catKey datF
       innerFld = (,) <$> datFold <*> projFld
@@ -233,13 +233,12 @@ modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 -- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
 predictedJoint :: forall g k w . (Show g, Ord g)
                => Lens' w Double
---               -> (Double -> w -> w) -- this might not be the lens update
                -> Predictor g
                -> g
                -> VS.Vector Double
                -> [(k, w)]
                -> Either Text [(k, w)]
-predictedJoint wgtLens {- updateWgt -} p gk covariates keyedProduct = do
+predictedJoint wgtLens p gk covariates keyedProduct = do
   let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
       prodV = VS.fromList $ fmap (view wgtLens . snd) keyedProduct
   nvpsPrediction <- VS.fromList <$> modelResultNVPs p gk covariates
