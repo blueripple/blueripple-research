@@ -131,6 +131,7 @@ marginalStructure wl innerProduct =  DMS.reKeyMarginalStructure
                                      (DMS.identityMarginalStructure @(F.Record (qs V.++ bs)) wl)
 
 
+
 msSER_A5SR :: Monoid w
            => Lens' w Double
            -> (Map (F.Record '[DT.Education4C]) w -> Map (F.Record '[DT.Age5FC]) w -> Map (F.Record '[DT.Education4C], F.Record '[DT.Age5FC]) w)
