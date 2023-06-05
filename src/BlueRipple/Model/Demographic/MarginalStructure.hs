@@ -42,25 +42,13 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
 normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
+
 reKeyMarginalStructure :: forall k1 k2 w . (Ord k2, BRK.FiniteSet k2, BRK.FiniteSet k1)
                        => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
 reKeyMarginalStructure f21 f12 ms = case ms of
   MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
-    sts' = fmap (expandStencil f21) sts
+    sts' = fmap snd . sortOn fst . fmap (first f12) $ zip (S.toList $ BRK.elements @k1) (fmap (expandStencil f21) sts)
     ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
-
-reorderStencils :: forall ka ka' k w .
-                   (BRK.FiniteSet ka
-                   ,Ord ka'
-                   )
-                => Int -> (ka -> ka') -> MarginalStructure k w -> MarginalStructure k w
-reorderStencils pos mapKey (MarginalStructure sts ptFld) = MarginalStructure sts' ptFld
-  where
-    aKeys = S.toList $ BRK.elements @ka
-    na = length aKeys
-    reorder as = fmap snd $ sortOn fst $ fmap (first mapKey) $ zip aKeys as
-    sts' = take pos sts <> reorder (take na $ drop pos sts) <> drop (pos + na) sts
-
 
 -- given a k2 stencil and a map (k1 -> k2), we can generate a k1 stencil by testing each k1 to see if it maps to a k2 which
 -- is in the stencil
@@ -111,7 +99,6 @@ combineMarginalStructuresF wgtLens innerProduct = combineMarginalStructures' wgt
                                           (\(kr, kar, kbr) -> kr F.<+> kar F.<+> kbr)
 {-# INLINEABLE combineMarginalStructuresF #-}
 
--- NB: This has an implicit order to the stencils of (ok, ka) <> (ok, kb)
 combineMarginalStructures' :: forall k ka kb ok ika ikb w .
                              (Ord k, BRK.FiniteSet k
                              , Ord ka, BRK.FiniteSet ka
