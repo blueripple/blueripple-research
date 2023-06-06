@@ -130,7 +130,7 @@ marginalStructure wl innerProduct =  DMS.reKeyMarginalStructure
                                      (DMS.identityMarginalStructure @(F.Record (qs V.++ as)) wl)
                                      (DMS.identityMarginalStructure @(F.Record (qs V.++ bs)) wl)
 
-
+{-
 msSER_A5SR :: Monoid w
            => Lens' w Double
            -> (Map (F.Record '[DT.Education4C]) w -> Map (F.Record '[DT.Age5FC]) w -> Map (F.Record '[DT.Education4C], F.Record '[DT.Age5FC]) w)
@@ -163,7 +163,7 @@ msASE_CASR wl innerProduct = DMS.reKeyMarginalStructure
                             $ DMS.combineMarginalStructuresF  @'[DT.Age4C, DT.SexC]
                             wl innerProduct (DMS.identityMarginalStructure wl) (DMS.identityMarginalStructure wl)
 
-
+-}
 
 
 type LDRecoded ks = LDKey ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
@@ -372,7 +372,7 @@ cachedNVProjections :: forall rs ks r .
 cachedNVProjections cacheKey ms cachedDataRows = do
   let fld = projCovFld ms
 
-  BRK.retrieveOrMakeD cacheKey cachedDataRows
+  nvp_C <- BRK.retrieveOrMakeD cacheKey cachedDataRows
                              $ \dataRows -> do
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
     let (projMeans, projCovariances) = FL.fold fld dataRows
@@ -382,6 +382,9 @@ cachedNVProjections cacheKey ms cachedDataRows = do
       <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym projCovariances)
       <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
     pure $ DTP.uncorrelatedNullVecsMS ms projCovariances
+  nvp <- K.ignoreCacheTime nvp_C
+  K.logLE K.Info $ "Null-Space is " <> show (fst $ LA.size $ DTP.nvpProj nvp)
+  pure nvp_C
 
 innerFoldWD :: forall as bs rs . (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
                                  , Ord (F.Record as), Keyed.FiniteSet (F.Record as)
@@ -459,6 +462,7 @@ predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks q
                 -> K.ActionWithCacheTime r (F.FrameRec (PUMARowR ks))
                 -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor Text)
                            , K.ActionWithCacheTime r DTP.NullVectorProjections
+                           , DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                            )
 predictorModel3 cachePrefixE modelId cmdLine acs_C = do
   (ckp, clearCaches) <- case cachePrefixE of
@@ -477,7 +481,8 @@ predictorModel3 cachePrefixE modelId cmdLine acs_C = do
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
       modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) clearCaches cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
-  runAllModels predictorCacheKey modelOne acs_C nullVectorProjections_C
+  (predictor_C, nvps_C) <- runAllModels predictorCacheKey modelOne acs_C nullVectorProjections_C
+  pure (predictor_C, nvps_C, ms)
 
 
 subsetsMapFld :: (Monoid w, Ord k) => (row -> (k, w)) -> FL.Fold row (Map k w)

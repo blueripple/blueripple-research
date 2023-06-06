@@ -167,6 +167,9 @@ instance FiniteSet Bool where
   elements = Set.fromAscList [False, True]
   {-# INLINE elements #-}
 
+instance (Ord a, FiniteSet a) => FiniteSet (Maybe a) where
+  elements = Set.fromList $ [Nothing] <> fmap Just (Set.toList elements)
+
 instance (FiniteSet a, FiniteSet b) => FiniteSet (a, b) where
   elements = Set.fromAscList $ do
     a <- Set.toAscList elements

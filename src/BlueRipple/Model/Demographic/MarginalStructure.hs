@@ -22,7 +22,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 
 
 import qualified Control.Foldl as FL
-import Control.Lens (Lens', Traversal, view, set, over, lens)
+import Control.Lens (Lens', Traversal, view, set, over, lens, _2)
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Profunctor as PF
@@ -42,16 +42,19 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
 normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
-
+-- NB: The order of the stencils depends on how we get to k2. Which shouldn't matter as long as
+-- we only use them to compute marginals from products to compare to other marginals from
+-- products.
 reKeyMarginalStructure :: forall k1 k2 w . (Ord k2, BRK.FiniteSet k2, BRK.FiniteSet k1)
                        => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
 reKeyMarginalStructure f21 f12 ms = case ms of
   MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
-    sts' = fmap snd . sortOn fst . fmap (first f12) $ zip (S.toList $ BRK.elements @k1) (fmap (expandStencil f21) sts)
+    sts' = fmap (expandStencil f21) sts
     ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
 
 -- given a k2 stencil and a map (k1 -> k2), we can generate a k1 stencil by testing each k1 to see if it maps to a k2 which
 -- is in the stencil
+-- That is, if this is a functor, it's contravariant.
 expandStencil :: forall k1 k2 . (BRK.FiniteSet k1, Ord k2, BRK.FiniteSet k2) => (k1 -> k2) -> DED.Stencil Int -> DED.Stencil Int
 expandStencil f st = DED.Stencil dil
   where
@@ -109,10 +112,14 @@ combineMarginalStructures' :: forall k ka kb ok ika ikb w .
                              , Monoid w)
                            => Lens' w Double
                            -> (Map ika w -> Map ikb w -> Map (ika, ikb) w)
-                           -> (k -> ka) -> (ka -> (ok, ika))
-                           -> (k -> kb) -> (kb -> (ok, ikb))
+                           -> (k -> ka)
+                           -> (ka -> (ok, ika))
+                           -> (k -> kb)
+                           -> (kb -> (ok, ikb))
                            -> ((ok, ika, ikb) -> k)
-                           -> MarginalStructure w ka -> MarginalStructure w kb -> MarginalStructure w k
+                           -> MarginalStructure w ka
+                           -> MarginalStructure w kb
+                           -> MarginalStructure w k
 combineMarginalStructures' wgtLens innerProduct kaF expandA kbF expandB collapse msA msB = MarginalStructure sts prodFld
   where
     expandedStencilsA = fmap (expandStencil kaF) $ msStencils msA
@@ -133,8 +140,7 @@ identityMarginalStructure wgtLens = MarginalStructure (fmap (DED.Stencil . pure)
     numCats = S.size $ BRK.elements @k
 {-# INLINEABLE identityMarginalStructure #-}
 
-
-
+-- NB: The stencil order is unspecified. So this only works if the stencils are used as a map from a joint distribution to a marginal one
 data MarginalStructure w k where
   MarginalStructure :: (Monoid w, BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, w) [(k, w)]-> MarginalStructure w k
 
@@ -150,6 +156,13 @@ msNumCategories :: forall k w . MarginalStructure w k -> Int
 msNumCategories ms = case ms of
   MarginalStructure _ _ -> S.size $ BRK.elements @k
 {-# INLINEABLE msNumCategories #-}
+
+marginalProductFromJointFld :: Lens' w Double -> MarginalStructure w k -> FL.Fold (k, w) [(k, w)]
+marginalProductFromJointFld wgtLens ms =
+  let nFld = FL.premap (view $ _2 . wgtLens) FL.sum
+      f n normalizedPT = fmap (over (_2 . wgtLens) (* n)) normalizedPT
+  in case ms of
+    MarginalStructure _ ptFld -> f <$> nFld <*> ptFld
 
 constMap :: (BRK.FiniteSet k, Ord k) => a -> Map k a
 constMap x = M.fromList $ fmap (, x) $ S.toList BRK.elements
@@ -167,7 +180,7 @@ summedMap = FL.foldByKeyMap FL.mconcat --fmap getSum <$> FL.premap (second Sum) 
 {-# SPECIALIZE summedMap :: (Ord a, Num b) => FL.Fold (a, Sum b) (Map a (Sum b)) #-}
 {-# SPECIALIZE summedMap :: Ord a => FL.Fold (a, CellWithDensity ) (Map a CellWithDensity) #-}
 
-zeroFillSummedMapFld :: (BRK.FiniteSet k, Ord k, Monoid a) => FL.Fold (k, a) (Map k a)
+zeroFillSummedMapFld :: (BRK.FiniteSet k, Ord k, Monoid w) => FL.Fold (k, w) (Map k w)
 zeroFillSummedMapFld = fmap (<> zeroMap) summedMap
 {-# INLINEABLE zeroFillSummedMapFld #-}
 {-# SPECIALIZE zeroFillSummedMapFld ::  (BRK.FiniteSet k, Ord k, Num b) => FL.Fold (k, Sum b) (Map k (Sum b)) #-}

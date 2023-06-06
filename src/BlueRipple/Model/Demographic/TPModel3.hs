@@ -187,8 +187,9 @@ nullVecProjectionsModelDataFldCheck wl ms nvps outerKey catKey datF datFold = ca
       pcF :: [(k, w)] -> [(k, w)]
       pcF =  FL.fold ptFld
       results kws = let kws' = DMS.normalize (_2 . wl) kws -- normalized original probs
+--                        n = FL.fold (FL.premap (view $ _2 . wl) FL.sum) kws
                     in (DTP.diffProjectionsFromJointKeyedList ms wl (DTP.fullToProj nvps) kws'
-                      , pcF kws
+                      , FL.fold (DMS.marginalProductFromJointFld wl ms) kws --fmap (over (_2 . wl) (* n)) $ pcF kws -- product at original size
                       , kws
                       )
       projFld = fmap results $ DTP.labeledRowsToKeyedListFld catKey datF

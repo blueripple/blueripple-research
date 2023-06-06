@@ -291,17 +291,18 @@ testProductNS_CDs :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]
                      , FS.RecFlat (DMC.KeysWD ks)
                      )
                   => Bool
+                  -> Bool
                   -> Text
                   -> Text
                   -> BR.CommandLine
                   -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
                   -> K.ActionWithCacheTime r (F.FrameRec (CDRow ks))
-                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks)))
-testProductNS_CDs clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
+                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks), F.FrameRec (CDRow ks)))
+testProductNS_CDs rerunModel clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
   let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
   when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
-  (predictor_C, nvps_C) <- DMC.predictorModel3 @as @bs @ks @qs (Right cachePrefix) modelId cmdLine byPUMA_C
-  let ms = DMC.marginalStructure @ks @as @bs @DMS.CellWithDensity DMS.cwdWgtLens DMS.innerProductCWD'
+  let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
+  (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @ks @qs modelCacheDirE modelId cmdLine byPUMA_C
   byCD <- K.ignoreCacheTime byCD_C
   nvps <- K.ignoreCacheTime nvps_C
   let cdModelData = FL.fold
@@ -316,14 +317,14 @@ testProductNS_CDs clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
         )
         byCD
       productFrameDeps = (,) <$> nvps_C <*> predictor_C
-  BRK.retrieveOrMakeFrame productFrameCacheKey productFrameDeps $ \(nvps', predictor) -> do
+  BRK.retrieveOrMake2Frames productFrameCacheKey productFrameDeps $ \(nvps', predictor) -> do
     let vecToFrame ok kws = fmap (\(k, w) -> ok F.<+> k F.<+> DMS.cwdToRec w) kws
         prodAndModeledToFrames (ok, pKWs, mKWs) = (vecToFrame ok pKWs, vecToFrame ok mKWs)
 
-        smcRowToProdAndModeled (ok, _, _, pKWs, oKWs) = do
-          let pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
+        smcRowToProdAndModeled (ok, covariates, _, pKWs, _) = do
+--          let pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
           mKWs <- K.knitEither
-                $ DTM3.predictedJoint DMS.cwdWgtLens predictor (ok ^. GT.stateAbbreviation) pV oKWs
+                $ DTM3.predictedJoint DMS.cwdWgtLens predictor (ok ^. GT.stateAbbreviation) covariates pKWs
           pure (ok, pKWs, mKWs)
 
     let cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
@@ -352,18 +353,134 @@ testProductNS_CDs clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
         K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
 
     prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
-    pure $ F.toFrame . concat
-         $ fmap snd
+    pure $ bimap (F.toFrame . concat) (F.toFrame . concat)
+         $ unzip
          $ fmap prodAndModeledToFrames prodAndModeled
 
-compareCSR_A5SR :: (K.KnitOne r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r ()
-compareCSR_A5SR cmdLine = do
+
+cdWithZeros :: forall ks .
+             (
+               (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) F.⊆ CDRow ks
+             , ks F.⊆ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , FSI.RecVec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , Keyed.FiniteSet (F.Record ks)
+             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PWPopPerSqMile
+             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PopCount
+             )
+          => F.FrameRec (CDRow ks)
+          -> F.FrameRec (CDRow ks)
+cdWithZeros frame = FL.fold (FMR.concatFold
+                           $ FMR.mapReduceFold
+                           FMR.noUnpack
+                           (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
+                            @(ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
+                           (FMR.foldAndLabel
+                            (fmap F.toFrame $ Keyed.addDefaultRec @ks zc)
+                            (\k r -> fmap (k F.<+>) r)
+                           )
+                          )
+                  frame
+  where
+       zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
+
+
+aggregateAndZeroFillTables :: forall ls ks .
+                              (
+                                (ls V.++ ks) V.++ [DT.PopCount, DT.PWPopPerSqMile] ~ ls V.++ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                              , Ord (F.Record ls)
+                              , ls F.⊆ ((ls V.++ ks) V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                              , ks F.⊆ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                              , ks V.++ [DT.PopCount, DT.PWPopPerSqMile] F.⊆ ((ls V.++ ks) V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                              , FSI.RecVec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                              , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PopCount
+                              , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PWPopPerSqMile
+                              , Keyed.FiniteSet (F.Record ks)
+                              , Ord (F.Record ks)
+                              )
+                           => F.FrameRec (ls V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                           -> F.FrameRec (ls V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+aggregateAndZeroFillTables frame =FL.fold
+                                  (FMR.concatFold
+                                   $ FMR.mapReduceFold
+                                   FMR.noUnpack
+                                   (FMR.assignKeysAndData @ls @(ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
+                                   (FMR.foldAndLabel innerFld (\k r -> fmap (k F.<+>) r))
+                                  )
+                                  frame
+  where
+    toKW r = (F.rcast @ks r, DTM3.cwdF r)
+    toRec (k, w) = k F.<+> DMS.cwdToRec w
+    innerFld :: FL.Fold (F.Record (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])) (F.FrameRec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
+    innerFld = fmap (F.toFrame . fmap toRec . M.toList) $ FL.premap toKW DMS.zeroFillSummedMapFld
+
+
+
+
+
+compareCSR_A5SR :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
+compareCSR_A5SR cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for CSR x A5SR -> CA5SR"
-    byPUMA_C <- fmap (fmap $ F.rcast @(DMC.PUMARowR DMC.CA5SR)) <$> DDP.cachedACSa5ByPUMA
-    byCD_C <- fmap (fmap $ F.rcast @(CDRow DMC.CA5SR)) <$> DDP.cachedACSa5ByCD
-    productCSR_A5SR <- testProductNS_CDs @DMC.CA5SR @'[DT.CitizenC] @'[DT.Age5FC] False "model/demographic/csr_a5sr" "CSR_A5SR" cmdLine
-                       byPUMA_C byCD_C
+    byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CA5SR . fmap F.rcast)
+                <$> DDP.cachedACSa5ByPUMA
+    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CA5SR . fmap F.rcast)
+              <$> DDP.cachedACSa5ByCD
+    byCD <- K.ignoreCacheTime byCD_C
+    (product_CSR_A5SR, modeled_CSR_A5SR) <- K.ignoreCacheTimeM
+                                            $ testProductNS_CDs @DMC.CA5SR @'[DT.CitizenC] @'[DT.Age5FC]
+                                            False True "model/demographic/csr_a5sr" "CSR_A5SR" cmdLine byPUMA_C byCD_C
+    let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
+        ageOrder = show <$> S.toList (Keyed.elements @DT.Age5F)
+        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
+        showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.age5FC, r ^. DT.sexC, r ^. DT.race5C)
+    synthModelPaths <- postPaths "Model_CSR_A5SR" cmdLine
+    BRK.brNewPost synthModelPaths postInfo "Model_CSR_A5SR" $ do
+      compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CA5SR)
+        synthModelPaths postInfo cdPopMap DDP.districtKeyT (Just "NY")
+        (F.rcast @DMC.CA5SR)
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.citizenC, r ^. DT.age5FC))
+        showCellKey
+        (Just ("Race", show . view DT.race5C, Just raceOrder))
+        (Just ("Age", show . view DT.age5FC, Just ageOrder))
+        (fmap F.rcast $ cdWithZeros @DMC.CA5SR byCD)
+        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.CA5SR byCD) (Just "Actual") Nothing Nothing
+        ,MethodResult (fmap F.rcast product_CSR_A5SR) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast modeled_CSR_A5SR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
+        ]
     pure ()
+
+compareSER_A5SR :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
+compareSER_A5SR cmdLine postInfo = do
+    K.logLE K.Info "Building test CD-level products for SER x A5SR -> A5SER"
+    byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.A5SER . fmap F.rcast)
+                <$> DDP.cachedACSa5ByPUMA
+    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.A5SER . fmap F.rcast)
+              <$> DDP.cachedACSa5ByCD
+    byCD <- K.ignoreCacheTime byCD_C
+    (product_CSR_A5SR, modeled_CSR_A5SR) <- K.ignoreCacheTimeM
+                                            $ testProductNS_CDs @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C]
+                                            False True "model/demographic/ser_a5sr" "SER_A5SR" cmdLine byPUMA_C byCD_C
+    let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
+        ageOrder = show <$> S.toList (Keyed.elements @DT.Age5F)
+        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
+        showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.age5FC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
+    synthModelPaths <- postPaths "Model_SER_A5SR" cmdLine
+    BRK.brNewPost synthModelPaths postInfo "Model_SER_A5SR" $ do
+      compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.A5SER)
+        synthModelPaths postInfo cdPopMap DDP.districtKeyT (Just "NY")
+        (F.rcast @DMC.A5SER)
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.education4C, r ^. DT.age5FC))
+        showCellKey
+        (Just ("Race", show . view DT.race5C, Just raceOrder))
+        (Just ("Age", show . view DT.age5FC, Just ageOrder))
+        (fmap F.rcast $ cdWithZeros @DMC.A5SER byCD)
+        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.A5SER byCD) (Just "Actual") Nothing Nothing
+        ,MethodResult (fmap F.rcast product_CSR_A5SR) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast modeled_CSR_A5SR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
+        ]
+    pure ()
+
 
 main :: IO ()
 main = do
@@ -384,14 +501,17 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-{-
-    K.logLE K.Info "Building district-level ASER joint distributions"
-    predictor_C <- DMC.predictorModel3 False cmdLine
-    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
-    let censusTableCond r = r ^. GT.stateFIPS == 9 && r ^. GT.districtTypeC == GT.StateUpper -- && r ^. GT.districtName == "10"
-        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
-    predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusASER True "model/demographic/test/svdBug" predictor_C filteredCensusTables_C
--}
+    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+
+    compareCSR_A5SR cmdLine postInfo
+    compareSER_A5SR cmdLine postInfo
+  case resE of
+    Right namedDocs →
+      K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
+    Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+originalPost ::  (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
+originalPost cmdLine postInfo = do
     K.logLE K.Info $ "Loading ACS data for each PUMA" <> show cmdLine
     acsA5ByPUMA_C <- DDP.cachedACSa5ByPUMA
 
@@ -402,15 +522,25 @@ main = do
                         DTP.sumLens DMS.innerProductSum
                         (DMS.identityMarginalStructure DTP.sumLens)
                         (DMS.identityMarginalStructure DTP.sumLens)
-
+{-
         msSER_A5SR_sd' = DMC.marginalStructure @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] DTP.sumLens DMS.innerProductSum
     let eqStencils = DMS.msStencils msSER_A5SR_sd == DMS.msStencils msSER_A5SR_sd'
     K.logLE K.Info $ "Stencils are == ?" <> show eqStencils
     when (not eqStencils) $ K.logLE K.Info $ "orig=" <> show (DMS.msStencils msSER_A5SR_sd) <> "\nnew=" <> show (DMS.msStencils msSER_A5SR_sd')
     K.knitError "STOP"
+-}
+    {-
+    K.logLE K.Info "Building district-level ASER joint distributions"
+    predictor_C <- DMC.predictorModel3 False cmdLine
+    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
+    let censusTableCond r = r ^. GT.stateFIPS == 9 && r ^. GT.districtTypeC == GT.StateUpper -- && r ^. GT.districtName == "10"
+        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
+    predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusASER True "model/demographic/test/svdBug" predictor_C filteredCensusTables_C
+-}
     acsA5ByCD_C <- DDP.cachedACSa5ByCD
     acsA5ByCD <- K.ignoreCacheTime acsA5ByCD_C
-    productNS3_SER_A5SR_C <- testProductNS_CDs @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] True "model/demographic/ser_a5sr" "SER_A5SR" cmdLine
+    productNS3_SER_A5SR_C <- fmap snd <$>
+                             testProductNS_CDs @DMC.A5SER @'[DT.Age5FC] @'[DT.Education4C] False True "model/demographic/ser_a5sr" "SER_A5SR" cmdLine
                              (fmap (fmap F.rcast) acsA5ByPUMA_C)
                              (fmap (fmap F.rcast) acsA5ByCD_C)
     productNS3_SER_A5SR <- fmap (fmap F.rcast) $ K.ignoreCacheTime productNS3_SER_A5SR_C
@@ -612,7 +742,6 @@ main = do
                                    ((,) <$> serToA2SER_PC True <*> acsSampleSER_C)
                                    $ \(p, d) -> DED.mapPE $ p d
 
-    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
     synthModelPaths <- postPaths "SynthModel" cmdLine
     BRK.brNewPost synthModelPaths postInfo "SynthModel" $ do
       let showCellKeyA2 r = show (r ^. GT.stateAbbreviation, r ^. DT.simpleAgeC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
@@ -653,10 +782,6 @@ main = do
         ,MethodResult productNS3_SER_A5SR (Just "Null-Space_v3") (Just "Null-Space_v3") (Just "Null-Space_v3")
         ]
     pure ()
-  case resE of
-    Right namedDocs →
-      K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
-    Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 
 data KLTableRow = KLTableRow { kltrLabel :: Text, kltrKLs :: [Double] }
