@@ -311,9 +311,7 @@ age5FToSimple A5F_25To44 = Under
 age5FToSimple _ = EqualOrOver
 
 
-data Age5 = A5_18To24 | A5_25To44 | A5_45To64 | A5_65To74 | A5_75AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
---instance S.Serialize Age5
---instance B.Binary Age5
+data Age5 = A5_18To24 | A5_25To34 | A5_35To44 | A5_45To64 | A5_65AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 instance Flat.Flat Age5
 instance Grouping Age5
 instance K.FiniteSet Age5
@@ -328,8 +326,32 @@ FTH.declareColumn "Age5C" ''Age5
 
 
 simpleAgeFrom5 :: SimpleAge -> [Age5]
-simpleAgeFrom5 Under       = [A5_18To24, A5_25To44]
-simpleAgeFrom5 EqualOrOver = [A5_45To64, A5_65To74, A5_75AndOver]
+simpleAgeFrom5 Under       = [A5_18To24, A5_25To34, A5_35To44]
+simpleAgeFrom5 EqualOrOver = [A5_45To64, A5_65AndOver]
+
+age5ToSimple :: Age5 -> SimpleAge
+age5ToSimple A5_45To64 = EqualOrOver
+age5ToSimple A5_65AndOver = EqualOrOver
+age5ToSimple _ = Under
+
+
+data Age6 = A6_Under18 | A6_18To24 | A6_25To34 | A6_35To44 | A6_45To64 | A6_65AndOver deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
+instance Flat.Flat Age6
+instance Grouping Age6
+instance K.FiniteSet Age6
+derivingUnbox "Age6"
+  [t|Age6 -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FSI.VectorFor Age6 = UVec.Vector
+
+--type Age5C = "Age5" F.:-> Age5
+FTH.declareColumn "Age6C" ''Age6
+
+
+simpleAgeFrom6 :: SimpleAge -> [Age6]
+simpleAgeFrom6 Under       = [A6_Under18, A6_18To24, A6_25To34, A6_35To44]
+simpleAgeFrom6 EqualOrOver = [A6_45To64, A6_65AndOver]
 
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 --instance S.Serialize Education
@@ -422,10 +444,19 @@ aseTurnoutLabel (a, s, e) =
 
 age5Label :: Age5 -> T.Text
 age5Label A5_18To24    = "18To24"
-age5Label A5_25To44    = "25To44"
+age5Label A5_25To34    = "25To34"
+age5Label A5_35To44    = "35To44"
 age5Label A5_45To64    = "45To64"
-age5Label A5_65To74    = "65To74"
-age5Label A5_75AndOver = "75AndOver"
+age5Label A5_65AndOver = "65AndOver"
+
+age5pLabel :: Age6 -> T.Text
+age5pLabel A6_Under18   = "Under18"
+age5pLabel A6_18To24    = "18To24"
+age5pLabel A6_25To34    = "25To34"
+age5pLabel A6_35To44    = "35To44"
+age5pLabel A6_45To64    = "45To64"
+age5pLabel A6_65AndOver = "65AndOver"
+
 
 turnoutSexLabel :: Sex -> T.Text
 turnoutSexLabel Female = "F"

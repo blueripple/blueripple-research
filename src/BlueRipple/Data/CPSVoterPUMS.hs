@@ -110,9 +110,11 @@ type CPSVoterPUMS = '[ BR.Year
                      , GT.CountyFIPS
                      , DT.CitizenC
                      , DT.Age4C
+                     , DT.Age5C
                      , DT.SexC
                      , DT.RaceAlone4C
                      , DT.HispC
+                     , DT.EducationC
                      , DT.CollegeGradC
                      , DT.InCollege
                      , ET.VoteWhyNotC
@@ -481,6 +483,26 @@ intToAge4 n
   | n < 65 = DT.A4_45To64
   | otherwise = DT.A4_65AndOver
 
+intToAge5 :: Int -> DT.Age5
+intToAge5 n
+  | n < 18 = error "CPS Voter record with age < 18"
+  | n < 25 = DT.A5_18To24
+  | n < 35 = DT.A5_25To34
+  | n < 45 = DT.A5_35To44
+  | n < 65 = DT.A5_45To64
+  | otherwise = DT.A5_65AndOver
+
+intToEducation :: Int -> DT.Education
+intToEducation n
+  | n == 999 = DT.L9
+  | n < 40 = DT.L9
+  | n < 60 = DT.L12
+  | n <= 73 = DT.HS
+  | n <= 90 = DT.SC
+  | n <= 92 = DT.AS
+  | n <= 122 = DT.BA
+  | otherwise = DT.AD
+
 intToCollegeGrad :: Int -> DT.CollegeGrad
 intToCollegeGrad n = if n < 111 then DT.NonGrad else DT.Grad
 
@@ -597,11 +619,13 @@ transformCPSVoterPUMSRow = F.rcast . addCols  where
             . (FT.addOneFromOne @CPS.CPSVOTEHOW @ET.VoteHowC intToVoteHow)
             . (FT.addOneFromOne @CPS.CPSVOYNOTREG @ET.RegWhyNotC intToRegWhyNot)
             . (FT.addOneFromOne @CPS.CPSVOWHYNOT @ET.VoteWhyNotC intToVoteWhyNot)
+            . (FT.addOneFromOne @CPS.CPSEDUC @DT.EducationC intToEducation)
             . (FT.addOneFromOne @CPS.CPSSCHLCOLL @DT.InCollege intToInCollege)
             . (FT.addOneFromOne @CPS.CPSEDUC @DT.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @CPS.CPSCITIZEN @DT.CitizenC intToCit)
             . (FT.addOneFromOne @CPS.CPSSEX @DT.SexC intToSex)
             . (FT.addOneFromOne @CPS.CPSAGE @DT.Age4C intToAge4)
+            . (FT.addOneFromOne @CPS.CPSAGE @DT.Age5C intToAge5)
 
 
 {-

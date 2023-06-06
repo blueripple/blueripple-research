@@ -343,6 +343,16 @@ age14ToAge5FFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
     collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
 
 
+age14ToAge6Fld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Age6C, DT.PopCount, DT.PWPopPerSqMile])
+age14ToAge6Fld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
+  where
+    ageAggF :: BRK.AggF Bool DT.Age6 BRC.Age14 = BRK.AggF g
+    g :: DT.Age6 -> BRC.Age14 -> Bool
+    g a6 a14 = BRC.age14ToAge6 a14 == a6
+    ageAggFRec = BRK.toAggFRec ageAggF
+    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
+
+
 edToCGFld :: FL.Fold (F.Record [DT.Education4C, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, DT.PopCount])
 edToCGFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad DT.Education4 = BRK.AggF g where
                    g DT.Grad DT.E4_CollegeGrad = True

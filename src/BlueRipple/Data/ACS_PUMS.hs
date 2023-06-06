@@ -103,7 +103,7 @@ pumsRowsLoaderAdults :: (K.KnitEffects r, BR.CacheEffects r)
                      => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
 pumsRowsLoaderAdults = pumsRowsLoader (Just $ ((/= DT.A5F_Under18) . F.rgetField @DT.Age5FC))
 
-type PUMABucket = [DT.CitizenC, DT.Age5FC, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
+type PUMABucket = [DT.CitizenC, DT.Age5FC, DT.Age6C, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC]
 type PUMADesc = [BR.Year, GT.StateFIPS, GT.CensusDivisionC, GT.PUMA]
 type PUMADescWA = [BR.Year, GT.StateFIPS, GT.StateAbbreviation, GT.CensusDivisionC, GT.PUMA]
 
@@ -451,6 +451,7 @@ type PUMS_Typed = '[ BR.Year
                    , DT.PopPerSqMile
                    , DT.CitizenC
                    , DT.Age5FC
+                   , DT.Age6C
                    , DT.EducationC
                    , DT.InCollege
                    , DT.SexC
@@ -470,6 +471,7 @@ type PUMS_Counted = '[BR.Year
                      , GT.PUMA
                      , DT.CitizenC
                      , DT.Age5FC
+                     , DT.Age6C
                      , DT.SexC
                      , DT.EducationC
                      , DT.InCollege
@@ -497,6 +499,7 @@ type PUMS = '[BR.Year
              , DT.PWPopPerSqMile
              , DT.CitizenC
              , DT.Age5FC
+             , DT.Age6C
              , DT.SexC
              , DT.EducationC
              , DT.InCollege
@@ -696,6 +699,16 @@ intToAge5F n
   | n < 65 = DT.A5F_45To64
   | otherwise = DT.A5F_65AndOver
 
+-- PUMSAGE
+intToAge6 :: Int -> DT.Age6
+intToAge6 n
+  | n < 18 = DT.A6_Under18
+  | n < 24 = DT.A6_18To24
+  | n < 35 = DT.A6_25To34
+  | n < 45 = DT.A6_35To44
+  | n < 65 = DT.A6_45To64
+  | otherwise = DT.A6_65AndOver
+
 -- PUMSCITIZEN
 intToCitizen :: Int -> Bool
 intToCitizen n = if n >= 3 then False else True
@@ -813,6 +826,7 @@ transformPUMSRow = F.rcast . addCols where
             . (FT.addName @BR.PUMSPERWT @PUMSWeight)
             . (FT.addOneFromOne @BR.PUMSCITIZEN @DT.CitizenC intToCit)
             . (FT.addOneFromOne @BR.PUMSAGE @DT.Age5FC intToAge5F)
+            . (FT.addOneFromOne @BR.PUMSAGE @DT.Age6C intToAge6)
             . (FT.addOneFromOne @BR.PUMSSEX @DT.SexC intToSex)
 --            . (FT.addOneFromOne @BR.PUMSEDUCD @DT.CollegeGradC intToCollegeGrad)
             . (FT.addOneFromOne @BR.PUMSEDUCD @DT.EducationC pumsEDUCDToEducation)
@@ -835,6 +849,7 @@ transformPUMSRow' r =
   F.&: F.rgetField @BR.PUMSDENSITY r
   F.&: (intToCit  $ F.rgetField @BR.PUMSCITIZEN r)
   F.&: (intToAge5F $ F.rgetField @BR.PUMSAGE r)
+  F.&: (intToAge6 $ F.rgetField @BR.PUMSAGE r)
 --  F.&: (intToCollegeGrad $ F.rgetField @BR.PUMSEDUCD r)
   F.&: (pumsEDUCDToEducation $ F.rgetField @BR.PUMSEDUCD r)
   F.&: (intToInCollege $ F.rgetField @BR.PUMSGRADEATT r)

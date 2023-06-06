@@ -464,14 +464,14 @@ runProjModel :: forall kM pd kPs rs r .
                 , Typeable rs
                 , F.ElemOf rs GT.StateAbbreviation
                 , Ord (F.Record kPs)
-                , kPs F.⊆ DDP.ACSa4ByPUMAR
+                , kPs F.⊆ DDP.ACSa5ByPUMAR
                 )
              => Bool
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig (F.Record rs) pd
-             -> (F.Record DDP.ACSa4ByPUMAR -> kM)
-             -> (F.Record DDP.ACSa4ByPUMAR -> F.Record kPs)
+             -> (F.Record DDP.ACSa5ByPUMAR -> kM)
+             -> (F.Record DDP.ACSa5ByPUMAR -> F.Record kPs)
              -> (F.Record rs -> pd Double)
              -> K.Sem r (K.ActionWithCacheTime r ())
 runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
@@ -485,7 +485,7 @@ runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
       statesFilter = maybe id (\(_, sts) -> F.filterFrame ((`elem` sts) . view GT.stateAbbreviation)) rc.statesM
-  acsByPUMA_C <- fmap statesFilter <$> DDP.cachedACSa4ByPUMA
+  acsByPUMA_C <- fmap statesFilter <$> DDP.cachedACSa5ByPUMA
   let dataCacheKey = cacheRoot <> "/acsCounts_" <> mc.alphaDMR.dmName <> maybe "" fst rc.statesM
   when clearCaches $ BRK.clearIfPresentD dataCacheKey
   acsCountedByPUMA_C <- BRK.retrieveOrMakeD

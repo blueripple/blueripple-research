@@ -143,6 +143,22 @@ age14ToAge5F A14_65To74 = DT.A5F_65AndOver
 age14ToAge5F A14_75To84 = DT.A5F_65AndOver
 age14ToAge5F A14_85AndOver = DT.A5F_65AndOver
 
+age14ToAge6 :: Age14 -> DT.Age6
+age14ToAge6 A14_Under5 = DT.A6_Under18
+age14ToAge6 A14_5To9 = DT.A6_Under18
+age14ToAge6 A14_10To14 = DT.A6_Under18
+age14ToAge6 A14_15To17 = DT.A6_Under18
+age14ToAge6 A14_18To19 = DT.A6_18To24
+age14ToAge6 A14_20To24 = DT.A6_18To24
+age14ToAge6 A14_25To29 = DT.A6_25To34
+age14ToAge6 A14_30To34 = DT.A6_25To34
+age14ToAge6 A14_35To44 = DT.A6_35To44
+age14ToAge6 A14_45To54 = DT.A6_45To64
+age14ToAge6 A14_55To64 = DT.A6_45To64
+age14ToAge6 A14_65To74 = DT.A6_65AndOver
+age14ToAge6 A14_75To84 = DT.A6_65AndOver
+age14ToAge6 A14_85AndOver = DT.A6_65AndOver
+
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
@@ -240,6 +256,88 @@ tableYear TY2018 = 2018
 tableYear TY2016 = 2016
 tableYear TY2014 = 2014
 tableYear TY2012 = 2012
+
+sexByAgeByEducation ::  NHGISPrefix -> Map (DT.Sex, DT.Age5, DT.Education) Text
+sexByAgeByEducation (NHGISPrefix p) =
+  Map.fromList [((DT.Male, DT.A5_18To24, DT.L9), p <> "E004")
+               ,((DT.Male, DT.A5_18To24, DT.L12), p <> "E005")
+               ,((DT.Male, DT.A5_18To24, DT.HS), p <> "E006")
+               ,((DT.Male, DT.A5_18To24, DT.SC), p <> "E007")
+               ,((DT.Male, DT.A5_18To24, DT.AS), p <> "E008")
+               ,((DT.Male, DT.A5_18To24, DT.BA), p <> "E009")
+               ,((DT.Male, DT.A5_18To24, DT.AD), p <> "E010")
+               ,((DT.Male, DT.A5_25To34, DT.L9), p <> "E012")
+               ,((DT.Male, DT.A5_25To34, DT.L12), p <> "E013")
+               ,((DT.Male, DT.A5_25To34, DT.HS), p <> "E014")
+               ,((DT.Male, DT.A5_25To34, DT.SC), p <> "E015")
+               ,((DT.Male, DT.A5_25To34, DT.AS), p <> "E016")
+               ,((DT.Male, DT.A5_25To34, DT.BA), p <> "E017")
+               ,((DT.Male, DT.A5_25To34, DT.AD), p <> "E018")
+               ,((DT.Male, DT.A5_35To44, DT.L9), p <> "E020")
+               ,((DT.Male, DT.A5_35To44, DT.L12), p <> "E021")
+               ,((DT.Male, DT.A5_35To44, DT.HS), p <> "E022")
+               ,((DT.Male, DT.A5_35To44, DT.SC), p <> "E023")
+               ,((DT.Male, DT.A5_35To44, DT.AS), p <> "E024")
+               ,((DT.Male, DT.A5_35To44, DT.BA), p <> "E025")
+               ,((DT.Male, DT.A5_35To44, DT.AD), p <> "E026")
+               ,((DT.Male, DT.A5_45To64, DT.L9), p <> "E028")
+               ,((DT.Male, DT.A5_45To64, DT.L12), p <> "E029")
+               ,((DT.Male, DT.A5_45To64, DT.HS), p <> "E030")
+               ,((DT.Male, DT.A5_45To64, DT.SC), p <> "E031")
+               ,((DT.Male, DT.A5_45To64, DT.AS), p <> "E032")
+               ,((DT.Male, DT.A5_45To64, DT.BA), p <> "E033")
+               ,((DT.Male, DT.A5_45To64, DT.AD), p <> "E034")
+               ,((DT.Male, DT.A5_65AndOver, DT.L9), p <> "E036")
+               ,((DT.Male, DT.A5_65AndOver, DT.L12), p <> "E037")
+               ,((DT.Male, DT.A5_65AndOver, DT.HS), p <> "E038")
+               ,((DT.Male, DT.A5_65AndOver, DT.SC), p <> "E039")
+               ,((DT.Male, DT.A5_65AndOver, DT.AS), p <> "E040")
+               ,((DT.Male, DT.A5_65AndOver, DT.BA), p <> "E041")
+               ,((DT.Male, DT.A5_65AndOver, DT.AD), p <> "E042")
+               ,((DT.Female, DT.A5_18To24, DT.L9), p <> "E045")
+               ,((DT.Female, DT.A5_18To24, DT.L12), p <> "E046")
+               ,((DT.Female, DT.A5_18To24, DT.HS), p <> "E047")
+               ,((DT.Female, DT.A5_18To24, DT.SC), p <> "E048")
+               ,((DT.Female, DT.A5_18To24, DT.AS), p <> "E049")
+               ,((DT.Female, DT.A5_18To24, DT.BA), p <> "E050")
+               ,((DT.Female, DT.A5_18To24, DT.AD), p <> "E051")
+               ,((DT.Female, DT.A5_25To34, DT.L9), p <> "E053")
+               ,((DT.Female, DT.A5_25To34, DT.L12), p <> "E054")
+               ,((DT.Female, DT.A5_25To34, DT.HS), p <> "E055")
+               ,((DT.Female, DT.A5_25To34, DT.SC), p <> "E056")
+               ,((DT.Female, DT.A5_25To34, DT.AS), p <> "E057")
+               ,((DT.Female, DT.A5_25To34, DT.BA), p <> "E058")
+               ,((DT.Female, DT.A5_25To34, DT.AD), p <> "E059")
+               ,((DT.Female, DT.A5_35To44, DT.L9), p <> "E061")
+               ,((DT.Female, DT.A5_35To44, DT.L12), p <> "E062")
+               ,((DT.Female, DT.A5_35To44, DT.HS), p <> "E063")
+               ,((DT.Female, DT.A5_35To44, DT.SC), p <> "E064")
+               ,((DT.Female, DT.A5_35To44, DT.AS), p <> "E065")
+               ,((DT.Female, DT.A5_35To44, DT.BA), p <> "E066")
+               ,((DT.Female, DT.A5_35To44, DT.AD), p <> "E067")
+               ,((DT.Female, DT.A5_45To64, DT.L9), p <> "E069")
+               ,((DT.Female, DT.A5_45To64, DT.L12), p <> "E070")
+               ,((DT.Female, DT.A5_45To64, DT.HS), p <> "E071")
+               ,((DT.Female, DT.A5_45To64, DT.SC), p <> "E072")
+               ,((DT.Female, DT.A5_45To64, DT.AS), p <> "E073")
+               ,((DT.Female, DT.A5_45To64, DT.BA), p <> "E074")
+               ,((DT.Female, DT.A5_45To64, DT.AD), p <> "E075")
+               ,((DT.Female, DT.A5_65AndOver, DT.L9), p <> "E077")
+               ,((DT.Female, DT.A5_65AndOver, DT.L12), p <> "E078")
+               ,((DT.Female, DT.A5_65AndOver, DT.HS), p <> "E079")
+               ,((DT.Female, DT.A5_65AndOver, DT.SC), p <> "E080")
+               ,((DT.Female, DT.A5_65AndOver, DT.AS), p <> "E081")
+               ,((DT.Female, DT.A5_65AndOver, DT.BA), p <> "E082")
+               ,((DT.Female, DT.A5_65AndOver, DT.AD), p <> "E083")
+               ]
+
+sexByAgeByEducationPrefix :: TableYear -> NHGISPrefix
+sexByAgeByEducationPrefix TY2020 = "AM6L"
+sexByAgeByEducationPrefix TY2018 = "AM6L"
+sexByAgeByEducationPrefix TY2016 = "AM6L"
+sexByAgeByEducationPrefix TY2014 = "AM6L"
+sexByAgeByEducationPrefix TY2012 = "Q8Z"
+
 
 sexByAgeByEmploymentPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
 sexByAgeByEmploymentPrefix TY2020 R_White = [NHGISPrefix "ANH9"]

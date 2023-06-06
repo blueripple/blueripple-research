@@ -438,17 +438,13 @@ intToHisp n
 intToAgeT :: Real a => a -> DT.Age5
 intToAgeT x
   | x < 25 = DT.A5_18To24
-  | x < 45 = DT.A5_25To44
+  | x < 35 = DT.A5_25To34
+  | x < 45 = DT.A5_35To44
   | x < 65 = DT.A5_45To64
-  | x < 75 = DT.A5_65To74
-  | otherwise = DT.A5_75AndOver
+  | otherwise = DT.A5_65AndOver
 
 intToSimpleAge :: Int -> DT.SimpleAge
 intToSimpleAge n = if n < 45 then DT.Under else DT.EqualOrOver
-
-
-
-
 
 data RegistrationT = R_Active
                    | R_NoRecord
