@@ -55,6 +55,8 @@ import qualified Frames.Visualization.VegaLite.Data
 import qualified Graphics.Vega.VegaLite        as GV
 import qualified Relude.Extra as Relude
 import qualified Data.Array as Array
+
+import GHC.TypeLits (Symbol)
 -- Serialize for caching
 -- Binary for caching
 -- Flat for caching
@@ -352,6 +354,15 @@ FTH.declareColumn "Age6C" ''Age6
 simpleAgeFrom6 :: SimpleAge -> [Age6]
 simpleAgeFrom6 Under       = [A6_Under18, A6_18To24, A6_25To34, A6_35To44]
 simpleAgeFrom6 EqualOrOver = [A6_45To64, A6_65AndOver]
+
+type family AdultsOnly (a :: Type) :: Type where
+  AdultsOnly Age6 = Age5
+  AdultsOnly Age5F = Age4
+
+type family AdultsOnlyC (a :: (Symbol, Type)) :: (Symbol, Type) where
+  AdultsOnlyC Age6C = Age5C
+  AdultsOnlyC Age5FC = Age4C
+
 
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 --instance S.Serialize Education

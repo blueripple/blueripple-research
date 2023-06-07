@@ -519,7 +519,9 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-
+    sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
+    sldCensusTablesMA <- BRC.filterCensusTables ((== 56) . view GT.stateFIPS) <$> K.ignoreCacheTime sld2022CensusTables_C
+    BRK.logFrame $ BRC.ageSexEducation sldCensusTablesMA
     compareCSR_A6SR cmdLine postInfo
 --    compareSER_A5SR cmdLine postInfo
   case resE of

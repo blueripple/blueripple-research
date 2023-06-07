@@ -332,11 +332,11 @@ sexByAgeByEducation (NHGISPrefix p) =
                ]
 
 sexByAgeByEducationPrefix :: TableYear -> NHGISPrefix
-sexByAgeByEducationPrefix TY2020 = "AM6L"
-sexByAgeByEducationPrefix TY2018 = "AM6L"
-sexByAgeByEducationPrefix TY2016 = "AM6L"
-sexByAgeByEducationPrefix TY2014 = "AM6L"
-sexByAgeByEducationPrefix TY2012 = "Q8Z"
+sexByAgeByEducationPrefix TY2020 = NHGISPrefix "AM6L"
+sexByAgeByEducationPrefix TY2018 = error "No 2018 sex by age by education data" -- NHGISPrefix "AM6L"
+sexByAgeByEducationPrefix TY2016 = error "No 2016 sex by age by education data" -- NHGISPrefix "AM6L"
+sexByAgeByEducationPrefix TY2014 = error "No 2014 sex by age by education data" -- NHGISPrefix "AM6L"
+sexByAgeByEducationPrefix TY2012 = error "No 2012 sex by age by education data" -- NHGISPrefix "Q8Z"
 
 
 sexByAgeByEmploymentPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
