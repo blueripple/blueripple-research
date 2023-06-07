@@ -71,16 +71,16 @@ import GHC.TypeLits (Symbol)
 -}
 type SR = [DT.SexC, DT.Race5C]
 type SRo = [DT.SexC, BRC.RaceEthnicityC]
-type SER = [DT.SexC, DT.EducationC, DT.Race5C]
+type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type CSR = [DT.CitizenC, DT.SexC, DT.Race5C]
 type ASR = [DT.Age5C, DT.SexC, DT.Race5C]
 type CASR = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Race5C]
-type ASE = [DT.Age5C, DT.SexC, DT.EducationC]
-type ASER = [DT.Age5C, DT.SexC, DT.EducationC, DT.Race5C]
-type CASER = [DT.CitizenC, DT.Age5C, DT.SexC, DT.EducationC, DT.Race5C]
+type ASE = [DT.Age5C, DT.SexC, DT.Education4C]
+type ASER = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
+type CASER = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type CA6SR = [DT.CitizenC, DT.Age6C, DT.SexC, DT.Race5C]
 type A6SR = [DT.Age6C, DT.SexC, DT.Race5C]
-type A6SER = [DT.Age6C, DT.SexC, DT.EducationC, DT.Race5C]
+type A6SER = [DT.Age6C, DT.SexC, DT.Education4C, DT.Race5C]
 type LDOuterKeyR = BRDF.Year ': BRC.LDLocationR
 type LDKey ks = LDOuterKeyR V.++ ks
 type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
@@ -89,8 +89,9 @@ type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
 type PUMAOuterKeyR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
 type PUMARowR ks = PUMAOuterKeyR V.++ KeysWD ks
-type CensusASERR = CensusOuterKeyR V.++ KeysWD ASER
-type CensusA6SERR = CensusOuterKeyR V.++ KeysWD A6SER
+type CensusASER = CensusOuterKeyR V.++ KeysWD ASER
+type CensusA6SER = CensusOuterKeyR V.++ KeysWD A6SER
+type CensusCA6SR = CensusOuterKeyR V.++ KeysWD CA6SR
 
 marginalStructure :: forall ks as bs w qs .
                      (Monoid w
@@ -133,15 +134,10 @@ marginalStructure wl innerProduct =  DMS.reKeyMarginalStructure
 
 type LDRecoded ks = LDKey ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
-recodeA6SR :: F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [BRC.Age14C, DT.SexC, BRC.RaceEthnicityC])
+recodeA6SR :: F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.Age6C, DT.SexC, BRC.RaceEthnicityC])
           -> F.FrameRec (LDRecoded A6SR)
-recodeA6SR = fmap F.rcast . FL.fold reFld . FL.fold ageFld
+recodeA6SR = fmap F.rcast . FL.fold reFld
   where
-    ageFld = FMR.concatFold
-             $ FMR.mapReduceFold
-             FMR.noUnpack
-             (FMR.assignKeysAndData @(LDKey [DT.SexC, BRC.RaceEthnicityC]))
-             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.age14ToAge6Fld)
     reFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
@@ -149,25 +145,30 @@ recodeA6SR = fmap F.rcast . FL.fold reFld . FL.fold ageFld
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
 
-recodeSER ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.SexC, DT.EducationC, BRC.RaceEthnicityC])
+recodeSER ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.SexC, DT.Education4C, BRC.RaceEthnicityC])
           -> F.FrameRec (LDRecoded SER)
 recodeSER = fmap F.rcast . FL.fold reFld
   where
     reFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
-             (FMR.assignKeysAndData @(LDKey [DT.SexC, DT.EducationC]))
+             (FMR.assignKeysAndData @(LDKey [DT.SexC, DT.Education4C]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
 
-recodeCSR ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [DT.CitizenC, DT.SexC, BRC.RaceEthnicityC])
+recodeCSR ::  F.FrameRec (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR [BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC])
           -> F.FrameRec (LDRecoded CSR)
-recodeCSR = fmap F.rcast . FL.fold reFld
+recodeCSR = fmap F.rcast . FL.fold reFld . FL.fold cFld
   where
     reFld = FMR.concatFold
              $ FMR.mapReduceFold
              FMR.noUnpack
              (FMR.assignKeysAndData @(LDKey [DT.CitizenC, DT.SexC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.reToR5Fld)
+    cFld =  FMR.concatFold
+             $ FMR.mapReduceFold
+             FMR.noUnpack
+             (FMR.assignKeysAndData @(LDKey [DT.SexC, BRC.RaceEthnicityC]))
+             (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.cToCFld)
 
 
 {-
@@ -181,41 +182,42 @@ recodeASE = fmap F.rcast . FL.fold edFld
              (FMR.assignKeysAndData @(LDKey [DT.Age6C, DT.SexC]))
              (FMR.makeRecsWithKey id $ FMR.ReduceFold $ const BRC.eToe4Fld)
 -}
-{-
-ser_asr_tableProductWithDensity :: F.FrameRec (KeysWD SER) -> F.FrameRec (KeysWD A6SR) -> F.FrameRec (KeysWD A6SER)
-ser_asr_tableProductWithDensity ser asr = F.toFrame $ fmap toRecord $ concat $ fmap pushOuterIn $ M.toList $ fmap M.toList
-                                          $ DMS.tableProduct DMS.innerProductCWD' serMap asrMap
+
+
+csr_a6sr_tableProductWithDensity :: F.FrameRec (KeysWD CSR) -> F.FrameRec (KeysWD A6SR) -> F.FrameRec (KeysWD CA6SR)
+csr_a6sr_tableProductWithDensity csr asr = F.toFrame $ fmap toRecord $ concat $ fmap pushOuterIn $ M.toList $ fmap M.toList
+                                          $ DMS.tableProduct DMS.innerProductCWD' csrMap a6srMap
   where
     pushOuterIn (o, xs) = fmap (o,) xs
     tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
     tcwd r = DMS.CellWithDensity (realToFrac $ view DT.popCount r) (view DT.pWPopPerSqMile r)
     okF :: (SR F.⊆ rs) => F.Record rs -> F.Record SR
     okF = F.rcast
-    serTMFld :: FL.Fold (F.Record (KeysWD SER)) (Map (F.Record SR) (Map (F.Record '[DT.EducationC]) DMS.CellWithDensity))
-    serTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.EducationC] r), tcwd r)) DMS.tableMapFld
+    csrTMFld :: FL.Fold (F.Record (KeysWD CSR)) (Map (F.Record SR) (Map (F.Record '[DT.CitizenC]) DMS.CellWithDensity))
+    csrTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.CitizenC] r), tcwd r)) DMS.tableMapFld
     asrTMFld :: FL.Fold (F.Record (KeysWD A6SR)) (Map (F.Record SR) (Map (F.Record '[DT.Age6C]) DMS.CellWithDensity))
     asrTMFld = FL.premap (\r -> ((okF r, F.rcast @'[DT.Age6C] r), tcwd r)) DMS.tableMapFld
-    serMap = FL.fold serTMFld ser
-    asrMap = FL.fold asrTMFld asr
+    csrMap = FL.fold csrTMFld csr
+    a6srMap = FL.fold asrTMFld asr
     cwdToRec :: DMS.CellWithDensity -> F.Record [DT.PopCount, DT.PWPopPerSqMile]
     cwdToRec cwd = round (DMS.cwdWgt cwd) F.&: DMS.cwdDensity cwd F.&: V.RNil
     toRecord :: (F.Record SR
-                , ((F.Record '[DT.EducationC], F.Record '[DT.Age6C]), DMS.CellWithDensity)
+                , ((F.Record '[DT.CitizenC], F.Record '[DT.Age6C]), DMS.CellWithDensity)
                 )
-             -> F.Record (KeysWD A6SER)
-    toRecord (outer, ((e, a), cwd)) = F.rcast $ outer F.<+> e F.<+> a F.<+> cwdToRec cwd
+             -> F.Record (KeysWD CA6SR)
+    toRecord (outer, ((c, a), cwd)) = F.rcast $ c F.<+> a F.<+> outer F.<+> cwdToRec cwd
 
 
 --type ProdOuter = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 
-censusASR_SER_Products :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
+censusA6SR_CSR_Products :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                        => Text
                        -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
-                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusA6SERR))
-censusASR_SER_Products cacheKey censusTables_C = do
+                       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCA6SR))
+censusA6SR_CSR_Products cacheKey censusTables_C = do
   let
-    f :: BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusA6SERR)
-    f (BRC.CensusTables asr _ ser _) = do
+    f :: BRC.LoadedCensusTablesByLD -> K.Sem r (F.FrameRec CensusCA6SR)
+    f (BRC.CensusTables a6sr csr _ _ _) = do
       K.logLE K.Info "Building/re-building censusASR_SER products"
 
       stateAbbrFromFIPSMap <- BRDF.stateAbbrFromFIPSMapLoader
@@ -228,45 +230,45 @@ censusASR_SER_Products cacheKey censusTables_C = do
                            )
           keyF :: (LDOuterKeyR F.⊆ rs) => F.Record rs -> F.Record LDOuterKeyR
           keyF = F.rcast
-          asrF :: ((KeysWD A6SR) F.⊆ rs) => F.Record rs -> F.Record (KeysWD A6SR)
-          asrF = F.rcast
-          serF :: ((KeysWD SER) F.⊆ rs) => F.Record rs -> F.Record (KeysWD SER)
-          serF = F.rcast
+          csrF :: ((KeysWD CSR) F.⊆ rs) => F.Record rs -> F.Record (KeysWD CSR)
+          csrF = F.rcast
+          a6srF :: ((KeysWD A6SR) F.⊆ rs) => F.Record rs -> F.Record (KeysWD A6SR)
+          a6srF = F.rcast
       -- check tables before recoding
           compareF (s1, s2) =
             let n1 = getSum s1
                 n2 = getSum s2
-            in if n1 /= n2 then Just $ "N(A5SR)=" <> show n1 <> "; N(SER)=" <> show n2 else Nothing
+            in if n1 /= n2 then Just $ "N(CSR)=" <> show n1 <> "; N(A6SR)=" <> show n2 else Nothing
       innerCompareMap <- K.knitEither
                          $ compareMarginals
-                         (\asrR -> (F.rcast @(LDOuterKeyR V.++ SRo) asrR, Sum $ view DT.popCount asrR))
-                         (\serR -> (F.rcast @(LDOuterKeyR V.++ SRo) serR, Sum $ view DT.popCount serR))
-                         asr ser
+                         (\csrR -> (F.rcast @(LDOuterKeyR V.++ SRo) csrR, Sum $ view DT.popCount csrR))
+                         (\a6srR -> (F.rcast @(LDOuterKeyR V.++ SRo) a6srR, Sum $ view DT.popCount a6srR))
+                         csr a6sr
       let outerCompareMap = compareOuter (F.rcast @LDOuterKeyR) innerCompareMap
       compareMapToLog show compareF outerCompareMap
       compareMapToLog show compareF innerCompareMap
-      let recodedA5SR = recodeA6SR asr
-          recodedSER = recodeSER ser
+      let recodedCSR = recodeCSR csr
+          recodedA6SR = recodeA6SR a6sr
 --      BRK.logFrame ser
 --      BRK.logFrame recodedSER
-      let asrMap = FL.fold (toMapFld keyF asrF) $ recodedA5SR
-          serMap = FL.fold (toMapFld keyF serF) $ recodedSER
+      let csrMap = FL.fold (toMapFld keyF csrF) $ recodedCSR
+          a6srMap = FL.fold (toMapFld keyF a6srF) $ recodedA6SR
           checkFrames :: (Show k, F.ElemOf as DT.PopCount, F.ElemOf bs DT.PopCount)
                       => k -> F.FrameRec as -> F.FrameRec bs -> K.Sem r ()
           checkFrames k ta tb = do
             let na = FL.fold (FL.premap (view DT.popCount) FL.sum) ta
                 nb = FL.fold (FL.premap (view DT.popCount) FL.sum) tb
-            when (na /= nb) $ K.logLE K.Error $ "Mismatched ASR/SER tables at k=" <> show k <> ". N(ASR)=" <> show na <> "; N(SER)=" <> show nb
+            when (na /= nb) $ K.logLE K.Error $ "Mismatched CSR/A6SR tables at k=" <> show k <> ". N(CSR)=" <> show na <> "; N(A6SR)=" <> show nb
             pure ()
-          whenMatchedF k asr' ser' = checkFrames k asr' ser' >> pure (ser_asr_tableProductWithDensity ser' asr')
-          whenMissingASRF k _ = K.knitError $ "Missing ASR table for k=" <> show k
-          whenMissingSERF k _ = K.knitError $ "Missing SER table for k=" <> show k
+          whenMatchedF k csr' a6sr' = checkFrames k csr' a6sr' >> pure (csr_a6sr_tableProductWithDensity csr' a6sr')
+          whenMissingCSRF k _ = K.knitError $ "Missing CSR table for k=" <> show k
+          whenMissingA6SRF k _ = K.knitError $ "Missing A6SR table for k=" <> show k
       productMap <- MM.mergeA
-                    (MM.traverseMissing whenMissingSERF)
-                    (MM.traverseMissing whenMissingASRF)
+                    (MM.traverseMissing whenMissingA6SRF)
+                    (MM.traverseMissing whenMissingCSRF)
                     (MM.zipWithAMatched whenMatchedF)
-                    asrMap
-                    serMap
+                    csrMap
+                    a6srMap
       let assocToFrame (k, fr) = do
             let fips = k ^. GT.stateFIPS
             sa <- K.knitMaybe ("Missing FIPS=" <> show fips) $ M.lookup fips stateAbbrFromFIPSMap
@@ -276,6 +278,7 @@ censusASR_SER_Products cacheKey censusTables_C = do
       mconcat <$> fmap assocToFrame $ M.toList productMap
   BRK.retrieveOrMakeFrame cacheKey censusTables_C f
 
+{-
 logitMarginalsCMatrix :: LA.Matrix Double
 logitMarginalsCMatrix =
   let serInASER :: F.Record A6SER -> F.Record SER

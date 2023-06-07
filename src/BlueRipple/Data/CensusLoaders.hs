@@ -64,25 +64,25 @@ type CensusRow p d ks = CensusRowUC p d ks V.++ '[DT.PopCount]
 
 data CensusTables p d a s e r c l
   = CensusTables { ageSexRace :: F.FrameRec (CensusRow p d [a, s, r])
-                 , sexRaceCitizenship :: F.FrameRec (CensusRow p d [s, r, c])
+                 , citizenshipSexRace :: F.FrameRec (CensusRow p d [c, s, r])
                  , sexEducationRace :: F.FrameRec (CensusRow p d [s, e, r])
                  , sexRaceEmployment ::  F.FrameRec (CensusRow p d [s, r, l])
                  , ageSexEducation :: F.FrameRec (CensusRow p d [DT.AdultsOnlyC a, s, e])
                  } deriving stock Generic
 
 filterCensusTables :: forall p d a s e r c l . (FI.RecVec (CensusRow p d [a, s, r])
-                                               , FI.RecVec (CensusRow p d [s, r, c])
+                                               , FI.RecVec (CensusRow p d [c, s, r])
                                                , FI.RecVec (CensusRow p d [s, e, r])
                                                , FI.RecVec (CensusRow p d [s, r, l])
                                                , FI.RecVec (CensusRow p d [DT.AdultsOnlyC a, s, e])
                                                , (p V.++ d) F.⊆ (CensusRow p d [a, s, r])
-                                               , (p V.++ d) F.⊆ (CensusRow p d [s, r, c])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [c, s, r])
                                                , (p V.++ d) F.⊆ (CensusRow p d [s, e, r])
                                                , (p V.++ d) F.⊆ (CensusRow p d [s, r, l])
                                                , (p V.++ d) F.⊆ (CensusRow p d [DT.AdultsOnlyC a, s, e])
                                                )
                    =>  (F.Record (p V.++ d) -> Bool) -> CensusTables p d a s e r c l -> CensusTables p d a s e r c l
-filterCensusTables g (CensusTables a b c d e) = CensusTables (f @[a, s, r] a) (f @[s, r, c] b) (f @[s, e, r] c) (f @[s, r ,l] d) (f @[DT.AdultsOnlyC a, s, e] e) where
+filterCensusTables g (CensusTables a b c d e) = CensusTables (f @[a, s, r] a) (f @[c, s, r] b) (f @[s, e, r] c) (f @[s, r ,l] d) (f @[DT.AdultsOnlyC a, s, e] e) where
   f :: forall ks . (FI.RecVec (CensusRow p d ks)
                    ,((p V.++ d) F.⊆ CensusRow p d ks )
                     )
@@ -106,7 +106,7 @@ instance (FieldC S.Serialize a
          , FieldC S.Serialize c
          , FieldC S.Serialize l
          , KeysSC p d [a, s, r]
-         , KeysSC p d [s, r, c]
+         , KeysSC p d [c, s, r]
          , KeysSC p d [s, e, r]
          , KeysSC p d [s, r, l]
          , KeysSC p d [DT.AdultsOnlyC a, s, e]
@@ -128,7 +128,7 @@ instance (FieldC Flat.Flat a
          , FieldC Flat.Flat c
          , FieldC Flat.Flat l
          , KeysFC p d [a, s, r]
-         , KeysFC p d [s, r, c]
+         , KeysFC p d [c, s, r]
          , KeysFC p d [s, e, r]
          , KeysFC p d [s, r, l]
          , KeysFC p d [DT.AdultsOnlyC a, s, e]
@@ -383,6 +383,18 @@ edToCGFld  = let edAggF :: BRK.AggF Bool DT.CollegeGrad DT.Education4 = BRK.AggF
          in fmap F.toFrame $ BRK.aggFoldAllRec edAggFRec collapse
 
 
+cToCFld :: FL.Fold (F.Record [BRC.CitizenshipC, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.CitizenC, DT.PopCount, DT.PWPopPerSqMile])
+cToCFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
+  where
+    cAggF :: BRK.AggF Bool DT.Citizen BRC.Citizenship = BRK.AggF g
+    g :: DT.Citizen -> BRC.Citizenship -> Bool
+    g DT.Citizen BRC.Native = True
+    g DT.Citizen BRC.Naturalized = True
+    g DT.NonCitizen BRC.NonCitizen = True
+    g _ _ = False
+    ageAggFRec = BRK.toAggFRec cAggF
+    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
+
 censusDemographicsRecode :: F.FrameRec CensusSERR -> F.FrameRec CensusRecodedR
 censusDemographicsRecode rows =
   let fld1 = FMR.concatFold
@@ -431,8 +443,8 @@ sexByCitizenshipKeyRec :: (DT.Sex, BRC.Citizenship) -> F.Record [DT.SexC, BRC.Ci
 sexByCitizenshipKeyRec (s, c) = s F.&: c F.&: V.RNil
 {-# INLINE sexByCitizenshipKeyRec #-}
 -}
-raceBySexByCitizenshipKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Citizenship)) -> F.Record [DT.SexC, BRC.RaceEthnicityC, BRC.CitizenshipC]
-raceBySexByCitizenshipKeyRec (r, (s, c)) = s F.&: r F.&: c F.&: V.RNil
+raceBySexByCitizenshipKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Citizenship)) -> F.Record [BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC]
+raceBySexByCitizenshipKeyRec (r, (s, c)) = c F.&: s F.&: r F.&: V.RNil
 {-# INLINE raceBySexByCitizenshipKeyRec #-}
 
 {-
@@ -469,7 +481,7 @@ aggregateCensusTableByPrefixF mapP =
 
 aggregateCensusTablesByPrefix :: forall p p' a s e r c l.
                                  ( AggregateByPrefixC [a, s, r] p p'
-                                 , AggregateByPrefixC [s, r, c] p p'
+                                 , AggregateByPrefixC [c, s, r] p p'
                                  , AggregateByPrefixC [s, e, r] p p'
                                  , AggregateByPrefixC [s, r, l] p p'
                                  , AggregateByPrefixC [DT.AdultsOnlyC a, s, e] p p'
@@ -480,7 +492,7 @@ aggregateCensusTablesByPrefix :: forall p p' a s e r c l.
 aggregateCensusTablesByPrefix f (CensusTables t1 t2 t3 t4 t5) =
   CensusTables
   (FL.fold (aggregateCensusTableByPrefixF @[a, s, r] f) t1)
-  (FL.fold (aggregateCensusTableByPrefixF @[s, r, c] f) t2)
+  (FL.fold (aggregateCensusTableByPrefixF @[c, s, r] f) t2)
   (FL.fold (aggregateCensusTableByPrefixF @[s, e, r] f) t3)
   (FL.fold (aggregateCensusTableByPrefixF @[s, r, l] f) t4)
   (FL.fold (aggregateCensusTableByPrefixF @[DT.AdultsOnlyC a, s, e] f) t5)

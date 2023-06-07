@@ -43,36 +43,6 @@ type LDLocationR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 type LDPrefixR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.TotalPopCount, DT.PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type CensusDataR = [SqMiles, TotalIncome, DT.PWPopPerSqMile]
 
-{-
---newtype CensusPrefix rs = CensusPrefix { unCensusPrefix :: F.Record rs }
-newtype CDPrefix = CDPrefix { unCDPrefix :: F.Record CDPrefixR } deriving (Show)
-toCDPrefix :: Int -> Int -> Int -> Double -> Double -> Double -> Double -> Double -> CDPrefix
-toCDPrefix sf cd pop d pwd inc sm sk
-  = CDPrefix $ sf F.&: cd F.&: pop F.&: d F.&: pwd F.&: (realToFrac pop * inc) F.&: sm F.&: sk F.&: V.RNil
-
-instance CSV.FromNamedRecord CDPrefix where
-  parseNamedRecord r = toCDPrefix
-                       <$> r .: "StateFIPS"
-                       <*> r .: "CongressionalDistrict"
-                       <*> r .: "TotalPopulation"
-                       <*> r .: "PopPerSqMile"
-                       <*> r .: "pwPopPerSqMile"
-                       <*> r .: "PerCapitaIncome"
-                       <*> r .: "SqMiles"
-                       <*> r .: "SqKm"
-
--}
-{-
-parseDistrictType :: Text -> Either Text ET.DistrictType
-parseDistrictType "StateLower" = Right ET.StateLower
-parseDistrictType "StateUpper" = Right ET.StateUpper
-parseDistrictType "Congressional" = Right ET.Congressional
-parseDistrictType x = Left $ x <> " could not be parsed as a district type."
-
-csvParseDistrictType :: CSV.Parser Text -> CSV.Parser ET.DistrictType
-csvParsePistrictType =
--}
-
 -- To avoid an orphan instance of FromField DistrictType
 newtype DistrictTypeWrapper = DistrictTypeWrapper { unWrapDistrictType :: GT.DistrictType }
 
