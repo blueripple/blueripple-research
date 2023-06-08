@@ -519,9 +519,15 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+    byPUMA_C <-  fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CA6SR . fmap F.rcast)
+                <$> DDP.cachedACSa6ByPUMA
+    (predictor_C, _, _) <- DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age6C] @DMC.CA6SR(Right "model/demographic/csr_a6sr") "CSR_A6SR" cmdLine byPUMA_C
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
     sldCensusTablesMA <- BRC.filterCensusTables ((== 25) . view GT.stateFIPS) <$> K.ignoreCacheTime sld2022CensusTables_C
     BRK.logFrame $ BRC.ageSexEducation sldCensusTablesMA
+    let censusTableCond r = r ^. GT.stateFIPS == 9 -- && r ^. GT.districtTypeC == GT.StateUpper -- && r ^. GT.districtName == "10"
+        filteredCensusTables_C = fmap (BRC.filterCensusTables censusTableCond) sld2022CensusTables_C
+    predictedSLDDemographics_C <- fmap fst $ DMC.predictedCensusCA6SR True "model/demographic/test/ca6srTest" predictor_C filteredCensusTables_C
     compareCSR_A6SR cmdLine postInfo
 --    compareSER_A5SR cmdLine postInfo
   case resE of
