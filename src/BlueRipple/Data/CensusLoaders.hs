@@ -69,22 +69,22 @@ data CensusTables p d a s e r c l
                  , citizenshipSexRace :: F.FrameRec (CensusRow p d [c, s, r])
                  , sexEducationRace :: F.FrameRec (CensusRow p d [s, e, r])
                  , sexRaceEmployment ::  F.FrameRec (CensusRow p d [s, r, l])
-                 , ageSexEducation :: F.FrameRec (CensusRow p d [DT.AdultsOnlyC a, s, e])
+                 , ageSexEducation :: F.FrameRec (CensusRow p d [a, s, e])
                  } deriving stock Generic
 
 filterCensusTables :: forall p d a s e r c l . (FI.RecVec (CensusRow p d [a, s, r])
                                                , FI.RecVec (CensusRow p d [c, s, r])
                                                , FI.RecVec (CensusRow p d [s, e, r])
                                                , FI.RecVec (CensusRow p d [s, r, l])
-                                               , FI.RecVec (CensusRow p d [DT.AdultsOnlyC a, s, e])
+                                               , FI.RecVec (CensusRow p d [a, s, e])
                                                , (p V.++ d) F.⊆ (CensusRow p d [a, s, r])
                                                , (p V.++ d) F.⊆ (CensusRow p d [c, s, r])
                                                , (p V.++ d) F.⊆ (CensusRow p d [s, e, r])
                                                , (p V.++ d) F.⊆ (CensusRow p d [s, r, l])
-                                               , (p V.++ d) F.⊆ (CensusRow p d [DT.AdultsOnlyC a, s, e])
+                                               , (p V.++ d) F.⊆ (CensusRow p d [a, s, e])
                                                )
                    =>  (F.Record (p V.++ d) -> Bool) -> CensusTables p d a s e r c l -> CensusTables p d a s e r c l
-filterCensusTables g (CensusTables a b c d e) = CensusTables (f @[a, s, r] a) (f @[c, s, r] b) (f @[s, e, r] c) (f @[s, r ,l] d) (f @[DT.AdultsOnlyC a, s, e] e) where
+filterCensusTables g (CensusTables a b c d e) = CensusTables (f @[a, s, r] a) (f @[c, s, r] b) (f @[s, e, r] c) (f @[s, r ,l] d) (f @[a, s, e] e) where
   f :: forall ks . (FI.RecVec (CensusRow p d ks)
                    ,((p V.++ d) F.⊆ CensusRow p d ks )
                     )
@@ -101,7 +101,6 @@ type KeysSC p d ks = (V.RMap (CensusRow p d ks)
                      )
 
 instance (FieldC S.Serialize a
-         ,FieldC S.Serialize (DT.AdultsOnlyC a)
          , FieldC S.Serialize s
          , FieldC S.Serialize e
          , FieldC S.Serialize r
@@ -111,7 +110,7 @@ instance (FieldC S.Serialize a
          , KeysSC p d [c, s, r]
          , KeysSC p d [s, e, r]
          , KeysSC p d [s, r, l]
-         , KeysSC p d [DT.AdultsOnlyC a, s, e]
+         , KeysSC p d [a, s, e]
          ) =>
          S.Serialize (CensusTables p d a s e r c l) where
   put (CensusTables f1 f2 f3 f4 f5) = S.put (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5)
@@ -123,7 +122,6 @@ type KeysFC p d ks = (V.RMap (CensusRow p d ks)
                   )
 
 instance (FieldC Flat.Flat a
-         , FieldC Flat.Flat (DT.AdultsOnlyC a)
          , FieldC Flat.Flat s
          , FieldC Flat.Flat e
          , FieldC Flat.Flat r
@@ -133,7 +131,7 @@ instance (FieldC Flat.Flat a
          , KeysFC p d [c, s, r]
          , KeysFC p d [s, e, r]
          , KeysFC p d [s, r, l]
-         , KeysFC p d [DT.AdultsOnlyC a, s, e]
+         , KeysFC p d [a, s, e]
          ) =>
   Flat.Flat (CensusTables p d a s e r c l) where
   size (CensusTables f1 f2 f3 f4 f5) n = Flat.size (FS.SFrame f1, FS.SFrame f2, FS.SFrame f3, FS.SFrame f4, FS.SFrame f5) n
@@ -144,7 +142,7 @@ instance (FieldC Flat.Flat a
 --type CDRow rs = '[BR.Year] V.++ BRC.CDPrefixR V.++ rs V.++ '[DT.PopCount]
 
 type LoadedCensusTablesByLD
-  = CensusTables BRC.LDLocationR BRC.CensusDataR DT.Age6C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
+  = CensusTables BRC.LDLocationR BRC.CensusDataR DT.Age5C DT.SexC DT.Education4C BRC.RaceEthnicityC BRC.CitizenshipC BRC.EmploymentC
 
 censusTablesByDistrict  :: (K.KnitEffects r
                            , BR.CacheEffects r)
@@ -183,7 +181,7 @@ censusTablesByDistrict filesByYear cacheName = do
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
         return $ CensusTables
-          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.Age6C, DT.SexC, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByAge)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.Age5C, DT.SexC, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByAge)
           (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByCitizenship)
           (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.SexC, DT.Education4C, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByEducation)
           (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.SexC, BRC.RaceEthnicityC, BRC.EmploymentC]) $ fmap F.rcast fRaceBySexByEmployment)
@@ -438,16 +436,16 @@ sexByAgeKeyRec :: (DT.Sex, BRC.Age14) -> F.Record [DT.Age6C, DT.SexC]
 sexByAgeKeyRec (s, a) = BRC.age14ToAge6 a F.&: s F.&: V.RNil
 {-# INLINE sexByAgeKeyRec #-}
 
-raceBySexByAgeKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Age14)) -> F.Record [DT.Age6C, DT.SexC, BRC.RaceEthnicityC]
-raceBySexByAgeKeyRec (r, (s, a)) = BRC.age14ToAge6 a F.&: s F.&: r F.&: V.RNil
+raceBySexByAgeKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Age14)) -> Maybe (F.Record [DT.Age5C, DT.SexC, BRC.RaceEthnicityC])
+raceBySexByAgeKeyRec (r, (s, a)) = fmap (\a5 -> a5 F.&: s F.&: r F.&: V.RNil) $ BRC.age14ToAge5 a
 {-# INLINE raceBySexByAgeKeyRec #-}
 {-
 sexByCitizenshipKeyRec :: (DT.Sex, BRC.Citizenship) -> F.Record [DT.SexC, BRC.CitizenshipC]
 sexByCitizenshipKeyRec (s, c) = s F.&: c F.&: V.RNil
 {-# INLINE sexByCitizenshipKeyRec #-}
 -}
-raceBySexByCitizenshipKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Citizenship)) -> F.Record [BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC]
-raceBySexByCitizenshipKeyRec (r, (s, c)) = c F.&: s F.&: r F.&: V.RNil
+raceBySexByCitizenshipKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.Citizenship)) -> Maybe (F.Record [BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC])
+raceBySexByCitizenshipKeyRec (r, (s, c)) = Just $ c F.&: s F.&: r F.&: V.RNil
 {-# INLINE raceBySexByCitizenshipKeyRec #-}
 
 {-
@@ -456,16 +454,17 @@ sexByEducationKeyRec (s, e) = s F.&: e F.&: V.RNil
 {-# INLINE sexByEducationKeyRec #-}
 -}
 
-raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, DT.Education4)) -> F.Record [DT.SexC, DT.Education4C, BRC.RaceEthnicityC]
-raceBySexByEducationKeyRec (r, (s, e)) = s F.&: e F.&: r F.&: V.RNil
+raceBySexByEducationKeyRec :: (BRC.RaceEthnicity, (DT.Sex, DT.Education4)) -> Maybe (F.Record [DT.SexC, DT.Education4C, BRC.RaceEthnicityC])
+raceBySexByEducationKeyRec (r, (s, e)) = Just $ s F.&: e F.&: r F.&: V.RNil
 {-# INLINE raceBySexByEducationKeyRec #-}
 
-raceBySexByAgeByEmploymentKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.EmpAge, BRC.Employment)) -> F.Record [DT.SexC, BRC.RaceEthnicityC, BRC.EmpAgeC, BRC.EmploymentC]
-raceBySexByAgeByEmploymentKeyRec (r, (s, a, l)) = s F.&: r F.&: a F.&: l F.&: V.RNil
+raceBySexByAgeByEmploymentKeyRec :: (BRC.RaceEthnicity, (DT.Sex, BRC.EmpAge, BRC.Employment))
+                                 -> Maybe (F.Record [DT.SexC, BRC.RaceEthnicityC, BRC.EmpAgeC, BRC.EmploymentC])
+raceBySexByAgeByEmploymentKeyRec (r, (s, a, l)) = Just $ s F.&: r F.&: a F.&: l F.&: V.RNil
 {-# INLINE raceBySexByAgeByEmploymentKeyRec #-}
 
-sexByAgeByEducationKeyRec :: (DT.Sex, DT.Age5, DT.Education) -> F.Record [DT.Age5C, DT.SexC, DT.Education4C]
-sexByAgeByEducationKeyRec (s, a, e) = a F.&: s F.&: DT.educationToEducation4 e F.&: V.RNil
+sexByAgeByEducationKeyRec :: (DT.Sex, DT.Age5, DT.Education) -> Maybe (F.Record [DT.Age5C, DT.SexC, DT.Education4C])
+sexByAgeByEducationKeyRec (s, a, e) = Just $ a F.&: s F.&: DT.educationToEducation4 e F.&: V.RNil
 {-# INLINE sexByAgeByEducationKeyRec #-}
 
 
@@ -508,36 +507,36 @@ analyzeAllPerPrefix :: forall p b k a s e r c l .
                        , (p V.++ [c, s, r]) F.⊆ CensusRow p BRC.CensusDataR [c, s, r]
                        , (p V.++ [s, e, r]) F.⊆ CensusRow p BRC.CensusDataR [s, e, r]
                        , (p V.++ [s, r, l]) F.⊆ CensusRow p BRC.CensusDataR [s, r, l]
-                       , (p V.++ [DT.AdultsOnlyC a, s, e]) F.⊆ CensusRow p BRC.CensusDataR [DT.AdultsOnlyC a, s, e]
+                       , (p V.++ [a, s, e]) F.⊆ CensusRow p BRC.CensusDataR [a, s, e]
                        , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [a, s, r]
                        , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [c, s, r]
                        , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [s, e, r]
                        , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [s, r, l]
-                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [DT.AdultsOnlyC a, s, e]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [a, s, e]
                        , p F.⊆ (BR.Year ': p V.++ [a, s, r])
                        , p F.⊆ (BR.Year ': p V.++ [c, s, r])
                        , p F.⊆ (BR.Year ': p V.++ [s, e, r])
                        , p F.⊆ (BR.Year ': p V.++ [s, r, l])
-                       , p F.⊆ (BR.Year ': p V.++ [DT.AdultsOnlyC a, s, e])
+                       , p F.⊆ (BR.Year ': p V.++ [a, s, e])
                        )
                     => (F.Record (BR.Year ': p) -> k)
                     -> FL.Fold (F.Record (BRC.CensusDataR V.++ '[DT.PopCount])) b
                     -> CensusTables p BRC.CensusDataR a s e r c l
                     -> Either Text (Map k (b, b, b, b, b))
-analyzeAllPerPrefix prefixKey datFld (CensusTables a6sr csr ser srl ase) = do
-  let a6srMap = FL.fold (aggregateToMapF @p @[a, s, r] (prefixKey . F.rcast) datFld) a6sr
+analyzeAllPerPrefix prefixKey datFld (CensusTables asr csr ser srl ase) = do
+  let asrMap = FL.fold (aggregateToMapF @p @[a, s, r] (prefixKey . F.rcast) datFld) asr
       csrMap = FL.fold (aggregateToMapF @p @[c, s, r] (prefixKey . F.rcast) datFld) csr
       serMap = FL.fold (aggregateToMapF @p @[s, e, r] (prefixKey . F.rcast) datFld) ser
       srlMap = FL.fold (aggregateToMapF @p @[s, r, l] (prefixKey . F.rcast) datFld) srl
-      aseMap = FL.fold (aggregateToMapF @p @[DT.AdultsOnlyC a, s, e](prefixKey . F.rcast) datFld) ase
+      aseMap = FL.fold (aggregateToMapF @p @[a, s, e] (prefixKey . F.rcast) datFld) ase
       whenMatchedF f _ y b = Right $ f y b
       whenMissing1F t1 tA a _ = Left $ show a <> " is missing from " <> t1 <> " frame but present in " <> tA <> "."
       whenMissingAF t1 tA a _ = Left $ show a <> " is present in " <> t1 <> " frame but missing from " <> tA <> "."
       mf t1 tA f = MM.mergeA (MM.traverseMissing $ whenMissingAF t1 tA) (MM.traverseMissing $ whenMissing1F t1 tA) (MM.zipWithAMatched $ whenMatchedF f)
-  m1 <- mf "CSR" "A6SR" (,) a6srMap csrMap
-  m2 <- mf "SER" "CSR + A6SR" (\(b1, b2) b3 -> (b1, b2, b3)) m1 serMap
-  m3 <- mf "SRL" "SER + CSR + A6SR" (\(b1, b2, b3) b4 -> (b1, b2, b3, b4)) m2 srlMap
-  mf "ASE" "SRL + SER + CSR + A6SR" (\(b1, b2, b3, b4) b5 -> (b1, b2, b3, b4, b5)) m3 aseMap
+  m1 <- mf "CSR" "ASR" (,) asrMap csrMap
+  m2 <- mf "SER" "CSR + ASR" (\(b1, b2) b3 -> (b1, b2, b3)) m1 serMap
+  m3 <- mf "SRL" "SER + CSR + ASR" (\(b1, b2, b3) b4 -> (b1, b2, b3, b4)) m2 srlMap
+  mf "ASE" "SRL + SER + CSR + ASR" (\(b1, b2, b3, b4) b5 -> (b1, b2, b3, b4, b5)) m3 aseMap
 
 type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.CensusDataR V.++ '[DT.PopCount])
                                    , ((ks V.++ p) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])) F.⊆ CensusRow p BRC.CensusDataR ks
@@ -558,7 +557,7 @@ aggregateCensusTablesByPrefix :: forall p p' a s e r c l.
                                  , AggregateByPrefixC [c, s, r] p p'
                                  , AggregateByPrefixC [s, e, r] p p'
                                  , AggregateByPrefixC [s, r, l] p p'
-                                 , AggregateByPrefixC [DT.AdultsOnlyC a, s, e] p p'
+                                 , AggregateByPrefixC [a, s, e] p p'
                                  )
                               => (F.Record p -> F.Record p')
                               -> CensusTables p BRC.CensusDataR a s e r c l
@@ -569,17 +568,18 @@ aggregateCensusTablesByPrefix f (CensusTables t1 t2 t3 t4 t5) =
   (FL.fold (aggregateCensusTableByPrefixF @[c, s, r] f) t2)
   (FL.fold (aggregateCensusTableByPrefixF @[s, e, r] f) t3)
   (FL.fold (aggregateCensusTableByPrefixF @[s, r, l] f) t4)
-  (FL.fold (aggregateCensusTableByPrefixF @[DT.AdultsOnlyC a, s, e] f) t5)
+  (FL.fold (aggregateCensusTableByPrefixF @[a, s, e] f) t5)
 
 frameFromTableRows :: forall a b as bs. (FI.RecVec (as V.++ (bs V.++ '[DT.PopCount])))
                    => (a -> F.Record as)
-                   -> (b -> F.Record bs)
+                   -> (b -> Maybe (F.Record bs))
                    -> Int
                    -> Vec.Vector (KT.TableRow a (Map b Int))
                    -> F.FrameRec ('[BR.Year] V.++ as V.++ (bs V.++ '[DT.PopCount]))
-frameFromTableRows prefixToRec keyToRec year tableRows =
-  let mapToRows :: Map b Int -> [F.Record (bs V.++ '[DT.PopCount])]
-      mapToRows = fmap (\(b, n) -> keyToRec b V.<+> (FT.recordSingleton @DT.PopCount n)) . Map.toList
+frameFromTableRows prefixToRec keyToRecM year tableRows =
+  let assocToMRow (b, n) = fmap (\kRec -> kRec F.<+> FT.recordSingleton @DT.PopCount n) $ keyToRecM b
+      mapToRows :: Map b Int -> [F.Record (bs V.++ '[DT.PopCount])]
+      mapToRows = catMaybes . fmap assocToMRow . Map.toList
       oneRow (KT.TableRow p m) = let x = year F.&: prefixToRec p in fmap (x `V.rappend`) $ mapToRows m
       allRows = fmap oneRow tableRows
   in F.toFrame $ concat $ Vec.toList allRows

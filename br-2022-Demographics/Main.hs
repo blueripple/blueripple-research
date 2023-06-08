@@ -521,9 +521,10 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    byPUMA_C <-  fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CA6SR . fmap F.rcast)
+ {-   byPUMA_C <-  fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CA6SR . fmap F.rcast)
                 <$> DDP.cachedACSa6ByPUMA
     (predictor_C, _, _) <- DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age6C] @DMC.CA6SR(Right "model/demographic/csr_a6sr") "CSR_A6SR" cmdLine byPUMA_C
+-}
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
     sldCensusTablesMA <- BRC.filterCensusTables ((== 25) . view GT.stateFIPS) <$> K.ignoreCacheTime sld2022CensusTables_C
 --    BRK.logFrame $ BRC.ageSexEducation sldCensusTablesMA

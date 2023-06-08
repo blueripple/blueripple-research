@@ -139,6 +139,23 @@ age14ToAge6 A14_65To74 = DT.A6_65AndOver
 age14ToAge6 A14_75To84 = DT.A6_65AndOver
 age14ToAge6 A14_85AndOver = DT.A6_65AndOver
 
+age14ToAge5 :: Age14 -> Maybe DT.Age5
+age14ToAge5 A14_Under5 = Nothing
+age14ToAge5 A14_5To9 = Nothing
+age14ToAge5 A14_10To14 = Nothing
+age14ToAge5 A14_15To17 = Nothing
+age14ToAge5 A14_18To19 = Just DT.A5_18To24
+age14ToAge5 A14_20To24 = Just DT.A5_18To24
+age14ToAge5 A14_25To29 = Just DT.A5_25To34
+age14ToAge5 A14_30To34 = Just DT.A5_25To34
+age14ToAge5 A14_35To44 = Just DT.A5_35To44
+age14ToAge5 A14_45To54 = Just DT.A5_45To64
+age14ToAge5 A14_55To64 = Just DT.A5_45To64
+age14ToAge5 A14_65To74 = Just DT.A5_65AndOver
+age14ToAge5 A14_75To84 = Just DT.A5_65AndOver
+age14ToAge5 A14_85AndOver = Just DT.A5_65AndOver
+
+
 reKeyAgeBySex :: (DT.Sex, DT.Age5F) -> [(DT.Sex, Age14)]
 reKeyAgeBySex (s, a) = fmap (s, ) $ age14FromAge5F a
 
