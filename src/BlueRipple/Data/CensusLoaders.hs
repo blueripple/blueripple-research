@@ -33,6 +33,7 @@ import qualified Control.MapReduce as MR
 import qualified Control.Foldl as FL
 import Control.Lens (view, (^.))
 import qualified Data.Map as Map
+import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as Set
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
@@ -190,6 +191,7 @@ censusTablesByDistrict filesByYear cacheName = do
   dataDeps <- traverse (K.fileDependency . toString . snd) filesByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text ("data/Census/" <> cacheName <> ".bin") dataDep $ const $ do
+    K.logLE K.Info "Rebuilding Census tables for SLDS..."
     tables <- traverse doOneYear filesByYear
     neTables <- K.knitMaybe "Empty list of tables in result of censusTablesByDistrict" $ nonEmpty tables
     return $ sconcat neTables
@@ -496,6 +498,46 @@ aggregateToMapF key datFld = fmap (Map.fromListWith (<>))
                              (MR.Assign $ \r -> (key (F.rcast r), F.rcast @(BRC.CensusDataR V.++ '[DT.PopCount]) r))
                              (MR.foldAndLabel datFld (,))
 
+
+
+analyzeAllPerPrefix :: forall p b k a s e r c l .
+                       (Monoid b
+                       , Ord k
+                       , Show k
+                       , (p V.++ [a, s, r]) F.⊆ CensusRow p BRC.CensusDataR [a, s, r]
+                       , (p V.++ [c, s, r]) F.⊆ CensusRow p BRC.CensusDataR [c, s, r]
+                       , (p V.++ [s, e, r]) F.⊆ CensusRow p BRC.CensusDataR [s, e, r]
+                       , (p V.++ [s, r, l]) F.⊆ CensusRow p BRC.CensusDataR [s, r, l]
+                       , (p V.++ [DT.AdultsOnlyC a, s, e]) F.⊆ CensusRow p BRC.CensusDataR [DT.AdultsOnlyC a, s, e]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [a, s, r]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [c, s, r]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [s, e, r]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [s, r, l]
+                       , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR [DT.AdultsOnlyC a, s, e]
+                       , p F.⊆ (BR.Year ': p V.++ [a, s, r])
+                       , p F.⊆ (BR.Year ': p V.++ [c, s, r])
+                       , p F.⊆ (BR.Year ': p V.++ [s, e, r])
+                       , p F.⊆ (BR.Year ': p V.++ [s, r, l])
+                       , p F.⊆ (BR.Year ': p V.++ [DT.AdultsOnlyC a, s, e])
+                       )
+                    => (F.Record (BR.Year ': p) -> k)
+                    -> FL.Fold (F.Record (BRC.CensusDataR V.++ '[DT.PopCount])) b
+                    -> CensusTables p BRC.CensusDataR a s e r c l
+                    -> Either Text (Map k (b, b, b, b, b))
+analyzeAllPerPrefix prefixKey datFld (CensusTables a6sr csr ser srl ase) = do
+  let a6srMap = FL.fold (aggregateToMapF @p @[a, s, r] (prefixKey . F.rcast) datFld) a6sr
+      csrMap = FL.fold (aggregateToMapF @p @[c, s, r] (prefixKey . F.rcast) datFld) csr
+      serMap = FL.fold (aggregateToMapF @p @[s, e, r] (prefixKey . F.rcast) datFld) ser
+      srlMap = FL.fold (aggregateToMapF @p @[s, r, l] (prefixKey . F.rcast) datFld) srl
+      aseMap = FL.fold (aggregateToMapF @p @[DT.AdultsOnlyC a, s, e](prefixKey . F.rcast) datFld) ase
+      whenMatchedF f _ y b = Right $ f y b
+      whenMissing1F t1 tA a _ = Left $ show a <> " is missing from " <> t1 <> " frame but present in " <> tA <> "."
+      whenMissingAF t1 tA a _ = Left $ show a <> " is present in " <> t1 <> " frame but missing from " <> tA <> "."
+      mf t1 tA f = MM.mergeA (MM.traverseMissing $ whenMissingAF t1 tA) (MM.traverseMissing $ whenMissing1F t1 tA) (MM.zipWithAMatched $ whenMatchedF f)
+  m1 <- mf "CSR" "A6SR" (,) a6srMap csrMap
+  m2 <- mf "SER" "CSR + A6SR" (\(b1, b2) b3 -> (b1, b2, b3)) m1 serMap
+  m3 <- mf "SRL" "SER + CSR + A6SR" (\(b1, b2, b3) b4 -> (b1, b2, b3, b4)) m2 srlMap
+  mf "ASE" "SRL + SER + CSR + A6SR" (\(b1, b2, b3, b4) b5 -> (b1, b2, b3, b4, b5)) m3 aseMap
 
 type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.CensusDataR V.++ '[DT.PopCount])
                                    , ((ks V.++ p) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])) F.⊆ CensusRow p BRC.CensusDataR ks

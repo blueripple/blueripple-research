@@ -357,12 +357,15 @@ simpleAgeFrom6 EqualOrOver = [A6_45To64, A6_65AndOver]
 
 type family AdultsOnly (a :: Type) :: Type where
   AdultsOnly Age6 = Age5
+  AdultsOnly Age5 = Age5
   AdultsOnly Age5F = Age4
+  AdultsOnly Age4 = Age4
 
 type family AdultsOnlyC (a :: (Symbol, Type)) :: (Symbol, Type) where
   AdultsOnlyC Age6C = Age5C
+  AdultsOnlyC Age5C = Age5C
   AdultsOnlyC Age5FC = Age4C
-
+  AdultsOnlyC Age4C = Age4C
 
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 --instance S.Serialize Education

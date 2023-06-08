@@ -443,12 +443,12 @@ sexByCitizenshipPrefix TY2012 E_WhiteNonHispanic = [NHGISPrefix "Q27"]
 
 sexByCitizenship :: NHGISPrefix -> Map (DT.Sex, Citizenship) Text
 sexByCitizenship (NHGISPrefix p) = Map.fromList [((DT.Male, Native), p <> "E009")
-                                                   ,((DT.Male, Naturalized), p <> "E011")
-                                                   ,((DT.Male, NonCitizen), p <> "E012")
-                                                   ,((DT.Female, Native), p <> "E020")
-                                                   ,((DT.Female, Naturalized), p <> "E022")
-                                                   ,((DT.Female, NonCitizen), p <> "E023")
-                                                   ]
+                                                ,((DT.Male, Naturalized), p <> "E011")
+                                                ,((DT.Male, NonCitizen), p <> "E012")
+                                                ,((DT.Female, Native), p <> "E020")
+                                                ,((DT.Female, Naturalized), p <> "E022")
+                                                ,((DT.Female, NonCitizen), p <> "E023")
+                                                ]
 
 sexByEducationPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
 sexByEducationPrefix TY2020 R_White = [NHGISPrefix "ANHL"]

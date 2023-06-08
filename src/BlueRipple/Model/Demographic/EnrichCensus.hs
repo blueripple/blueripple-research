@@ -57,6 +57,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Control.MapReduce as MR
 import qualified Numeric
 import qualified Numeric.LinearAlgebra as LA
+import qualified Colonnade as C
 
 import GHC.TypeLits (Symbol)
 
@@ -210,23 +211,27 @@ csr_a6sr_tableProductWithDensity csr asr = F.toFrame $ fmap toRecord $ concat $ 
 
 --type ProdOuter = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 
-checkCensusTables :: (F.Record BRC.LDLocationR -> Text) -> K.ActionWithCacheTime x BRC.LoadedCensusTablesByLD ->  K.Sem x ()
-checkCensusTables keyText censusTables_C = do
+checkCensusTables :: K.KnitEffects x => K.ActionWithCacheTime x BRC.LoadedCensusTablesByLD ->  K.Sem x ()
+checkCensusTables censusTables_C = do
   censusTables <- K.ignoreCacheTime censusTables_C
-  let
-    sizeMapFld :: FL.Fold (F.Record (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR ks)) (Map Text Int)
-    sizeMapFld = fmap M.fromList $ MR.mapReduceFold MR.noUnpack (MR.assign (keyText . F.rcast @BRC.LDLocationR) (view DT.popCount)) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
-    a6srMap = FL.fold sizeMapFld $ BRC.ageSexRace censusTables
-    csrMap = FL.fold sizeMapFld $ BRC.citizenshipSexRace censusTables
-    serMap = FL.fold sizeMapFld $ BRC.sexEducationRace censusTables
-    sreMap = FL.fold sizeMapFld $ BRC.sexRaceEmployment censusTables
-    aseMap = FL.fold sizeMapFld $ BRC.ageSexEducation censusTables
-    o t m = t <> " has " <> show (M.size m) <> " tables accounting for " <> show (FL.fold FL.sum m) <> " people."
-  K.logLE K.Info $ o "a6sr" a6srMap
-  K.logLE K.Info $ o "csr" csrMap
-  K.logLE K.Info $ o "ser" serMap
-  K.logLE K.Info $ o "sre" sreMap
-  K.logLE K.Info $ o "ase" aseMap
+  let popFld = fmap Sum $ FL.premap (view DT.popCount) FL.sum
+      label r = "StFIPS=" <> show (r ^. GT.stateFIPS) <> ": " <> show (r ^. GT.districtTypeC) <> "-" <> (r ^. GT.districtName)
+  compMap <- K.knitEither $ BRC.analyzeAllPerPrefix label popFld censusTables
+  K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString censusCompColonnade) $ M.toList compMap)
+
+censusCompColonnade :: C.Colonnade C.Headed ((Text, (Sum Int, Sum Int, Sum Int, Sum Int, Sum Int))) Text
+censusCompColonnade =
+  let a6sr (x, _, _, _, _) = x
+      csr (_, x, _, _, _) = x
+      ser (_, _, x, _, _) = x
+      srl (_, _, _, x, _) = x
+      ase (_, _, _, _, x) = x
+  in C.headed "District" (show . fst)
+     <>  C.headed "A6SR" (show . getSum . a6sr . snd)
+     <>  C.headed "CSR" (show . getSum . csr . snd)
+     <>  C.headed "SER" (show . getSum . ser . snd)
+     <>  C.headed "SRL" (show . getSum . srl . snd)
+     <>  C.headed "ASE" (show . getSum . ase . snd)
 
 
 
