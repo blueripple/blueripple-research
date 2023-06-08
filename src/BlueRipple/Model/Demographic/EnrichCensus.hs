@@ -210,6 +210,28 @@ csr_a6sr_tableProductWithDensity csr asr = F.toFrame $ fmap toRecord $ concat $ 
 
 --type ProdOuter = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 
+checkCensusTables :: (F.Record BRC.LDLocationR -> Text) -> K.ActionWithCacheTime x BRC.LoadedCensusTablesByLD ->  K.Sem x ()
+checkCensusTables keyText censusTables_C = do
+  censusTables <- K.ignoreCacheTime censusTables_C
+  let
+    sizeMapFld :: FL.Fold (F.Record (BRC.CensusRow BRC.LDLocationR BRC.CensusDataR ks)) (Map Text Int)
+    sizeMapFld = fmap M.fromList $ MR.mapReduceFold MR.noUnpack (MR.assign (keyText . F.rcast @BRC.LDLocationR) (view DT.popCount)) (MR.ReduceFold $ \k -> fmap (k,) FL.sum)
+    a6srMap = FL.fold sizeMapFld $ BRC.ageSexRace censusTables
+    csrMap = FL.fold sizeMapFld $ BRC.citizenshipSexRace censusTables
+    serMap = FL.fold sizeMapFld $ BRC.sexEducationRace censusTables
+    sreMap = FL.fold sizeMapFld $ BRC.sexRaceEmployment censusTables
+    aseMap = FL.fold sizeMapFld $ BRC.ageSexEducation censusTables
+    o t m = t <> " has " <> show (M.size m) <> " tables accounting for " <> show (FL.fold FL.sum m) <> " people."
+  K.logLE K.Info $ o "a6sr" a6srMap
+  K.logLE K.Info $ o "csr" csrMap
+  K.logLE K.Info $ o "ser" serMap
+  K.logLE K.Info $ o "sre" sreMap
+  K.logLE K.Info $ o "ase" aseMap
+
+
+
+
+
 censusA6SR_CSR_Products :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                        => Text
                        -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD

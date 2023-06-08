@@ -22,6 +22,8 @@ import qualified BlueRipple.Data.Keyed as K
 
 import qualified Flat
 
+import qualified Control.Foldl as FL
+import Control.Lens (view, (^.))
 import qualified Data.Array as Array
 import qualified Data.Csv as CSV
 import           Data.Csv ((.:))
@@ -30,6 +32,7 @@ import qualified Frames                        as F
 import qualified Frames.Streamly.InCore        as FI
 import           Data.Discrimination            ( Grouping )
 import qualified Data.Vinyl                    as V
+import qualified Data.Vinyl.TypeLevel          as V
 import qualified Data.Vector.Unboxed           as UVec
 import           Data.Vector.Unboxed.Deriving   (derivingUnbox)
 
@@ -42,6 +45,16 @@ F.declareColumn "TotalIncome" ''Double
 type LDLocationR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 type LDPrefixR = [GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName, DT.TotalPopCount, DT.PWPopPerSqMile, TotalIncome, SqMiles, SqKm]
 type CensusDataR = [SqMiles, TotalIncome, DT.PWPopPerSqMile]
+
+aggCensusData :: FL.Fold (F.Record (CensusDataR V.++ '[DT.PopCount])) (F.Record (CensusDataR V.++ '[DT.PopCount]))
+aggCensusData =
+  let smF = FL.premap (view sqMiles) FL.sum
+      tiF = FL.premap (view totalIncome) FL.sum
+      pcF = FL.premap (view DT.popCount) FL.sum
+      wpwdF = FL.premap (\r -> realToFrac (r ^. DT.popCount) * r ^. DT.pWPopPerSqMile) FL.sum
+      safeDiv x y = if y /= 0 then x / realToFrac y else 0
+      pwdF = safeDiv <$> wpwdF <*> pcF
+  in (\sm ti pwd pc -> sm F.&: ti F.&: pwd F.&: pc F.&: V.RNil) <$> smF <*> tiF <*> pwdF <*> pcF
 
 -- To avoid an orphan instance of FromField DistrictType
 newtype DistrictTypeWrapper = DistrictTypeWrapper { unWrapDistrictType :: GT.DistrictType }
@@ -76,8 +89,6 @@ data Age14 = A14_Under5 | A14_5To9 | A14_10To14 | A14_15To17 | A14_18To19 | A14_
            | A14_25To29 | A14_30To34 | A14_35To44 | A14_45To54
            | A14_55To64 | A14_65To74 | A14_75To84 | A14_85AndOver deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
 
---instance S.Serialize Age14
---instance B.Binary Age14
 instance Flat.Flat Age14
 instance Grouping Age14
 instance K.FiniteSet Age14
@@ -88,7 +99,6 @@ derivingUnbox "Age14"
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Age14 = UVec.Vector
 F.declareColumn "Age14C" ''Age14
---type Age14C = "Age14" F.:-> Age14
 
 age14FromAge5F :: DT.Age5F -> [Age14]
 age14FromAge5F DT.A5F_Under18 = [A14_Under5, A14_5To9, A14_10To14, A14_15To17]
@@ -156,33 +166,8 @@ citizenshipToIsCitizen Native = True
 citizenshipToIsCitizen Naturalized = True
 citizenshipToIsCitizen NonCitizen = False
 
-{-
-data Education4 = E4_NonHSGrad | E4_HSGrad | E4_SomeCollege | E4_CollegeGrad deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
---instance S.Serialize Education4
---instance B.Binary Education4
-instance Flat.Flat Education4
-instance Grouping Education4
-instance K.FiniteSet Education4
-derivingUnbox "Education4"
-  [t|Education4 -> Word8|]
-  [|toEnum . fromEnum|]
-  [|toEnum . fromEnum|]
-type instance FI.VectorFor Education4 = UVec.Vector
-type Education4C = "Education" F.:-> Education4
-
-education4FromCollegeGrad :: DT.CollegeGrad -> [Education4]
-education4FromCollegeGrad DT.NonGrad = [E4_NonHSGrad, E4_HSGrad, E4_SomeCollege]
-education4FromCollegeGrad DT.Grad = [E4_CollegeGrad]
-
-education4ToCollegeGrad :: Education4 -> DT.CollegeGrad
-education4ToCollegeGrad E4_CollegeGrad = DT.Grad
-education4ToCollegeGrad _ = DT.NonGrad
--}
-
 -- Easiest to have a type matching the census table
 data RaceEthnicity = R_White | R_Black | R_Asian | R_Other | E_Hispanic | E_WhiteNonHispanic deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
---instance S.Serialize RaceEthnicity
---instance B.Binary RaceEthnicity
 instance Flat.Flat RaceEthnicity
 instance Grouping RaceEthnicity
 instance K.FiniteSet RaceEthnicity
@@ -192,11 +177,8 @@ derivingUnbox "RaceEthnicity"
   [|toEnum . fromEnum|]
 type instance FI.VectorFor RaceEthnicity = UVec.Vector
 F.declareColumn "RaceEthnicityC" ''RaceEthnicity
---type RaceEthnicityC = "RaceEthnicity" F.:-> RaceEthnicity
 
 data Employment = E_ArmedForces | E_CivEmployed | E_CivUnemployed | E_NotInLaborForce deriving stock (Show, Enum, Bounded, Eq, Ord, Array.Ix, Generic)
---instance S.Serialize Employment
---instance B.Binary Employment
 instance Flat.Flat Employment
 instance Grouping Employment
 instance K.FiniteSet Employment
@@ -206,16 +188,6 @@ derivingUnbox "Employment"
   [|toEnum . fromEnum|]
 type instance FI.VectorFor Employment = UVec.Vector
 F.declareColumn "EmploymentC" ''Employment
---type EmploymentC = "Employment" F.:-> Employment
-
-{-
-data CensusTable = SexByAge | SexByCitizenship | SexByEducation deriving stock (Show, Eq, Ord)
-
-type family CensusTableKey (c :: CensusTable) :: Type where
-  CensusTableKey 'SexByAge = (DT.Sex, Age14)
-  CensusTableKey 'SexByCitizenship = (DT.Sex, Citizenship)
-  CensusTableKey 'SexByEducation = (DT.Sex, Education4)
--}
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving stock (Eq, Ord, Show)
 data TableYear = TY2020 | TY2018 | TY2016 | TY2014 | TY2012

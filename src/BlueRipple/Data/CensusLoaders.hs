@@ -29,6 +29,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Loaders as BR
 
+import qualified Control.MapReduce as MR
 import qualified Control.Foldl as FL
 import Control.Lens (view, (^.))
 import qualified Data.Map as Map
@@ -181,11 +182,11 @@ censusTablesByDistrict filesByYear cacheName = do
                        (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
             fRaceBySexByEmployment = FL.fold fldSumAges fRaceBySexByAgeByEmployment
         return $ CensusTables
-          (FL.fold (aggregateCensusTableByPrefixF @[DT.Age6C, DT.SexC, BRC.RaceEthnicityC] @BRC.LDLocationR id) $ fmap F.rcast fRaceBySexByAge)
-          (fmap F.rcast fRaceBySexByCitizenship)
-          (fmap F.rcast fRaceBySexByEducation)
-          (fmap F.rcast fRaceBySexByEmployment)
-          (FL.fold (aggregateCensusTableByPrefixF @[DT.Age5C, DT.SexC, DT.Education4C] @BRC.LDLocationR id) $ fmap F.rcast fSexByAgeByEducation)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.Age6C, DT.SexC, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByAge)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[BRC.CitizenshipC, DT.SexC, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByCitizenship)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.SexC, DT.Education4C, BRC.RaceEthnicityC]) $ fmap F.rcast fRaceBySexByEducation)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.SexC, BRC.RaceEthnicityC, BRC.EmploymentC]) $ fmap F.rcast fRaceBySexByEmployment)
+          (FL.fold (aggregateSameKeysF @BRC.LDLocationR @[DT.Age5C, DT.SexC, DT.Education4C]) $ fmap F.rcast fSexByAgeByEducation)
   dataDeps <- traverse (K.fileDependency . toString . snd) filesByYear
   let dataDep = fromMaybe (pure ()) $ fmap sconcat $ nonEmpty dataDeps
   K.retrieveOrMake @BR.SerializerC @BR.CacheData @Text ("data/Census/" <> cacheName <> ".bin") dataDep $ const $ do
@@ -464,6 +465,37 @@ raceBySexByAgeByEmploymentKeyRec (r, (s, a, l)) = s F.&: r F.&: a F.&: l F.&: V.
 sexByAgeByEducationKeyRec :: (DT.Sex, DT.Age5, DT.Education) -> F.Record [DT.Age5C, DT.SexC, DT.Education4C]
 sexByAgeByEducationKeyRec (s, a, e) = a F.&: s F.&: DT.educationToEducation4 e F.&: V.RNil
 {-# INLINE sexByAgeByEducationKeyRec #-}
+
+
+aggregateSameKeysF :: forall p ks .
+                      (Ord (F.Record (p V.++ ks))
+                      , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR ks
+                      , (p V.++ ks) F.⊆ CensusRow p BRC.CensusDataR ks
+                      , (((p V.++ BRC.CensusDataR) V.++ ks) V.++ '[DT.PopCount]) F.⊆ (BR.Year ': ((p V.++ ks) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])))
+                      , FI.RecVec (BR.Year ': ((p V.++ ks) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])))
+                      )
+                   => FL.Fold (F.Record (CensusRow p BRC.CensusDataR ks)) (F.FrameRec (CensusRow p BRC.CensusDataR ks))
+aggregateSameKeysF = FMR.concatFold
+                     $ FMR.mapReduceFold
+                     FMR.noUnpack
+                     (FMR.assignKeysAndData @('[BR.Year] V.++ p V.++ ks))
+                     (fmap (fmap F.rcast) $ FMR.foldAndAddKey BRC.aggCensusData)
+
+aggregateToMapF :: forall p ks a b .
+                   (Monoid b
+                   , Ord a
+                   , (p V.++ ks) F.⊆ CensusRow p BRC.CensusDataR ks
+                   , (BRC.CensusDataR V.++ '[DT.PopCount]) F.⊆ CensusRow p BRC.CensusDataR ks
+                   )
+                => (F.Record (BR.Year ': p V.++ ks) -> a)
+                -> FL.Fold (F.Record (BRC.CensusDataR V.++ '[DT.PopCount])) b
+                -> FL.Fold (F.Record (CensusRow p BRC.CensusDataR ks)) (Map a b)
+aggregateToMapF key datFld = fmap (Map.fromListWith (<>))
+                             $ MR.mapReduceFold
+                             MR.noUnpack
+                             (MR.Assign $ \r -> (key (F.rcast r), F.rcast @(BRC.CensusDataR V.++ '[DT.PopCount]) r))
+                             (MR.foldAndLabel datFld (,))
+
 
 type AggregateByPrefixC ks p p'  = (FA.AggregateC (BR.Year ': ks) p p' (BRC.CensusDataR V.++ '[DT.PopCount])
                                    , ((ks V.++ p) V.++ (BRC.CensusDataR V.++ '[DT.PopCount])) F.⊆ CensusRow p BRC.CensusDataR ks
