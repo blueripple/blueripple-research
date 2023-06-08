@@ -278,20 +278,20 @@ censusA6SR_CSR_Products cacheKey censusTables_C = do
       mconcat <$> fmap assocToFrame $ M.toList productMap
   BRK.retrieveOrMakeFrame cacheKey censusTables_C f
 
-{-
-logitMarginalsCMatrix :: LA.Matrix Double
-logitMarginalsCMatrix =
-  let serInASER :: F.Record A6SER -> F.Record SER
-      serInASER = F.rcast
-      asrInASER :: F.Record A6SER -> F.Record A6SR
-      asrInASER = F.rcast
-      serInASER_stencils = fmap (DMS.expandStencil serInASER)
+
+logitMarginalsCMatrixCSR_A6SR :: LA.Matrix Double
+logitMarginalsCMatrixCSR_A6SR =
+  let csrInCA6SR :: F.Record CA6SR -> F.Record CSR
+      csrInCA6SR = F.rcast
+      a6srInCA6SR :: F.Record CA6SR -> F.Record A6SR
+      a6srInCA6SR = F.rcast
+      csrInCA6SR_stencils = fmap (DMS.expandStencil csrInCA6SR)
                            $ DMS.msStencils
-                           $ DMS.identityMarginalStructure @(F.Record SER) DMS.cwdWgtLens
-      asrInASER_stencils = fmap (DMS.expandStencil asrInASER)
+                           $ DMS.identityMarginalStructure @(F.Record CSR) DMS.cwdWgtLens
+      a6srInCA6SR_stencils = fmap (DMS.expandStencil a6srInCA6SR)
                            $ DMS.msStencils
-                           $ DMS.identityMarginalStructure @(F.Record SER) DMS.cwdWgtLens
-  in DED.mMatrix (S.size $ Keyed.elements @(F.Record A6SER)) (serInASER_stencils <> asrInASER_stencils)
+                           $ DMS.identityMarginalStructure @(F.Record A6SR) DMS.cwdWgtLens
+  in DED.mMatrix (S.size $ Keyed.elements @(F.Record CA6SR)) (csrInCA6SR_stencils <> a6srInCA6SR_stencils)
 
 logitMarginals :: LA.Matrix Double -> VS.Vector Double -> VS.Vector Double
 logitMarginals cMat prodDistV = VS.map (DTM3.bLogit 1e-10) (cMat LA.#> prodDistV)
@@ -299,51 +299,51 @@ logitMarginals cMat prodDistV = VS.map (DTM3.bLogit 1e-10) (cMat LA.#> prodDistV
 popAndpwDensityFld :: FL.Fold DMS.CellWithDensity (Double, Double)
 popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
-predictedCensusASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
+predictedCensusCA6SR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => Bool
                     -> Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
-                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusA6SERR), K.ActionWithCacheTime r (F.FrameRec CensusA6SERR))
-predictedCensusASER rebuild cacheRoot predictor_C censusTables_C = do
+                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCA6SR), K.ActionWithCacheTime r (F.FrameRec CensusCA6SR))
+predictedCensusCA6SR rebuild cacheRoot predictor_C censusTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_modeled.bin"
-      logitMarginals' = logitMarginals logitMarginalsCMatrix
+      logitMarginals' = logitMarginals logitMarginalsCMatrixCSR_A6SR
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
-  products_C <- censusASR_SER_Products productCacheKey censusTables_C
-  let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD A6SER)) (F.FrameRec (KeysWD A6SER))
+  products_C <- censusA6SR_CSR_Products productCacheKey censusTables_C
+  let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD CA6SR)) (F.FrameRec (KeysWD CA6SR))
       predictFld predictor sa =
-        let key = F.rcast @A6SER
+        let key = F.rcast @CA6SR
             w r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
             g r = (key r, w r)
             prodMapFld = FL.premap g DMS.zeroFillSummedMapFld
             posLog x = if x < 1 then 0 else Numeric.log x
-            popAndPWDensity :: Map (F.Record A6SER) DMS.CellWithDensity -> (Double, Double)
+            popAndPWDensity :: Map (F.Record CA6SR) DMS.CellWithDensity -> (Double, Double)
             popAndPWDensity = FL.fold popAndpwDensityFld
             covariates pwD prodDistV = mconcat [VS.singleton (posLog pwD), logitMarginals' prodDistV]
             prodV pm = VS.fromList $ fmap DMS.cwdWgt $ M.elems pm
-            toRec :: (F.Record A6SER, DMS.CellWithDensity) -> F.Record (KeysWD A6SER)
+            toRec :: (F.Record CA6SR, DMS.CellWithDensity) -> F.Record (KeysWD CA6SR)
             toRec (k, cwd) = k F.<+> (round (DMS.cwdWgt cwd) F.&: DMS.cwdDensity cwd F.&: V.RNil)
             predict pm = let (n, pwD) = popAndPWDensity pm
                              pV = prodV pm
                              pDV = VS.map (/ n) pV
                          in F.toFrame . fmap toRec <$> DTM3.predictedJoint DMS.cwdWgtLens predictor sa (covariates pwD pDV) (M.toList pm)
         in FMR.postMapM predict $ FL.generalize prodMapFld
-  let f :: DTM3.Predictor Text -> F.FrameRec CensusA6SERR -> K.Sem r (F.FrameRec CensusA6SERR)
+  let f :: DTM3.Predictor Text -> F.FrameRec CensusCA6SR -> K.Sem r (F.FrameRec CensusCA6SR)
       f predictor products = do
-        let rFld :: F.Record CensusOuterKeyR -> FL.FoldM (K.Sem r) (F.Record (KeysWD A6SER)) (F.FrameRec CensusA6SERR)
+        let rFld :: F.Record CensusOuterKeyR -> FL.FoldM (K.Sem r) (F.Record (KeysWD CA6SR)) (F.FrameRec CensusCA6SR)
             rFld k = FL.hoists K.knitEither $ fmap (fmap (k F.<+>)) $ predictFld predictor (k ^. GT.stateAbbreviation)
             fldM = FMR.concatFoldM
                    $ FMR.mapReduceFoldM
                    (FMR.generalizeUnpack FMR.noUnpack)
-                   (FMR.generalizeAssign $ FMR.assignKeysAndData @CensusOuterKeyR @(KeysWD A6SER))
+                   (FMR.generalizeAssign $ FMR.assignKeysAndData @CensusOuterKeyR @(KeysWD CA6SR))
                    (MR.ReduceFoldM rFld)
-        K.logLE K.Info "Building/re-building censusASER predictions"
+        K.logLE K.Info "Building/re-building censusCA6SR predictions"
         FL.foldM fldM products
       predictionDeps = (,) <$> predictor_C <*> products_C
   predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
   pure (predicted_C, products_C)
--}
+
 projCovFld :: forall rs ks . (ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)
            => DMS.MarginalStructure DMS.CellWithDensity (F.Record ks) -> FL.Fold (F.Record rs) (LA.Vector Double, LA.Herm Double)
 projCovFld ms = DTP.diffCovarianceFldMS
