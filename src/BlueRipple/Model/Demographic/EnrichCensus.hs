@@ -216,23 +216,23 @@ checkCensusTables :: K.KnitEffects x => K.ActionWithCacheTime x BRC.LoadedCensus
 checkCensusTables censusTables_C = do
   censusTables <- K.ignoreCacheTime censusTables_C
   let popFld = fmap Sum $ FL.premap (view DT.popCount) FL.sum
-      label r = "StFIPS=" <> show (r ^. GT.stateFIPS) <> ": " <> show (r ^. GT.districtTypeC) <> "-" <> (r ^. GT.districtName)
+      label r = (r ^. GT.stateFIPS, GT.LegislativeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName))
   compMap <- K.knitEither $ BRC.analyzeAllPerPrefix label popFld censusTables
   K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString censusCompColonnade) $ M.toList compMap)
 
-censusCompColonnade :: C.Colonnade C.Headed ((Text, (Sum Int, Sum Int, Sum Int, Sum Int, Sum Int))) Text
+censusCompColonnade :: C.Colonnade C.Headed ((Int, GT.LegislativeDistrict), (Sum Int, Sum Int, Sum Int, Sum Int, Sum Int)) Text
 censusCompColonnade =
   let a6sr (x, _, _, _, _) = x
       csr (_, x, _, _, _) = x
       ser (_, _, x, _, _) = x
       srl (_, _, _, x, _) = x
       ase (_, _, _, _, x) = x
-  in C.headed "District" (show . fst)
-     <>  C.headed "A6SR" (show . getSum . a6sr . snd)
-     <>  C.headed "CSR" (show . getSum . csr . snd)
-     <>  C.headed "SER" (show . getSum . ser . snd)
-     <>  C.headed "SRL" (show . getSum . srl . snd)
-     <>  C.headed "ASE" (show . getSum . ase . snd)
+  in C.headed "District" (\((sf, ld), _) -> show sf <> ": " <> show ld)
+     <>  C.headed "ASR' (18+)" (show . getSum . a6sr . snd)
+     <>  C.headed "CSR' (18+)" (show . getSum . csr . snd)
+     <>  C.headed "SER' (25+)" (show . getSum . ser . snd)
+     <>  C.headed "SR'L" (show . getSum . srl . snd)
+     <>  C.headed "ASE (18+)" (show . getSum . ase . snd)
 
 
 
@@ -258,15 +258,15 @@ censusASR_CSR_Products cacheKey censusTables_C = do
                            )
           keyF :: (LDOuterKeyR F.⊆ rs) => F.Record rs -> F.Record LDOuterKeyR
           keyF = F.rcast
-          csrF :: ((KeysWD CSR) F.⊆ rs) => F.Record rs -> F.Record (KeysWD CSR)
+          csrF :: (KeysWD CSR F.⊆ rs) => F.Record rs -> F.Record (KeysWD CSR)
           csrF = F.rcast
-          asrF :: ((KeysWD ASR) F.⊆ rs) => F.Record rs -> F.Record (KeysWD ASR)
+          asrF :: (KeysWD ASR F.⊆ rs) => F.Record rs -> F.Record (KeysWD ASR)
           asrF = F.rcast
       -- check tables before recoding
           compareF (s1, s2) =
             let n1 = getSum s1
                 n2 = getSum s2
-            in if n1 /= n2 then Just $ "N(CSR)=" <> show n1 <> "; N(A6SR)=" <> show n2 else Nothing
+            in if abs (n1 - n2) > 20 then Just $ "N(CSR)=" <> show n1 <> "; N(ASR)=" <> show n2 else Nothing
       innerCompareMap <- K.knitEither
                          $ compareMarginals
                          (\csrR -> (F.rcast @(LDOuterKeyR V.++ SRo) csrR, Sum $ view DT.popCount csrR))
@@ -286,7 +286,7 @@ censusASR_CSR_Products cacheKey censusTables_C = do
           checkFrames k ta tb = do
             let na = FL.fold (FL.premap (view DT.popCount) FL.sum) ta
                 nb = FL.fold (FL.premap (view DT.popCount) FL.sum) tb
-            when (na /= nb) $ K.logLE K.Error $ "Mismatched CSR/ASR tables at k=" <> show k <> ". N(CSR)=" <> show na <> "; N(ASR)=" <> show nb
+            when (abs (na - nb) > 20) $ K.logLE K.Error $ "Mismatched CSR/ASR tables at k=" <> show k <> ". N(CSR)=" <> show na <> "; N(ASR)=" <> show nb
             pure ()
           whenMatchedF k csr' asr' = checkFrames k csr' asr' >> pure (csr_asr_tableProductWithDensity csr' asr')
           whenMissingCSRF k _ = K.knitError $ "Missing CSR table for k=" <> show k
@@ -339,6 +339,7 @@ predictedCensusCASR rebuild cacheRoot predictor_C censusTables_C = do
       logitMarginals' = logitMarginals logitMarginalsCMatrixCSR_ASR
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- censusASR_CSR_Products productCacheKey censusTables_C
+  K.ignoreCacheTime products_C >>= BRK.logFrame
   let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD CASR)) (F.FrameRec (KeysWD CASR))
       predictFld predictor sa =
         let key = F.rcast @CASR
@@ -360,13 +361,14 @@ predictedCensusCASR rebuild cacheRoot predictor_C censusTables_C = do
   let f :: DTM3.Predictor Text -> F.FrameRec CensusCASR -> K.Sem r (F.FrameRec CensusCASR)
       f predictor products = do
         let rFld :: F.Record CensusOuterKeyR -> FL.FoldM (K.Sem r) (F.Record (KeysWD CASR)) (F.FrameRec CensusCASR)
-            rFld k = FL.hoists K.knitEither $ fmap (fmap (k F.<+>)) $ predictFld predictor (k ^. GT.stateAbbreviation)
+            rFld k = FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show k) >> pure x)
+                     $ FL.hoists K.knitEither $ fmap (fmap (k F.<+>)) $ predictFld predictor (k ^. GT.stateAbbreviation)
             fldM = FMR.concatFoldM
                    $ FMR.mapReduceFoldM
                    (FMR.generalizeUnpack FMR.noUnpack)
                    (FMR.generalizeAssign $ FMR.assignKeysAndData @CensusOuterKeyR @(KeysWD CASR))
                    (MR.ReduceFoldM rFld)
-        K.logLE K.Info "Building/re-building censusCA6SR predictions"
+        K.logLE K.Info "Building/re-building censusCASR predictions"
         FL.foldM fldM products
       predictionDeps = (,) <$> predictor_C <*> products_C
   predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f

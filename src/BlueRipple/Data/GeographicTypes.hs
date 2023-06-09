@@ -34,6 +34,8 @@ import qualified Frames.ShowCSV as FCSV
 import qualified Frames.Visualization.VegaLite.Data as FV
 import qualified Graphics.Vega.VegaLite as GV
 
+import qualified Text.Show
+
 FTH.declareColumn "StateName" ''Text
 
 FTH.declareColumn "StateAbbreviation" ''Text
@@ -78,6 +80,13 @@ districtNameCompare t1 t2 = --if compInt == EQ then compare tr1 tr2 else compInt
     _ -> compare t1 t2
 {-# INLINEABLE districtNameCompare #-}
 
+data LegislativeDistrict = LegislativeDistrict { ldType :: DistrictType, ldName :: Text} deriving (Eq)
+
+instance Show LegislativeDistrict where
+  show (LegislativeDistrict t n) = show t <> "-" <> toString n
+
+instance Ord LegislativeDistrict where
+  compare (LegislativeDistrict t1 n1) (LegislativeDistrict t2 n2) = compare t1 t2 <> districtNameCompare n1 n2
 
 -- Serialize for caching
 -- FI.VectorFor for frames
