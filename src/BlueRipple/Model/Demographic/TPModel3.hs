@@ -24,6 +24,7 @@ where
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 
@@ -231,22 +232,28 @@ modelResultNVP mr g md = do
 modelResultNVPs :: (Show g, Ord g) => Predictor g -> g -> VS.Vector Double -> Either Text [Double]
 modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 
+viaNearestOnSimplex :: DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex nvps projWs prodV = do
+  let n = VS.sum prodV
+  pure $ VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nvps projWs (VS.map (/ n) prodV)
+
 -- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
-predictedJoint :: forall g k w . (Show g, Ord g)
-               => Lens' w Double
+predictedJoint :: forall g k w r . (Show g, Ord g, K.KnitEffects r)
+               => (DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+               -> Lens' w Double
                -> Predictor g
                -> g
                -> VS.Vector Double
                -> [(k, w)]
-               -> Either Text [(k, w)]
-predictedJoint wgtLens p gk covariates keyedProduct = do
+               -> K.Sem r [(k, w)]
+predictedJoint onSimplexM wgtLens p gk covariates keyedProduct = do
   let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
       prodV = VS.fromList $ fmap (view wgtLens . snd) keyedProduct
-  nvpsPrediction <- VS.fromList <$> modelResultNVPs p gk covariates
-  let onSimplex = DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
-      newWeights = VS.map (* n) onSimplex
-      f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
-  pure $ fmap f $ zip (VS.toList newWeights) keyedProduct
+  nvpsPrediction <- K.knitEither $ VS.fromList <$> modelResultNVPs p gk covariates
+  onSimplexWgts <- onSimplexM (predNVP p) nvpsPrediction prodV --wgts DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
+--      newWeights = VS.map (* n) onSimplex
+  let f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
+  pure $ fmap f $ zip (VS.toList onSimplexWgts) keyedProduct
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"

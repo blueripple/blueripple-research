@@ -141,6 +141,13 @@ baseNullVectorProjections ms = NullVectorProjections nullVecs (LA.ident nNullVec
 applyNSPWeights :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
 
+viaOptimalWeights :: K.KnitEffects r =>  NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaOptimalWeights nvps projWs prodV = do
+  let n = VS.sum prodV
+      pV = VS.map (/ n) prodV
+  ows <- DED.mapPE $ optimalWeights nvps projWs pV
+  pure $ VS.map (* n) $ applyNSPWeights nvps ows pV
+
 optimalWeights :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 optimalWeights nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
@@ -151,7 +158,8 @@ optimalWeights nvps projWs pV = do
       scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
       objD v =
 --        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
-        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
+--        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
+        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
 
 
   {-      obj2D v =
@@ -185,6 +193,12 @@ optimalWeights nvps projWs pV = do
 --        K.logLE K.Info $ "solution=" <> DED.prettyVector oWs
 --        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
+
+viaNearestOnSimplex :: NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex nvps projWs prodV = do
+  let n = VS.sum prodV
+  pure $ VS.map (* n) $ projectToSimplex $ applyNSPWeights nvps projWs (VS.map (/ n) prodV)
+
 
 -- after Chen & Ye: https://arxiv.org/pdf/1101.6081
 projectToSimplex :: VS.Vector Double -> VS.Vector Double

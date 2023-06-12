@@ -276,11 +276,11 @@ censusASR_CSR_Products cacheKey censusTables_C = do
       compareMapToLog show compareF outerCompareMap
       compareMapToLog show compareF innerCompareMap
       let recodedCSR = recodeCSR csr
-          recodedA6SR = recodeASR asr
+          recodedASR = recodeASR asr
 --      BRK.logFrame ser
 --      BRK.logFrame recodedSER
       let csrMap = FL.fold (toMapFld keyF csrF) $ recodedCSR
-          asrMap = FL.fold (toMapFld keyF asrF) $ recodedA6SR
+          asrMap = FL.fold (toMapFld keyF asrF) $ recodedASR
           checkFrames :: (Show k, F.ElemOf as DT.PopCount, F.ElemOf bs DT.PopCount)
                       => k -> F.FrameRec as -> F.FrameRec bs -> K.Sem r ()
           checkFrames k ta tb = do
@@ -309,7 +309,7 @@ censusASR_CSR_Products cacheKey censusTables_C = do
 
 logitMarginalsCMatrixCSR_ASR :: LA.Matrix Double
 logitMarginalsCMatrixCSR_ASR =
-  let csrInCASR :: F.Record CA6SR -> F.Record CSR
+  let csrInCASR :: F.Record CASR -> F.Record CSR
       csrInCASR = F.rcast
       asrInCASR :: F.Record CASR -> F.Record ASR
       asrInCASR = F.rcast
@@ -318,7 +318,7 @@ logitMarginalsCMatrixCSR_ASR =
                            $ DMS.identityMarginalStructure @(F.Record CSR) DMS.cwdWgtLens
       asrInCASR_stencils = fmap (DMS.expandStencil asrInCASR)
                            $ DMS.msStencils
-                           $ DMS.identityMarginalStructure @(F.Record A6SR) DMS.cwdWgtLens
+                           $ DMS.identityMarginalStructure @(F.Record ASR) DMS.cwdWgtLens
   in DED.mMatrix (S.size $ Keyed.elements @(F.Record CASR)) (csrInCASR_stencils <> asrInCASR_stencils)
 
 logitMarginals :: LA.Matrix Double -> VS.Vector Double -> VS.Vector Double
@@ -328,20 +328,21 @@ popAndpwDensityFld :: FL.Fold DMS.CellWithDensity (Double, Double)
 popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
 predictedCensusCASR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                    => Bool
+                    => (DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+                    -> Bool
                     -> Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASR), K.ActionWithCacheTime r (F.FrameRec CensusCASR))
-predictedCensusCASR rebuild cacheRoot predictor_C censusTables_C = do
+predictedCensusCASR onSimplexM rebuild cacheRoot predictor_C censusTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_modeled.bin"
       logitMarginals' = logitMarginals logitMarginalsCMatrixCSR_ASR
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- censusASR_CSR_Products productCacheKey censusTables_C
-  K.ignoreCacheTime products_C >>= BRK.logFrame
-  let predictFld :: DTM3.Predictor Text -> Text -> FL.FoldM (Either Text) (F.Record (KeysWD CASR)) (F.FrameRec (KeysWD CASR))
-      predictFld predictor sa =
+--  K.ignoreCacheTime products_C >>= BRK.logFrame
+  let predictFldM :: DTM3.Predictor Text -> Text -> FL.FoldM (K.Sem r) (F.Record (KeysWD CASR)) (F.FrameRec (KeysWD CASR))
+      predictFldM predictor sa =
         let key = F.rcast @CASR
             w r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
             g r = (key r, w r)
@@ -353,16 +354,18 @@ predictedCensusCASR rebuild cacheRoot predictor_C censusTables_C = do
             prodV pm = VS.fromList $ fmap DMS.cwdWgt $ M.elems pm
             toRec :: (F.Record CASR, DMS.CellWithDensity) -> F.Record (KeysWD CASR)
             toRec (k, cwd) = k F.<+> (round (DMS.cwdWgt cwd) F.&: DMS.cwdDensity cwd F.&: V.RNil)
-            predict pm = let (n, pwD) = popAndPWDensity pm
-                             pV = prodV pm
-                             pDV = VS.map (/ n) pV
-                         in F.toFrame . fmap toRec <$> DTM3.predictedJoint DMS.cwdWgtLens predictor sa (covariates pwD pDV) (M.toList pm)
+            predict pm = do
+              let (n, pwD) = popAndPWDensity pm
+                  pV = prodV pm
+                  pDV = VS.map (/ n) pV
+              predicted <- DTM3.predictedJoint onSimplexM DMS.cwdWgtLens predictor sa (covariates pwD pDV) (M.toList pm)
+              pure $ F.toFrame $ fmap toRec predicted
         in FMR.postMapM predict $ FL.generalize prodMapFld
   let f :: DTM3.Predictor Text -> F.FrameRec CensusCASR -> K.Sem r (F.FrameRec CensusCASR)
       f predictor products = do
         let rFld :: F.Record CensusOuterKeyR -> FL.FoldM (K.Sem r) (F.Record (KeysWD CASR)) (F.FrameRec CensusCASR)
             rFld k = FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show k) >> pure x)
-                     $ FL.hoists K.knitEither $ fmap (fmap (k F.<+>)) $ predictFld predictor (k ^. GT.stateAbbreviation)
+                     $ fmap (fmap (k F.<+>)) $ predictFldM predictor (k ^. GT.stateAbbreviation)
             fldM = FMR.concatFoldM
                    $ FMR.mapReduceFoldM
                    (FMR.generalizeUnpack FMR.noUnpack)
