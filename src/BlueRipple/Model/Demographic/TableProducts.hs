@@ -109,46 +109,73 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 -- to get the weighted sum of those vectors and then add it to the
 -- product counts
 
-data NullVectorProjections =
-  NullVectorProjections { nvpProj :: LA.Matrix LA.R, nvpRot :: LA.Matrix LA.R }
 
-instance Flat.Flat NullVectorProjections where
+-- k is a phantom here, unmentioned in the data. But it forces us to line things up with the marginal structure, etc.
+data NullVectorProjections k where
+  NullVectorProjections :: (Ord k, BRK.FiniteSet k) =>  LA.Matrix Double -> LA.Matrix Double -> NullVectorProjections k
+
+nvpProj :: NullVectorProjections k -> LA.Matrix Double
+nvpProj (NullVectorProjections p _) = p
+
+nvpRot :: NullVectorProjections k -> LA.Matrix Double
+nvpRot (NullVectorProjections _ r) = r
+
+
+instance (Ord k, BRK.FiniteSet k) => Flat.Flat (NullVectorProjections k) where
   size (NullVectorProjections p r) = Flat.size (LA.toRows p, LA.toRows r)
   encode (NullVectorProjections p r) = Flat.encode (LA.toRows p, LA.toRows r)
   decode = (\(pVs, rVs) -> NullVectorProjections (LA.fromRows pVs) (LA.fromRows rVs)) <$> Flat.decode
 
-numProjections :: NullVectorProjections -> Int
+numProjections :: NullVectorProjections k -> Int
 numProjections (NullVectorProjections p _) = fst $ LA.size p
 
-fullToProjM :: NullVectorProjections -> LA.Matrix LA.R
+fullToProjM :: NullVectorProjections k -> LA.Matrix LA.R
 fullToProjM (NullVectorProjections pM rM) = LA.tr rM LA.<> pM
 
-projToFullM :: NullVectorProjections -> LA.Matrix LA.R
+projToFullM :: NullVectorProjections k -> LA.Matrix LA.R
 projToFullM (NullVectorProjections pM rM) = LA.tr pM <> rM
 
-projToFull :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R
+projToFull :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 projToFull nvps v = v LA.<# fullToProjM nvps
 
-fullToProj :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R
+fullToProj :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 fullToProj nvps v = fullToProjM nvps LA.#> v
 
-baseNullVectorProjections :: DMS.MarginalStructure w k -> NullVectorProjections
-baseNullVectorProjections ms = NullVectorProjections nullVecs (LA.ident nNullVecs)
+baseNullVectorProjections :: DMS.MarginalStructure w k -> NullVectorProjections k
+baseNullVectorProjections ms = case ms of
+  DMS.MarginalStructure _ _ -> NullVectorProjections nullVecs (LA.ident nNullVecs)
   where
     nullVecs = nullSpaceVectors (DMS.msNumCategories ms) (DMS.msStencils ms)
     nNullVecs = fst $ LA.size nullVecs
 
-applyNSPWeights :: NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+
+
+
+permutationMatrix :: forall a b . DMS.IsomorphicKeys a b -> LA.Matrix Double
+permutationMatrix ik = case ik of
+  DMS.IsomorphicKeys abF _ -> let aIndexL = zip (S.toList $ BRK.elements @a) [(0 :: Int)..]
+                                  bIndexL = sortOn (abF . fst) aIndexL
+                                  mAssoc = fmap (,1) $ zip [0..] $ fmap snd bIndexL
+                                  n = length aIndexL
+                              in LA.assoc (n, n) 0 mAssoc
+
+mapNullVectorProjections :: DMS.IsomorphicKeys a b -> NullVectorProjections a -> NullVectorProjections b
+mapNullVectorProjections ikab nva = case ikab of
+  (DMS.IsomorphicKeys _ _) -> case nva of
+    (NullVectorProjections pM rM) -> let permM = permutationMatrix ikab
+                                     in NullVectorProjections (pM LA.<> permM) rM
+
+applyNSPWeights :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
 
-viaOptimalWeights :: K.KnitEffects r =>  NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaOptimalWeights :: K.KnitEffects r =>  NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
 viaOptimalWeights nvps projWs prodV = do
   let n = VS.sum prodV
       pV = VS.map (/ n) prodV
   ows <- DED.mapPE $ optimalWeights nvps projWs pV
   pure $ VS.map (* n) $ applyNSPWeights nvps ows pV
 
-optimalWeights :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+optimalWeights :: DED.EnrichDataEffects r => NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 optimalWeights nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length projWs
@@ -194,7 +221,7 @@ optimalWeights nvps projWs pV = do
 --        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
 
-viaNearestOnSimplex :: NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex :: NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
 viaNearestOnSimplex nvps projWs prodV = do
   let n = VS.sum prodV
   pure $ VS.map (* n) $ projectToSimplex $ applyNSPWeights nvps projWs (VS.map (/ n) prodV)
@@ -212,7 +239,7 @@ projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x-tHat)) yL
     go 0 = t 0
     go k = let tk = t k in if tk > sY L.!! k then tk else go (k - 1)
 
-applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
 applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
   where f oWs = applyNSPWeights nvps oWs pV
 
@@ -299,7 +326,7 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
                       )
                    => (F.Record outerKs -> Maybe Text)
-                   -> NullVectorProjections
+                   -> NullVectorProjections (F.Record ks) -- ?
                    -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector Double))
                    -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
 applyNSPWeightsFld logM nvps nsWsFldF =
@@ -333,7 +360,7 @@ applyNSPWeightsFldG :: forall outerK k w r .
                     => Lens' w Double
                     -> (Double -> w -> w) -- not sure if I can make this update follow lens laws
                     -> (outerK -> Maybe Text)
-                    -> NullVectorProjections
+                    -> NullVectorProjections k
                     -> (outerK -> FL.FoldM (K.Sem r) (k, w) (LA.Vector Double))
                     -> FL.FoldM (K.Sem r) (outerK, k, w) [(outerK, k, w)]
 applyNSPWeightsFldG wl updateW logM nvps nsWsFldF =
@@ -429,13 +456,15 @@ diffCovarianceFld wl outerKey catKey dat sts prodTableF = LA.meanCov . LA.fromRo
 significantNullVecsMS :: Double
                       -> DMS.MarginalStructure w k
                       -> LA.Herm LA.R
-                      -> NullVectorProjections
-significantNullVecsMS fracCovToInclude ms cov = significantNullVecs fracCovToInclude (nullSpaceVectorsMS ms) cov
+                      -> NullVectorProjections k
+significantNullVecsMS fracCovToInclude ms cov = case ms of
+  (DMS.MarginalStructure _ _) -> significantNullVecs fracCovToInclude (nullSpaceVectorsMS ms) cov
 
-significantNullVecs :: Double
+significantNullVecs :: (Ord k, BRK.FiniteSet k)
+                    => Double
                     -> LA.Matrix LA.R
                     -> LA.Herm LA.R
-                    -> NullVectorProjections
+                    -> NullVectorProjections k
 significantNullVecs fracCovToInclude nullVecs cov = NullVectorProjections (LA.tr sigEVecs LA.<> nullVecs) eigVecs
   where
     (eigVals, eigVecs) = LA.eigSH cov
@@ -444,12 +473,14 @@ significantNullVecs fracCovToInclude nullVecs cov = NullVectorProjections (LA.tr
     sigEVecs = LA.takeColumns nSig eigVecs
 
 
-uncorrelatedNullVecsMS :: DMS.MarginalStructure w k -> LA.Herm LA.R -> NullVectorProjections
-uncorrelatedNullVecsMS ms = uncorrelatedNullVecs (nullSpaceVectorsMS ms)
+uncorrelatedNullVecsMS :: DMS.MarginalStructure w k -> LA.Herm LA.R -> NullVectorProjections k
+uncorrelatedNullVecsMS ms = case ms of
+  (DMS.MarginalStructure _ _) -> uncorrelatedNullVecs (nullSpaceVectorsMS ms)
 
-uncorrelatedNullVecs :: LA.Matrix LA.R
+uncorrelatedNullVecs :: (Ord k, BRK.FiniteSet k)
+                     => LA.Matrix LA.R
                      -> LA.Herm LA.R
-                     -> NullVectorProjections
+                     -> NullVectorProjections k
 uncorrelatedNullVecs nullVecs cov = NullVectorProjections nullVecs eigVecs
   where
     (_, eigVecs) = LA.eigSH cov

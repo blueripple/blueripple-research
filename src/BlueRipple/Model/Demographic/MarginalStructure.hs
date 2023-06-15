@@ -42,15 +42,19 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 normalize :: (Functor f, Foldable f) => Lens' a Double -> f a -> f a
 normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l (/ s)) xs
 
+data IsomorphicKeys a b where
+  IsomorphicKeys :: (Ord a, BRK.FiniteSet a, Ord b, BRK.FiniteSet b) => (a -> b) -> (b -> a) -> IsomorphicKeys a b
+
 -- NB: The order of the stencils depends on how we get to k2. Which shouldn't matter as long as
 -- we only use them to compute marginals from products to compare to other marginals from
 -- products.
-reKeyMarginalStructure :: forall k1 k2 w . (Ord k2, BRK.FiniteSet k2, BRK.FiniteSet k1)
-                       => (k2 -> k1) -> (k1 -> k2) -> MarginalStructure w k1 -> MarginalStructure w k2
-reKeyMarginalStructure f21 f12 ms = case ms of
-  MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
-    sts' = fmap (expandStencil f21) sts
-    ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
+reKeyMarginalStructure :: forall k1 k2 w .
+                       IsomorphicKeys k2 k1 -> MarginalStructure w k1 -> MarginalStructure w k2
+reKeyMarginalStructure ik21 ms = case ik21 of
+  (IsomorphicKeys f21 f12) -> case ms of
+    MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
+      sts' = fmap (expandStencil f21) sts
+      ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
 
 -- given a k2 stencil and a map (k1 -> k2), we can generate a k1 stencil by testing each k1 to see if it maps to a k2 which
 -- is in the stencil

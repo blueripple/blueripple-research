@@ -75,7 +75,7 @@ import qualified Flat
 nullVecProjectionsModelDataFld ::  forall outerK k row md .
                                    (Ord outerK)
                                => DMS.MarginalStructure (Sum Double) k
-                               -> DTP.NullVectorProjections
+                               -> DTP.NullVectorProjections k
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> LA.R)
@@ -95,7 +95,7 @@ nullVecProjectionsModelDataFld ms nvps outerKey catKey count datFold = case ms o
 nullVecProjectionsModelDataFldCheck ::  forall outerK k row md .
                                         (Ord outerK)
                                     => DMS.MarginalStructure (Sum Double) k
-                                    -> DTP.NullVectorProjections
+                                    -> DTP.NullVectorProjections k
                                     -> (row -> outerK)
                                     -> (row -> k)
                                     -> (row -> Double)
@@ -185,10 +185,10 @@ distributionText CauchyDist = "cauchy"
 distributionText NormalDist = "normal"
 distributionText StudentTDist = "studentT"
 
-data ModelConfig md =
+data ModelConfig k md =
   ModelConfig
   {
-    projVecs :: DTP.NullVectorProjections
+    projVecs :: DTP.NullVectorProjections k
   , standardizeNVs :: Bool
   , designMatrixRow :: DM.DesignMatrixRow (md Double)
   , alphaModel :: AlphaModel
@@ -196,17 +196,17 @@ data ModelConfig md =
   , mdFuncs :: ModelDataFuncs md Double
   }
 
-modelNumNullVecs :: ModelConfig md -> Int
+modelNumNullVecs :: ModelConfig k md -> Int
 modelNumNullVecs mc = fst $ LA.size $ DTP.nvpProj mc.projVecs
 
-modelText :: ModelConfig md -> Text
+modelText :: ModelConfig k md -> Text
 modelText mc = distributionText mc.distribution <> "_" <> mc.designMatrixRow.dmName <> "_" <> alphaModelText mc.alphaModel
 
-dataText :: ModelConfig md -> Text
+dataText :: ModelConfig k md -> Text
 dataText mc = mc.designMatrixRow.dmName <> "_NV" <> show (modelNumNullVecs mc)
 
-projModelData :: forall md outerK . (Typeable outerK, Typeable md)
-               => ModelConfig md
+projModelData :: forall md outerK k . (Typeable outerK, Typeable md)
+               => ModelConfig k md
                -> SMB.StanBuilderM (ProjData outerK md) () (ProjModelData outerK md)
 projModelData mc = do
   projData <- SMB.dataSetTag @(ProjDataRow outerK md) SC.ModelData "ProjectionData"
@@ -241,7 +241,7 @@ paramTheta (NormalProjModelParameters _ t _) = t
 paramTheta (CauchyProjModelParameters _ t _) = t
 paramTheta (StudentTProjModelParameters _ t _ _) = t
 
-projModelParameters :: ModelConfig md -> ProjModelData outerK md -> SMB.StanBuilderM (ProjData outerK md) () ProjModelParameters
+projModelParameters :: ModelConfig k md -> ProjModelData outerK md -> SMB.StanBuilderM (ProjData outerK md) () ProjModelParameters
 projModelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
       stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
@@ -309,7 +309,7 @@ data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
 
 -- not returning anything for now
 projModel :: (Typeable outerK, Typeable md)
-          => RunConfig -> ModelConfig md -> SMB.StanBuilderM (ProjData outerK md) () ()
+          => RunConfig -> ModelConfig k md -> SMB.StanBuilderM (ProjData outerK md) () ()
 projModel rc mc = do
   mData <- projModelData mc
   mParams <- projModelParameters mc mData
@@ -402,7 +402,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) md r .
              => Bool
              -> BR.CommandLine
              -> RunConfig
-             -> ModelConfig md
+             -> ModelConfig (F.Record ks) md
              -> DMS.MarginalStructure (Sum Double) (F.Record ks)
              -> FL.Fold (F.Record DDP.ACSa5ByPUMAR) (md Double)
              -> K.Sem r (K.ActionWithCacheTime r (ModelResult Text md)) -- no returned result for now
@@ -456,12 +456,12 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
   pure res_C
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
-projModelResultAction :: forall outerK md r .
+projModelResultAction :: forall outerK md k r .
                          (K.KnitEffects r
                          , Typeable md
                          , Typeable outerK
                          )
-                      => ModelConfig md
+                      => ModelConfig k md
                       -> SC.ResultAction r (ProjData outerK md) () SMB.DataSetGroupIntMaps () (ModelResult Text md)
 projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do

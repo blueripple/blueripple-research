@@ -84,7 +84,7 @@ nullVecProjectionsModelDataFld ::  forall outerK k row w .
                                    (Ord outerK)
                                => Lens' w Double
                                -> DMS.MarginalStructure w k
-                               -> DTP.NullVectorProjections
+                               -> DTP.NullVectorProjections k
                                -> (row -> outerK)
                                -> (row -> k)
                                -> (row -> w)
@@ -168,7 +168,7 @@ nullVecProjectionsModelDataFldCheck ::  forall outerK k row w .
                                         (Ord outerK)
                                     => Lens' w Double
                                     -> DMS.MarginalStructure w k
-                                    -> DTP.NullVectorProjections
+                                    -> DTP.NullVectorProjections k
                                     -> (row -> outerK)
                                     -> (row -> k)
                                     -> (row -> w)
@@ -212,10 +212,12 @@ data ComponentPredictor g =
 
 deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
 
-data Predictor g = Predictor {predNVP :: DTP.NullVectorProjections, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
+data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
 
-deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (Predictor g)
+deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g) => Flat.Flat (Predictor k g)
 
+mapPredictor :: DMS.IsomorphicKeys a b -> Predictor a g -> Predictor b g
+mapPredictor ik (Predictor nvps predCPs) = Predictor (DTP.mapNullVectorProjections ik nvps) predCPs
 
 modelResultNVP :: (Show g, Ord g)
                => ComponentPredictor g
@@ -229,19 +231,19 @@ modelResultNVP mr g md = do
         beta = V.sum $ V.zipWith applyOne (VS.convert md) (mrSI mr)
     pure $ geoAlpha + beta
 
-modelResultNVPs :: (Show g, Ord g) => Predictor g -> g -> VS.Vector Double -> Either Text [Double]
+modelResultNVPs :: (Show g, Ord g) => Predictor k g -> g -> VS.Vector Double -> Either Text [Double]
 modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 
-viaNearestOnSimplex :: DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex :: DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
 viaNearestOnSimplex nvps projWs prodV = do
   let n = VS.sum prodV
   pure $ VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nvps projWs (VS.map (/ n) prodV)
 
 -- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
 predictedJoint :: forall g k w r . (Show g, Ord g, K.KnitEffects r)
-               => (DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+               => (DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
                -> Lens' w Double
-               -> Predictor g
+               -> Predictor k g
                -> g
                -> VS.Vector Double
                -> [(k, w)]
@@ -508,7 +510,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
              -> RunConfig
              -> ModelConfig
              -> K.ActionWithCacheTime r (F.FrameRec rs)
-             -> K.ActionWithCacheTime r DTP.NullVectorProjections
+             -> K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks))
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record rs) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))

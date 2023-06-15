@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
@@ -292,7 +293,7 @@ testProductNS_CDs :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]
                      , V.RecordToList (DMC.KeysWD ks)
                      , FS.RecFlat (DMC.KeysWD ks)
                      )
-                  => (DTP.NullVectorProjections -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+                  => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
                   -> Bool
                   -> Bool
                   -> Text
@@ -545,7 +546,7 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
     byPUMA_C <-  fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    (predictor_C, _, _) <- DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.CASR (Right "model/demographic/csr_asr") "CSR_ASR" cmdLine byPUMA_C
+    (predictor_C, _, _) <- DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.CASR @DMC.SR (Right "model/demographic/csr_asr") "CSR_ASR" cmdLine byPUMA_C
 
     sld2022CensusTables_C <- BRC.censusTablesFor2022SLDs
 --    sldCensusTablesMA <- BRC.filterCensusTables ((== 25) . view GT.stateFIPS) <$> K.ignoreCacheTime sld2022CensusTables_C

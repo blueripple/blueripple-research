@@ -103,7 +103,7 @@ productDistributionFld marginalStructure wl outerKey catKey datF = M.fromList <$
 -- probability 1 at k and the product distribution at outerK
 rowDiffProjections ::  forall outerK k row .
                        (Ord outerK, Show outerK, Ord k, BRK.FiniteSet k)
-                   => DTP.NullVectorProjections
+                   => DTP.NullVectorProjections k
                    -> Map outerK (VS.Vector Double) -- Product Distribution
                    -> (row -> outerK)
                    -> (row -> k)
@@ -121,7 +121,7 @@ rowsWithProjectedDiffs :: (Traversable g
                           , Show outerK
                           , Ord k
                           , BRK.FiniteSet k)
-                       =>  DTP.NullVectorProjections
+                       =>  DTP.NullVectorProjections k
                        -> Map outerK (VS.Vector Double) -- Product Distribution
                        -> (F.Record rs -> outerK)
                        -> (F.Record rs -> k)
@@ -215,27 +215,27 @@ distributionText NormalDist = "normal"
 --distributionText CauchyDist = "cauchy"
 --distributionText StudentTDist = "studentT"
 
-data ModelConfig alphaK pd where
+data ModelConfig fullK alphaK pd where
   ModelConfig :: Traversable pd
-              => { projVecs :: DTP.NullVectorProjections
+              => { projVecs :: DTP.NullVectorProjections fullK
                  , standardizeNVs :: Bool
                  , alphaDMR :: DM.DesignMatrixRow alphaK
                  , predDMR :: DM.DesignMatrixRow (pd Double)
                  , alphaModel :: AlphaModel
                  , distribution :: Distribution
-                 } -> ModelConfig alphaK pd
+                 } -> ModelConfig fullK alphaK pd
 
-modelNumNullVecs :: ModelConfig alphaK md -> Int
+modelNumNullVecs :: ModelConfig fullK alphaK md -> Int
 modelNumNullVecs mc = fst $ LA.size $ DTP.nvpProj mc.projVecs
 
-modelText :: ModelConfig alphaK md -> Text
+modelText :: ModelConfig fullK alphaK md -> Text
 modelText mc = distributionText mc.distribution <> "_" <> mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_" <> alphaModelText mc.alphaModel
 
-dataText :: ModelConfig alphaK md -> Text
+dataText :: ModelConfig fullK alphaK md -> Text
 dataText mc = mc.alphaDMR.dmName <> "_" <> mc.predDMR.dmName <> "_NV" <> show (modelNumNullVecs mc)
 
-projModelData :: forall pd alphaK rs . (Typeable rs)
-              =>  ModelConfig alphaK pd
+projModelData :: forall pd alphaK fullK rs . (Typeable rs)
+              =>  ModelConfig fullK alphaK pd
               -> (F.Record rs -> alphaK)
               -> (F.Record rs -> Int)
               -> (F.Record rs -> pd Double)
@@ -277,7 +277,7 @@ data ProjModelParameters where
 paramTheta :: ProjModelParameters -> Theta
 paramTheta (NormalParameters _ t _) = t
 
-projModelAlpha :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () Alpha
+projModelAlpha :: ModelConfig fullK alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () Alpha
 projModelAlpha mc pmd = do
   let nStatesE = SMB.groupSizeE stateG
       hierAlphaSpec = TE.array1Spec nStatesE (TE.matrixSpec pmd.nAlphasE pmd.nNullVecsE [])
@@ -327,7 +327,7 @@ projModelAlpha mc pmd = do
             let inner pE s a k = [indexSAK s a k pE `TE.assign` (indexAK a k muE `TE.plusE` (indexAK a k sigmaE `TE.timesE` indexSAK s a k rmE))]
             in DAG.DeclCodeF $ TE.addStmt . loopSAK . inner
 
-projModelParameters :: ModelConfig alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () ProjModelParameters
+projModelParameters :: ModelConfig fullK alphaK pd -> ProjModelData rs -> SMB.StanBuilderM (ProjData rs) () ProjModelParameters
 projModelParameters mc pmd = do
   let stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
       stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil --(TE.realE 0 :> TE.realE 1 :> TNil)
@@ -353,7 +353,7 @@ projModel :: Typeable rs
           -> (F.Record rs -> alphaK)
           -> (F.Record rs -> Int)
           -> (F.Record rs -> pd Double)
-          -> ModelConfig alphaK pd
+          -> ModelConfig fullK alphaK pd
           -> SMB.StanBuilderM  (ProjData rs) () ()
 projModel rc alphaKey countF predF mc = do
   mData <- projModelData mc alphaKey countF predF
@@ -458,7 +458,7 @@ runProjModel :: forall (ksO :: [(Symbol, Type)]) ksM pd r .
              -> Maybe Int
              -> BR.CommandLine
              -> RunConfig
-             -> ModelConfig (F.Record ksM) pd
+             -> ModelConfig (F.Record ksO) (F.Record ksM) pd
              -> DMS.MarginalStructure (Sum Double) (F.Record ksO)
              -> (F.Record DDP.ACSa5ByPUMAR -> pd Double)
              -> K.Sem r (K.ActionWithCacheTime r ())
