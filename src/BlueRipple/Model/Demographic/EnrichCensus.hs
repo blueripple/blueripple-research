@@ -76,6 +76,7 @@ type SR = [DT.SexC, DT.Race5C]
 type SRo = [DT.SexC, BRC.RaceEthnicityC]
 type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type CSR = [DT.CitizenC, DT.SexC, DT.Race5C]
+type AS = [DT.Age5C, DT.SexC]
 type ASR = [DT.Age5C, DT.SexC, DT.Race5C]
 type CASR = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Race5C]
 type ASE = [DT.Age5C, DT.SexC, DT.Education4C]
@@ -89,12 +90,13 @@ type LDKey ks = LDOuterKeyR V.++ ks
 type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
 
 --type ASERDataR =   [DT.PopCount, DT.PWPopPerSqMile]
-type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
+type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 type PUMAOuterKeyR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
 type PUMARowR ks = PUMAOuterKeyR V.++ KeysWD ks
 type CensusASER = CensusOuterKeyR V.++ KeysWD ASER
 type CensusA6SER = CensusOuterKeyR V.++ KeysWD A6SER
 type CensusCASR = CensusOuterKeyR V.++ KeysWD CASR
+type CensusCASER = CensusOuterKeyR V.++ KeysWD CASER
 type CensusCA6SR = CensusOuterKeyR V.++ KeysWD CA6SR
 
 marginalStructure :: forall ks as bs w qs .
@@ -269,7 +271,7 @@ type TableProductsC outerK cs as bs =
   , V.ReifyConstraint Show F.ElField outerK
   , V.RecordToList outerK
   , V.RMap outerK
-  , F.ElemOf outerK GT.StateFIPS
+--  , F.ElemOf outerK GT.StateFIPS
   , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ as))
   , KeysWD (cs V.++ as) F.⊆ (outerK V.++ KeysWD (cs V.++ as))
   , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ bs))
@@ -287,17 +289,17 @@ tableProducts :: forall outerK cs as bs r .
                  => Text
                  -> K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as)))
                  -> K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ bs)))
-                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs))))
+                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs))))
 tableProducts cacheKey caTables_C cbTables_C = do
   let
     deps = (,) <$> caTables_C <*> cbTables_C
     f :: F.FrameRec (outerK V.++ KeysWD (cs V.++ as))
       -> F.FrameRec (outerK V.++ KeysWD (cs V.++ bs))
-      -> K.Sem r (F.FrameRec (GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs)))
+      -> K.Sem r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
     f cas cbs = do
       K.logLE K.Info $ "Building/re-building products for key=" <> cacheKey
 
-      stateAbbrFromFIPSMap <- BRDF.stateAbbrFromFIPSMapLoader
+--      stateAbbrFromFIPSMap <- BRDF.stateAbbrFromFIPSMapLoader
       let toMapFld :: (FSI.RecVec ds, Ord k) => (row -> k) -> (row -> F.Record ds) -> FL.Fold row (Map k (F.FrameRec ds))
           toMapFld kF dF = fmap M.fromList
                            (MR.mapReduceFold
@@ -330,15 +332,9 @@ tableProducts cacheKey caTables_C cbTables_C = do
                     caMap
                     cbMap
       let assocToFrame :: (F.Record outerK, F.FrameRec (KeysWD (cs V.++ as V.++ bs)))
-                       -> K.Sem r (F.FrameRec (GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs)))
-          assocToFrame (k, fr) = do
-            let fips = k ^. GT.stateFIPS
-            sa <- K.knitMaybe ("Missing FIPS=" <> show fips) $ M.lookup fips stateAbbrFromFIPSMap
-            let newK :: F.Record (GT.StateAbbreviation ': outerK)
-                newK = (FT.recordSingleton @GT.StateAbbreviation sa) F.<+> k
-            pure $ fmap (newK F.<+>) fr
-
-      mconcat <$> fmap assocToFrame $ M.toList productMap
+                       -> (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
+          assocToFrame (k, fr) = fmap (k F.<+>) fr
+      pure $ mconcat $ fmap assocToFrame $ M.toList productMap
   BRK.retrieveOrMakeFrame cacheKey deps (uncurry f)
 
 censusASR_CSR_Products :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
@@ -396,7 +392,7 @@ popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
 
 -- NB: The predictor needs to be built with the same cs as bs
-type PredictedR outerK cs as bs = GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs)
+--type PredictedR outerK cs as bs = GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs)
 predictedTables :: forall outerK cs as bs r .
                    (K.KnitEffects r, BRK.CacheEffects r
                    , LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
@@ -412,28 +408,29 @@ predictedTables :: forall outerK cs as bs r .
                    , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PopCount
                    , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PWPopPerSqMile
                    , Ord (F.Record ((cs V.++ as) V.++ bs))
-                   , outerK F.⊆ PredictedR outerK cs as bs
-                   , KeysWD ((cs V.++ as) V.++ bs) F.⊆ PredictedR outerK cs as bs
+                   , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+                   , KeysWD ((cs V.++ as) V.++ bs) F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
                    )
-                => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+                => DTP.OptimalOnSimplexF r
                 -> Bool
                 -> Text
+                -> (F.Record outerK -> K.Sem r Text) -- get predictor geography key from outerK
                 -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text)
                 -> K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as)))
                 -> K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ bs)))
-                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (PredictedR outerK cs as bs))
-                           , K.ActionWithCacheTime r (F.FrameRec (PredictedR outerK cs as bs))
+                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
+                           , K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
                            )
-predictedTables onSimplexM rebuild cacheRoot predictor_C caTables_C cbTables_C = do
+predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cbTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_modeled.bin"
       logitMarginals' = logitMarginals $ logitMarginalsCMatrixCAB @cs @as @bs
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- tableProducts @outerK @cs @as @bs productCacheKey caTables_C cbTables_C
   let predictFldM :: DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text
-                  -> Text
+                  -> F.Record outerK
                   -> FL.FoldM (K.Sem r) (F.Record (KeysWD (cs V.++ as V.++ bs))) (F.FrameRec (KeysWD (cs V.++ as V.++ bs)))
-      predictFldM predictor sa =
+      predictFldM predictor ok =
         let key = F.rcast @(cs V.++ as V.++ bs)
             w r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
             g r = (key r, w r)
@@ -449,21 +446,22 @@ predictedTables onSimplexM rebuild cacheRoot predictor_C caTables_C cbTables_C =
               let (n, pwD) = popAndPWDensity pm
                   pV = prodV pm
                   pDV = VS.map (/ n) pV
+              sa <- geoTextMF ok
               predicted <- DTM3.predictedJoint onSimplexM DMS.cwdWgtLens predictor sa (covariates pwD pDV) (M.toList pm)
               pure $ F.toFrame $ fmap toRec predicted
         in FMR.postMapM predict $ FL.generalize prodMapFld
   let f :: DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text
-        -> F.FrameRec (PredictedR outerK cs as bs)
-        -> K.Sem r (F.FrameRec (PredictedR outerK cs as bs))
+        -> F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+        -> K.Sem r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
       f predictor products = do
-        let rFld :: F.Record (GT.StateAbbreviation ': outerK)
-                 -> FL.FoldM (K.Sem r) (F.Record (KeysWD (cs V.++ as V.++ bs))) (F.FrameRec (PredictedR outerK cs as bs))
-            rFld k = FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show k) >> pure x)
-                     $ fmap (fmap (k F.<+>)) $ predictFldM predictor (k ^. GT.stateAbbreviation)
+        let rFld :: F.Record outerK
+                 -> FL.FoldM (K.Sem r) (F.Record (KeysWD (cs V.++ as V.++ bs))) (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
+            rFld ok = FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show ok) >> pure x)
+                     $ fmap (fmap (ok F.<+>)) $ predictFldM predictor ok
             fldM = FMR.concatFoldM
                    $ FMR.mapReduceFoldM
                    (FMR.generalizeUnpack FMR.noUnpack)
-                   (FMR.generalizeAssign $ FMR.assignKeysAndData @(GT.StateAbbreviation ': outerK) @(KeysWD (cs V.++ as V.++ bs)))
+                   (FMR.generalizeAssign $ FMR.assignKeysAndData @outerK @(KeysWD (cs V.++ as V.++ bs)))
                    (MR.ReduceFoldM rFld)
         K.logLE K.Info "Building/re-building censusCASR predictions"
         FL.foldM fldM products
@@ -473,26 +471,135 @@ predictedTables onSimplexM rebuild cacheRoot predictor_C caTables_C cbTables_C =
 
 type SRCA = [DT.SexC, DT.Race5C, DT.CitizenC, DT.Age5C]
 
+predictCASRFrom_CSR_ASR :: forall outerKey r .
+                           (K.KnitEffects r, BRK.CacheEffects r
+                           , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age5C]
+                           , outerKey V.++ KeysWD CASR F.⊆ (outerKey V.++ KeysWD SRCA)
+                           , Ord (F.Record outerKey)
+                           , V.ReifyConstraint Show F.ElField outerKey
+                           , V.RecordToList outerKey
+                           , FS.RecFlat (outerKey V.++ KeysWD SRCA)
+                           , V.RMap outerKey
+                           , V.RMap (outerKey V.++ KeysWD SRCA)
+                           , FSI.RecVec (outerKey V.++ KeysWD SRCA)
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PopCount
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PWPopPerSqMile
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.SexC
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.Age5C
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.Race5C
+                           , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.CitizenC
+                           , outerKey F.⊆ (outerKey V.++ KeysWD SRCA)
+                           , outerKey V.++ KeysWD (SR V.++ '[DT.CitizenC]) F.⊆ (outerKey V.++ KeysWD CSR)
+                           , outerKey V.++ KeysWD (SR V.++ '[DT.Age5C]) F.⊆ (outerKey V.++ KeysWD ASR)
+
+                           )
+                        => DTP.OptimalOnSimplexF r
+                        -> Bool
+                        -> Text
+                        -> (F.Record outerKey -> K.Sem r Text)
+                        -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
+                        -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CSR))
+                        -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASR))
+                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
+                                   , K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR)))
+predictCASRFrom_CSR_ASR onSimplexM rebuild cacheRoot geoTextMF predictor_C csr_C asr_C =
+  (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
+  <$> predictedTables @outerKey @SR @'[DT.CitizenC] @'[DT.Age5C]
+  onSimplexM
+  rebuild
+  cacheRoot
+  geoTextMF
+  (fmap (DTM3.mapPredictor isoCASR_SRCA) predictor_C)
+  (fmap F.rcast <$> csr_C)
+  (fmap F.rcast <$> asr_C)
+  where
+    isoCASR_SRCA :: DMS.IsomorphicKeys (F.Record CASR) (F.Record SRCA) = DMS.IsomorphicKeys F.rcast F.rcast
+
+type ASCRE = [DT.Age5C, DT.SexC, DT.CitizenC, DT.Race5C, DT.Education4C]
+
+predictCASERFrom_CASR_ASE :: forall outerKey r .
+                             (K.KnitEffects r, BRK.CacheEffects r
+                             , TableProductsC outerKey AS '[DT.CitizenC, DT.Race5C] '[DT.Education4C]
+                             , outerKey V.++ KeysWD CASER F.⊆ (outerKey V.++ KeysWD ASCRE)
+                             , Ord (F.Record outerKey)
+                             , V.ReifyConstraint Show F.ElField outerKey
+                             , V.RecordToList outerKey
+                             , FS.RecFlat (outerKey V.++ KeysWD ASCRE)
+                             , V.RMap outerKey
+                             , V.RMap (outerKey V.++ KeysWD ASCRE)
+                             , FSI.RecVec (outerKey V.++ KeysWD ASCRE)
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PopCount
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PWPopPerSqMile
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.SexC
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.Age5C
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.Race5C
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.CitizenC
+                             , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.Education4C
+                             , outerKey F.⊆ (outerKey V.++ KeysWD ASCRE)
+                             , outerKey V.++ KeysWD (AS V.++ '[DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
+                             , outerKey V.++ KeysWD (AS V.++ '[DT.Education4C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
+                             , outerKey V.++ KeysWD (AS V.++ [DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD CASR)
+
+                           )
+                          => DTP.OptimalOnSimplexF r
+                          -> Bool
+                          -> Text
+                          -> (F.Record outerKey -> K.Sem r Text)
+                          -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASER) Text)
+                          -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
+                          -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASE))
+                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASER))
+                                   , K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASER)))
+predictCASERFrom_CASR_ASE onSimplexM rebuild cacheRoot geoTextMF predictor_C casr_C ase_C =
+  (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
+  <$> predictedTables @outerKey @AS @'[DT.CitizenC, DT.Race5C] @'[DT.Education4C]
+  onSimplexM
+  rebuild
+  cacheRoot
+  geoTextMF
+  (fmap (DTM3.mapPredictor isoCASER_ASCRE) predictor_C)
+  (fmap F.rcast <$> casr_C)
+  ase_C
+  where
+    isoCASER_ASCRE :: DMS.IsomorphicKeys (F.Record CASER) (F.Record ASCRE) = DMS.IsomorphicKeys F.rcast F.rcast
+
+
 predictedCensusCASR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-                    => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+                    => DTP.OptimalOnSimplexF r
                     -> Bool
                     -> Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASR), K.ActionWithCacheTime r (F.FrameRec CensusCASR))
-predictedCensusCASR onSimplexM rebuild cacheRoot predictor_C censusTables_C =
-  (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
-  <$> predictedTables @LDOuterKeyR @SR @'[DT.CitizenC] @'[DT.Age5C]
-  onSimplexM
-  rebuild
-  cacheRoot
-  (fmap (DTM3.mapPredictor isoCASR_SRCA) predictor_C)
-  recodedCSR_C
-  recodedASR_C
-  where
-    recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
-    recodedASR_C = fmap (fmap F.rcast . recodeASR . BRC.ageSexRace) censusTables_C
-    isoCASR_SRCA :: DMS.IsomorphicKeys (F.Record CASR) (F.Record SRCA) = DMS.IsomorphicKeys F.rcast F.rcast
+predictedCensusCASR onSimplexM rebuild cacheRoot predictor_C censusTables_C = do
+  stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
+  let geoTextMF ldK = do
+        let fips = ldK ^. GT.stateFIPS
+            err x = "FIPS=" <> show x <> " not found in FIPS map"
+        K.knitMaybe (err fips) $ M.lookup fips stateAbbrMap
+      recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
+      recodedASR_C = fmap (fmap F.rcast . recodeASR . BRC.ageSexRace) censusTables_C
+  predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictor_C recodedCSR_C recodedASR_C
+
+predictedCensusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
+                    => DTP.OptimalOnSimplexF r
+                    -> Bool
+                    -> Text
+                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
+                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASER) Text)
+                    -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
+                    -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASER), K.ActionWithCacheTime r (F.FrameRec CensusCASER))
+predictedCensusCASER onSimplexM rebuild cacheRoot predictCASR_C predictCASER_C censusTables_C = do
+  stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
+  let geoTextMF ldK = do
+        let fips = ldK ^. GT.stateFIPS
+            err x = "FIPS=" <> show x <> " not found in FIPS map"
+        K.knitMaybe (err fips) $ M.lookup fips stateAbbrMap
+      recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
+      recodedASR_C = fmap (fmap F.rcast . recodeASR . BRC.ageSexRace) censusTables_C
+      ase_C = fmap (fmap F.rcast . BRC.ageSexEducation) censusTables_C
+  (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictCASR_C recodedCSR_C recodedASR_C
+  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictCASER_C casrPrediction_C ase_C
 
 
 projCovFld :: forall rs ks . (ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)

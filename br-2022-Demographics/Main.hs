@@ -521,9 +521,6 @@ compareSER_ASR cmdLine postInfo = do
         ]
     pure ()
 
-
-
-
 main :: IO ()
 main = do
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine

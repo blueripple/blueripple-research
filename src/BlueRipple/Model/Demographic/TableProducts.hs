@@ -168,7 +168,9 @@ mapNullVectorProjections ikab nva = case ikab of
 applyNSPWeights :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
 
-viaOptimalWeights :: K.KnitEffects r =>  NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+type OptimalOnSimplexF r =  forall k . NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+
+viaOptimalWeights :: K.KnitEffects r =>  OptimalOnSimplexF r
 viaOptimalWeights nvps projWs prodV = do
   let n = VS.sum prodV
       pV = VS.map (/ n) prodV
@@ -221,7 +223,7 @@ optimalWeights nvps projWs pV = do
 --        K.logLE K.Info $ "Solution: pV + oWs <.> nVs = " <> DED.prettyVector (pV + projToFull nvps oWs)
         pure oWs
 
-viaNearestOnSimplex :: NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex :: OptimalOnSimplexF r
 viaNearestOnSimplex nvps projWs prodV = do
   let n = VS.sum prodV
   pure $ VS.map (* n) $ projectToSimplex $ applyNSPWeights nvps projWs (VS.map (/ n) prodV)
