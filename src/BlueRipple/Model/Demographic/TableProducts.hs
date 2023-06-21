@@ -148,9 +148,6 @@ baseNullVectorProjections ms = case ms of
     nullVecs = nullSpaceVectors (DMS.msNumCategories ms) (DMS.msStencils ms)
     nNullVecs = fst $ LA.size nullVecs
 
-
-
-
 permutationMatrix :: forall a b . DMS.IsomorphicKeys a b -> LA.Matrix Double
 permutationMatrix ik = case ik of
   DMS.IsomorphicKeys abF _ -> let aIndexL = zip (S.toList $ BRK.elements @a) [(0 :: Int)..]
@@ -168,39 +165,47 @@ mapNullVectorProjections ikab nva = case ikab of
 applyNSPWeights :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
 
+type ObjectiveF = forall k . NullVectorProjections k -> LA.Vector Double -> LA.Vector Double -> LA.Vector Double -> (Double, LA.Vector Double)
 type OptimalOnSimplexF r =  forall k . NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
 
-viaOptimalWeights :: K.KnitEffects r =>  OptimalOnSimplexF r
-viaOptimalWeights nvps projWs prodV = do
+viaOptimalWeights :: K.KnitEffects r =>  ObjectiveF -> OptimalOnSimplexF r
+viaOptimalWeights objF nvps projWs prodV = do
   let n = VS.sum prodV
       pV = VS.map (/ n) prodV
-  ows <- DED.mapPE $ optimalWeights nvps projWs pV
+  ows <- DED.mapPE $ optimalWeights objF nvps projWs pV
   pure $ VS.map (* n) $ applyNSPWeights nvps ows pV
 
-optimalWeights :: DED.EnrichDataEffects r => NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-optimalWeights nvps projWs pV = do
+euclideanNS :: ObjectiveF
+euclideanNS nvps projWs _ v =
+  let x = (v - projWs)
+  in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
+
+euclideanFull :: ObjectiveF
+euclideanFull nvps projWs _ v =
+  let x = projToFull nvps (v - projWs)
+  in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
+
+klDiv :: ObjectiveF
+klDiv nvps projWs pV v =
+  let nV = pV + fullToProj nvps projWs
+      mV = pV + fullToProj nvps v
+  in (DED.klDiv nV mV, DED.klGrad nV mV)
+
+optimalWeights :: DED.EnrichDataEffects r
+               => ObjectiveF
+               -> NullVectorProjections k
+               -> LA.Vector LA.R
+               -> LA.Vector LA.R
+               -> K.Sem r (LA.Vector LA.R)
+optimalWeights objectiveF nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length projWs
---      nsVs2 = nsVs LA.<> LA.tr nsVs
-      -- We minimize (Euclidean, but why?) distance between (v - nsWs)nsVs nsVs' (v - nsWs)'
       prToFull = projToFull nvps
       scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
-      objD v =
---        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
---        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) $ prToFull x, 2 * (scaleGradM LA.#> x))
-        let x = (v - projWs) in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
-
-
-  {-      obj2D v =
-        let srNormV = Numeric.sqrt (LA.norm_2 v)
-            srNormN = Numeric.sqrt (LA.norm_2 nsWs)
-            nRatio = srNormN / srNormV
-        in (v `LA.dot` nsWs - srNormV * srNormN, nsWs - (LA.scale nRatio v))
--}
---      obj v = fst . objD
+      objD = objectiveF nvps projWs pV
       constraintData =  L.zip (VS.toList pV) (LA.toColumns $ fullToProjM nvps)
       constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
-      constraintF (p, projToNullC) v = (negate (p + v `LA.dot` projToNullC), negate projToNullC)
+      constraintF (p, projToNullC) v = (negate (p + v `LA.dot` projToNullC), negate projTqoNullC)
       constraintFs = fmap constraintF constraintData
       nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-6) constraintFs
 --      nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs
@@ -241,8 +246,8 @@ projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x-tHat)) yL
     go 0 = t 0
     go k = let tk = t k in if tk > sY L.!! k then tk else go (k - 1)
 
-applyNSPWeightsO :: DED.EnrichDataEffects r => NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-applyNSPWeightsO  nvps nsWs pV = f <$> optimalWeights nvps nsWs pV
+applyNSPWeightsO :: DED.EnrichDataEffects r => ObjectiveF -> NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO objF nvps nsWs pV = f <$> optimalWeights objF nvps nsWs pV
   where f oWs = applyNSPWeights nvps oWs pV
 
 -- this aggregates over cells with the same given key

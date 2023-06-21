@@ -393,23 +393,29 @@ popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
 -- NB: The predictor needs to be built with the same cs as bs
 --type PredictedR outerK cs as bs = GT.StateAbbreviation ': outerK V.++ KeysWD (cs V.++ as V.++ bs)
+
+type PredictedTablesC outerK cs as bs =
+  (
+    LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
+  , TableProductsC outerK cs as bs
+  , (bs V.++ cs) F.⊆ ((bs V.++ cs) V.++ as)
+  , (bs V.++ as) F.⊆ ((bs V.++ cs) V.++ as)
+  , Ord (F.Record (bs V.++ cs))
+  , Ord (F.Record (bs V.++ as))
+  , Keyed.FiniteSet (F.Record (bs V.++ cs))
+  , Keyed.FiniteSet (F.Record (bs V.++ as))
+  , Keyed.FiniteSet (F.Record ((bs V.++ cs) V.++ as))
+  , (cs V.++ as) V.++ bs F.⊆ KeysWD ((cs V.++ as) V.++ bs)
+  , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PopCount
+  , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PWPopPerSqMile
+  , Ord (F.Record ((cs V.++ as) V.++ bs))
+  , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+  , KeysWD ((cs V.++ as) V.++ bs) F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+  )
+
 predictedTables :: forall outerK cs as bs r .
                    (K.KnitEffects r, BRK.CacheEffects r
-                   , LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
-                   , TableProductsC outerK cs as bs
-                   , (bs V.++ cs) F.⊆ ((bs V.++ cs) V.++ as)
-                   , (bs V.++ as) F.⊆ ((bs V.++ cs) V.++ as)
-                   , Ord (F.Record (bs V.++ cs))
-                   , Ord (F.Record (bs V.++ as))
-                   , Keyed.FiniteSet (F.Record (bs V.++ cs))
-                   , Keyed.FiniteSet (F.Record (bs V.++ as))
-                   , Keyed.FiniteSet (F.Record ((bs V.++ cs) V.++ as))
-                   , (cs V.++ as) V.++ bs F.⊆ KeysWD ((cs V.++ as) V.++ bs)
-                   , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PopCount
-                   , F.ElemOf (KeysWD ((cs V.++ as) V.++ bs)) DT.PWPopPerSqMile
-                   , Ord (F.Record ((cs V.++ as) V.++ bs))
-                   , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
-                   , KeysWD ((cs V.++ as) V.++ bs) F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+                   , PredictedTablesC outerK cs as bs
                    )
                 => DTP.OptimalOnSimplexF r
                 -> Bool
@@ -423,7 +429,7 @@ predictedTables :: forall outerK cs as bs r .
                            )
 predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cbTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
-      predictedCacheKey = cacheRoot <> "_modeled.bin"
+      predictedCacheKey = cacheRoot <> "_predicted.bin"
       logitMarginals' = logitMarginals $ logitMarginalsCMatrixCAB @cs @as @bs
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- tableProducts @outerK @cs @as @bs productCacheKey caTables_C cbTables_C
@@ -521,7 +527,7 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                              (K.KnitEffects r, BRK.CacheEffects r
                              , TableProductsC outerKey AS '[DT.CitizenC, DT.Race5C] '[DT.Education4C]
                              , outerKey V.++ KeysWD CASER F.⊆ (outerKey V.++ KeysWD ASCRE)
-                             , Ord (F.Record outerKey)
+--                             , Ord (F.Record outerKey)
                              , V.ReifyConstraint Show F.ElField outerKey
                              , V.RecordToList outerKey
                              , FS.RecFlat (outerKey V.++ KeysWD ASCRE)
