@@ -176,20 +176,22 @@ viaOptimalWeights objF nvps projWs prodV = do
   pure $ VS.map (* n) $ applyNSPWeights nvps ows pV
 
 euclideanNS :: ObjectiveF
-euclideanNS nvps projWs _ v =
+euclideanNS _nvps projWs _ v =
   let x = (v - projWs)
   in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
 
 euclideanFull :: ObjectiveF
 euclideanFull nvps projWs _ v =
-  let x = projToFull nvps (v - projWs)
-  in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * x)
+  let d = v - projWs
+      x = projToFull nvps d
+      ata = LA.tr (projToFullM nvps) LA.<> (projToFullM nvps)
+  in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * (ata LA.#> d))
 
 klDiv :: ObjectiveF
 klDiv nvps projWs pV v =
   let nV = pV + fullToProj nvps projWs
       mV = pV + fullToProj nvps v
-  in (DED.klDiv nV mV, DED.klGrad nV mV)
+  in (DED.klDiv nV mV, fullToProj nvps (DED.klGrad nV mV))
 
 optimalWeights :: DED.EnrichDataEffects r
                => ObjectiveF
@@ -205,7 +207,7 @@ optimalWeights objectiveF nvps projWs pV = do
       objD = objectiveF nvps projWs pV
       constraintData =  L.zip (VS.toList pV) (LA.toColumns $ fullToProjM nvps)
       constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
-      constraintF (p, projToNullC) v = (negate (p + v `LA.dot` projToNullC), negate projTqoNullC)
+      constraintF (p, projToNullC) v = (negate (p + v `LA.dot` projToNullC), negate projToNullC)
       constraintFs = fmap constraintF constraintData
       nlConstraintsD = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar cf) 1e-6) constraintFs
 --      nlConstraints = fmap (\cf -> NLOPT.InequalityConstraint (NLOPT.Scalar $ fst . cf) 1e-5) constraintFs

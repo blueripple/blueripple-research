@@ -251,11 +251,19 @@ predictedJoint :: forall g k w r . (Show g, Ord g, K.KnitEffects r)
 predictedJoint onSimplexM wgtLens p gk covariates keyedProduct = do
   let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
       prodV = VS.fromList $ fmap (view wgtLens . snd) keyedProduct
+
   nvpsPrediction <- K.knitEither $ VS.fromList <$> modelResultNVPs p gk covariates
+
   onSimplexWgts <- onSimplexM (predNVP p) nvpsPrediction prodV --wgts DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
 --      newWeights = VS.map (* n) onSimplex
   let f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
-  pure $ fmap f $ zip (VS.toList onSimplexWgts) keyedProduct
+      predictedTable = fmap f $ zip (VS.toList onSimplexWgts) keyedProduct
+  K.logLE (K.Debug 1)
+    $ "covariates = " <> DED.prettyVector covariates
+    <> "\npredicted projections = " <> DED.prettyVector nvpsPrediction
+    <> "\npredicted projections (onSimplex) = " <> DED.prettyVector onSimplexWgts
+    <> "\npredicted result = " <> DED.prettyVector (VS.fromList $ fmap (view wgtLens . snd) predictedTable)
+  pure predictedTable
 
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"

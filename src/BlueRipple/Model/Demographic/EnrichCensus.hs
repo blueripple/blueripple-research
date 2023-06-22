@@ -2,12 +2,14 @@
 {-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE QuasiQuotes         #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UnicodeSyntax       #-}
 --{-# LANGUAGE NoStrictData #-}
 
@@ -76,9 +78,13 @@ type SR = [DT.SexC, DT.Race5C]
 type SRo = [DT.SexC, BRC.RaceEthnicityC]
 type SER = [DT.SexC, DT.Education4C, DT.Race5C]
 type CSR = [DT.CitizenC, DT.SexC, DT.Race5C]
+type SRC = [DT.SexC, DT.Race5C, DT.CitizenC]
 type AS = [DT.Age5C, DT.SexC]
 type ASR = [DT.Age5C, DT.SexC, DT.Race5C]
+type SRA = [DT.SexC, DT.Race5C, DT.Age5C]
 type CASR = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Race5C]
+type SRCA = [DT.SexC, DT.Race5C, DT.CitizenC, DT.Age5C]
+type ASCR = [DT.Age5C, DT.SexC, DT.CitizenC, DT.Race5C]
 type ASE = [DT.Age5C, DT.SexC, DT.Education4C]
 type ASER = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type CASER = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
@@ -88,6 +94,38 @@ type A6SER = [DT.Age6C, DT.SexC, DT.Education4C, DT.Race5C]
 type LDOuterKeyR = BRDF.Year ': BRC.LDLocationR
 type LDKey ks = LDOuterKeyR V.++ ks
 type KeysWD ks = ks V.++ [DT.PopCount, DT.PWPopPerSqMile]
+
+class CatsText (a :: [(Symbol, Type)]) where
+  catsText :: Text
+
+instance CatsText SR where
+  catsText = "SR"
+instance CatsText CSR where
+  catsText = "CSR"
+instance CatsText SRC where
+  catsText = "SRC"
+instance CatsText ASR where
+  catsText = "ASR"
+instance CatsText SRA where
+  catsText = "SRA"
+instance CatsText CASR where
+  catsText = "CASR"
+instance CatsText SRCA where
+  catsText = "SRCA"
+instance CatsText AS where
+  catsText = "AS"
+instance CatsText ASE where
+  catsText = "ASE"
+instance CatsText ASCR where
+  catsText = "ASCR"
+instance CatsText CASER where
+  catsText = "CASER"
+instance CatsText ASCRE where
+  catsText = "ASCRE"
+
+
+type CatsTexts cs as bs = (CatsText (cs V.++ as), CatsText (cs V.++ bs), CatsText (cs V.++ as V.++ bs))
+
 
 --type ASERDataR =   [DT.PopCount, DT.PWPopPerSqMile]
 type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
@@ -358,6 +396,7 @@ type LogitMarginalsC as bs cs =
   , Keyed.FiniteSet (F.Record cs)
   )
 
+
 logitMarginalsCMatrix :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) (cs :: [(Symbol, Type)]) .
                          LogitMarginalsC as bs cs
                       =>  LA.Matrix Double
@@ -373,6 +412,44 @@ logitMarginalsCMatrix =
                       $ DMS.msStencils
                       $ DMS.identityMarginalStructure @(F.Record bs) DMS.cwdWgtLens
   in DED.mMatrix (S.size $ Keyed.elements @(F.Record cs)) (aInC_stencils <> bInC_stencils)
+
+type LogitMarginalsC' cs as bs =
+  (
+   cs V.++ (as V.++ bs) ~ ((cs V.++ as) V.++ bs)
+  , Ord (F.Record cs)
+  , Ord (F.Record as)
+  , Ord (F.Record bs)
+  , Ord (F.Record ((cs V.++ as) V.++ bs))
+  , Ord (F.Record (cs V.++ as))
+  , Ord (F.Record (cs V.++ bs))
+  , Keyed.FiniteSet (F.Record cs)
+  , Keyed.FiniteSet (F.Record as)
+  , Keyed.FiniteSet (F.Record bs)
+  , Keyed.FiniteSet (F.Record (cs V.++ as))
+  , Keyed.FiniteSet (F.Record (cs V.++ bs))
+  , Keyed.FiniteSet (F.Record ((cs V.++ as) V.++ bs))
+  , as F.⊆ (cs V.++ as)
+  , bs F.⊆ (cs V.++ bs)
+  , cs F.⊆ (cs V.++ as)
+  , cs F.⊆ (cs V.++ bs)
+  , cs V.++ as F.⊆ ((cs V.++ as) V.++ bs)
+  , cs V.++ bs F.⊆ ((cs V.++ as) V.++ bs)
+  )
+
+
+logitMarginalsCMatrixCAB' :: forall (cs :: [(Symbol, Type)]) (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
+                             (LogitMarginalsC' cs as bs
+                             )
+                      =>  LA.Matrix Double
+logitMarginalsCMatrixCAB' =
+  let ms = DMS.combineMarginalStructuresF @cs @as @bs
+           DMS.cwdWgtLens
+           DMS.innerProductCWD
+           (DMS.identityMarginalStructure DMS.cwdWgtLens)
+           (DMS.identityMarginalStructure DMS.cwdWgtLens)
+      nProbs = S.size (Keyed.elements @(F.Record (cs V.++ as V.++ bs)))
+  in DED.mMatrix nProbs $ DMS.msStencils ms
+
 
 logitMarginalsCMatrixCAB :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) (cs :: [(Symbol, Type)]) .
                               LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
@@ -396,7 +473,8 @@ popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
 type PredictedTablesC outerK cs as bs =
   (
-    LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
+--    LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
+    LogitMarginalsC' cs as bs
   , TableProductsC outerK cs as bs
   , (bs V.++ cs) F.⊆ ((bs V.++ cs) V.++ as)
   , (bs V.++ as) F.⊆ ((bs V.++ cs) V.++ as)
@@ -411,6 +489,7 @@ type PredictedTablesC outerK cs as bs =
   , Ord (F.Record ((cs V.++ as) V.++ bs))
   , outerK F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
   , KeysWD ((cs V.++ as) V.++ bs) F.⊆ (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+  , CatsTexts cs as bs
   )
 
 predictedTables :: forall outerK cs as bs r .
@@ -430,7 +509,12 @@ predictedTables :: forall outerK cs as bs r .
 predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cbTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_predicted.bin"
-      logitMarginals' = logitMarginals $ logitMarginalsCMatrixCAB @cs @as @bs
+      marginalsCMatrix = logitMarginalsCMatrixCAB' @cs @as @bs
+  K.logLE K.Info $ "predictedTables called with (cs ++ as)=" <> catsText @(cs V.++ as)
+    <> "; (cs ++ bs)=" <> catsText @(cs V.++ bs)
+    <> "; (cs ++ as ++ bs)=" <> catsText @(cs V.++ as V.++ bs)
+  K.logLE (K.Debug 1) $ "predictedTables marginals cMatrix = " <> toText (LA.dispf 3 marginalsCMatrix)
+  let logitMarginals' = logitMarginals marginalsCMatrix
   when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- tableProducts @outerK @cs @as @bs productCacheKey caTables_C cbTables_C
   let predictFldM :: DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text
@@ -462,8 +546,8 @@ predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cb
       f predictor products = do
         let rFld :: F.Record outerK
                  -> FL.FoldM (K.Sem r) (F.Record (KeysWD (cs V.++ as V.++ bs))) (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
-            rFld ok = FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show ok) >> pure x)
-                     $ fmap (fmap (ok F.<+>)) $ predictFldM predictor ok
+            rFld ok = {-FMR.postMapM (\x -> K.logLE K.Info ("predicting " <> show ok) >> pure x)
+                     $ -} fmap (fmap (ok F.<+>)) $ predictFldM predictor ok
             fldM = FMR.concatFoldM
                    $ FMR.mapReduceFoldM
                    (FMR.generalizeUnpack FMR.noUnpack)
@@ -475,7 +559,6 @@ predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cb
   predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
   pure (predicted_C, products_C)
 
-type SRCA = [DT.SexC, DT.Race5C, DT.CitizenC, DT.Age5C]
 
 predictCASRFrom_CSR_ASR :: forall outerKey r .
                            (K.KnitEffects r, BRK.CacheEffects r
@@ -731,8 +814,8 @@ predictorModel3 cachePrefixE modelId cmdLine acs_C = do
   let ms = marginalStructure @ks @as @bs @DMS.CellWithDensity @qs DMS.cwdWgtLens DMS.innerProductCWD'
   nullVectorProjections_C <- cachedNVProjections nvpsCacheKey ms acs_C
 
-  let tp3NumKeys = S.size (Keyed.elements @(F.Record (qs V.++ bs))) + S.size (Keyed.elements @(F.Record (qs V.++ as)))
-      tp3InnerFld = innerFoldWD @(qs V.++ bs) @(qs V.++ as) @(PUMARowR ks) (F.rcast @(qs V.++ bs)) (F.rcast @(qs V.++ as))
+  let tp3NumKeys = S.size (Keyed.elements @(F.Record (qs V.++ as))) + S.size (Keyed.elements @(F.Record (qs V.++ bs)))
+      tp3InnerFld = innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(PUMARowR ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs))
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist

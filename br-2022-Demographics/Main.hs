@@ -320,7 +320,7 @@ testProductNS_CDs onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine 
          (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict])
          (F.rcast @ks)
          DTM3.cwdF
-         (DMC.innerFoldWD @(qs V.++ bs) @(qs V.++ as) @(CDRow ks) (F.rcast @(qs V.++ bs )) (F.rcast @(qs V.++ as)))
+         (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(CDRow ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
         )
         byCD
       productFrameDeps = (,) <$> nvps_C <*> predictor_C
@@ -460,7 +460,7 @@ testProductNS_CD' onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine 
            (F.rcast @CDLoc)
            (F.rcast @ks)
            DTM3.cwdF
-           (DMC.innerFoldWD @(qs V.++ bs) @(qs V.++ as) @(CDRow ks) (F.rcast @(qs V.++ bs )) (F.rcast @(qs V.++ as)))
+           (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(CDRow ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
           )
           byCD
         cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
@@ -493,7 +493,7 @@ testProductNS_CD' onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine 
       let modeledCountsV = VS.map (* n) simplexFull
       K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
 
-  pure $ (,) <$> (fmap (fmap F.rcast) predictions_C) <*> (fmap (fmap F.rcast) products_C)
+  pure $ (,) <$> (fmap (fmap F.rcast) products_C) <*> (fmap (fmap F.rcast) predictions_C)
 
 cdWithZeros :: forall ks .
              (
@@ -558,6 +558,7 @@ aggregateAndZeroFillTables frame =FL.fold
 compareCSR_ASR :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
 compareCSR_ASR cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for CSR x ASR -> CASR"
+    let filterToCD sa cd r = (r ^. GT.stateAbbreviation == sa) && (r ^. GT.congressionalDistrict == cd)
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
@@ -565,7 +566,11 @@ compareCSR_ASR cmdLine postInfo = do
     byCD <- K.ignoreCacheTime byCD_C
     (product_CSR_ASR, modeled_CSR_ASR) <- K.ignoreCacheTimeM
                                           $ testProductNS_CDs @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
-                                          (DTP.viaOptimalWeights DTP.euclideanFull) False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
+                                          (DTP.viaOptimalWeights DTP.klDiv) False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
+
+    (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
+                                            $ testProductNS_CD' @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
+                                            (DTP.viaOptimalWeights DTP.klDiv) False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
@@ -587,7 +592,21 @@ compareCSR_ASR cmdLine postInfo = do
         ,MethodResult (fmap F.rcast modeled_CSR_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CASR)
-        synthModelPaths postInfo "CSR_ASR" statePopMap (view GT.stateAbbreviation) (Just "PA")
+        synthModelPaths postInfo "CSR_ASR" cdPopMap DDP.districtKeyT (Just "PA")
+        (F.rcast @DMC.CASR)
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.citizenC, r ^. DT.age5C))
+        showCellKey
+        (Just ("Race", show . view DT.race5C, Just raceOrder))
+        (Just ("Age", show . view DT.age5C, Just ageOrder))
+        (fmap F.rcast $ cdWithZeros @DMC.CASR byCD)
+        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.CASR byCD) (Just "Actual") Nothing Nothing
+        ,MethodResult (fmap F.rcast product_CSR_ASR') (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast modeled_CSR_ASR') (Just "NS Model") (Just "NS Model") (Just "NS Model")
+        ]
+{-
+      compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CASR)
+        synthModelPaths postInfo "CSR_ASR" statePopMap (view GT.stateAbbreviation) (Just "NY")
         (F.rcast @DMC.CASR)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.citizenC, r ^. DT.age5C))
@@ -599,6 +618,7 @@ compareCSR_ASR cmdLine postInfo = do
         ,MethodResult (fmap F.rcast product_CSR_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast modeled_CSR_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
+-}
     pure ()
 
 
