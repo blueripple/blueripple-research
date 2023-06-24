@@ -82,11 +82,13 @@ type SRC = [DT.SexC, DT.Race5C, DT.CitizenC]
 type AS = [DT.Age5C, DT.SexC]
 type ASR = [DT.Age5C, DT.SexC, DT.Race5C]
 type SRA = [DT.SexC, DT.Race5C, DT.Age5C]
+type SRE = [DT.SexC, DT.Race5C, DT.Education4C]
 type CASR = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Race5C]
 type SRCA = [DT.SexC, DT.Race5C, DT.CitizenC, DT.Age5C]
 type ASCR = [DT.Age5C, DT.SexC, DT.CitizenC, DT.Race5C]
 type ASE = [DT.Age5C, DT.SexC, DT.Education4C]
 type ASER = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
+type SRAE = [DT.SexC,  DT.Race5C, DT.Age5C, DT.Education4C]
 type CASER = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type CA6SR = [DT.CitizenC, DT.Age6C, DT.SexC, DT.Race5C]
 type A6SR = [DT.Age6C, DT.SexC, DT.Race5C]
@@ -122,6 +124,11 @@ instance CatsText CASER where
   catsText = "CASER"
 instance CatsText ASCRE where
   catsText = "ASCRE"
+instance CatsText SRAE where
+  catsText = "SRAE"
+instance CatsText SRE where
+  catsText = "SRE"
+
 
 
 type CatsTexts cs as bs = (CatsText (cs V.++ as), CatsText (cs V.++ bs), CatsText (cs V.++ as V.++ bs))
@@ -385,33 +392,6 @@ censusASR_CSR_Products cacheKey censusTables_C = fmap (fmap F.rcast)
     recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
     recodedASR_C = fmap (fmap F.rcast . recodeASR . BRC.ageSexRace) censusTables_C
 
-type LogitMarginalsC as bs cs =
-  (
-    as F.⊆ cs
-  , bs F.⊆ cs
-  , Ord (F.Record as)
-  , Ord (F.Record bs)
-  , Keyed.FiniteSet (F.Record as)
-  , Keyed.FiniteSet (F.Record bs)
-  , Keyed.FiniteSet (F.Record cs)
-  )
-
-
-logitMarginalsCMatrix :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) (cs :: [(Symbol, Type)]) .
-                         LogitMarginalsC as bs cs
-                      =>  LA.Matrix Double
-logitMarginalsCMatrix =
-  let aInC :: F.Record cs -> F.Record as
-      aInC = F.rcast
-      bInC :: F.Record cs -> F.Record bs
-      bInC = F.rcast
-      aInC_stencils = fmap (DMS.expandStencil aInC)
-                      $ DMS.msStencils
-                      $ DMS.identityMarginalStructure @(F.Record as) DMS.cwdWgtLens
-      bInC_stencils = fmap (DMS.expandStencil bInC)
-                      $ DMS.msStencils
-                      $ DMS.identityMarginalStructure @(F.Record bs) DMS.cwdWgtLens
-  in DED.mMatrix (S.size $ Keyed.elements @(F.Record cs)) (aInC_stencils <> bInC_stencils)
 
 type LogitMarginalsC' cs as bs =
   (
@@ -437,11 +417,11 @@ type LogitMarginalsC' cs as bs =
   )
 
 
-logitMarginalsCMatrixCAB' :: forall (cs :: [(Symbol, Type)]) (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
+logitMarginalsCMatrix :: forall (cs :: [(Symbol, Type)]) (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
                              (LogitMarginalsC' cs as bs
                              )
                       =>  LA.Matrix Double
-logitMarginalsCMatrixCAB' =
+logitMarginalsCMatrix =
   let ms = DMS.combineMarginalStructuresF @cs @as @bs
            DMS.cwdWgtLens
            DMS.innerProductCWD
@@ -449,17 +429,6 @@ logitMarginalsCMatrixCAB' =
            (DMS.identityMarginalStructure DMS.cwdWgtLens)
       nProbs = S.size (Keyed.elements @(F.Record (cs V.++ as V.++ bs)))
   in DED.mMatrix nProbs $ DMS.msStencils ms
-
-
-logitMarginalsCMatrixCAB :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) (cs :: [(Symbol, Type)]) .
-                              LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
-                         => LA.Matrix Double
-logitMarginalsCMatrixCAB = logitMarginalsCMatrix @(cs V.++ as) @(cs V.++ bs) @(cs V.++ as V.++ bs)
-
-
-logitMarginalsCMatrixCSR_ASR :: LA.Matrix Double
-logitMarginalsCMatrixCSR_ASR = logitMarginalsCMatrix @CSR @ASR @CASR
-
 
 logitMarginals :: LA.Matrix Double -> VS.Vector Double -> VS.Vector Double
 logitMarginals cMat prodDistV = VS.map (DTM3.bLogit 1e-10) (cMat LA.#> prodDistV)
@@ -509,7 +478,7 @@ predictedTables :: forall outerK cs as bs r .
 predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cbTables_C = do
   let productCacheKey = cacheRoot <> "_products.bin"
       predictedCacheKey = cacheRoot <> "_predicted.bin"
-      marginalsCMatrix = logitMarginalsCMatrixCAB' @cs @as @bs
+      marginalsCMatrix = logitMarginalsCMatrix @cs @as @bs
   K.logLE K.Info $ "predictedTables called with (cs ++ as)=" <> catsText @(cs V.++ as)
     <> "; (cs ++ bs)=" <> catsText @(cs V.++ bs)
     <> "; (cs ++ as ++ bs)=" <> catsText @(cs V.++ as V.++ bs)

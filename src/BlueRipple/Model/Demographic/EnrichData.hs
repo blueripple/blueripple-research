@@ -61,6 +61,9 @@ import qualified Numeric.NLOPT as NLOPT
 import qualified Numeric
 import qualified Data.Vector.Storable as VS
 
+import qualified Say
+import qualified System.IO.Unsafe as Unsafe
+
 import Control.Monad.Except (throwError)
 
 data EnrichDataException = ModelLookupException Text
@@ -488,10 +491,10 @@ klGrad :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 klGrad nV mV = res
   where
     res = VS.zipWith f nV mV
---    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res
+    !_ = Unsafe.unsafePerformIO $ Say.say $ "klGrad=" <> show res
     invMSum = 1 / VS.sum mV
     invNSum = 1 / VS.sum nV
-    f n m = invMSum - {- if m == 0 then 1 else -} invNSum * n / m
+    f n m = invMSum - if m == 0 then 1 else invNSum * n / m
 
 klGradP :: LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
 klGradP nV mV = res

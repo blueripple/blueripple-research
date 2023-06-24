@@ -93,7 +93,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/hvega-utils
-  tag: 0b1582fdaf52eecdd13c1edd5f22c53e475e8814
+  tag: ce8a9d65cd4bf2ec37739963c64dea7e0ed1744f
 
 source-repository-package
   type: git

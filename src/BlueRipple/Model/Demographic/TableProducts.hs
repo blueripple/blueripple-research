@@ -111,6 +111,14 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 
 
 -- k is a phantom here, unmentioned in the data. But it forces us to line things up with the marginal structure, etc.
+-- Given N entries in table and a marginal structure with a Q dimensional null space
+-- First matrix, P, is projections, Q x N, each row is a basis vector of the null space.
+-- So Pv = projection of v onto the null space
+-- Second matrix, R, is rotation from SVD computed null space basis to eigenvector basis. Columns are eigenvectors.
+-- So R'P projects onto the null space and rotates into the basis of eigenvectors of covariance matrix
+-- And P'R rotates a vector in the nullspace expressed in the basis of eigenvectors of the covariance matrix and
+-- rotates back to the SVD computed null space and then injects into the space of the full table.
+
 data NullVectorProjections k where
   NullVectorProjections :: (Ord k, BRK.FiniteSet k) =>  LA.Matrix Double -> LA.Matrix Double -> NullVectorProjections k
 
@@ -183,14 +191,15 @@ euclideanNS _nvps projWs _ v =
 euclideanFull :: ObjectiveF
 euclideanFull nvps projWs _ v =
   let d = v - projWs
-      x = projToFull nvps d
-      ata = LA.tr (projToFullM nvps) LA.<> (projToFullM nvps)
-  in (VS.sum $ VS.map (^ (2 :: Int)) x, 2 * (ata LA.#> d))
+      a = projToFullM nvps
+      x = a LA.#> d
+--      ata = LA.tr (projToFullM nvps) LA.<> (projToFullM nvps)
+  in (VS.sum $ VS.map (^ (2 :: Int)) x, (LA.tr a) LA.#> (2 * x))
 
 klDiv :: ObjectiveF
 klDiv nvps projWs pV v =
-  let nV = pV + fullToProj nvps projWs
-      mV = pV + fullToProj nvps v
+  let nV = pV + projToFull nvps projWs
+      mV = pV + projToFull nvps v
   in (DED.klDiv nV mV, fullToProj nvps (DED.klGrad nV mV))
 
 optimalWeights :: DED.EnrichDataEffects r

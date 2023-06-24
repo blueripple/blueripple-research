@@ -111,9 +111,9 @@ updateCWDCount n (CountWithDensity _ d) = CountWithDensity n d
 --type InputFrame ks = F.FrameRec (ks V.++ '[DT.PopCount, DT.PWPopPerSqMile])
 type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
 
-data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, _mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text, mrKLHeader :: Maybe Text}
+data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, _mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text, mrErrHeader :: Maybe Text}
 
-compareResults :: forall ks key colKey rowKey r f .
+compareResults :: forall ks key colKey rowKey a r f .
                   (K.KnitOne r
                   , Traversable f
                   , Ord key
@@ -131,12 +131,14 @@ compareResults :: forall ks key colKey rowKey r f .
                   , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
                   , FSI.RecVec (ks V.++ '[DT.PopCount])
                   , F.ElemOf (ks V.++ '[DT.PopCount]) GT.StateAbbreviation
+                  , Ord a
+                  , Show a
                   )
                => BR.PostPaths Path.Abs
                -> BR.PostInfo
+               -> Bool
                -> Text
-               -> Map Text Int -- populations
-               -> (F.Record ks -> Text) -- region label
+               -> (Text, Map a Int, F.Record ks -> a)
                -> Maybe Text
                -> (F.Record (ks V.++ '[DT.PopCount]) -> key)
                -> (F.Record (ks V.++ '[DT.PopCount]) -> rowKey)
@@ -144,10 +146,12 @@ compareResults :: forall ks key colKey rowKey r f .
                -> (F.Record ks -> Text)
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
+               -> (Text, Double -> Text, Double -> Double, LA.Vector Double -> LA.Vector Double -> Double)
                -> ResultFrame ks
                -> f (MethodResult ks)
                -> K.Sem r ()
-compareResults pp pi' chartDataPrefix regionPopMap regionKey exampleStateM catKey rowKey colKey showCellKey colorM shapeM actual results = do
+compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regionKey) exampleStateM
+  catKey rowKey colKey showCellKey colorM shapeM (errLabel, errFmt, errScale, errF) actual results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -200,38 +204,55 @@ compareResults pp pi' chartDataPrefix regionPopMap regionKey exampleStateM catKe
           tableTextMF t rfM = whenJust rfM $ \rf -> K.logLE K.Info $ t <> "\n" <> tableText (ff rf)
           stTitle x = title x <> ": " <> sa
       K.logLE K.Info $ "Example State=" <> sa
-      tableTextMF "Actual Joint" (Just actual)
-      traverse_ (\mr -> maybe (pure ()) (\t -> tableTextMF t (Just $ mr.mrResult)) $ mr.mrChartTitle) results
+      when showTables $ do
+        tableTextMF "Actual Joint" (Just actual)
+        traverse_ (\mr -> maybe (pure ()) (\t -> tableTextMF t (Just $ mr.mrResult)) $ mr.mrChartTitle) results
       K.logLE K.Info "Building example state charts."
       traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False False (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
       traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False True (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
       pure ()
 
   -- compute KL divergences
-  K.logLE K.Info "Computing KL Divergences:"
+  K.logLE K.Info "Computing Errors:"
   let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
-      computeKL d rk = (DED.klDiv' acsV dV, absFracWrong acsV dV) where
+      computeErr d rk = errF acsV dV where
         acsV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) actual
         dV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) d
-        absFracWrong acsV' dV' = FL.fold
-                                 ((/)
-                                   <$> FL.premap fst FL.sum
-                                   <*> FL.premap snd FL.sum)
-                                 $ zipWith (\acs d' -> (abs (acs - d'), acs)) (VS.toList acsV') (VS.toList dV')
-      klCol mr = case mr.mrKLHeader of
-        Just h -> Just $ (h, computeKL mr.mrResult <$> allRegions)
-        Nothing -> Nothing
-      klCols = catMaybes $ FL.fold FL.list $ fmap klCol results
-      klColHeaders = fst <$> klCols
-      klTableRows = zipWith (\region kls -> KLTableRow region kls) allRegions (transp $ fmap snd klCols)
 
-  K.logLE K.Info "Divergence Table:"
-  K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ klColonnadeFlex klColHeaders "Region") klTableRows)
+      errCol mr = case mr.mrErrHeader of
+        Just h -> Just $ (h, computeErr mr.mrResult <$> allRegions)
+        Nothing -> Nothing
+      errCols = catMaybes $ FL.fold FL.list $ fmap errCol results
+      errColHeaders = fst <$> errCols
+      errTableRows = zipWith (\region kls -> ErrTableRow region kls) (fmap show allRegions) (transp $ fmap snd errCols)
+  errCompChartVL <- errorCompareChart pp pi' errLabel chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders (errLabel, errScale) errTableRows
+  _ <- K.addHvega Nothing Nothing errCompChartVL
+
+  when showTables $ do
+    K.logLE K.Info "Error Table:"
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ errColonnadeFlex errFmt errColHeaders "Region") errTableRows)
 --  _ <- compChart True "Actual" $ mrActual results
   K.logLE K.Info "Building national charts."
   traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False True (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   pure ()
+
+pctFmt :: Double -> Text
+pctFmt = toText @String . PF.printf "%2.1g" . (100 *)
+
+l1Err :: LA.Vector Double -> LA.Vector Double -> Double
+l1Err acsV dV = FL.fold
+                ((/)
+                  <$> FL.premap fst FL.sum
+                  <*> FL.premap snd FL.sum)
+                $ zipWith (\acs d' -> (abs (acs - d'), acs)) (VS.toList acsV) (VS.toList dV)
+
+l2Err :: LA.Vector Double -> LA.Vector Double -> Double
+l2Err acsV dV = FL.fold
+                ((\sumSqDiff s -> sqrt sumSqDiff / s)
+                  <$> FL.premap fst FL.sum
+                  <*> FL.premap snd FL.sum)
+                $ zipWith (\acs d -> ((acs - d) * (acs - d), acs)) (VS.toList acsV) (VS.toList dV)
 
 transp :: [[a]] -> [[a]]
 transp = go [] where
@@ -248,200 +269,89 @@ transp = go [] where
 --type A5SER = [DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
 
 type CDLoc = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
-type CDRow ks =  CDLoc V.++ DMC.KeysWD ks
+type TestRow ok ks =  ok V.++ DMC.KeysWD ks
+
 
 -- NB: as ks - first component and bs is ks - second
 -- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
-testProductNS_CDs :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
-                     (K.KnitEffects r, BRK.CacheEffects r
-                     , qs ~ F.RDeleteAll (as V.++ bs) ks
-                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-                     , Ord (F.Record ks)
-                     , Keyed.FiniteSet (F.Record ks)
-                     , ((qs V.++ as) V.++ bs) F.⊆ ks
-                     , ks F.⊆ ((qs V.++ as) V.++ bs)
-                     , Ord (F.Record qs)
-                     , Ord (F.Record as)
-                     , Ord (F.Record bs)
-                     , Ord (F.Record (qs V.++ as))
-                     , Ord (F.Record (qs V.++ bs))
-                     , Ord (F.Record ((qs V.++ as) V.++ bs))
-                     , Keyed.FiniteSet (F.Record qs)
-                     , Keyed.FiniteSet (F.Record as)
-                     , Keyed.FiniteSet (F.Record bs)
-                     , Keyed.FiniteSet (F.Record (qs V.++ as))
-                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
-                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
-                     , as F.⊆ (qs V.++ as)
-                     , bs F.⊆ (qs V.++ bs)
-                     , qs F.⊆ (qs V.++ as)
-                     , qs F.⊆ (qs V.++ bs)
-                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
-                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
-                     , qs V.++ as F.⊆ DMC.PUMARowR ks
-                     , qs V.++ bs F.⊆ DMC.PUMARowR ks
-                     , ks F.⊆ DMC.PUMARowR ks
-                     , V.RMap as
-                     , V.ReifyConstraint Show F.ElField as
-                     , V.RecordToList as
-                     , V.RMap bs
-                     , V.ReifyConstraint Show F.ElField bs
-                     , V.RecordToList bs
-                     , F.ElemOf (DMC.KeysWD ks) DT.PopCount
-                     , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
-                     , ks F.⊆ CDRow ks
-                     , qs V.++ as F.⊆ CDRow ks
-                     , qs V.++ bs F.⊆ CDRow ks
-                     , FSI.RecVec (DMC.KeysWD ks)
-                     , V.RMap (DMC.KeysWD ks)
-                     , FS.RecFlat (DMC.KeysWD ks)
-                     )
-                  => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
-                  -> Bool
-                  -> Bool
-                  -> Text
-                  -> Text
-                  -> BR.CommandLine
-                  -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
-                  -> K.ActionWithCacheTime r (F.FrameRec (CDRow ks))
-                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks), F.FrameRec (CDRow ks)))
-testProductNS_CDs onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
+testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
+           (K.KnitEffects r, BRK.CacheEffects r
+           , qs ~ F.RDeleteAll (as V.++ bs) ks
+           , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+           , Ord (F.Record ks)
+           , Keyed.FiniteSet (F.Record ks)
+           , ((qs V.++ as) V.++ bs) F.⊆ ks
+           , ks F.⊆ ((qs V.++ as) V.++ bs)
+           , Ord (F.Record qs)
+           , Ord (F.Record as)
+           , Ord (F.Record bs)
+           , Ord (F.Record (qs V.++ as))
+           , Ord (F.Record (qs V.++ bs))
+           , Ord (F.Record ((qs V.++ as) V.++ bs))
+           , Keyed.FiniteSet (F.Record qs)
+           , Keyed.FiniteSet (F.Record as)
+           , Keyed.FiniteSet (F.Record bs)
+           , Keyed.FiniteSet (F.Record (qs V.++ as))
+           , Keyed.FiniteSet (F.Record (qs V.++ bs))
+           , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+           , as F.⊆ (qs V.++ as)
+           , bs F.⊆ (qs V.++ bs)
+           , qs F.⊆ (qs V.++ as)
+           , qs F.⊆ (qs V.++ bs)
+           , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+           , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+           , qs V.++ as F.⊆ DMC.PUMARowR ks
+           , qs V.++ bs F.⊆ DMC.PUMARowR ks
+           , ks F.⊆ DMC.PUMARowR ks
+           , V.RMap as
+           , V.ReifyConstraint Show F.ElField as
+           , V.RecordToList as
+           , V.RMap bs
+           , V.ReifyConstraint Show F.ElField bs
+           , V.RecordToList bs
+           , F.ElemOf (DMC.KeysWD ks) DT.PopCount
+           , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
+           , AggregateAndZeroFillC outerK (F.RDeleteAll as ks)
+           , AggregateAndZeroFillC outerK (F.RDeleteAll bs ks)
+           , DMC.PredictedTablesC outerK qs as bs
+           , DMC.KeysWD (F.RDeleteAll as ks) F.⊆ TestRow outerK ks
+           , DMC.KeysWD (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
+           , DMC.KeysWD (qs V.++ as) F.⊆ TestRow outerK (F.RDeleteAll bs ks)
+           , DMC.KeysWD (qs V.++ bs) F.⊆ TestRow outerK (F.RDeleteAll as ks)
+           , DMC.KeysWD ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
+           , ks F.⊆ TestRow outerK ks
+           , (qs V.++ bs) F.⊆ TestRow outerK ks
+           , (qs V.++ as) F.⊆ TestRow outerK ks
+           , TestRow outerK (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
+           , TestRow outerK (F.RDeleteAll as ks) F.⊆ TestRow outerK ks
+           , TestRow outerK (qs V.++ as) F.⊆ TestRow outerK (F.RDeleteAll bs ks)
+           , TestRow outerK (qs V.++ bs) F.⊆ TestRow outerK (F.RDeleteAll as ks)
+           , outerK F.⊆ TestRow outerK ks
+           , F.ElemOf outerK GT.StateAbbreviation
+           , F.ElemOf (TestRow outerK ks) DT.PopCount
+           , F.ElemOf (TestRow outerK ks) DT.PWPopPerSqMile
+           , TestRow outerK ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
+           )
+        => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+        -> Bool
+        -> Bool
+        -> Text
+        -> Text
+        -> (F.Record outerK -> Text)
+        -> BR.CommandLine
+        -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
+        -> K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks))
+        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks), F.FrameRec (TestRow outerK ks)))
+testNS onSimplexM rerunModel clearCaches cachePrefix modelId testRowKeyText cmdLine byPUMA_C byCD_C = do
   let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
   when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
   let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
   (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @ks @qs modelCacheDirE modelId cmdLine byPUMA_C
   byCD <- K.ignoreCacheTime byCD_C
-  nvps <- K.ignoreCacheTime nvps_C
-  let cdModelData = FL.fold
-        (DTM3.nullVecProjectionsModelDataFldCheck
-         DMS.cwdWgtLens
-         ms
-         nvps
-         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict])
-         (F.rcast @ks)
-         DTM3.cwdF
-         (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(CDRow ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
-        )
-        byCD
-      productFrameDeps = (,) <$> nvps_C <*> predictor_C
-  BRK.retrieveOrMake2Frames productFrameCacheKey productFrameDeps $ \(nvps', predictor) -> do
-    let vecToFrame ok kws = fmap (\(k, w) -> ok F.<+> k F.<+> DMS.cwdToRec w) kws
-        prodAndModeledToFrames (ok, pKWs, mKWs) = (vecToFrame ok pKWs, vecToFrame ok mKWs)
-
-        smcRowToProdAndModeled (ok, covariates, _, pKWs, _) = do
---          let pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
-          mKWs <- DTM3.predictedJoint onSimplexM DMS.cwdWgtLens predictor (ok ^. GT.stateAbbreviation) covariates pKWs
-          pure (ok, pKWs, mKWs)
-
-    let cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
-
-    forM_ cdModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
-      let keyT = DDP.districtKeyT sar
-          pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
-          nV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) oKWs
-          n = VS.sum pV
-
-      when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
-        let showSum v = " (" <> show (VS.sum v) <> ")"
-        K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
-        K.logLE K.Info $ keyT <> " prod counts=" <> DED.prettyVector pV <> showSum pV
---        let nvpsV = DTP.applyNSPWeights nvps' (VS.map (* n) nVpsActual) pV
-        K.logLE K.Info $ keyT <> "NS projections=" <> DED.prettyVector nVpsActual
-        K.logLE K.Info $ "sumSq(projections)=" <> show (VS.sum $ VS.zipWith (*) nVpsActual nVpsActual)
-        let cCheckV = cMatrix LA.#> (nV - pV)
-        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
-        K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
-        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs predictor (view GT.stateAbbreviation sar) md)
-        K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
-        let dNVPs = VS.zipWith (-) nVpsActual nvpsModeled
-        K.logLE K.Info $ "dNVPS=" <> DED.prettyVector dNVPs
-        K.logLE K.Info $ "sumSq(dNVPS)=" <>  show (VS.sum $ VS.zipWith (*) dNVPs dNVPs)
-        simplexFull <- onSimplexM nvps' nvpsModeled $ VS.map (/ n) pV
---        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nvps' nvpsModeled (VS.map (/ n) pV)
-        let simplexNVPs = DTP.fullToProj nvps' simplexFull
-            dSimplexNVPs = VS.zipWith (-) simplexNVPs nVpsActual
-        K.logLE K.Info $ "dSimplexNVPS=" <> DED.prettyVector dSimplexNVPs
-        K.logLE K.Info $ "sumSq(dSimplexNVPS)=" <>  show (VS.sum $ VS.zipWith (*) dSimplexNVPs dSimplexNVPs)
-        K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs <> showSum simplexNVPs
-        let modeledCountsV = VS.map (* n) simplexFull
-        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
-
-    prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
-    pure $ bimap (F.toFrame . concat) (F.toFrame . concat)
-         $ unzip
-         $ fmap prodAndModeledToFrames prodAndModeled
-
-
--- NB: as ks - first component and bs is ks - second
--- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
-testProductNS_CD' :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
-                     (K.KnitEffects r, BRK.CacheEffects r
-                     , qs ~ F.RDeleteAll (as V.++ bs) ks
-                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-                     , Ord (F.Record ks)
-                     , Keyed.FiniteSet (F.Record ks)
-                     , ((qs V.++ as) V.++ bs) F.⊆ ks
-                     , ks F.⊆ ((qs V.++ as) V.++ bs)
-                     , Ord (F.Record qs)
-                     , Ord (F.Record as)
-                     , Ord (F.Record bs)
-                     , Ord (F.Record (qs V.++ as))
-                     , Ord (F.Record (qs V.++ bs))
-                     , Ord (F.Record ((qs V.++ as) V.++ bs))
-                     , Keyed.FiniteSet (F.Record qs)
-                     , Keyed.FiniteSet (F.Record as)
-                     , Keyed.FiniteSet (F.Record bs)
-                     , Keyed.FiniteSet (F.Record (qs V.++ as))
-                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
-                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
-                     , as F.⊆ (qs V.++ as)
-                     , bs F.⊆ (qs V.++ bs)
-                     , qs F.⊆ (qs V.++ as)
-                     , qs F.⊆ (qs V.++ bs)
-                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
-                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
-                     , qs V.++ as F.⊆ DMC.PUMARowR ks
-                     , qs V.++ bs F.⊆ DMC.PUMARowR ks
-                     , ks F.⊆ DMC.PUMARowR ks
-                     , V.RMap as
-                     , V.ReifyConstraint Show F.ElField as
-                     , V.RecordToList as
-                     , V.RMap bs
-                     , V.ReifyConstraint Show F.ElField bs
-                     , V.RecordToList bs
-                     , F.ElemOf (DMC.KeysWD ks) DT.PopCount
-                     , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
-                     , AggregateAndZeroFillC CDLoc (F.RDeleteAll as ks)
-                     , AggregateAndZeroFillC CDLoc (F.RDeleteAll bs ks)
-                     , DMC.PredictedTablesC CDLoc qs as bs
-                     , DMC.KeysWD (F.RDeleteAll as ks) F.⊆ CDRow ks
-                     , DMC.KeysWD (F.RDeleteAll bs ks) F.⊆ CDRow ks
-                     , DMC.KeysWD (qs V.++ as) F.⊆ CDRow (F.RDeleteAll bs ks)
-                     , DMC.KeysWD (qs V.++ bs) F.⊆ CDRow (F.RDeleteAll as ks)
-                     , DMC.KeysWD ks F.⊆ CDRow (qs V.++ as V.++ bs)
-                     , ks F.⊆ CDRow ks
-                     , (qs V.++ bs) F.⊆ CDRow ks
-                     , (qs V.++ as) F.⊆ CDRow ks
-                     )
-                  => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
-                  -> Bool
-                  -> Bool
-                  -> Text
-                  -> Text
-                  -> BR.CommandLine
-                  -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
-                  -> K.ActionWithCacheTime r (F.FrameRec (CDRow ks))
-                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks), F.FrameRec (CDRow ks)))
-testProductNS_CD' onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
-  let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
-  when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
-  let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
-  (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @ks @qs modelCacheDirE modelId cmdLine byPUMA_C
-  byCD <- K.ignoreCacheTime byCD_C
-  let byCDas_C = (aggregateAndZeroFillTables @CDLoc @(F.RDeleteAll bs ks) . fmap F.rcast) <$> byCD_C
-      byCDbs_C = (aggregateAndZeroFillTables @CDLoc @(F.RDeleteAll as ks) . fmap F.rcast) <$> byCD_C
+  let byCDas_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll bs ks) . fmap F.rcast) <$> byCD_C
+      byCDbs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll as ks) . fmap F.rcast) <$> byCD_C
       iso :: DMS.IsomorphicKeys (F.Record ks) (F.Record (qs V.++ as V.++ bs)) = DMS.IsomorphicKeys F.rcast F.rcast
-  (predictions_C, products_C) <- DMC.predictedTables @CDLoc @qs @as @bs
+  (predictions_C, products_C) <- DMC.predictedTables @outerK @qs @as @bs
                                  onSimplexM
                                  clearCaches
                                  cachePrefix
@@ -457,16 +367,16 @@ testProductNS_CD' onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine 
            DMS.cwdWgtLens
            ms
            nvps
-           (F.rcast @CDLoc)
+           (F.rcast @outerK)
            (F.rcast @ks)
            DTM3.cwdF
-           (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(CDRow ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
+           (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(TestRow outerK ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
           )
           byCD
         cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
     predictor <- K.ignoreCacheTime predictor_C
     forM_ cdModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
-      let keyT = DDP.districtKeyT sar
+      let keyT = testRowKeyText sar
           pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
           nV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) oKWs
           n = VS.sum pV
@@ -495,22 +405,23 @@ testProductNS_CD' onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine 
 
   pure $ (,) <$> (fmap (fmap F.rcast) products_C) <*> (fmap (fmap F.rcast) predictions_C)
 
-cdWithZeros :: forall ks .
-             (
-               (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) F.⊆ CDRow ks
-             , ks F.⊆ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
-             , FSI.RecVec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
-             , Keyed.FiniteSet (F.Record ks)
-             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PWPopPerSqMile
-             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PopCount
-             )
-          => F.FrameRec (CDRow ks)
-          -> F.FrameRec (CDRow ks)
-cdWithZeros frame = FL.fold (FMR.concatFold
+testRowsWithZeros :: forall outerK ks .
+                     (
+                       (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) F.⊆ TestRow outerK ks
+                     , ks F.⊆ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                     , FSI.RecVec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+                     , Keyed.FiniteSet (F.Record ks)
+                     , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PWPopPerSqMile
+                     , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PopCount
+                     , Ord (F.Record outerK)
+                     , outerK F.⊆ TestRow outerK ks
+                     )
+                  => F.FrameRec (TestRow outerK ks)
+                  -> F.FrameRec (TestRow outerK ks)
+testRowsWithZeros frame = FL.fold (FMR.concatFold
                            $ FMR.mapReduceFold
                            FMR.noUnpack
-                           (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
-                            @(ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
+                           (FMR.assignKeysAndData @outerK @(ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
                            (FMR.foldAndLabel
                             (fmap F.toFrame $ Keyed.addDefaultRec @ks zc)
                             (\k r -> fmap (k F.<+>) r)
@@ -564,33 +475,43 @@ compareCSR_ASR cmdLine postInfo = do
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
               <$> DDP.cachedACSa5ByCD
     byCD <- K.ignoreCacheTime byCD_C
+    byPUMA <- K.ignoreCacheTime byPUMA_C
     (product_CSR_ASR, modeled_CSR_ASR) <- K.ignoreCacheTimeM
-                                          $ testProductNS_CDs @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
-                                          (DTP.viaOptimalWeights DTP.klDiv) False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
+                                          $ testNS @DMC.PUMAOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
+                                          (DTP.viaOptimalWeights DTP.euclideanFull)
+                                          False True "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C byPUMA_C
 
+{-
     (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
                                             $ testProductNS_CD' @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
-                                            (DTP.viaOptimalWeights DTP.klDiv) False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
+                                            DTP.viaNearestOnSimplex False True "model/demographic/csr_asr" "CSR_ASR" cmdLine byPUMA_C byCD_C
+-}
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
-        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
-        statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
+        pumaKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.pUMA)
+
+        pumaPopMap = FL.fold (FL.premap (\r -> (pumaKey r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byPUMA
+--        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
+--        statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
         showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.age5C, r ^. DT.sexC, r ^. DT.race5C)
-    synthModelPaths <- postPaths "Model_CSR_ASR" cmdLine
-    BRK.brNewPost synthModelPaths postInfo "Model_CSR_ASR" $ do
-      compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CASR)
-        synthModelPaths postInfo "CSR_ASR" cdPopMap DDP.districtKeyT (Just "NY")
+    synthModelPaths <- postPaths "Model_CSR_ASR_ByPUMA" cmdLine
+    BRK.brNewPost synthModelPaths postInfo "Model_CSR_ASR_ByPUMA" $ do
+      compareResults @(DMC.PUMAOuterKeyR V.++ DMC.CASR)
+        synthModelPaths postInfo False "CSR_ASR" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.CASR)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.citizenC, r ^. DT.age5C))
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        (fmap F.rcast $ cdWithZeros @DMC.CASR byCD)
-        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.CASR byCD) (Just "Actual") Nothing Nothing
+        ("L1 Error", pctFmt, (* 100), l1Err)
+        (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR byPUMA)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR byPUMA) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_CSR_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast modeled_CSR_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
+        ,MethodResult (fmap F.rcast modeled_CSR_ASR) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
+--        ,MethodResult (fmap F.rcast modeled_CSR_ASR') (Just "NS Model (Yi/Chen)") (Just "NS Model (Yi/Chen)") (Just "NS Model (Yi/Chen)")
         ]
+{-
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CASR)
         synthModelPaths postInfo "CSR_ASR" cdPopMap DDP.districtKeyT (Just "PA")
         (F.rcast @DMC.CASR)
@@ -604,6 +525,7 @@ compareCSR_ASR cmdLine postInfo = do
         ,MethodResult (fmap F.rcast product_CSR_ASR') (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast modeled_CSR_ASR') (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
+-}
 {-
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.CASR)
         synthModelPaths postInfo "CSR_ASR" statePopMap (view GT.stateAbbreviation) (Just "NY")
@@ -631,8 +553,9 @@ compareSER_ASR cmdLine postInfo = do
               <$> DDP.cachedACSa5ByCD
     byCD <- K.ignoreCacheTime byCD_C
     (product_SER_ASR, modeled_SER_ASR) <- K.ignoreCacheTimeM
-                                            $ testProductNS_CDs @DMC.ASER @'[DT.Age5C] @'[DT.Education4C]
-                                            (DTP.viaOptimalWeights DTP.euclideanFull) False True "model/demographic/ser_asr" "SER_ASR" cmdLine byPUMA_C byCD_C
+                                            $ testNS @CDLoc @DMC.ASER @'[DT.Age5C] @'[DT.Education4C]
+                                            (DTP.viaOptimalWeights DTP.euclideanFull)
+                                            False True "model/demographic/ser_asr" "SER_ASR" DDP.districtKeyT cmdLine byPUMA_C byCD_C
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
@@ -641,28 +564,30 @@ compareSER_ASR cmdLine postInfo = do
     synthModelPaths <- postPaths "Model_SER_A6SR" cmdLine
     BRK.brNewPost synthModelPaths postInfo "Model_SER_A6SR" $ do
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.ASER)
-        synthModelPaths postInfo "SER_ASR" cdPopMap DDP.districtKeyT (Just "NY")
+        synthModelPaths postInfo False "SER_ASR" ("CD", cdPopMap,  DDP.districtKeyT) (Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        (fmap F.rcast $ cdWithZeros @DMC.ASER byCD)
-        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.ASER byCD) (Just "Actual") Nothing Nothing
+        ("L1 Error", pctFmt, (* 100), l1Err)
+        (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_SER_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast modeled_SER_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.ASER)
-        synthModelPaths postInfo "SER_ASR" statePopMap (view GT.stateAbbreviation) (Just "PA")
+        synthModelPaths postInfo False "SER_ASR" ("State", statePopMap, view GT.stateAbbreviation) (Just "PA")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        (fmap F.rcast $ cdWithZeros @DMC.ASER byCD)
-        [MethodResult (fmap F.rcast $ cdWithZeros @DMC.ASER byCD) (Just "Actual") Nothing Nothing
+        ("L1 Error", pctFmt, (* 100), l1Err)
+        (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_SER_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast modeled_SER_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
@@ -980,23 +905,17 @@ originalPost cmdLine postInfo = do
     pure ()
 -}
 
-data KLTableRow = KLTableRow { kltrLabel :: Text, kltrKLs :: [(Double, Double)] }
+data ErrTableRow = ErrTableRow { eTrLabel :: Text, eTrErr :: [Double] }
 
 -- This function expects the same length list in the table row as is provided in the col headders argument
-klColonnadeFlex :: Foldable f => f Text -> Text -> C.Colonnade C.Headed KLTableRow Text
-klColonnadeFlex colHeaders regionName =
-  C.headed regionName kltrLabel
-  <> mconcat (fmap cols [0..(length chList - 1)])
+errColonnadeFlex :: Foldable f => (Double -> Text) -> f Text -> Text -> C.Colonnade C.Headed ErrTableRow Text
+errColonnadeFlex errFmt colHeaders regionName =
+  C.headed regionName eTrLabel
+  <> mconcat (fmap errCol [0..(length chList - 1)])
   where
     chList = FL.fold FL.list colHeaders
-    klT :: Double -> Text
-    klT x = toText @String $ PF.printf "%2.2e" x
-    errT :: Double -> Text
-    errT x =  toText @String . PF.printf "%2.0g" . (100 *) . sqrt $ 2 * x
-    klCol n = C.headed (chList List.!! n) (klT . fst . (List.!! n) . kltrKLs)
-    errCol n =  C.headed "Error (%)" (errT . fst . (List.!! n) . kltrKLs)
-    fwCol n = C.headed "Abs Wrong (%)" (errT . snd . (List.!! n) . kltrKLs)
-    cols n = klCol n <> errCol n <> fwCol n
+    errCol n = C.headed  (chList List.!! n) (errFmt . (List.!! n) . eTrErr)
+--    cols n = errCol n
 
 klColonnade :: C.Colonnade C.Headed (Text, Double, Double, Double, Double) Text
 klColonnade =
@@ -1085,8 +1004,8 @@ distCompareChart :: (Ord k, Show k, Show a, Ord a, K.KnitEffects r)
                  -> (Text, F.FrameRec rs)
                  -> K.Sem r GV.VegaLite
 distCompareChart pp pi' chartDataPrefix vc title key keyText facetB cat1M cat2M asDiffB count scalesM (actualLabel, actualRows) (synthLabel, synthRows) = do
-  let assoc r = (key r, count r)
-      toMap = FL.fold (FL.premap assoc FL.map)
+  let assoc r = (key r, Sum $ count r)
+      toMap = FL.fold (fmap getSum <$> FL.premap assoc FL.map)
       whenMatchedF _ aCount sCount = Right (aCount, sCount)
       whenMatched = MM.zipWithAMatched whenMatchedF
       whenMissingF t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " rows."
@@ -1142,6 +1061,166 @@ distCompareChart pp pi' chartDataPrefix vc title key keyText facetB cat1M cat2M 
   pure $ if facetB
          then FV.configuredVegaLite vc [FV.title title, facets, GV.specification (GV.asSpec [layers]), vlData]
          else FV.configuredVegaLite vc [FV.title title, layers, vlData]
+
+
+errorCompareChart :: K.KnitEffects r
+                  => BR.PostPaths Path.Abs
+                  -> BR.PostInfo
+                  -> Text
+                  -> Text
+                  -> FV.ViewConfig
+                  -> Text
+                  -> [Text]
+                  -> (Text, Double -> Double)
+                  -> [ErrTableRow]
+                  -> K.Sem r GV.VegaLite
+errorCompareChart postPaths postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
+  let n = length labels
+      l1Label = "L1 Error (5)"
+      colData k (ErrTableRow l es) = [("Source", GV.Str $ labels List.!! k)
+                                    , (regionName, GV.Str l )
+                                    , (l1Label, GV.Number $ errScale (es List.!! k))]
+      kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+
+      jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
+  jsonFilePrefix <- K.getNextUnusedId $ ("errorCompareChart_" <> chartID)
+  jsonUrl <-  BRK.brAddJSON postPaths postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+      enc = GV.encoding
+        . GV.position GV.X [GV.PName l1Label, GV.PmType GV.Quantitative, GV.PBin [GV.Step 1], GV.PAxis [GV.AxTitle errLabel]]
+        . GV.position GV.Y [GV.PName l1Label, GV.PAggregate GV.Count, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle $ "# " <> regionName]]
+        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , GV.mark GV.Line []
+                                  , enc []
+                                  , vlData
+                                  ]
+
+{-
+
+-- NB: as ks - first component and bs is ks - second
+-- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
+testProductNS_CDs :: forall  ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
+                     (K.KnitEffects r, BRK.CacheEffects r
+                     , qs ~ F.RDeleteAll (as V.++ bs) ks
+                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+                     , Ord (F.Record ks)
+                     , Keyed.FiniteSet (F.Record ks)
+                     , ((qs V.++ as) V.++ bs) F.⊆ ks
+                     , ks F.⊆ ((qs V.++ as) V.++ bs)
+                     , Ord (F.Record qs)
+                     , Ord (F.Record as)
+                     , Ord (F.Record bs)
+                     , Ord (F.Record (qs V.++ as))
+                     , Ord (F.Record (qs V.++ bs))
+                     , Ord (F.Record ((qs V.++ as) V.++ bs))
+                     , Keyed.FiniteSet (F.Record qs)
+                     , Keyed.FiniteSet (F.Record as)
+                     , Keyed.FiniteSet (F.Record bs)
+                     , Keyed.FiniteSet (F.Record (qs V.++ as))
+                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
+                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+                     , as F.⊆ (qs V.++ as)
+                     , bs F.⊆ (qs V.++ bs)
+                     , qs F.⊆ (qs V.++ as)
+                     , qs F.⊆ (qs V.++ bs)
+                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+                     , qs V.++ as F.⊆ DMC.PUMARowR ks
+                     , qs V.++ bs F.⊆ DMC.PUMARowR ks
+                     , ks F.⊆ DMC.PUMARowR ks
+                     , V.RMap as
+                     , V.ReifyConstraint Show F.ElField as
+                     , V.RecordToList as
+                     , V.RMap bs
+                     , V.ReifyConstraint Show F.ElField bs
+                     , V.RecordToList bs
+                     , F.ElemOf (DMC.KeysWD ks) DT.PopCount
+                     , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
+                     , ks F.⊆ CDRow ks
+                     , qs V.++ as F.⊆ CDRow ks
+                     , qs V.++ bs F.⊆ CDRow ks
+                     , FSI.RecVec (DMC.KeysWD ks)
+                     , V.RMap (DMC.KeysWD ks)
+                     , FS.RecFlat (DMC.KeysWD ks)
+                     )
+                  => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+                  -> Bool
+                  -> Bool
+                  -> Text
+                  -> Text
+                  -> BR.CommandLine
+                  -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
+                  -> K.ActionWithCacheTime r (F.FrameRec (CDRow ks))
+                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDRow ks), F.FrameRec (CDRow ks)))
+testProductNS_CDs onSimplexM rerunModel clearCaches cachePrefix modelId cmdLine byPUMA_C byCD_C = do
+  let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
+  when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
+  let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
+  (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @ks @qs modelCacheDirE modelId cmdLine byPUMA_C
+  byCD <- K.ignoreCacheTime byCD_C
+  nvps <- K.ignoreCacheTime nvps_C
+  let cdModelData = FL.fold
+        (DTM3.nullVecProjectionsModelDataFldCheck
+         DMS.cwdWgtLens
+         ms
+         nvps
+         (F.rcast @'[BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict])
+         (F.rcast @ks)
+         DTM3.cwdF
+         (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(CDRow ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
+        )
+        byCD
+      productFrameDeps = (,) <$> nvps_C <*> predictor_C
+  BRK.retrieveOrMake2Frames productFrameCacheKey productFrameDeps $ \(nvps', predictor) -> do
+    let vecToFrame ok kws = fmap (\(k, w) -> ok F.<+> k F.<+> DMS.cwdToRec w) kws
+        prodAndModeledToFrames (ok, pKWs, mKWs) = (vecToFrame ok pKWs, vecToFrame ok mKWs)
+
+        smcRowToProdAndModeled (ok, covariates, _, pKWs, _) = do
+--          let pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
+          mKWs <- DTM3.predictedJoint onSimplexM DMS.cwdWgtLens predictor (ok ^. GT.stateAbbreviation) covariates pKWs
+          pure (ok, pKWs, mKWs)
+
+    let cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
+
+    forM_ cdModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
+      let keyT = DDP.districtKeyT sar
+          pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
+          nV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) oKWs
+          n = VS.sum pV
+
+      when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
+        let showSum v = " (" <> show (VS.sum v) <> ")"
+        K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
+        K.logLE K.Info $ keyT <> " prod counts=" <> DED.prettyVector pV <> showSum pV
+--        let nvpsV = DTP.applyNSPWeights nvps' (VS.map (* n) nVpsActual) pV
+        K.logLE K.Info $ keyT <> "NS projections=" <> DED.prettyVector nVpsActual
+        K.logLE K.Info $ "sumSq(projections)=" <> show (VS.sum $ VS.zipWith (*) nVpsActual nVpsActual)
+        let cCheckV = cMatrix LA.#> (nV - pV)
+        K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
+        K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
+        nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs predictor (view GT.stateAbbreviation sar) md)
+        K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
+        let dNVPs = VS.zipWith (-) nVpsActual nvpsModeled
+        K.logLE K.Info $ "dNVPS=" <> DED.prettyVector dNVPs
+        K.logLE K.Info $ "sumSq(dNVPS)=" <>  show (VS.sum $ VS.zipWith (*) dNVPs dNVPs)
+        simplexFull <- onSimplexM nvps' nvpsModeled $ VS.map (/ n) pV
+--        let simplexFull = DTP.projectToSimplex $ DTP.applyNSPWeights nvps' nvpsModeled (VS.map (/ n) pV)
+        let simplexNVPs = DTP.fullToProj nvps' simplexFull
+            dSimplexNVPs = VS.zipWith (-) simplexNVPs nVpsActual
+        K.logLE K.Info $ "dSimplexNVPS=" <> DED.prettyVector dSimplexNVPs
+        K.logLE K.Info $ "sumSq(dSimplexNVPS)=" <>  show (VS.sum $ VS.zipWith (*) dSimplexNVPs dSimplexNVPs)
+        K.logLE K.Info $ keyT <> " onSimplex=" <> DED.prettyVector simplexNVPs <> showSum simplexNVPs
+        let modeledCountsV = VS.map (* n) simplexFull
+        K.logLE K.Info $ keyT <> " modeled counts=" <> DED.prettyVector modeledCountsV <> showSum modeledCountsV
+
+    prodAndModeled <- traverse smcRowToProdAndModeled cdModelData
+    pure $ bimap (F.toFrame . concat) (F.toFrame . concat)
+         $ unzip
+         $ fmap prodAndModeledToFrames prodAndModeled
+-}
 
 {-
 runCitizenModel :: (K.KnitEffects r, BRK.CacheEffects r)
