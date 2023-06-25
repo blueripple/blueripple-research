@@ -52,10 +52,12 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Numeric
 import qualified Numeric.LinearAlgebra as LA
 import qualified Control.Foldl as FL
+import qualified Control.Foldl.Statistics as FL
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FSI
 --import qualified Frames.Transform as FT
+import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 --import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
@@ -212,10 +214,46 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
       traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False True (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
       pure ()
 
-  -- compute KL divergences
-  K.logLE K.Info "Computing Errors:"
-  let toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
-      computeErr d rk = errF acsV dV where
+  -- compute errors
+
+  let toVecFld :: FL.Fold (F.Record (ks V.++ '[DT.PopCount])) (VS.Vector Double)
+      toVecFld = VS.fromList . fmap snd . M.toList <$> FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map
+--      toVecF = VS.fromList . fmap snd . M.toList . FL.fold (FL.premap (\r -> (catKey r, realToFrac (r ^. DT.popCount))) FL.map)
+--      toVecF = FL.fold toVecFld
+  let vecMapFld :: FL.Fold (F.Record (ks V.++ '[DT.PopCount])) (Map a (VS.Vector Double))
+      vecMapFld = M.fromList
+                  <$> MR.mapReduceFold
+                  MR.noUnpack
+                  (MR.assign (regionKey . F.rcast) id)
+                  (MR.foldAndLabel toVecFld (,))
+      actualVecMap = FL.fold vecMapFld actual
+      compMap dName dVecMap = do
+        let whenMatched _ c1 c2 = Right $ (c1, c2)
+            whenMissing t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " table."
+        K.knitEither $ MM.mergeA
+          (MM.traverseMissing $ whenMissing "ACS")
+          (MM.traverseMissing $ whenMissing dName)
+          (MM.zipWithAMatched $ whenMatched)
+          actualVecMap
+          dVecMap
+      resultToErrMapM (MethodResult rf _ _ ehM) =
+        case ehM of
+          Nothing -> pure Nothing
+          Just h -> do
+            errMap <- fmap (uncurry errF) <$> compMap h (FL.fold vecMapFld rf)
+            pure $ Just (h, errMap)
+  K.logLE K.Info "Computing Full Table Errors:"
+  resultErrMaps <- catMaybes . FL.fold FL.list <$> traverse resultToErrMapM results
+  let errCols = fmap (second M.elems) resultErrMaps
+      errColHeaders = fst <$> errCols
+      errTableRows = zipWith (\region kls -> ErrTableRow region kls) (fmap show allRegions) (transp $ fmap snd errCols)
+  errCompChartVL <- errorCompareChart pp pi' errLabel chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders (errLabel, errScale) errTableRows
+  _ <- K.addHvega Nothing Nothing errCompChartVL
+
+--  K.logLE K.Info "Computing per position Errors:"
+
+{-
+       computeErr d rk = errF acsV dV where
         acsV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) actual
         dV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) d
 
@@ -227,6 +265,7 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
       errTableRows = zipWith (\region kls -> ErrTableRow region kls) (fmap show allRegions) (transp $ fmap snd errCols)
   errCompChartVL <- errorCompareChart pp pi' errLabel chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders (errLabel, errScale) errTableRows
   _ <- K.addHvega Nothing Nothing errCompChartVL
+-}
 
   when showTables $ do
     K.logLE K.Info "Error Table:"
@@ -253,6 +292,9 @@ l2Err acsV dV = FL.fold
                   <$> FL.premap fst FL.sum
                   <*> FL.premap snd FL.sum)
                 $ zipWith (\acs d -> ((acs - d) * (acs - d), acs)) (VS.toList acsV) (VS.toList dV)
+
+lmvsk :: LA.Vector Double -> LA.Vector Double -> FL.LMVSK
+lmvsk acsV dV = FL.fold FL.fastLMVSK $ VS.toList (acsV - dV)
 
 transp :: [[a]] -> [[a]]
 transp = go [] where
@@ -479,7 +521,7 @@ compareCSR_ASR cmdLine postInfo = do
     (product_CSR_ASR, modeled_CSR_ASR) <- K.ignoreCacheTimeM
                                           $ testNS @DMC.PUMAOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
                                           (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False True "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C byPUMA_C
+                                          False False "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C byPUMA_C
 
 {-
     (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
