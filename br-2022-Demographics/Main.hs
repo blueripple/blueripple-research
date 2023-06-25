@@ -115,6 +115,10 @@ type ResultFrame ks = F.FrameRec (ks V.++ '[DT.PopCount])
 
 data MethodResult ks = MethodResult { mrResult :: ResultFrame ks, _mrTableTitle :: Maybe Text, mrChartTitle :: Maybe Text, mrErrHeader :: Maybe Text}
 
+data ErrorFunction a = ErrorFunction { errLabel :: Text, errF :: a -> a -> Double, errTableFmt :: Double -> Text, errChartScale :: Double -> Double }
+
+data ErrorResults rk a = ErrorResults { errSourceLabel :: Text, errByRegionMap :: Map rk a, errByCell :: [a] }
+
 compareResults :: forall ks key colKey rowKey a r f .
                   (K.KnitOne r
                   , Traversable f
@@ -148,12 +152,13 @@ compareResults :: forall ks key colKey rowKey a r f .
                -> (F.Record ks -> Text)
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
                -> Maybe (Text, F.Record ks -> Text, Maybe [Text])
-               -> (Text, Double -> Text, Double -> Double, LA.Vector Double -> LA.Vector Double -> Double)
+               -> ErrorFunction (VS.Vector Double)
+               -> ErrorFunction (VS.Vector Double)
                -> ResultFrame ks
                -> f (MethodResult ks)
                -> K.Sem r ()
 compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regionKey) exampleStateM
-  catKey rowKey colKey showCellKey colorM shapeM (errLabel, errFmt, errScale, errF) actual results = do
+  catKey rowKey colKey showCellKey colorM shapeM byRegionErrorF byCellErrorF actual results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
                                          $ DED.rowMajorMapFldInt
@@ -227,6 +232,9 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
                   (MR.assign (regionKey . F.rcast) id)
                   (MR.foldAndLabel toVecFld (,))
       actualVecMap = FL.fold vecMapFld actual
+      rowsToCols = LA.toColumns . LA.fromRows
+      compMapToCellLists :: Map a (VS.Vector Double, VS.Vector Double) -> [(VS.Vector Double, VS.Vector Double)]
+      compMapToCellLists m = uncurry zip $ bimap rowsToCols rowsToCols $ unzip $ M.elems m
       compMap dName dVecMap = do
         let whenMatched _ c1 c2 = Right $ (c1, c2)
             whenMissing t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " table."
@@ -236,22 +244,29 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
           (MM.zipWithAMatched $ whenMatched)
           actualVecMap
           dVecMap
-      resultToErrMapM (MethodResult rf _ _ ehM) =
+      resultToErrsM (MethodResult rf _ _ ehM) =
         case ehM of
           Nothing -> pure Nothing
           Just h -> do
-            errMap <- fmap (uncurry errF) <$> compMap h (FL.fold vecMapFld rf)
-            pure $ Just (h, errMap)
-  K.logLE K.Info "Computing Full Table Errors:"
-  resultErrMaps <- catMaybes . FL.fold FL.list <$> traverse resultToErrMapM results
-  let errCols = fmap (second M.elems) resultErrMaps
-      errColHeaders = fst <$> errCols
-      errTableRows = zipWith (\region kls -> ErrTableRow region kls) (fmap show allRegions) (transp $ fmap snd errCols)
-  errCompChartVL <- errorCompareChart pp pi' errLabel chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders (errLabel, errScale) errTableRows
-  _ <- K.addHvega Nothing Nothing errCompChartVL
+            byRegionErrMap <- fmap (uncurry byRegionErrorF.errF) <$> compMap h (FL.fold vecMapFld rf)
+            byCellErrList <- fmap (uncurry byCellErrorF.errF) . compMapToCellLists <$> compMap h (FL.fold vecMapFld rf)
+            pure $ Just $ ErrorResults h byRegionErrMap byCellErrList
+  K.logLE K.Info "Computing errors by region and by cell:"
+  resultErrs <- catMaybes . FL.fold FL.list <$> traverse resultToErrsM results
+  let errCols = fmap (M.elems . errByRegionMap) resultErrs
+      errColHeaders = errSourceLabel <$> resultErrs
+      byRegionErrTableRows = zipWith (\region errs -> ErrTableRow region errs) (fmap show allRegions) (transp errCols)
+      byCellErrTableRows = zipWith (\cell errs -> ErrTableRow cell errs) [1..] (transp $ fmap errByCell resultErrs)
+  byRegionErrCompChartVL <- errorCompareHistogram pp pi' byRegionErrorF.errLabel
+                            chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders
+                            (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
+  _ <- K.addHvega Nothing Nothing byRegionErrCompChartVL
+  byCellErrCompChartVL <- errorCompareScatter pp pi' byCellErrorF.errLabel
+                          chartDataPrefix (FV.ViewConfig 400 400 5) "Cells" errColHeaders
+                          (byCellErrorF.errLabel, byCellErrorF.errChartScale) byCellErrTableRows
+  _ <- K.addHvega Nothing Nothing byCellErrCompChartVL
 
---  K.logLE K.Info "Computing per position Errors:"
-
+  K.logLE K.Info "Computing per position Errors:"
 {-
        computeErr d rk = errF acsV dV where
         acsV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) actual
@@ -269,7 +284,7 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
 
   when showTables $ do
     K.logLE K.Info "Error Table:"
-    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ errColonnadeFlex errFmt errColHeaders "Region") errTableRows)
+    K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ errColonnadeFlex byRegionErrorF.errTableFmt errColHeaders "Region") byRegionErrTableRows)
 --  _ <- compChart True "Actual" $ mrActual results
   K.logLE K.Info "Building national charts."
   traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
@@ -278,6 +293,13 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
 
 pctFmt :: Double -> Text
 pctFmt = toText @String . PF.printf "%2.1g" . (100 *)
+
+stdMeanErr :: LA.Vector Double -> LA.Vector Double -> Double
+stdMeanErr acsV dV =
+  let x = lmvsk acsV dV
+      m = FL.lmvskMean x
+      v = FL.lmvskVariance x
+  in m / sqrt v
 
 l1Err :: LA.Vector Double -> LA.Vector Double -> Double
 l1Err acsV dV = FL.fold
@@ -546,7 +568,8 @@ compareCSR_ASR cmdLine postInfo = do
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        ("L1 Error", pctFmt, (* 100), l1Err)
+        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR byPUMA)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR byPUMA) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_CSR_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
@@ -613,7 +636,8 @@ compareSER_ASR cmdLine postInfo = do
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        ("L1 Error", pctFmt, (* 100), l1Err)
+        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_SER_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
@@ -627,7 +651,8 @@ compareSER_ASR cmdLine postInfo = do
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        ("L1 Error", pctFmt, (* 100), l1Err)
+        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @CDLoc @DMC.ASER byCD) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast product_SER_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
@@ -947,10 +972,10 @@ originalPost cmdLine postInfo = do
     pure ()
 -}
 
-data ErrTableRow = ErrTableRow { eTrLabel :: Text, eTrErr :: [Double] }
+data ErrTableRow a = ErrTableRow { eTrLabel :: a, eTrErr :: [Double] }
 
 -- This function expects the same length list in the table row as is provided in the col headders argument
-errColonnadeFlex :: Foldable f => (Double -> Text) -> f Text -> Text -> C.Colonnade C.Headed ErrTableRow Text
+errColonnadeFlex :: Foldable f => (Double -> Text) -> f Text -> Text -> C.Colonnade C.Headed (ErrTableRow Text) Text
 errColonnadeFlex errFmt colHeaders regionName =
   C.headed regionName eTrLabel
   <> mconcat (fmap errCol [0..(length chList - 1)])
@@ -1105,23 +1130,22 @@ distCompareChart pp pi' chartDataPrefix vc title key keyText facetB cat1M cat2M 
          else FV.configuredVegaLite vc [FV.title title, layers, vlData]
 
 
-errorCompareChart :: K.KnitEffects r
-                  => BR.PostPaths Path.Abs
-                  -> BR.PostInfo
-                  -> Text
-                  -> Text
-                  -> FV.ViewConfig
-                  -> Text
-                  -> [Text]
-                  -> (Text, Double -> Double)
-                  -> [ErrTableRow]
-                  -> K.Sem r GV.VegaLite
-errorCompareChart postPaths postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
+errorCompareHistogram :: K.KnitEffects r
+                      => BR.PostPaths Path.Abs
+                      -> BR.PostInfo
+                      -> Text
+                      -> Text
+                      -> FV.ViewConfig
+                      -> Text
+                      -> [Text]
+                      -> (Text, Double -> Double)
+                      -> [ErrTableRow Text]
+                      -> K.Sem r GV.VegaLite
+errorCompareHistogram postPaths postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
   let n = length labels
-      l1Label = "L1 Error (5)"
       colData k (ErrTableRow l es) = [("Source", GV.Str $ labels List.!! k)
                                     , (regionName, GV.Str l )
-                                    , (l1Label, GV.Number $ errScale (es List.!! k))]
+                                    , (errLabel, GV.Number $ errScale (es List.!! k))]
       kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
 
       jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
@@ -1130,12 +1154,46 @@ errorCompareChart postPaths postInfo title chartID vc regionName labels (errLabe
 
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
       enc = GV.encoding
-        . GV.position GV.X [GV.PName l1Label, GV.PmType GV.Quantitative, GV.PBin [GV.Step 1], GV.PAxis [GV.AxTitle errLabel]]
-        . GV.position GV.Y [GV.PName l1Label, GV.PAggregate GV.Count, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle $ "# " <> regionName]]
+        . GV.position GV.X [GV.PName errLabel, GV.PmType GV.Quantitative, GV.PBin [GV.Step 1], GV.PAxis [GV.AxTitle errLabel]]
+        . GV.position GV.Y [GV.PName errLabel, GV.PAggregate GV.Count, GV.PmType GV.Quantitative, GV.PAxis [GV.AxTitle $ "# " <> regionName]]
         . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
 
   pure $ FV.configuredVegaLite vc [FV.title title
                                   , GV.mark GV.Line []
+                                  , enc []
+                                  , vlData
+                                  ]
+
+errorCompareScatter :: K.KnitEffects r
+                  => BR.PostPaths Path.Abs
+                  -> BR.PostInfo
+                  -> Text
+                  -> Text
+                  -> FV.ViewConfig
+                  -> Text
+                  -> [Text]
+                  -> (Text, Double -> Double)
+                  -> [ErrTableRow Int]
+                  -> K.Sem r GV.VegaLite
+errorCompareScatter postPaths postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
+  let n = length labels
+      colData k (ErrTableRow n es) = [("Source", GV.Str $ labels List.!! k)
+                                    , ("Cell", GV.Number $ realToFrac n )
+                                    , (errLabel, GV.Number $ errScale (es List.!! k))]
+      kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+
+      jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
+  jsonFilePrefix <- K.getNextUnusedId $ ("errorCompareChart_" <> chartID)
+  jsonUrl <-  BRK.brAddJSON postPaths postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+      enc = GV.encoding
+        . GV.position GV.X [GV.PName "Cell", GV.PmType GV.Quantitative]
+        . GV.position GV.Y [GV.PName errLabel, GV.PmType GV.Quantitative]
+        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , GV.mark GV.Point [GV.MSize 5]
                                   , enc []
                                   , vlData
                                   ]
