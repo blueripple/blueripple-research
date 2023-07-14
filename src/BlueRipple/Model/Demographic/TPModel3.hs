@@ -32,7 +32,7 @@ import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 
-import qualified Knit.Report as K
+import qualified Knit.Report as K hiding (elements)
 
 import qualified Control.MapReduce.Simple as MR
 
@@ -203,24 +203,47 @@ data ProjData outerK =
   , pdRows :: [ProjDataRow outerK]
   }
 
-data ComponentPredictor g =
+newtype RecordKey ks = RecordKey (F.Record ks)
+
+instance Show (F.Record ks) => Show (RecordKey ks) where
+  show (RecordKey r) = "RecordKey " <> show r
+
+instance Eq (F.Record ks) => Eq (RecordKey ks) where
+  RecordKey r1 == RecordKey r2 = r1 == r2
+
+instance Ord (F.Record ks) => Ord (RecordKey ks) where
+  compare (RecordKey r1) (RecordKey r2) = compare r1 r2
+
+
+instance FS.RecFlat ks => Flat.Flat (RecordKey ks) where
+  size (RecordKey k) = Flat.size $ FS.toS k
+  encode (RecordKey k) = Flat.encode $ FS.toS k
+  decode = fmap (RecordKey . FS.fromS) $ Flat.decode
+
+instance BRK.FiniteSet (F.Record k) => BRK.FiniteSet (RecordKey k) where
+  elements = BRK.elements @(F.Record k)
+
+data ComponentPredictor k g =
   ComponentPredictor { mrGeoAlpha :: Map g Double
+                     , componentKey :: k
                      , mrSI :: V.Vector (Double, Double)
                      }
   deriving stock (Generic)
 
+mapCPKey :: (a -> b) -> ComponentPredictor a g -> ComponentPredictor b g
+mapCPKey f (ComponentPredictor gaM k siV) = ComponentPredictor gaM (f k) siV
 
-deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
+deriving anyclass instance (Ord g, Flat.Flat g, Flat.Flat k) => Flat.Flat (ComponentPredictor k g)
 
-data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
+data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: Map k (ComponentPredictor k g) } deriving stock (Generic)
 
-deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g) => Flat.Flat (Predictor k g)
+deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g, FS.RecFlat k) => Flat.Flat (Predictor k g)
 
 mapPredictor :: DMS.IsomorphicKeys a b -> Predictor a g -> Predictor b g
-mapPredictor ik (Predictor nvps predCPs) = Predictor (DTP.mapNullVectorProjections ik nvps) predCPs
+mapPredictor ik@(DMS.IsomorphicKeys abF _) (Predictor nvps predCPs) = Predictor (DTP.mapNullVectorProjections ik nvps) (M.mapKeys abF predCPs)
 
 modelResultNVP :: (Show g, Ord g)
-               => ComponentPredictor g
+               => ComponentPredictor k g
                -> g
                -> VS.Vector Double
                -> Either Text Double
@@ -258,11 +281,15 @@ predictedJoint onSimplexM wgtLens p gk covariates keyedProduct = do
 --      newWeights = VS.map (* n) onSimplex
   let f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
       predictedTable = fmap f $ zip (VS.toList onSimplexWgts) keyedProduct
+      predV = VS.fromList $ fmap (view wgtLens . snd) predictedTable
+      checkV = DTP.nvpConstraints (predNVP p) LA.#> (predV - prodV)
   K.logLE (K.Debug 1)
-    $ "covariates = " <> DED.prettyVector covariates
+    $ "Region=" <> show gk
+    <> "\ncovariates = " <> DED.prettyVector covariates
     <> "\npredicted projections = " <> DED.prettyVector nvpsPrediction
     <> "\npredicted projections (onSimplex) = " <> DED.prettyVector onSimplexWgts
-    <> "\npredicted result = " <> DED.prettyVector (VS.fromList $ fmap (view wgtLens . snd) predictedTable)
+    <> "\npredicted result = " <> DED.prettyVector predV
+    <> "\nC * (predicted - product) = " <> DED.prettyVector checkV
   pure predictedTable
 
 stateG :: SMB.GroupTypeTag Text
@@ -521,7 +548,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
              -> K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks))
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record rs) (VS.Vector Double)
-             -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
+             -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor (RecordKey ks) Text))
 runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   let cacheRoot = "model/demographic/nullVecProjModel3_A5/"
       cacheDirE = (if clearCaches then Left else Right) cacheRoot
@@ -573,12 +600,12 @@ runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   pure res_C
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
-projModelResultAction :: forall outerK r .
+projModelResultAction :: forall outerK r ks .
                          (K.KnitEffects r
                          , Typeable outerK
                          )
                       => ModelConfig
-                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor Text)
+                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor (RecordKey ks) Text)
 projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C

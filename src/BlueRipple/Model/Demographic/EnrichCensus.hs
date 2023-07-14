@@ -81,6 +81,7 @@ type CSR = [DT.CitizenC, DT.SexC, DT.Race5C]
 type SRC = [DT.SexC, DT.Race5C, DT.CitizenC]
 type AS = [DT.Age5C, DT.SexC]
 type ASR = [DT.Age5C, DT.SexC, DT.Race5C]
+type ASRE = [DT.Age5C, DT.SexC, DT.Race5C, DT.Education4C]
 type SRA = [DT.SexC, DT.Race5C, DT.Age5C]
 type SRE = [DT.SexC, DT.Race5C, DT.Education4C]
 type CASR = [DT.CitizenC, DT.Age5C, DT.SexC, DT.Race5C]
@@ -108,6 +109,8 @@ instance CatsText SRC where
   catsText = "SRC"
 instance CatsText ASR where
   catsText = "ASR"
+instance CatsText ASRE where
+  catsText = "ASRE"
 instance CatsText SRA where
   catsText = "SRA"
 instance CatsText CASR where
@@ -522,7 +525,7 @@ predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cb
                    (FMR.generalizeUnpack FMR.noUnpack)
                    (FMR.generalizeAssign $ FMR.assignKeysAndData @outerK @(KeysWD (cs V.++ as V.++ bs)))
                    (MR.ReduceFoldM rFld)
-        K.logLE K.Info "Building/re-building censusCASR predictions"
+        K.logLE K.Info $ "Building/re-building predictions for " <> catsText @(cs V.++ as V.++ bs)
         FL.foldM fldM products
       predictionDeps = (,) <$> predictor_C <*> products_C
   predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
@@ -680,9 +683,9 @@ cachedNVProjections :: forall rs ks r .
                     -> K.Sem r (K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks)))
 cachedNVProjections cacheKey ms cachedDataRows = do
   let fld = projCovFld ms
-
-  nvp_C <- BRK.retrieveOrMakeD cacheKey cachedDataRows
-                             $ \dataRows -> do
+  K.logLE K.Info $ "Retrieving or rebuilding null-space projections for key=" <> cacheKey
+  nvp_C <- BRK.retrieveOrMakeD cacheKey cachedDataRows $ \dataRows -> do
+    K.logLE K.Info $ "Rebuilding null-space projections for key=" <> cacheKey
     K.logLE K.Info $ "Computing covariance matrix of projected differences."
     let (projMeans, projCovariances) = FL.fold fld dataRows
         (eigVals, _) = LA.eigSH projCovariances

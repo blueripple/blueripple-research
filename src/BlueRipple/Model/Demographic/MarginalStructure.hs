@@ -45,6 +45,9 @@ normalize l xs = let s = FL.fold (FL.premap (view l) FL.sum) xs in fmap (over l 
 data IsomorphicKeys a b where
   IsomorphicKeys :: (Ord a, BRK.FiniteSet a, Ord b, BRK.FiniteSet b) => (a -> b) -> (b -> a) -> IsomorphicKeys a b
 
+reverseIsomorphism :: IsomorphicKeys a b -> IsomorphicKeys b a
+reverseIsomorphism (IsomorphicKeys a2b b2a) = IsomorphicKeys b2a a2b
+
 -- NB: The order of the stencils depends on how we get to k2. Which shouldn't matter as long as
 -- we only use them to compute marginals from products to compare to other marginals from
 -- products.
@@ -148,6 +151,18 @@ identityMarginalStructure wgtLens = MarginalStructure (fmap (DED.Stencil . pure)
 data MarginalStructure w k where
   MarginalStructure :: (Monoid w, BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, w) [(k, w)]-> MarginalStructure w k
 
+productFld :: MarginalStructure w k -> FL.Fold (k, w) [(k,w)]
+productFld ms = case ms of
+  MarginalStructure stencils _ -> undefined
+
+stencilsToProductFld :: forall k w . (BRK.FiniteSet k, Ord k, Monoid w) => [DED.Stencil Int] -> FL.Fold (k, w) [(k, w)]
+stencilsToProductFld stencils =
+  let allKeys = BRK.elements @k
+      nKeys = S.size allKeys
+      cM = DED.mMatrix nKeys stencils
+  in fmap M.toList $ zeroFillSummedMapFld
+
+
 msStencils :: MarginalStructure w k -> [DED.Stencil Int]
 msStencils (MarginalStructure sts _) = sts
 {-# INLINE msStencils #-}
@@ -160,6 +175,7 @@ msNumCategories :: forall k w . MarginalStructure w k -> Int
 msNumCategories ms = case ms of
   MarginalStructure _ _ -> S.size $ BRK.elements @k
 {-# INLINEABLE msNumCategories #-}
+
 
 marginalProductFromJointFld :: Lens' w Double -> MarginalStructure w k -> FL.Fold (k, w) [(k, w)]
 marginalProductFromJointFld wgtLens ms =
