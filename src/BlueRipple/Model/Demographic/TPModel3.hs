@@ -52,7 +52,7 @@ import qualified Data.Vinyl as Vinyl
 import qualified Data.Vector as V
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
-
+import qualified Text.Show
 import Control.Lens (Lens', view, over, (^.), _2)
 import GHC.TypeLits (Symbol)
 
@@ -202,10 +202,10 @@ data ProjData outerK =
     pdNPredictors :: Int
   , pdRows :: [ProjDataRow outerK]
   }
-
+{-
 newtype RecordKey ks = RecordKey (F.Record ks)
 
-instance Show (F.Record ks) => Show (RecordKey ks) where
+instance Text.Show.Show (F.Record ks) => Show (RecordKey ks) where
   show (RecordKey r) = "RecordKey " <> show r
 
 instance Eq (F.Record ks) => Eq (RecordKey ks) where
@@ -214,36 +214,34 @@ instance Eq (F.Record ks) => Eq (RecordKey ks) where
 instance Ord (F.Record ks) => Ord (RecordKey ks) where
   compare (RecordKey r1) (RecordKey r2) = compare r1 r2
 
-
 instance FS.RecFlat ks => Flat.Flat (RecordKey ks) where
   size (RecordKey k) = Flat.size $ FS.toS k
   encode (RecordKey k) = Flat.encode $ FS.toS k
   decode = fmap (RecordKey . FS.fromS) $ Flat.decode
 
 instance BRK.FiniteSet (F.Record k) => BRK.FiniteSet (RecordKey k) where
-  elements = BRK.elements @(F.Record k)
-
-data ComponentPredictor k g =
+  elements = RecordKey <$> BRK.elements @(F.Record k)
+-}
+data ComponentPredictor g =
   ComponentPredictor { mrGeoAlpha :: Map g Double
-                     , componentKey :: k
                      , mrSI :: V.Vector (Double, Double)
                      }
   deriving stock (Generic)
 
-mapCPKey :: (a -> b) -> ComponentPredictor a g -> ComponentPredictor b g
-mapCPKey f (ComponentPredictor gaM k siV) = ComponentPredictor gaM (f k) siV
+deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
 
-deriving anyclass instance (Ord g, Flat.Flat g, Flat.Flat k) => Flat.Flat (ComponentPredictor k g)
+data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
 
-data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: Map k (ComponentPredictor k g) } deriving stock (Generic)
+deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g) => Flat.Flat (Predictor k g)
 
-deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g, FS.RecFlat k) => Flat.Flat (Predictor k g)
-
+{-
 mapPredictor :: DMS.IsomorphicKeys a b -> Predictor a g -> Predictor b g
-mapPredictor ik@(DMS.IsomorphicKeys abF _) (Predictor nvps predCPs) = Predictor (DTP.mapNullVectorProjections ik nvps) (M.mapKeys abF predCPs)
+mapPredictor ik@(DMS.IsomorphicKeys abF _) (Predictor nvps predCPs) =
+  Predictor (DTP.mapNullVectorProjections ik nvps) (M.mapKeys abF $ fmap (mapCPKey abF) predCPs)
+-}
 
 modelResultNVP :: (Show g, Ord g)
-               => ComponentPredictor k g
+               => ComponentPredictor g
                -> g
                -> VS.Vector Double
                -> Either Text Double
@@ -440,7 +438,9 @@ data RunConfig = RunConfig { nvIndex :: Int, rcIncludePPCheck :: Bool, rcInclude
 
 -- not returning anything for now
 projModel :: (Typeable outerK)
-          => RunConfig -> ModelConfig -> SMB.StanBuilderM (ProjData outerK) () ()
+          => RunConfig
+          -> ModelConfig
+          -> SMB.StanBuilderM (ProjData outerK) () ()
 projModel rc mc = do
   mData <- projModelData mc
   mParams <- projModelParameters mc mData
@@ -548,7 +548,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
              -> K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks))
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record rs) (VS.Vector Double)
-             -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor (RecordKey ks) Text))
+             -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
 runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   let cacheRoot = "model/demographic/nullVecProjModel3_A5/"
       cacheDirE = (if clearCaches then Left else Right) cacheRoot
@@ -605,7 +605,7 @@ projModelResultAction :: forall outerK r ks .
                          , Typeable outerK
                          )
                       => ModelConfig
-                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor (RecordKey ks) Text)
+                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor Text)
 projModelResultAction mc = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C

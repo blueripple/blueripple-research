@@ -558,7 +558,7 @@ predictCASRFrom_CSR_ASR :: forall outerKey r .
                         -> Bool
                         -> Text
                         -> (F.Record outerKey -> K.Sem r Text)
-                        -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
+                        -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA) Text)
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CSR))
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASR))
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
@@ -570,11 +570,9 @@ predictCASRFrom_CSR_ASR onSimplexM rebuild cacheRoot geoTextMF predictor_C csr_C
   rebuild
   cacheRoot
   geoTextMF
-  (fmap (DTM3.mapPredictor isoCASR_SRCA) predictor_C)
+  predictor_C
   (fmap F.rcast <$> csr_C)
   (fmap F.rcast <$> asr_C)
-  where
-    isoCASR_SRCA :: DMS.IsomorphicKeys (F.Record CASR) (F.Record SRCA) = DMS.IsomorphicKeys F.rcast F.rcast
 
 type ASCRE = [DT.Age5C, DT.SexC, DT.CitizenC, DT.Race5C, DT.Education4C]
 
@@ -606,7 +604,7 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                           -> Bool
                           -> Text
                           -> (F.Record outerKey -> K.Sem r Text)
-                          -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASER) Text)
+                          -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record ASCRE) Text)
                           -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
                           -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASE))
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASER))
@@ -618,18 +616,15 @@ predictCASERFrom_CASR_ASE onSimplexM rebuild cacheRoot geoTextMF predictor_C cas
   rebuild
   cacheRoot
   geoTextMF
-  (fmap (DTM3.mapPredictor isoCASER_ASCRE) predictor_C)
+  predictor_C
   (fmap F.rcast <$> casr_C)
   ase_C
-  where
-    isoCASER_ASCRE :: DMS.IsomorphicKeys (F.Record CASER) (F.Record ASCRE) = DMS.IsomorphicKeys F.rcast F.rcast
-
 
 predictedCensusCASR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => DTP.OptimalOnSimplexF r
                     -> Bool
                     -> Text
-                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
+                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASR), K.ActionWithCacheTime r (F.FrameRec CensusCASR))
 predictedCensusCASR onSimplexM rebuild cacheRoot predictor_C censusTables_C = do
@@ -646,11 +641,11 @@ predictedCensusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => DTP.OptimalOnSimplexF r
                     -> Bool
                     -> Text
-                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASR) Text)
-                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record CASER) Text)
+                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA) Text)
+                    -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record ASCRE) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASER), K.ActionWithCacheTime r (F.FrameRec CensusCASER))
-predictedCensusCASER onSimplexM rebuild cacheRoot predictCASR_C predictCASER_C censusTables_C = do
+predictedCensusCASER onSimplexM rebuild cacheRoot predictSRCA_C predictACSRE_C censusTables_C = do
   stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
   let geoTextMF ldK = do
         let fips = ldK ^. GT.stateFIPS
@@ -659,8 +654,8 @@ predictedCensusCASER onSimplexM rebuild cacheRoot predictCASR_C predictCASER_C c
       recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
       recodedASR_C = fmap (fmap F.rcast . recodeASR . BRC.ageSexRace) censusTables_C
       ase_C = fmap (fmap F.rcast . BRC.ageSexEducation) censusTables_C
-  (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictCASR_C recodedCSR_C recodedASR_C
-  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictCASER_C casrPrediction_C ase_C
+  (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictSRCA_C recodedCSR_C recodedASR_C
+  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictACSRE_C casrPrediction_C ase_C
 
 
 projCovFld :: forall rs ks . (ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)

@@ -16,11 +16,9 @@ module Main
 where
 
 import qualified BlueRipple.Configuration as BR
---import qualified BlueRipple.Model.Demographic.StanModels as SM
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
---import qualified BlueRipple.Model.Demographic.TPModel1 as DTM1
 import qualified BlueRipple.Model.Demographic.TPModel3 as DTM3
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
@@ -56,10 +54,8 @@ import qualified Control.Foldl.Statistics as FL
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FSI
---import qualified Frames.Transform as FT
 import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
---import qualified Frames.Folds as FF
 import qualified Frames.Serialize as FS
 
 import Control.Lens (view, (^.), _2)
@@ -67,7 +63,6 @@ import Control.Lens (view, (^.), _2)
 import Path (Dir, Rel)
 import qualified Path
 
---import qualified Frames.Visualization.VegaLite.Data as FVD
 import qualified Text.Printf as PF
 import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
@@ -342,10 +337,10 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            (K.KnitEffects r, BRK.CacheEffects r
            , qs ~ F.RDeleteAll (as V.++ bs) ks
            , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-           , Ord (F.Record ks)
-           , Keyed.FiniteSet (F.Record ks)
-           , ((qs V.++ as) V.++ bs) F.⊆ ks
-           , ks F.⊆ ((qs V.++ as) V.++ bs)
+--           , Ord (F.Record ks)
+--          , Keyed.FiniteSet (F.Record ks)
+--           , ((qs V.++ as) V.++ bs) F.⊆ ks
+--           , ks F.⊆ ((qs V.++ as) V.++ bs)
            , Ord (F.Record qs)
            , Ord (F.Record as)
            , Ord (F.Record bs)
@@ -364,26 +359,28 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            , qs F.⊆ (qs V.++ bs)
            , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
            , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
-           , qs V.++ as F.⊆ DMC.PUMARowR ks
-           , qs V.++ bs F.⊆ DMC.PUMARowR ks
-           , ks F.⊆ DMC.PUMARowR ks
+           , qs V.++ as F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
+           , qs V.++ bs F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
+           , ((qs V.++ as) V.++ bs) F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
+           , DMC.KeysWD (qs V.++ as V.++ bs) F.⊆ DMC.PUMARowR ks
            , V.RMap as
            , V.ReifyConstraint Show F.ElField as
            , V.RecordToList as
            , V.RMap bs
            , V.ReifyConstraint Show F.ElField bs
            , V.RecordToList bs
-           , F.ElemOf (DMC.KeysWD ks) DT.PopCount
-           , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
+--           , F.ElemOf (DMC.KeysWD ks) DT.PopCount
+--           , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
            , AggregateAndZeroFillC outerK (F.RDeleteAll as ks)
            , AggregateAndZeroFillC outerK (F.RDeleteAll bs ks)
            , DMC.PredictedTablesC outerK qs as bs
-           , DMC.KeysWD (F.RDeleteAll as ks) F.⊆ TestRow outerK ks
-           , DMC.KeysWD (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
-           , DMC.KeysWD (qs V.++ as) F.⊆ TestRow outerK (F.RDeleteAll bs ks)
-           , DMC.KeysWD (qs V.++ bs) F.⊆ TestRow outerK (F.RDeleteAll as ks)
-           , DMC.KeysWD ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
-           , ks F.⊆ TestRow outerK ks
+--           , DMC.KeysWD (F.RDeleteAll as ks) F.⊆ TestRow outerK ks
+--           , DMC.KeysWD (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
+--           , DMC.KeysWD (qs V.++ as) F.⊆ TestRow outerK (F.RDeleteAll bs ks)
+--           , DMC.KeysWD (qs V.++ bs) F.⊆ TestRow outerK (F.RDeleteAll as ks)
+--           , DMC.KeysWD ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
+--           , DMC.KeysWD (qs V.++ as V.++ bs) F.⊆ TestRow outerK ks
+           , (qs V.++ as V.++ bs) F.⊆ TestRow outerK ks
            , (qs V.++ bs) F.⊆ TestRow outerK ks
            , (qs V.++ as) F.⊆ TestRow outerK ks
            , TestRow outerK (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
@@ -395,6 +392,7 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            , F.ElemOf (TestRow outerK ks) DT.PopCount
            , F.ElemOf (TestRow outerK ks) DT.PWPopPerSqMile
            , TestRow outerK ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
+           , (qs V.++ as) V.++ bs F.⊆ ((qs V.++ as) V.++ bs)
            )
         => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
         -> Bool
@@ -410,18 +408,18 @@ testNS onSimplexM rerunModel clearCaches cachePrefix modelId testRowKeyText cmdL
   let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
   when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
   let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
-  (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @ks @qs modelCacheDirE modelId cmdLine byPUMA_C
+  (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @(qs V.++ as V.++ bs) @qs modelCacheDirE modelId cmdLine $ fmap (fmap F.rcast) byPUMA_C
   byCD <- K.ignoreCacheTime byCD_C
   let byCDas_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll bs ks) . fmap F.rcast) <$> byCD_C
       byCDbs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll as ks) . fmap F.rcast) <$> byCD_C
-      iso :: DMS.IsomorphicKeys (F.Record ks) (F.Record (qs V.++ as V.++ bs)) = DMS.IsomorphicKeys F.rcast F.rcast
-  K.logLE K.Diagnostic $ "testNS: list permutation of [1,2,3,..] is " <> (show $ DTP.permuteList iso [1..])
+--      iso :: DMS.IsomorphicKeys (F.Record ks) (F.Record (qs V.++ as V.++ bs)) = DMS.IsomorphicKeys F.rcast F.rcast
+--  K.logLE K.Diagnostic $ "testNS: list permutation of [1,2,3,..] is " <> (show $ DTP.permuteList iso [1..])
   (predictions_C, products_C) <- DMC.predictedTables @outerK @qs @as @bs
                                  onSimplexM
                                  clearCaches
                                  cachePrefix
                                  (pure . view GT.stateAbbreviation)
-                                 (fmap (DTM3.mapPredictor iso) predictor_C)
+                                 predictor_C
                                  (fmap F.rcast <$> byCDas_C)
                                  (fmap F.rcast <$> byCDbs_C)
 
@@ -433,7 +431,7 @@ testNS onSimplexM rerunModel clearCaches cachePrefix modelId testRowKeyText cmdL
            ms
            nvps
            (F.rcast @outerK)
-           (F.rcast @ks)
+           (F.rcast @(qs V.++ as V.++ bs))
            DTM3.cwdF
            (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(TestRow outerK ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
           )
@@ -541,7 +539,7 @@ compareCSR_ASR cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    let testPUMAs_C = fmap (F.filterFrame $ filterToState "NY") byPUMA_C
+    let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "NY") -} byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
 {-    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
               <$> DDP.cachedACSa5ByCD
@@ -551,7 +549,7 @@ compareCSR_ASR cmdLine postInfo = do
     (product_CSR_ASR, modeled_CSR_ASR) <- K.ignoreCacheTimeM
                                           $ testNS @DMC.PUMAOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
                                           (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False True "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+                                          False False "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
 
 {-
     (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
@@ -593,7 +591,7 @@ compareASR_ASE cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.ASER . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    let testPUMAs_C = fmap (F.filterFrame $ filterToState "NY") byPUMA_C
+    let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "NY") -} byPUMA_C
 {-    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
               <$> DDP.cachedACSa5ByCD
     byCD <- K.ignoreCacheTime byCD_C -}
@@ -601,7 +599,7 @@ compareASR_ASE cmdLine postInfo = do
     (product_ASR_ASE, modeled_ASR_ASE) <- K.ignoreCacheTimeM
                                           $ testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                                           (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False True "model/demographic/asr_ase" "ASR_ASE_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+                                          False False "model/demographic/asr_ase" "ASR_ASE_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
 
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
@@ -634,7 +632,7 @@ compareCASR_ASE cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASER . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    let testPUMAs_C = fmap (F.filterFrame $ filterToState "RI") byPUMA_C
+    let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "RI") -} byPUMA_C
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASER . fmap F.rcast)
               <$> DDP.cachedACSa5ByCD
     byCD <- K.ignoreCacheTime byCD_C
@@ -761,8 +759,8 @@ main = do
     DMC.checkCensusTables filteredCensusTables_C
 -}
     compareCSR_ASR cmdLine postInfo
---    compareASR_ASE cmdLine postInfo
---    compareCASR_ASE cmdLine postInfo
+    compareASR_ASE cmdLine postInfo
+    compareCASR_ASE cmdLine postInfo
 --    compareSER_ASR cmdLine postInfo
   case resE of
     Right namedDocs →
