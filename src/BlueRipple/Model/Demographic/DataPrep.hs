@@ -40,6 +40,8 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 import qualified Frames.Melt as F
+import qualified Frames.Serialize as FS
+import qualified Frames.Streamly.InCore as FSI
 import qualified Knit.Report as K
 import qualified Knit.Utilities.Streamly as K
 import qualified Numeric
@@ -221,66 +223,65 @@ cachedACSa6ByPUMA = K.wrapPrefix "Model.Demographic.cachedACSByPUMA" $ do
     K.logLE K.Info $ "Done"
     pure $ fmap F.rcast withSA
 
-cachedACSa5ByCD :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa5ByCDR))
-cachedACSa5ByCD = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
-  acsByPUMA_C <- cachedACSa5ByPUMA
-  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  let deps = (,) <$> acsByPUMA_C <*> cdFromPUMA_C
-      pumaToCDFld :: FL.Fold (F.Record ((BRDF.FracPUMAInCD ': DatFieldsTo))) (F.Record DatFieldsTo)
-      pumaToCDFld =
-        let cdWgt = F.rgetField @BRDF.FracPUMAInCD
-            ppl = realToFrac . view DT.popCount
-            wgtdPpl r = cdWgt r * ppl r
-            density = view DT.pWPopPerSqMile
-            countFld = fmap round $ FL.premap wgtdPpl FL.sum
-            densityFld = FL.premap (\r -> (wgtdPpl r, density r)) PUMS.wgtdDensityF
-        in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
+type PUMAToCDRow ks = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA] V.++ ks V.++ DatFieldsTo
+type CDFromPUMARow ks = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ ks V.++ DatFieldsTo
+type PUMAJoinKey = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
+type XRow ks = (ks V.++ DatFieldsTo) V.++ [GT.CongressionalDistrict, BRDF.Population2016, BRDF.FracCDInPUMA, BRDF.FracPUMAInCD]
 
-  BRK.retrieveOrMakeFrame "model/demographic/data/acs2020ByCD_a5.bin" deps $ \(acsByPUMA, cdFromPUMA) -> do
-    K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading ACSByPUMA rows..."
-    K.logLE K.Info $ "ACSByPUMA has " <> show (FL.fold FL.length acsByPUMA) <> " rows. Joining with CD weights..."
-    let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BRDF.Year, GT.StateFIPS, GT.PUMA] acsByPUMA cdFromPUMA
-    when (not $ null missing) $ K.knitError $ "Missing PUMAs in acsByCD left join: " <> show missing
-    aggregatedACS <-
+cachedPUMAsToCDs :: forall ks r .
+                    (FS.RecFlat (ks V.++ DatFieldsTo)
+                    , FJ.CanLeftJoinM PUMAJoinKey (PUMAToCDRow ks) BR.DatedCDFromPUMA2012
+                    , FSI.RecVec (ks V.++ DatFieldsTo)
+                    , V.RMap (ks V.++ DatFieldsTo)
+                    , Ord (F.Record ks)
+                    , ks F.⊆ (PUMAJoinKey V.++ XRow ks)
+                    , F.ElemOf (XRow ks) GT.CongressionalDistrict
+                    , F.ElemOf (XRow ks) BRDF.FracPUMAInCD
+                    , F.ElemOf (XRow ks) DT.PopCount
+                    , F.ElemOf (XRow ks) DT.PWPopPerSqMile
+                    , K.KnitEffects r
+                    , BRK.CacheEffects r
+                    )
+                 => Text
+                 -> K.ActionWithCacheTime r (F.FrameRec (PUMAToCDRow ks))
+                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDFromPUMARow ks)))
+cachedPUMAsToCDs cacheKey byPUMAs_C = do
+  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+  let deps = (,) <$> byPUMAs_C <*> cdFromPUMA_C
+  BRK.retrieveOrMakeFrame cacheKey deps $ \(byPUMAs, cdFromPUMA) -> do
+    K.logLE K.Info $ "cachedPUMAsToCDs (" <> cacheKey <> "): Cached doesn't exist or is older than dependencies. Loading byPUMAs rows..."
+    K.logLE K.Info $ "byPUMAs (" <> cacheKey <> ") has " <> show (FL.fold FL.length byPUMAs) <> " rows. Joining with CD weights..."
+    let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @PUMAJoinKey byPUMAs cdFromPUMA
+    when (not $ null missing) $ K.knitError $ "Missing PUMAs in cachedPUMAsToCD left join: " <> show missing
+    aggregated <-
       K.streamlyToKnit
       $ BRF.frameCompactMR
       FMR.noUnpack
-      (FMR.assignKeysAndData @([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ CategoricalsA5)  @(BRDF.FracPUMAInCD ': DatFieldsTo))
+      (FMR.assignKeysAndData @([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ ks)  @(BRDF.FracPUMAInCD ': DatFieldsTo))
       pumaToCDFld
       byPUMAWithCDAndWeight
-    K.logLE K.Info $ "aggregated ACS (by PUMA) has " <> show (FL.fold FL.length aggregatedACS)
-    pure aggregatedACS
+    K.logLE K.Info $ "aggregated (by PUMA) has " <> show (FL.fold FL.length aggregated)
+    pure aggregated
+
+pumaToCDFld :: FL.Fold (F.Record ((BRDF.FracPUMAInCD ': DatFieldsTo))) (F.Record DatFieldsTo)
+pumaToCDFld =
+  let cdWgt = F.rgetField @BRDF.FracPUMAInCD
+      ppl = realToFrac . view DT.popCount
+      wgtdPpl r = cdWgt r * ppl r
+      density = view DT.pWPopPerSqMile
+      countFld = fmap round $ FL.premap wgtdPpl FL.sum
+      densityFld = FL.premap (\r -> (wgtdPpl r, density r)) PUMS.wgtdDensityF
+  in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
+
+cachedACSa5ByCD :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa5ByCDR))
+cachedACSa5ByCD = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
+  acsByPUMA_C <- cachedACSa5ByPUMA
+  cachedPUMAsToCDs @CategoricalsA5 "model/demographic/data/acs2020ByCD_a5.bin" acsByPUMA_C
 
 cachedACSa6ByCD :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa6ByCDR))
 cachedACSa6ByCD = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
   acsByPUMA_C <- cachedACSa6ByPUMA
-  cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
-  let deps = (,) <$> acsByPUMA_C <*> cdFromPUMA_C
-      pumaToCDFld :: FL.Fold (F.Record ((BRDF.FracPUMAInCD ': DatFieldsTo))) (F.Record DatFieldsTo)
-      pumaToCDFld =
-        let cdWgt = F.rgetField @BRDF.FracPUMAInCD
-            ppl = realToFrac . view DT.popCount
-            wgtdPpl r = cdWgt r * ppl r
-            density = view DT.pWPopPerSqMile
-            countFld = fmap round $ FL.premap wgtdPpl FL.sum
-            densityFld = FL.premap (\r -> (wgtdPpl r, density r)) PUMS.wgtdDensityF
-        in (\pc d -> pc F.&: d F.&: V.RNil) <$> countFld <*> densityFld
-
-  BRK.retrieveOrMakeFrame "model/demographic/data/acs2020ByCD_a6.bin" deps $ \(acsByPUMA, cdFromPUMA) -> do
-    K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading ACSByPUMA rows..."
-    K.logLE K.Info $ "ACSByPUMA has " <> show (FL.fold FL.length acsByPUMA) <> " rows. Joining with CD weights..."
-    let (byPUMAWithCDAndWeight, missing) = FJ.leftJoinWithMissing @[BRDF.Year, GT.StateFIPS, GT.PUMA] acsByPUMA cdFromPUMA
-    when (not $ null missing) $ K.knitError $ "Missing PUMAs in acsByCD left join: " <> show missing
-    aggregatedACS <-
-      K.streamlyToKnit
-      $ BRF.frameCompactMR
-      FMR.noUnpack
-      (FMR.assignKeysAndData @([BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ CategoricalsA6)  @(BRDF.FracPUMAInCD ': DatFieldsTo))
-      pumaToCDFld
-      byPUMAWithCDAndWeight
-    K.logLE K.Info $ "aggregated ACS (by PUMA) has " <> show (FL.fold FL.length aggregatedACS)
-    pure aggregatedACS
-
+  cachedPUMAsToCDs @CategoricalsA6 "model/demographic/data/acs2020ByCD_a6.bin" acsByPUMA_C
 
 districtKey :: ([GT.StateAbbreviation, GT.CongressionalDistrict]  F.⊆ rs)
             => F.Record rs -> F.Record [GT.StateAbbreviation, GT.CongressionalDistrict]

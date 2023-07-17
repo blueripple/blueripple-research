@@ -140,6 +140,7 @@ type CatsTexts cs as bs = (CatsText (cs V.++ as), CatsText (cs V.++ bs), CatsTex
 --type ASERDataR =   [DT.PopCount, DT.PWPopPerSqMile]
 type CensusOuterKeyR = [BRDF.Year, GT.StateFIPS, GT.DistrictTypeC, GT.DistrictName]
 type PUMAOuterKeyR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
+type CDOuterKeyR = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict]
 type PUMARowR ks = PUMAOuterKeyR V.++ KeysWD ks
 type CensusASER = CensusOuterKeyR V.++ KeysWD ASER
 type CensusA6SER = CensusOuterKeyR V.++ KeysWD A6SER

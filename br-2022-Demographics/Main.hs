@@ -231,7 +231,7 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
       compMapToCellLists :: Map a (VS.Vector Double, VS.Vector Double) -> [(VS.Vector Double, VS.Vector Double)]
       compMapToCellLists m = uncurry zip $ bimap rowsToCols rowsToCols $ unzip $ M.elems m
       compMap dName dVecMap = do
-        let whenMatched _ c1 c2 = Right $ (c1, c2)
+        let whenMatched _ c1 c2 = Right (c1, c2)
             whenMissing t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " table."
         K.knitEither $ MM.mergeA
           (MM.traverseMissing $ whenMissing "ACS")
@@ -252,12 +252,12 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
       errColHeaders = errSourceLabel <$> resultErrs
       byRegionErrTableRows = zipWith (\region errs -> ErrTableRow region errs) (fmap show allRegions) (transp errCols)
       byCellErrTableRows = zipWith (\cell errs -> ErrTableRow cell errs) [1..] (transp $ fmap errByCell resultErrs)
-  byRegionErrCompChartVL <- errorCompareHistogram pp pi' byRegionErrorF.errLabel
+  byRegionErrCompChartVL <- errorCompareHistogram pp pi' (byRegionErrorF.errLabel <> " Histogram")
                             chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders
                             (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionErrCompChartVL
-  byCellErrCompChartVL <- errorCompareScatter pp pi' byCellErrorF.errLabel
-                          chartDataPrefix (FV.ViewConfig 400 400 5) "Cells" errColHeaders
+  byCellErrCompChartVL <- errorCompareScatter pp pi' (byCellErrorF.errLabel <> " by Cell")
+                          chartDataPrefix (FV.ViewConfig 400 400 5) "Cell" errColHeaders
                           (byCellErrorF.errLabel, byCellErrorF.errChartScale) byCellErrTableRows
   _ <- K.addHvega Nothing Nothing byCellErrCompChartVL
 
@@ -337,10 +337,6 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            (K.KnitEffects r, BRK.CacheEffects r
            , qs ~ F.RDeleteAll (as V.++ bs) ks
            , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
---           , Ord (F.Record ks)
---          , Keyed.FiniteSet (F.Record ks)
---           , ((qs V.++ as) V.++ bs) F.⊆ ks
---           , ks F.⊆ ((qs V.++ as) V.++ bs)
            , Ord (F.Record qs)
            , Ord (F.Record as)
            , Ord (F.Record bs)
@@ -369,17 +365,9 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            , V.RMap bs
            , V.ReifyConstraint Show F.ElField bs
            , V.RecordToList bs
---           , F.ElemOf (DMC.KeysWD ks) DT.PopCount
---           , F.ElemOf (DMC.KeysWD ks) DT.PWPopPerSqMile
            , AggregateAndZeroFillC outerK (F.RDeleteAll as ks)
            , AggregateAndZeroFillC outerK (F.RDeleteAll bs ks)
            , DMC.PredictedTablesC outerK qs as bs
---           , DMC.KeysWD (F.RDeleteAll as ks) F.⊆ TestRow outerK ks
---           , DMC.KeysWD (F.RDeleteAll bs ks) F.⊆ TestRow outerK ks
---           , DMC.KeysWD (qs V.++ as) F.⊆ TestRow outerK (F.RDeleteAll bs ks)
---           , DMC.KeysWD (qs V.++ bs) F.⊆ TestRow outerK (F.RDeleteAll as ks)
---           , DMC.KeysWD ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
---           , DMC.KeysWD (qs V.++ as V.++ bs) F.⊆ TestRow outerK ks
            , (qs V.++ as V.++ bs) F.⊆ TestRow outerK ks
            , (qs V.++ bs) F.⊆ TestRow outerK ks
            , (qs V.++ as) F.⊆ TestRow outerK ks
@@ -394,20 +382,20 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
            , TestRow outerK ks F.⊆ TestRow outerK (qs V.++ as V.++ bs)
            , (qs V.++ as) V.++ bs F.⊆ ((qs V.++ as) V.++ bs)
            )
-        => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
-        -> Bool
-        -> Bool
-        -> Text
-        -> Text
-        -> (F.Record outerK -> Text)
-        -> BR.CommandLine
-        -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
-        -> K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks))
-        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks), F.FrameRec (TestRow outerK ks)))
-testNS onSimplexM rerunModel clearCaches cachePrefix modelId testRowKeyText cmdLine byPUMA_C byCD_C = do
+       => (forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+       -> Either Text Text
+       -> Text
+       -> Bool
+       -> Text
+       -> (F.Record outerK -> Text)
+       -> BR.CommandLine
+       -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
+       -> K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks))
+       -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks), F.FrameRec (TestRow outerK ks)))
+testNS onSimplexM modelCacheDirE modelId clearCaches cachePrefix testRowKeyText cmdLine byPUMA_C byCD_C = do
   let productFrameCacheKey = cachePrefix <> "_productFrame.bin"
   when clearCaches $ traverse_ BRK.clearIfPresentD [productFrameCacheKey]
-  let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
+--  let modelCacheDirE = (if rerunModel then Left else Right) cachePrefix
   (predictor_C, nvps_C, ms) <- DMC.predictorModel3 @as @bs @(qs V.++ as V.++ bs) @qs modelCacheDirE modelId cmdLine $ fmap (fmap F.rcast) byPUMA_C
   byCD <- K.ignoreCacheTime byCD_C
   let byCDas_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll bs ks) . fmap F.rcast) <$> byCD_C
@@ -539,17 +527,19 @@ compareCSR_ASR cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "NY") -} byPUMA_C
+    let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
-{-    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD
-    byCD <- K.ignoreCacheTime byCD_C -}
+    testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
+                 <$> DDP.cachedACSa5ByCD
+    testCDs <- K.ignoreCacheTime testCDs_C
 
 --    byPUMA <- K.ignoreCacheTime byPUMA_C
-    (product_CSR_ASR, modeled_CSR_ASR) <- K.ignoreCacheTimeM
-                                          $ testNS @DMC.PUMAOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
-                                          (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False False "model/demographic/csr_asr" "CSR_ASR_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+    pumaTest_C <- testNS @DMC.PUMAOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
+                  (DTP.viaOptimalWeights DTP.euclideanFull)
+                  (Right "model/demographic/csr_asr_PUMA") "CSR_ASR_ByPUMA"
+                  False "model/demographic/csr_asr_PUMA"
+                  (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+    (pumaProduct, pumaModeled) <- K.ignoreCacheTime pumaTest_C
 
 {-
     (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
@@ -559,27 +549,58 @@ compareCSR_ASR cmdLine postInfo = do
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         pumaKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.pUMA)
+        cdKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.congressionalDistrict)
 
         pumaPopMap = FL.fold (FL.premap (\r -> (pumaKey r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testPUMAs
---        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
+        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testCDs
 --        statePopMap = FL.fold (FL.premap (\r -> (view GT.stateAbbreviation r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
         showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.citizenC, r ^. DT.age5C, r ^. DT.sexC, r ^. DT.race5C)
-    synthModelPaths <- postPaths "Model_CSR_ASR_ByPUMA" cmdLine
-    BRK.brNewPost synthModelPaths postInfo "Model_CSR_ASR_ByPUMA" $ do
+    pumaModelPaths <- postPaths "Model_CSR_ASR_ByPUMA" cmdLine
+    BRK.brNewPost pumaModelPaths postInfo "Model_CSR_ASR_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.CASR)
-        synthModelPaths postInfo True "CSR_ASR" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo True "CSR_ASR" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.CASR)
         (\r -> (r ^. DT.citizenC, r ^. DT.race5C))
         (\r -> (r ^. DT.sexC, r ^. DT.age5C))
         showCellKey
         (Just ("Race", show . view DT.race5C, Just raceOrder))
         (Just ("Age", show . view DT.age5C, Just ageOrder))
-        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "L1 Error (%)" l1Err pctFmt (* 100))
         (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASR testPUMAs) (Just "Actual") Nothing Nothing
-        ,MethodResult (fmap F.rcast product_CSR_ASR) (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast modeled_CSR_ASR) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
+        ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast pumaModeled) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
+        ]
+
+    cdFromPUMAModeled_C <- DDP.cachedPUMAsToCDs @DMC.CASR "model/demographic/csr_asr_CDFromPUMA.bin" $ fmap snd pumaTest_C
+    cdFromPUMAModeled <- K.ignoreCacheTime cdFromPUMAModeled_C
+
+    (cdProduct, cdModeled) <- K.ignoreCacheTimeM
+                              $ testNS @DMC.CDOuterKeyR @DMC.CASR @'[DT.CitizenC] @'[DT.Age5C]
+                              (DTP.viaOptimalWeights DTP.euclideanFull)
+                              (Right "model/demographic/csr_asr_PUMA") "CSR_ASR_ByPUMA"
+                              False "model/demographic/csr_asr_CD"
+                              DDP.districtKeyT cmdLine byPUMA_C testCDs_C
+
+
+    cdModelPaths <- postPaths "Model_CSR_ASR_ByCD" cmdLine
+    BRK.brNewPost cdModelPaths postInfo "Model_CSR_ASR_ByCD" $ do
+      compareResults @(DMC.CDOuterKeyR V.++ DMC.CASR)
+        pumaModelPaths postInfo True "CSR_ASR" ("CD", cdPopMap, DDP.districtKeyT) (Just "NY")
+        (F.rcast @DMC.CASR)
+        (\r -> (r ^. DT.citizenC, r ^. DT.race5C))
+        (\r -> (r ^. DT.sexC, r ^. DT.age5C))
+        showCellKey
+        (Just ("Race", show . view DT.race5C, Just raceOrder))
+        (Just ("Age", show . view DT.age5C, Just ageOrder))
+        (ErrorFunction "L1 Error (%)" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
+        (fmap F.rcast $ testRowsWithZeros @DMC.CDOuterKeyR @DMC.CASR testCDs)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.CDOuterKeyR @DMC.CASR testCDs) (Just "Actual") Nothing Nothing
+        ,MethodResult (fmap F.rcast cdProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast cdModeled) (Just "Direct NS Model (direct)") (Just "Direct NS Model (L2)") (Just "Direct NS Model")
+        ,MethodResult (fmap F.rcast cdFromPUMAModeled) (Just "Aggregated NS Model (direct)") (Just "Aggregated NS Model (L2)") (Just "Aggregated NS Model")
         ]
     pure ()
 
@@ -591,26 +612,29 @@ compareASR_ASE cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.ASER . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA
-    let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "NY") -} byPUMA_C
-{-    byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD
-    byCD <- K.ignoreCacheTime byCD_C -}
+    let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
-    (product_ASR_ASE, modeled_ASR_ASE) <- K.ignoreCacheTimeM
-                                          $ testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
-                                          (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False False "model/demographic/asr_ase" "ASR_ASE_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+
+    testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
+                 <$> DDP.cachedACSa5ByCD
+    testCDs <- K.ignoreCacheTime testCDs_C
+    pumaTest_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                   (DTP.viaOptimalWeights DTP.euclideanFull)
+                   (Right  "model/demographic/asr_ase") "ASR_ASE_ByPUMA"
+                   False "model/demographic/asr_ase_ByPUMA"  (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+    (pumaProduct, pumaModeled) <- K.ignoreCacheTime pumaTest_C
 
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         pumaKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.pUMA)
 
         pumaPopMap = FL.fold (FL.premap (\r -> (pumaKey r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testPUMAs
+        cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testCDs
         showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.age5C, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
-    synthModelPaths <- postPaths "Model_ASR_ASE_ByPUMA" cmdLine
-    BRK.brNewPost synthModelPaths postInfo "Model_ASR_ASE_ByPUMA" $ do
+    pumaModelPaths <- postPaths "Model_ASR_ASE_ByPUMA" cmdLine
+    BRK.brNewPost pumaModelPaths postInfo "Model_ASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
-        synthModelPaths postInfo True "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo True "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
@@ -621,10 +645,40 @@ compareASR_ASE cmdLine postInfo = do
         (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
-        ,MethodResult (fmap F.rcast product_ASR_ASE) (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast modeled_ASR_ASE) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
+        ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast pumaModeled) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
         ]
 
+    cdFromPUMAModeled_C <- DDP.cachedPUMAsToCDs @DMC.ASER "model/demographic/asr_ase_CDFromPUMA.bin" $ fmap snd pumaTest_C
+    cdFromPUMAModeled <- K.ignoreCacheTime cdFromPUMAModeled_C
+
+    (cdProduct, cdModeled) <- K.ignoreCacheTimeM
+                              $ testNS @DMC.CDOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                              (DTP.viaOptimalWeights DTP.euclideanFull)
+                              (Right "model/demographic/asr_ase") "ASR_ASE_ByPUMA"
+                              False "model/demographic/asr_ase_CD"
+                              DDP.districtKeyT cmdLine byPUMA_C testCDs_C
+
+    cdModelPaths <- postPaths "Model_ASR_ASE_ByCD" cmdLine
+    BRK.brNewPost cdModelPaths postInfo "Model_ASR_ASE_ByCD" $ do
+      compareResults @(DMC.CDOuterKeyR V.++ DMC.ASER)
+        cdModelPaths postInfo True "ASR_ASE" ("CD", cdPopMap, DDP.districtKeyT) (Just "NY")
+        (F.rcast @DMC.ASER)
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.education4C, r ^. DT.age5C))
+        showCellKey
+        (Just ("Race", show . view DT.race5C, Just raceOrder))
+        (Just ("Age", show . view DT.age5C, Just ageOrder))
+        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
+        (fmap F.rcast $ testRowsWithZeros @DMC.CDOuterKeyR @DMC.ASER testCDs)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.CDOuterKeyR @DMC.ASER testCDs) (Just "Actual") Nothing Nothing
+        ,MethodResult (fmap F.rcast cdProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (fmap F.rcast cdModeled) (Just "Direct NS Model") (Just "Direct NS Model (L2)") (Just "Direct NS Model")
+        ,MethodResult (fmap F.rcast cdFromPUMAModeled) (Just "Aggregated NS Model (direct)") (Just "Aggregated NS Model (L2)") (Just "Aggregated NS Model")
+        ]
+
+    pure ()
 
 compareCASR_ASE :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
 compareCASR_ASE cmdLine postInfo = do
@@ -640,7 +694,9 @@ compareCASR_ASE cmdLine postInfo = do
     (product_CASR_ASE, modeled_CASR_ASE) <- K.ignoreCacheTimeM
                                           $ testNS @DMC.PUMAOuterKeyR @DMC.CASER @'[DT.CitizenC, DT.Race5C] @'[DT.Education4C]
                                           (DTP.viaOptimalWeights DTP.euclideanFull)
-                                          False False "model/demographic/casr_ase" "CASR_ASE_ByPUMA" (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
+                                          (Right "model/demographic/casr_ase") "CASR_ASE_ByPUMA"
+                                          False "model/demographic/casr_ase"
+                                          (show . view GT.pUMA) cmdLine byPUMA_C testPUMAs_C
 
 {-
     (product_CSR_ASR', modeled_CSR_ASR') <- K.ignoreCacheTimeM
@@ -686,7 +742,9 @@ compareSER_ASR cmdLine postInfo = do
     (product_SER_ASR, modeled_SER_ASR) <- K.ignoreCacheTimeM
                                             $ testNS @CDLoc @DMC.ASER @'[DT.Age5C] @'[DT.Education4C]
                                             (DTP.viaOptimalWeights DTP.euclideanFull)
-                                            False False "model/demographic/ser_asr" "SER_ASR" DDP.districtKeyT cmdLine byPUMA_C byCD_C
+                                            (Right "model/demographic/ser_asr") "SER_ASR"
+                                            False "model/demographic/ser_asr"
+                                            DDP.districtKeyT cmdLine byPUMA_C byCD_C
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) byCD
@@ -760,7 +818,7 @@ main = do
 -}
     compareCSR_ASR cmdLine postInfo
     compareASR_ASE cmdLine postInfo
-    compareCASR_ASE cmdLine postInfo
+--    compareCASR_ASE cmdLine postInfo
 --    compareSER_ASR cmdLine postInfo
   case resE of
     Right namedDocs →
@@ -1244,21 +1302,21 @@ errorCompareScatter :: K.KnitEffects r
                   -> (Text, Double -> Double)
                   -> [ErrTableRow Int]
                   -> K.Sem r GV.VegaLite
-errorCompareScatter postPaths postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
+errorCompareScatter postPaths' postInfo title chartID vc unitName labels (errLabel', errScale) tableRows = do
   let n = length labels
-      colData k (ErrTableRow n es) = [("Source", GV.Str $ labels List.!! k)
-                                    , ("Cell", GV.Number $ realToFrac n )
-                                    , (errLabel, GV.Number $ errScale (es List.!! k))]
+      colData k (ErrTableRow n' es) = [("Source", GV.Str $ labels List.!! k)
+                                    , (unitName, GV.Number $ realToFrac n')
+                                    , (errLabel', GV.Number $ errScale (es List.!! k))]
       kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
 
       jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
   jsonFilePrefix <- K.getNextUnusedId $ ("errorCompareChart_" <> chartID)
-  jsonUrl <-  BRK.brAddJSON postPaths postInfo jsonFilePrefix jsonRows
+  jsonUrl <-  BRK.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
 
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
       enc = GV.encoding
-        . GV.position GV.X [GV.PName "Cell", GV.PmType GV.Quantitative]
-        . GV.position GV.Y [GV.PName errLabel, GV.PmType GV.Quantitative]
+        . GV.position GV.X [GV.PName unitName, GV.PmType GV.Quantitative]
+        . GV.position GV.Y [GV.PName errLabel', GV.PmType GV.Quantitative]
         . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
 
   pure $ FV.configuredVegaLite vc [FV.title title
