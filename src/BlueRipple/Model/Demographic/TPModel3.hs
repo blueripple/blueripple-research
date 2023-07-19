@@ -246,7 +246,7 @@ modelResultNVP :: (Show g, Ord g)
                -> VS.Vector Double
                -> Either Text Double
 modelResultNVP mr g md = do
-    geoAlpha <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g) $ M.lookup g mr.mrGeoAlpha
+    geoAlpha <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g <> ". mrGeoAlpha=" <> show mr.mrGeoAlpha) $ M.lookup g mr.mrGeoAlpha
     let
         applyOne x (b, m) = b * (x - m)
         beta = V.sum $ V.zipWith applyOne (VS.convert md) (mrSI mr)

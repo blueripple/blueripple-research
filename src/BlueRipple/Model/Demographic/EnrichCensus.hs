@@ -658,6 +658,12 @@ predictedCensusCASER onSimplexM rebuild cacheRoot predictSRCA_C predictACSRE_C c
   (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictSRCA_C recodedCSR_C recodedASR_C
   predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictACSRE_C casrPrediction_C ase_C
 
+censusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
+            => DTP.OptimalOnSimplexF r
+            -> Bool
+            -> Bool
+            ->
+
 
 projCovFld :: forall rs ks . (ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)
            => DMS.MarginalStructure DMS.CellWithDensity (F.Record ks) -> FL.Fold (F.Record rs) (LA.Vector Double, LA.Herm Double)

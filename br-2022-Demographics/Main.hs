@@ -536,30 +536,33 @@ compareCSR_ASR_ASE cmdLine postInfo = do
                        (DTP.viaOptimalWeights DTP.euclideanFull)
                        (Right "model/demographic/csr_asr_PUMA") "CSR_ASR_ByPUMA"
                        False "model/demographic/csr_asr_PUMA"
-                       (show . pumaKey) cmdLine (fmap (fmap F.rcast) byPUMA_C) (fmap (fmap F.rcast) testPUMAs_C)
+                       (view GT.stateAbbreviation) cmdLine (fmap (fmap F.rcast) byPUMA_C) (fmap (fmap F.rcast) testPUMAs_C)
     (pumaProduct_CASR, pumaModeled_CASR) <- K.ignoreCacheTime pumaTest_CASR_C
 
     (ascrePredictor_C, ascre_NVPS_C, ascre_ms) <- DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
                                                   (Right "model/demographic/casr_ase") "CASR_ASE_ByPUMA" cmdLine $ fmap (fmap F.rcast) byPUMA_C
-    let ascr_C =  (aggregateAndZeroFillTables @DMC.PUMAOuterKeyR @DMC.ASCR . fmap F.rcast) <$> fmap snd pumaTest_CASR_C
+    let casr_C =  {- (aggregateAndZeroFillTables @DMC.PUMAOuterKeyR @DMC.ASCR . fmap F.rcast) <$> -} fmap snd pumaTest_CASR_C
         ase_C = (aggregateAndZeroFillTables @DMC.PUMAOuterKeyR @DMC.ASE . fmap F.rcast) <$> byPUMA_C
 
     (pumaModeled_ASCRE_C, pumaProduct_ASCRE_C) <- DMC.predictedTables @DMC.PUMAOuterKeyR @DMC.AS @[DT.CitizenC, DT.Race5C] @'[DT.Education4C]
                                                  (DTP.viaOptimalWeights DTP.euclideanFull)
                                                  False
                                                  "model/demographic/csr_asr_ase_PUMA"
-                                                 (pure . show . pumaKey)
+                                                 (pure  . view GT.stateAbbreviation)
                                                  ascrePredictor_C
-                                                 (fmap (fmap F.rcast) ascr_C)
-                                                 (fmap (fmap F.rcast) ase_C)
+                                                 (fmap (fmap F.rcast) casr_C) -- make it ASCR
+                                                 ase_C
 
     let isCitizen :: F.ElemOf rs DT.CitizenC => F.Record rs -> Bool
         isCitizen r = r ^. DT.citizenC == DT.Citizen
         reOrderAnd :: TestRow DMC.PUMAOuterKeyR DMC.ASER  F.⊆ rs => F.Record rs -> F.Record (TestRow DMC.PUMAOuterKeyR DMC.ASER)
         reOrderAnd = F.rcast @(TestRow DMC.PUMAOuterKeyR DMC.ASER)
-    pumaActual <- K.ignoreCacheTime $ fmap (fmap reOrderAnd . F.filterFrame isCitizen) byPUMA_C
-    pumaModeled <- K.ignoreCacheTime $ fmap (F.filterFrame isCitizen) pumaModeled_ASCRE_C
-    pumaProduct <- K.ignoreCacheTime $ fmap (F.filterFrame isCitizen) pumaProduct_ASCRE_C
+        caserToASER :: (FSI.RecVec rs, F.ElemOf rs DT.CitizenC, TestRow DMC.PUMAOuterKeyR DMC.ASER  F.⊆ rs)
+                    => F.FrameRec rs -> F.FrameRec (TestRow DMC.PUMAOuterKeyR DMC.ASER)
+        caserToASER = fmap reOrderAnd . F.filterFrame isCitizen
+    pumaActual <- K.ignoreCacheTime $  fmap caserToASER byPUMA_C
+    pumaModeled <- K.ignoreCacheTime $ fmap caserToASER pumaModeled_ASCRE_C
+    pumaProduct <- K.ignoreCacheTime $ fmap caserToASER pumaProduct_ASCRE_C
 
 
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
@@ -582,7 +585,7 @@ compareCSR_ASR_ASE cmdLine postInfo = do
         (Just ("Age", show . view DT.age5C, Just ageOrder))
         (ErrorFunction "L1 Error (%)" l1Err pctFmt (* 100))
         (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
-        (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.CASER testPUMAs)
+        (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER pumaActual)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER pumaActual) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast pumaModeled) (Just "NS Model") (Just "NS Model (L2)") (Just "NS Model")
