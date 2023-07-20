@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -11,6 +12,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -28,6 +30,7 @@ where
 
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DEC
+import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
@@ -45,6 +48,7 @@ import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Model.PostStratify as BRPS
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
+import Control.Lens (view)
 import qualified Control.Foldl as FL
 import qualified Control.MapReduce as FMR
 import qualified Data.Map.Strict as M
@@ -84,12 +88,12 @@ FS.declareColumn "DVotes" ''Int
 FS.declareColumn "RVotes" ''Int
 FS.declareColumn "TVotes" ''Int
 FS.declareColumn "Voted" ''Int
-FS.declareColumn "HouseVotes" ''Int
-FS.declareColumn "HouseDVotes" ''Int
-FS.declareColumn "HouseRVotes" ''Int
 FS.declareColumn "PresVotes" ''Int
 FS.declareColumn "PresDVotes" ''Int
 FS.declareColumn "PresRVotes" ''Int
+FS.declareColumn "HouseVotes" ''Int
+FS.declareColumn "HouseDVotes" ''Int
+FS.declareColumn "HouseRVotes" ''Int
 
 -- +1 for Dem incumbent, 0 for no incumbent, -1 for Rep incumbent
 FS.declareColumn "Incumbency" ''Int
@@ -100,69 +104,23 @@ type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
 
 type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 
-
--- CCES data
-
--- type AHPresDVotes = "AHPresDVotes" F.:-> Double
--- type CCESAH = [AHVoted, AHHouseDVotes, AHHouseRVotes, AHPresDVotes, AHPresRVotes]
-type CCESCountDataR = [Surveyed, Registered, Voted, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
+type CountDataR = [Surveyed, Registered, Voted]
 type DCatsR = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type PredictorsR = DT.PWPopPerSqMile ': DCatsR
-type CCESByCDR = CDKeyR V.++ PredictorsR V.++ CCESCountDataR V.++ '[HouseIncumbency]
+type VotePredictorsR = HouseIncumbency ': PredictorsR
+type VoteDataR = [VotesInRace, DVotes, RVotes]
+type CESByCDR = CDKeyR V.++ VotePredictorsR V.++ CountDataR V.++ VoteDataR
 
--- type CCESByCDAH = CDKeyR V.++ [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR V.++ CCESAH
---type CCESDataR = CCESByCDR V.++ [HouseIncumbency]
---type CCESPredictorR = [DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PWPopPerSqMile]
---type CCESPredictorEMR = [DT.SexC, DT.CollegeGradC, DT.Race5C] -- , DT.AvgIncome, DT.PWPopPerSqMile]
---type CCESByCDEMR = CDKeyR V.++ [DT.SexC, DT.CollegeGradC, DT.Race5C] V.++ CCESVotingDataR -- V.++ CCESAH
---type CCESData = F.FrameRec CCESDataR
+type ElectionDataR = [HouseIncumbency, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
 
-data DemographicSource = DS_1YRACSPUMS | DS_5YRACSTracts deriving stock (Show, Eq, Ord)
-demographicSourceLabel ∷ DemographicSource → Text
-demographicSourceLabel DS_1YRACSPUMS = "ACS1P"
-demographicSourceLabel DS_5YRACSTracts = "ACS5T"
+newtype CESData = CESData (F.FrameRec CESByCDR) deriving stock Generic
 
-newtype CCESData = CCESData (F.FrameRec CCESByCDR) deriving stock Generic
+instance Flat.Flat CESData where
+  size (CESData c) n = Flat.size (FS.SFrame c) n
+  encode (CESData c) = Flat.encode (FS.SFrame c)
+  decode = (\c → CESData (FS.unSFrame c)) <$> Flat.decode
 
-instance Flat.Flat CCESData where
-  size (CCESData c) n = Flat.size (FS.SFrame c) n
-  encode (CCESData c) = Flat.encode (FS.SFrame c)
-  decode = (\c → CCESData (FS.unSFrame c)) <$> Flat.decode
-
-
-{-
-houseRaceKey ∷ F.Record HouseElectionDataR → F.Record CDKeyR
-houseRaceKey = F.rcast
-
-senateRaceKey ∷ F.Record SenateElectionDataR → F.Record SenateRaceKeyR
-senateRaceKey = F.rcast
-
-presidentialRaceKey ∷ F.Record PresidentialElectionDataR → F.Record StateKeyR
-presidentialRaceKey = F.rcast
--}
--- frames are not directly serializable so we have to do...shenanigans
-{-
-instance S.Serialize HouseModelData where
-  put (HouseModelData h s p c) = S.put (FS.SFrame h, FS.SFrame s, FS.SFrame p, FS.SFrame c)
-  get = (\(h, s, p, c) → HouseModelData (FS.unSFrame h) (FS.unSFrame s) (FS.unSFrame p) (FS.unSFrame c)) <$> S.get
--}
-
-{-
-type PUMSDataR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.AvgIncome, DT.PWPopPerSqMile, DT.PopCount]
-type PUMSDataEMR = [DT.CitizenC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC, DT.PopCount]
-
-type PUMSByCDR = CDKeyR V.++ PUMSDataR
-type PUMSByCDEMR = CDKeyR V.++ PUMSDataEMR
-type PUMSByCD = F.FrameRec PUMSByCDR
-type PUMSByStateR = StateKeyR V.++ PUMSDataR
-type PUMSByState = F.FrameRec PUMSByStateR
--}
--- unweighted, which we address via post-stratification
--- type AHSuccesses = "AHSucceses" F.:-> Double
---type CensusPredictorR = [DT.CitizenC, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
---type CensusPredictorEMR = [DT.CitizenC, DT.SexC, DT.CollegeGradC, DT.RaceAlone4C, DT.HispC]
-type CPSCountDataR = [Surveyed, Registered, Voted]
-type CPSByStateR = StateKeyR V.++ PredictorsR V.++ CPSCountDataR
+type CPSByStateR = StateKeyR V.++ PredictorsR V.++ CountDataR
 
 newtype CPSData = CPSData (F.FrameRec CPSByStateR) deriving stock Generic
 
@@ -172,37 +130,215 @@ instance Flat.Flat CPSData where
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
 
 
-{-
-type CPSVDataEMR = CensusPredictorEMR V.++ BRCF.CountCols -- V.++ '[AHSuccesses]
-type CPSVByStateR = StateKeyR V.++ CPSVDataR
-type CPSVByStateEMR = StateKeyR V.++ CPSVDataEMR
-type CPSVByStateAH = CPSVByStateR -- V.++ '[AHSuccesses]
--}
--- type CPSVByCDR = CDKeyR V.++ CPSVDataR
-
-type DistrictDataR = CDKeyR V.++ [DT.PWPopPerSqMile, DT.AvgIncome] V.++ ElectionR
-type DistrictDemDataR = CDKeyR V.++ [DT.PopCount, DT.PWPopPerSqMile, DT.AvgIncome]
-type StateDemDataR = StateKeyR V.++ [DT.PopCount, DT.PWPopPerSqMile, DT.AvgIncome]
-type AllCatR = '[BR.Year] V.++ CensusPredictorR
-
 data ModelData = ModelData
-  { ccesData ∷ CCESData
+  { ccesData ∷ CESData
   , cpsData ∷ CPSData
   }
   deriving stock Generic
 
 deriving instance Flat.Flat ModelData
 
+
+-- Add Density
+cesAddDensity :: (K.KnitEffects r, BR.CacheEffects r)
+              => Either Text Text
+              -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR)))
+cesAddDensity cacheE ces_C = do
+  acs_C <- DDP.cachedACSa5ByCD
+  cacheKey <- case cacheE of
+    Right ck -> pure ck
+    Left ck -> BR.clearIfPresentD ck >> pure ck
+  BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> ces_C) $ \(acs, ces) -> do
+    let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
+    when (not $ null missing) $ K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
+    pure $ fmap F.rcast joined
+
+-- add House Incumbency
+cesAddHouseIncumbency :: (K.KnitEffects r, BR.CacheEffects r)
+              => Either Text Text
+              -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR))
+              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ VotePredictorsR V.++ CountDataR V.++ VoteDataR)))
+cesAddHouseIncumbency cacheE ces_C = do
+  elections_C <- fmap (FL.foldM (electionF @CDKeyR) . fmap F.rcast) <$> BR.houseElectionsWithIncumbency
+  cacheKey <- case cacheE of
+    Right ck -> pure ck
+    Left ck -> BR.clearIfPresentD ck >> pure ck
+  BR.retrieveOrMakeFrame cacheKey ((,) <$> elections_C <*> ces_C) $ \(electionsE, ces) -> do
+    elections <- K.knitEither electionsE
+    let (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces elections
+    when (not $ null missing) $ K.knitError $ "cesAddHouseIncumbency: Missing keys in CES/Elections join: " <> show missing
+    let f = FT.mutate $ \r -> FT.recordSingleton @HouseIncumbency (F.rgetField @Incumbency r)
+    pure $ fmap (F.rcast . f) joined
+
+-- an example for presidential 2020 vote.
+cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
+                       ⇒ Bool
+                       → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR)))
+cesCountedDemPresVotesByCD clearCaches = do
+  ces2020_C ← CCES.ces20Loader
+  let cacheKey = "model/election2/ces20ByCD.bin"
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR 2020 (F.rgetField @CCES.MPresVoteParty) ces
+
+
+
 modelDataForYear ∷ Int → ModelData → ModelData
 modelDataForYear y = modelDataForYears [y]
 
 modelDataForYears ∷ [Int] → ModelData → ModelData
-modelDataForYears ys (ModelData cces cps) =
+modelDataForYears ys (ModelData (CESData ces) (CPSData cps)) =
   let f ∷ (FI.RecVec rs, F.ElemOf rs BR.Year) ⇒ F.FrameRec rs → F.FrameRec rs
       f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-   in CCESAndPUMS (f cces) (f cps)
+   in ModelData (CESData $ f ces) (CPSData $ f cps)
+
+-- CCES
+
+countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC)
+               => (F.Record rs -> MT.MaybeData ET.PartyT)
+               -> FL.Fold
+                  (F.Record rs)
+                  (F.Record (CountDataR V.++ VoteDataR))
+countCESVotesF votePartyMD =
+  let vote (MT.MaybeData x) = maybe False (const True) x
+      dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
+      surveyedF = FL.length
+      registeredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) FL.length
+      votedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) FL.length
+      votesF = FL.prefilter (vote . votePartyMD) votedF
+      dVotesF = FL.prefilter (dVote . votePartyMD) votedF
+      rVotesF = FL.prefilter (rVote . votePartyMD) votedF
+   in (\s r v vs dvs rvs  → s F.&: r F.&: v F.&: vs F.&: dvs F.&: rvs F.&: V.RNil)
+      <$> surveyedF
+      <*> registeredF
+      <*> votedF
+      <*> votesF
+      <*> dVotesF
+      <*> rVotesF
+
+cesRecodeHispanic ∷ (F.ElemOf rs DT.HispC, F.ElemOf rs DT.Race5C) => F.Record rs -> F.Record rs
+cesRecodeHispanic r =
+  let h = F.rgetField @DT.HispC r
+      f r5 = if h == DT.Hispanic then DT.R5_Hispanic else r5
+   in FT.fieldEndo @DT.Race5C f r
+
+cesAddEducation4 ∷ (F.ElemOf rs DT.EducationC) => F.Record rs -> F.Record (DT.Education4C ': rs)
+cesAddEducation4 r =
+  let e4 = DT.educationToEducation4 $ F.rgetField @DT.EducationC r
+  in e4 F.&: r
+
+-- using each year's common content
+cesMR ∷ forall rs f m .
+        (Foldable f, Functor f, Monad m
+        , F.ElemOf rs BR.Year
+        , F.ElemOf rs GT.StateAbbreviation
+        , F.ElemOf rs GT.CongressionalDistrict
+        , F.ElemOf rs DT.Age5C
+        , F.ElemOf rs DT.SexC
+        , F.ElemOf rs DT.EducationC
+        , F.ElemOf rs DT.HispC
+        , F.ElemOf rs DT.Race5C
+        , rs F.⊆ (DT.Education4C ': rs)
+        , F.ElemOf rs CCES.CatalistRegistrationC
+        , F.ElemOf rs CCES.CatalistTurnoutC
+        )
+      ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+cesMR earliestYear votePartyMD =
+  BRF.frameCompactMR
+  (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+  (FMR.assignKeysAndData @(CDKeyR V.++ DCatsR) @rs)
+  (countCESVotesF votePartyMD)
+  . fmap (cesAddEducation4 . cesRecodeHispanic)
+
+-- This is the thing to apply to loaded result data (with incumbents)
+electionF
+  ∷ ∀ ks
+   . ( Ord (F.Record ks)
+     , ks F.⊆ (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Incumbent
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Party
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Votes
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) BR.Candidate
+     , FI.RecVec (ks V.++ ElectionR)
+     )
+  ⇒ FL.FoldM (Either T.Text) (F.Record (ks V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])) (F.FrameRec (ks V.++ ElectionR))
+electionF =
+  FMR.concatFoldM $
+    FMR.mapReduceFoldM
+      (FMR.generalizeUnpack FMR.noUnpack)
+      (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
+      (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
+
+data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
+
+updateIncParty ∷ IncParty → (ET.PartyT, Text) → IncParty
+updateIncParty (Multi cs) (_, c) = Multi (c : cs)
+updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
+updateIncParty None (p, c) = Inc (p, c)
+
+incPartyToInt ∷ IncParty → Either T.Text Int
+incPartyToInt None = Right 0
+incPartyToInt (Inc (ET.Democratic, _)) = Right 1
+incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
+incPartyToInt (Inc _) = Right 0
+incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
+
+flattenVotesF ∷ FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
+flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
+ where
+  party = F.rgetField @ET.Party
+  votes = F.rgetField @ET.Votes
+  incumbentPartyF =
+    FMR.postMapM incPartyToInt $
+      FL.generalize $
+        FL.prefilter (F.rgetField @ET.Incumbent) $
+          FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
+  totalVotes = FL.premap votes FL.sum
+  demVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
+  repVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Republican) $ totalVotes
+  unopposedF = (\x y → x == 0 || y == 0) <$> demVotesF <*> repVotesF
+  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
+
+aggregatePartiesF
+  ∷ FL.FoldM
+      (Either T.Text)
+      (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
+      (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
+aggregatePartiesF =
+  let apF ∷ Text → FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
+      apF c = FMR.postMapM ap (FL.generalize $ FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
+       where
+        ap pvs =
+          let demvM = M.lookup ET.Democratic pvs
+              repvM = M.lookup ET.Republican pvs
+              votes = FL.fold FL.sum $ M.elems pvs
+              partyE = case (demvM, repvM) of
+                (Nothing, Nothing) → Right ET.Other
+                (Just _, Nothing) → Right ET.Democratic
+                (Nothing, Just _) → Right ET.Republican
+                (Just _, Just _) → Left $ c <> " has votes on both D and R lines!"
+           in fmap (\p → p F.&: votes F.&: V.RNil) partyE
+   in FMR.concatFoldM $
+        FMR.mapReduceFoldM
+          (FMR.generalizeUnpack FMR.noUnpack)
+          (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r → fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
 
 
+{-
+cesFold ∷ Int → FL.Fold (F.Record CCES.CESPR) (F.FrameRec CCESByCDR)
+cesFold earliestYear =
+  FMR.concatFold $
+    FMR.mapReduceFold
+      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+      (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
+      (FMR.foldAndAddKey countCESVotesF)
+-}
+
+
+
+{-
 prepCCESAndCPSEM
   ∷ (K.KnitEffects r, BR.CacheEffects r)
   ⇒ Bool
@@ -301,79 +437,6 @@ pumsDataF =
           V.:& FF.toFoldRecord pplF
           V.:& V.RNil
 
--- This is the thing to apply to loaded result data (with incumbents)
-electionF
-  ∷ ∀ ks
-   . ( Ord (F.Record ks)
-     , ks F.⊆ (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Incumbent
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Party
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Votes
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) BR.Candidate
-     , FI.RecVec (ks V.++ ElectionR)
-     )
-  ⇒ FL.FoldM (Either T.Text) (F.Record (ks V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])) (F.FrameRec (ks V.++ ElectionR))
-electionF =
-  FMR.concatFoldM $
-    FMR.mapReduceFoldM
-      (FMR.generalizeUnpack FMR.noUnpack)
-      (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
-      (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
-
-data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
-
-updateIncParty ∷ IncParty → (ET.PartyT, Text) → IncParty
-updateIncParty (Multi cs) (_, c) = Multi (c : cs)
-updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
-updateIncParty None (p, c) = Inc (p, c)
-
-incPartyToInt ∷ IncParty → Either T.Text Int
-incPartyToInt None = Right 0
-incPartyToInt (Inc (ET.Democratic, _)) = Right 1
-incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
-incPartyToInt (Inc _) = Right 0
-incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
-
-flattenVotesF ∷ FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
-flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
- where
-  party = F.rgetField @ET.Party
-  votes = F.rgetField @ET.Votes
-  incumbentPartyF =
-    FMR.postMapM incPartyToInt $
-      FL.generalize $
-        FL.prefilter (F.rgetField @ET.Incumbent) $
-          FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
-  totalVotes = FL.premap votes FL.sum
-  demVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
-  repVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Republican) $ totalVotes
-  unopposedF = (\x y → x == 0 || y == 0) <$> demVotesF <*> repVotesF
-  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
-
-aggregatePartiesF
-  ∷ FL.FoldM
-      (Either T.Text)
-      (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
-      (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
-aggregatePartiesF =
-  let apF ∷ Text → FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
-      apF c = FMR.postMapM ap (FL.generalize $ FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
-       where
-        ap pvs =
-          let demvM = M.lookup ET.Democratic pvs
-              repvM = M.lookup ET.Republican pvs
-              votes = FL.fold FL.sum $ M.elems pvs
-              partyE = case (demvM, repvM) of
-                (Nothing, Nothing) → Right ET.Other
-                (Just _, Nothing) → Right ET.Democratic
-                (Nothing, Just _) → Right ET.Republican
-                (Just _, Just _) → Left $ c <> " has votes on both D and R lines!"
-           in fmap (\p → p F.&: votes F.&: V.RNil) partyE
-   in FMR.concatFoldM $
-        FMR.mapReduceFoldM
-          (FMR.generalizeUnpack FMR.noUnpack)
-          (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
-          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r → fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
 
 type ElectionResultWithDemographicsR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ DemographicsR
 type ElectionResultR ks = ks V.++ '[ET.Office] V.++ ElectionR V.++ '[DT.PopCount]
@@ -520,61 +583,6 @@ ccesCountedDemHouseVotesByCD clearCaches = do
     ccesMR 2012 cces
 -}
 
-countCESVotesF
-  ∷ FL.Fold
-      (F.Record [CCES.CatalistTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
-      (F.Record [Surveyed, Voted, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes])
-countCESVotesF =
-  let vote (MT.MaybeData x) = maybe False (const True) x
-      dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
-      rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
-      surveyedF = FL.length
-      votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
-      houseVotesF = FL.prefilter (vote . F.rgetField @CCES.MHouseVoteParty) votedF
-      houseDVotesF = FL.prefilter (dVote . F.rgetField @CCES.MHouseVoteParty) votedF
-      houseRVotesF = FL.prefilter (rVote . F.rgetField @CCES.MHouseVoteParty) votedF
-      presVotesF = FL.prefilter (vote . F.rgetField @CCES.MPresVoteParty) votedF
-      presDVotesF = FL.prefilter (dVote . F.rgetField @CCES.MPresVoteParty) votedF
-      presRVotesF = FL.prefilter (rVote . F.rgetField @CCES.MPresVoteParty) votedF
-   in (\s v hv hdv hrv pv pdv prv → s F.&: v F.&: hv F.&: hdv F.&: hrv F.&: pv F.&: pdv F.&: prv F.&: V.RNil)
-        <$> surveyedF
-        <*> votedF
-        <*> houseVotesF
-        <*> houseDVotesF
-        <*> houseRVotesF
-        <*> presVotesF
-        <*> presDVotesF
-        <*> presRVotesF
-
-cesRecodeHispanic ∷ F.Record CCES.CESPR → F.Record CCES.CESPR
-cesRecodeHispanic r =
-  let h = F.rgetField @DT.HispC r
-      f r5 = if h == DT.Hispanic then DT.R5_Hispanic else r5
-   in FT.fieldEndo @DT.Race5C f r
-
--- using each year's common content
-cesMR ∷ (Foldable f, Functor f, Monad m) ⇒ Int → f (F.Record CCES.CESPR) → m (F.FrameRec CCESByCDR)
-cesMR earliestYear =
-  BRF.frameCompactMR
-    (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-    (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
-    countCESVotesF
-    . fmap cesRecodeHispanic
-
-cesFold ∷ Int → FL.Fold (F.Record CCES.CESPR) (F.FrameRec CCESByCDR)
-cesFold earliestYear =
-  FMR.concatFold $
-    FMR.mapReduceFold
-      (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-      (FMR.assignKeysAndData @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.CollegeGradC, DT.Race5C])
-      (FMR.foldAndAddKey countCESVotesF)
-
-cesCountedDemVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ Bool → K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCESByCDR))
-cesCountedDemVotesByCD clearCaches = do
-  ces2020_C ← CCES.ces20Loader
-  let cacheKey = "model/house/ces20ByCD.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR 2020 ces
 
 --  BR.retrieveOrMakeFrame cacheKey ces2020_C $ return . FL.fold (cesFold 2020)
 
@@ -1053,4 +1061,5 @@ raceAlone4FromRace5 DT.R5_Black = DT.RA4_Black
 raceAlone4FromRace5 DT.R5_Hispanic = DT.RA4_Other
 raceAlone4FromRace5 DT.R5_Asian = DT.RA4_Asian
 raceAlone4FromRace5 DT.R5_WhiteNonHispanic = DT.RA4_White
+-}
 -}

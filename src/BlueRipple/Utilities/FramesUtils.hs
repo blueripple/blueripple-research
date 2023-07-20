@@ -166,7 +166,10 @@ streamGrouper2 = sMap (\(!k, (!n, !soa)) ->  (k, Frames.InCore.toAoS n soa))
 
 framesStreamlyMRM ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Ord (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
@@ -191,7 +194,10 @@ framesStreamlyMRM unpack (MapReduce.AssignM af) reduce =
 
 framesStreamlyMR ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Ord (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
@@ -278,7 +284,10 @@ streamGrouperHT = sConcatEffect . Streamly.fold classifyHT
 
 framesStreamlyMRM_HT ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Hashable.Hashable (Frames.Record ks)
 --  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
@@ -304,7 +313,10 @@ framesStreamlyMRM_HT unpack (MapReduce.AssignM af) reduce =
 
 framesStreamlyMR_HT ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Hashable.Hashable (Frames.Record ks)
 --  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
@@ -331,7 +343,10 @@ reduceFunctionM (MapReduce.ReduceFoldM f) k = Foldl.foldM (f k)
 
 framesStreamlyMRM_SF ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Ord (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
@@ -355,7 +370,10 @@ framesStreamlyMRM_SF unpack (MapReduce.AssignM af) reduce =
 
 framesStreamlyMR_SF ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Ord (Frames.Record ks)
   , Frames.InCore.RecVec cs
   , Frames.InCore.RecVec ds
@@ -374,7 +392,10 @@ framesStreamlyMR_SF u a r = framesStreamlyMRM_SF
 
 fStreamlyMRM_HT ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Hashable.Hashable (Frames.Record ks)
 --  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs
@@ -398,7 +419,10 @@ fStreamlyMRM_HT unpack (MapReduce.AssignM af) reduce =
 
 fStreamlyMR_HT ::
   (Prim.PrimMonad m
+#if MIN_VERSION_streamly(0,9,0)
+#else
   , MonadAsync m
+#endif
   , Hashable.Hashable (Frames.Record ks)
 --  , Eq (Frames.Record ks)
   , Frames.InCore.RecVec cs

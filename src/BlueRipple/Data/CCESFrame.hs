@@ -69,7 +69,7 @@ derivingUnbox
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 
-type CatalistRegistrationC = "CatalistRegistration" F.:-> CatalistRegistration
+F.declareColumn "CatalistRegistrationC" ''CatalistRegistration
 
 catalistRegistrationFromNText :: Int -> Text -> CatalistRegistration
 catalistRegistrationFromNText n t
@@ -105,7 +105,7 @@ derivingUnbox
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 
-type CatalistTurnoutC = "CatalistTurnout" F.:-> CatalistTurnout
+F.declareColumn "CatalistTurnoutC" ''CatalistTurnout
 
 catalistTurnoutFromNText :: Int -> Text -> CatalistTurnout
 catalistTurnoutFromNText n t
