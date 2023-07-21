@@ -28,24 +28,15 @@ module BlueRipple.Model.Election2.DataPrep
   )
 where
 
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
-import qualified BlueRipple.Model.Demographic.EnrichCensus as DEC
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 
 import qualified BlueRipple.Data.CCES as CCES
-import qualified BlueRipple.Data.CPSVoterPUMS as CPS
-import qualified BlueRipple.Data.CensusLoaders as Census
-import qualified BlueRipple.Data.CensusTables as Census
-import qualified BlueRipple.Data.CountFolds as BRCF
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
-import BlueRipple.Data.ElectionTypes (CVAP)
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
-import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.ModelingTypes as MT
-import qualified BlueRipple.Model.PostStratify as BRPS
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import Control.Lens (view)
@@ -58,7 +49,6 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Flat
 import qualified Frames as F
-import qualified Frames.Folds as FF
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Melt as F
 import qualified Frames.Serialize as FS
@@ -130,46 +120,97 @@ instance Flat.Flat CPSData where
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
 
 
-data ModelData = ModelData
+data TurnoutModelData = TurnoutModelData
   { ccesData ∷ CESData
   , cpsData ∷ CPSData
   }
   deriving stock Generic
 
-deriving instance Flat.Flat ModelData
+deriving instance Flat.Flat TurnoutModelData
+
+turnoutModelDataForYear ∷ Int → TurnoutModelData → TurnoutModelData
+turnoutModelDataForYear y = turnoutModelDataForYears [y]
+
+turnoutModelDataForYears ∷ [Int] → TurnoutModelData → TurnoutModelData
+turnoutModelDataForYears ys (TurnoutModelData (CESData ces) (CPSData cps)) =
+  let f ∷ (FI.RecVec rs, F.ElemOf rs BR.Year) ⇒ F.FrameRec rs → F.FrameRec rs
+      f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
+   in TurnoutModelData (CESData $ f ces) (CPSData $ f cps)
+
+cachedTurnoutModelData :: (K.KnitEffects r, BR.CacheEffects r)
+                       => Either Text Text
+                       -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+                       -> Either Text Text
+                       -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
+                       -> K.Sem r (K.ActionWithCacheTime r TurnoutModelData)
+cachedTurnoutModelData cesCacheE cesRaw_C cpsCacheE cpsRaw_C = do
+  ces_C <- cachedPreppedCES cesCacheE cesRaw_C
+  cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
+  pure $ TurnoutModelData <$> fmap CESData ces_C <*> fmap CPSData cps_C
 
 
+-- CPS
+cpsAddDensity ::  (K.KnitEffects r, BR.CacheEffects r)
+              => F.FrameRec DDP.ACSa5ByStateR
+              -> F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR)
+              -> K.Sem r (F.FrameRec CPSByStateR)
+cpsAddDensity acs cps = do
+  K.logLE K.Info "Adding people-weighted pop density to CPS"
+  let (joined, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ DCatsR) cps acs
+  when (not $ null missing) $ K.knitError $ "cpsAddDensity: Missing keys in CPS/ACS join: " <> show missing
+  pure $ fmap F.rcast joined
+
+cachedPreppedCPS ::  (K.KnitEffects r, BR.CacheEffects r)
+                 => Either Text Text
+                 -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
+                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSByStateR))
+cachedPreppedCPS cacheE cps_C = do
+  cacheKey <- case cacheE of
+    Left ck -> BR.clearIfPresentD ck >> pure ck
+    Right ck -> pure ck
+  acs_C <- DDP.cachedACSa5ByState
+  BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> cps_C) $ uncurry cpsAddDensity
+
+-- CES
 -- Add Density
 cesAddDensity :: (K.KnitEffects r, BR.CacheEffects r)
-              => Either Text Text
-              -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
-              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR)))
-cesAddDensity cacheE ces_C = do
-  acs_C <- DDP.cachedACSa5ByCD
-  cacheKey <- case cacheE of
-    Right ck -> pure ck
-    Left ck -> BR.clearIfPresentD ck >> pure ck
-  BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> ces_C) $ \(acs, ces) -> do
-    let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
-    when (not $ null missing) $ K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
-    pure $ fmap F.rcast joined
+              => F.FrameRec DDP.ACSa5ByCDR
+              -> F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR)
+              -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR))
+cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
+  K.logLE K.Info "Adding people-weighted pop density to CES"
+  let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
+  when (not $ null missing) $ K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
+  pure $ fmap F.rcast joined
 
 -- add House Incumbency
 cesAddHouseIncumbency :: (K.KnitEffects r, BR.CacheEffects r)
-              => Either Text Text
-              -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR))
-              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ VotePredictorsR V.++ CountDataR V.++ VoteDataR)))
-cesAddHouseIncumbency cacheE ces_C = do
-  elections_C <- fmap (FL.foldM (electionF @CDKeyR) . fmap F.rcast) <$> BR.houseElectionsWithIncumbency
+                      => F.FrameRec BR.HouseElectionColsI
+                      -> F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR)
+                      -> K.Sem r (F.FrameRec CESByCDR)
+cesAddHouseIncumbency houseElections ces = K.wrapPrefix "Election2.DataPrep" $ do
+  K.logLE K.Info "Adding house incumbency to CES (+ density)"
+  houseElectionsByContest <- K.knitEither $ FL.foldM (electionF @CDKeyR) $ fmap F.rcast houseElections
+  let (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces houseElectionsByContest
+  when (not $ null missing) $ K.knitError $ "cesAddHouseIncumbency: Missing keys in CES/Elections join: " <> show missing
+  let g = FT.mutate $ \r -> FT.recordSingleton @HouseIncumbency (F.rgetField @Incumbency r)
+  pure $ fmap (F.rcast . g) joined
+
+
+cachedPreppedCES :: (K.KnitEffects r, BR.CacheEffects r)
+                 => Either Text Text
+                 -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESByCDR))
+cachedPreppedCES cacheE ces_C = do
   cacheKey <- case cacheE of
-    Right ck -> pure ck
     Left ck -> BR.clearIfPresentD ck >> pure ck
-  BR.retrieveOrMakeFrame cacheKey ((,) <$> elections_C <*> ces_C) $ \(electionsE, ces) -> do
-    elections <- K.knitEither electionsE
-    let (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces elections
-    when (not $ null missing) $ K.knitError $ "cesAddHouseIncumbency: Missing keys in CES/Elections join: " <> show missing
-    let f = FT.mutate $ \r -> FT.recordSingleton @HouseIncumbency (F.rgetField @Incumbency r)
-    pure $ fmap (F.rcast . f) joined
+    Right ck -> pure ck
+  acs_C <- DDP.cachedACSa5ByCD
+  houseElections_C <- BR.houseElectionsWithIncumbency
+  let deps = (,,) <$> ces_C <*> acs_C <*> houseElections_C
+  BR.retrieveOrMakeFrame cacheKey deps $ \(ces, acs, elex) -> do
+    cesWD <- cesAddDensity acs ces
+    cesAddHouseIncumbency elex cesWD
 
 -- an example for presidential 2020 vote.
 cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
@@ -181,18 +222,6 @@ cesCountedDemPresVotesByCD clearCaches = do
   when clearCaches $ BR.clearIfPresentD cacheKey
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR 2020 (F.rgetField @CCES.MPresVoteParty) ces
 
-
-
-modelDataForYear ∷ Int → ModelData → ModelData
-modelDataForYear y = modelDataForYears [y]
-
-modelDataForYears ∷ [Int] → ModelData → ModelData
-modelDataForYears ys (ModelData (CESData ces) (CPSData cps)) =
-  let f ∷ (FI.RecVec rs, F.ElemOf rs BR.Year) ⇒ F.FrameRec rs → F.FrameRec rs
-      f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-   in ModelData (CESData $ f ces) (CPSData $ f cps)
-
--- CCES
 
 countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC)
                => (F.Record rs -> MT.MaybeData ET.PartyT)

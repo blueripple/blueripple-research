@@ -229,6 +229,7 @@ library
                  , BlueRipple.Model.Election.DataPrep
                  , BlueRipple.Model.Election.StanModel
                  , BlueRipple.Model.Election2.DataPrep
+                 , BlueRipple.Model.Election2.ModelCommon
                  , BlueRipple.Utilities.Heidi
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils
