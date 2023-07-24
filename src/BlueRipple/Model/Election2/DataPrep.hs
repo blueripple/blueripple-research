@@ -119,36 +119,6 @@ instance Flat.Flat CPSData where
   encode (CPSData c) = Flat.encode (FS.SFrame c)
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
 
-
-data TurnoutModelData = TurnoutModelData
-  { ccesData ∷ CESData
-  , cpsData ∷ CPSData
-  }
-  deriving stock Generic
-
-deriving instance Flat.Flat TurnoutModelData
-
-turnoutModelDataForYear ∷ Int → TurnoutModelData → TurnoutModelData
-turnoutModelDataForYear y = turnoutModelDataForYears [y]
-
-turnoutModelDataForYears ∷ [Int] → TurnoutModelData → TurnoutModelData
-turnoutModelDataForYears ys (TurnoutModelData (CESData ces) (CPSData cps)) =
-  let f ∷ (FI.RecVec rs, F.ElemOf rs BR.Year) ⇒ F.FrameRec rs → F.FrameRec rs
-      f = F.filterFrame ((`elem` ys) . F.rgetField @BR.Year)
-   in TurnoutModelData (CESData $ f ces) (CPSData $ f cps)
-
-cachedTurnoutModelData :: (K.KnitEffects r, BR.CacheEffects r)
-                       => Either Text Text
-                       -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
-                       -> Either Text Text
-                       -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
-                       -> K.Sem r (K.ActionWithCacheTime r TurnoutModelData)
-cachedTurnoutModelData cesCacheE cesRaw_C cpsCacheE cpsRaw_C = do
-  ces_C <- cachedPreppedCES cesCacheE cesRaw_C
-  cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
-  pure $ TurnoutModelData <$> fmap CESData ces_C <*> fmap CPSData cps_C
-
-
 -- CPS
 cpsAddDensity ::  (K.KnitEffects r, BR.CacheEffects r)
               => F.FrameRec DDP.ACSa5ByStateR
