@@ -103,12 +103,15 @@ type CESByCDR = CDKeyR V.++ VotePredictorsR V.++ CountDataR V.++ VoteDataR
 
 type ElectionDataR = [HouseIncumbency, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
 
-newtype CESData = CESData (F.FrameRec CESByCDR) deriving stock Generic
+newtype CESData = CESData { unCESData :: F.FrameRec CESByCDR } deriving stock Generic
 
 instance Flat.Flat CESData where
   size (CESData c) n = Flat.size (FS.SFrame c) n
   encode (CESData c) = Flat.encode (FS.SFrame c)
   decode = (\c → CESData (FS.unSFrame c)) <$> Flat.decode
+
+mapCESData :: (F.FrameRec CESByCDR -> F.FrameRec CESByCDR) -> CESData -> CESData
+mapCESData f = CESData . f . unCESData
 
 type CPSByStateR = StateKeyR V.++ PredictorsR V.++ CountDataR
 

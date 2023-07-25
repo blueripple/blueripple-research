@@ -4,13 +4,11 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -24,34 +22,17 @@ where
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 
-import qualified BlueRipple.Model.Election2.DataPrep
-import qualified BlueRipple.Data.Keyed as BRK
-import qualified BlueRipple.Data.DemographicTypes as DT
-import qualified BlueRipple.Data.GeographicTypes as GT
-
 import qualified Knit.Report as K hiding (elements)
 
-import qualified Control.MapReduce.Simple as MR
 
 import qualified Control.Foldl as FL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.Type.Equality (type (~))
 
 import qualified Data.List as List
-import qualified Frames as F
-import qualified Frames.Melt as F
-import qualified Frames.Serialize as FS
-import qualified Numeric.LinearAlgebra as LA
-import qualified Numeric
-import qualified Data.Vinyl as Vinyl
 import qualified Data.Vector as V
-import qualified Data.Vector.Storable as VS
 import qualified Data.Vector.Unboxed as VU
-import qualified Text.Show
-import Control.Lens (Lens', view, over, (^.), _2)
-import GHC.TypeLits (Symbol)
 
 import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
@@ -65,7 +46,6 @@ import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
-import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
@@ -76,14 +56,14 @@ import Flat.Instances.Vector ()
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
 
-{-
-stateGroupBuilder :: (Foldable f, Typeable outerK)
-                  => (outerK -> Text) -> f Text -> SMB.StanGroupBuilderM (ProjData outerK) () ()
-stateGroupBuilder saF states = do
-  projData <- SMB.addModelDataToGroupBuilder "ProjectionData" (SMB.ToFoldable pdRows)
-  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show (saF . pdKey) states
-  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable (saF . pdKey) states
--}
+
+stateGroupBuilder :: (Foldable f, Foldable g, Typeable a)
+                  => (a -> Text) -> (md -> f a) -> g Text -> SMB.StanGroupBuilderM md () ()
+stateGroupBuilder saF foldableRows states = do
+  projData <- SMB.addModelDataToGroupBuilder "ModelData" (SMB.ToFoldable foldableRows)
+  SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show saF states
+  SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable saF states
+
 
 data StateAlphaModel = StateAlphaSimple | StateAlphaHierCentered | StateAlphaHierNonCentered deriving stock (Show)
 
@@ -107,12 +87,14 @@ data ModelConfig a =
   }
 
 -- for now we model only alpha hierarchically. Beta will be the same everywhere.
-data PredictionData a = PredictionData { pdAlphaMap :: Map Text Double
-                                       , pdBetaV :: VU.Vector Double
-                                       , pdLogisticAdjMapM :: Maybe (Map Text Double)
-                                       }
+data PredictionData = PredictionData { pdAlphaMap :: Map Text Double
+                                     , pdBetaV :: VU.Vector (Double, Double)
+                                     , pdLogisticAdjMapM :: Maybe (Map Text Double)
+                                     } deriving stock (Generic)
 
-predictedP :: ModelConfig a -> PredictionData a -> a -> Either Text Double
+deriving anyclass instance Flat.Flat PredictionData
+
+predictedP :: ModelConfig a -> PredictionData -> a -> Either Text Double
 predictedP mc pd a = do
   alpha <- case M.lookup (mc.stateAbbrF a) pd.pdAlphaMap of
     Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: alphaMap lookup failed for k=" <> show (mc.stateAbbrF a)
@@ -124,7 +106,8 @@ predictedP mc pd a = do
       Just x -> pure x
   let covariatesV = DM.designMatrixRowF mc.designMatrixRow a
       invLogit x = 1 / (1 + exp (negate x))
-  pure $ invLogit (alpha + VU.sum (VU.zipWith (*) covariatesV pd.pdBetaV) + logisticAdj)
+      applySI x (s, i) = i + s * x
+  pure $ invLogit (alpha + VU.sum (VU.zipWith applySI covariatesV pd.pdBetaV) + logisticAdj)
 
 modelText :: ModelConfig a -> Text
 modelText mc = mc.trialsT <> "_" <> mc.successesT <> "_" <> mc.designMatrixRow.dmName <> "_" <> stateAlphaModelText mc.stateAlphaModel
@@ -284,53 +267,38 @@ model rc mc = do
 
 --cwdF :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
 --cwdF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
-{-
-runModel :: forall (ks :: [(Symbol, Type)]) rs r .
-                (K.KnitEffects r
-                , BRKU.CacheEffects r
-                )
-             => Bool
-             -> BR.CommandLine
-             -> RunConfig
-             -> ModelConfig a
-             -> K.ActionWithCacheTime r (ModelData a)
-             -> K.Sem r (K.ActionWithCacheTime r (PredictionData a))
-runModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
-  let cacheRoot = "model/demographic/nullVecProjModel3_A5/"
-      cacheDirE = (if clearCaches then Left else Right) cacheRoot
-      dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
+
+runModel :: (K.KnitEffects r
+            , BRKU.CacheEffects r
+            , Foldable f
+            , Typeable a
+            )
+         => Either Text Text
+         -> Text
+         -> BR.CommandLine
+         -> RunConfig
+         -> (md -> f a)
+         -> ModelConfig a
+         -> K.ActionWithCacheTime r md
+         -> K.Sem r (K.ActionWithCacheTime r PredictionData)
+runModel cacheDirE modelName _cmdLine runConfig foldableRows modelConfig modelData_C = do
+  cacheRoot <- case cacheDirE of
+    Left cd -> BRKU.clearIfPresentD cd >> pure cd
+    Right cd -> pure cd
+
+  let dataName = dataText modelConfig
       runnerInputNames = SC.RunnerInputNames
-                         ("br-2022-Demographics/stan/nullVecProj_M3_A5")
-                         (modelText mc)
+                         ("br-2023-election2/stan/" <> modelName <> "/")
+                         (modelText modelConfig)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
---  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
-  let nvpDataCacheKey = cacheRoot <> "nvpRowData" <> dataText mc <> ".bin"
-      outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
-      catKey = F.rcast @ks
---      datF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
-      nvpDeps = (,) <$> acs_C <*>  nvps_C
-  nvpData_C <- fmap (fmap (fmap unNVProjectionRowData))
-               $ BRKU.retrieveOrMakeD nvpDataCacheKey nvpDeps
-               $ \(acsByPUMA, nvps) -> (do
-                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms nvps outerKey catKey cwdF datFld) acsByPUMA
-                                   pure $ fmap NVProjectionRowData rawRows
-                               )
-  let statesFilter = maybe id (\(_, sts) -> filter ((`elem` sts) . view GT.stateAbbreviation . pdKey)) rc.statesM
-      rowData_C = fmap (statesFilter . fmap (toProjDataRow rc.nvIndex)) $ nvpData_C
-      modelData_C = ProjData (DM.rowLength mc.designMatrixRow) <$> rowData_C
---  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
-
-  let meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
-  modelData <- K.ignoreCacheTime modelData_C
-  let meanSD = FL.fold (FL.premap pdCoeff meanSDFld) $ pdRows modelData
-  K.logLE K.Info $ "meanSD=" <> show meanSD
-  states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
+--  modelData <- K.ignoreCacheTime modelData_C
+  states <- FL.fold (FL.premap modelConfig.stateAbbrF FL.set) . foldableRows <$> K.ignoreCacheTime modelData_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
-                (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
-                (projModel rc mc)
+                (stateGroupBuilder modelConfig.stateAbbrF foldableRows (S.toList states))
+                (model runConfig modelConfig)
 
-  let unwraps = [SR.UnwrapNamed "projection" "yProjection"]
+  let unwraps = [SR.UnwrapNamed modelName ("y" <> modelName)]
 
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            cacheDirE
@@ -338,186 +306,44 @@ runModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
            Nothing
            dw
            code
-           (projModelResultAction mc) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
+           (modelResultAction foldableRows modelConfig) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
            (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            modelData_C
            (pure ())
-  K.logLE K.Info "projModel run complete."
+  K.logLE K.Info $ modelName <> " run complete."
   pure res_C
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
-projModelResultAction :: forall outerK r ks .
-                         (K.KnitEffects r
-                         , Typeable outerK
-                         )
-                      => ModelConfig
-                      -> SC.ResultAction r (ProjData outerK) () SMB.DataSetGroupIntMaps () (ComponentPredictor Text)
-projModelResultAction mc = SC.UseSummary f where
+modelResultAction :: forall a r md f . (K.KnitEffects r, Foldable f, Typeable a)
+                  => (md -> f a)
+                  -> ModelConfig a
+                  -> SC.ResultAction r md () SMB.DataSetGroupIntMaps () PredictionData
+modelResultAction foldableRows modelConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C _ = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
     -- compute means of predictors because model was zero-centered in them
-    let nPredictors = DM.rowLength mc.designMatrixRow
-        mdMeansFld = FL.premap (VS.toList . pdCovariates)
+    let covariates = DM.designMatrixRowF modelConfig.designMatrixRow
+        nPredictors = DM.rowLength modelConfig.designMatrixRow
+        mdMeansFld = FL.premap (VU.toList . covariates)
                     $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
-        nvpSDFld = FL.premap pdCoeff FL.std
-        (mdMeansL, nvpSD) = FL.fold ((,) <$> mdMeansFld <*> nvpSDFld) $ pdRows modelData
-        rescaleAlphaBeta x = if mc.standardizeNVs then x * nvpSD else x
+        mdMeansL = FL.fold mdMeansFld $ foldableRows modelData
     stateIM <- K.knitEither
-      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(ProjDataRow outerK) SC.ModelData "ProjectionData") stateG
+      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @a SC.ModelData "ModelData") stateG
     let allStates = IM.elems stateIM
         getScalar n = K.knitEither $ SP.getScalar . fmap CS.mean <$> SP.parseScalar n (CS.paramStats summary)
         getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
 --        getMatrix n = K.knitEither $ fmap CS.mean <$> SP.parse2D n (CS.paramStats summary)
-    geoMap <- case mc.alphaModel of
-      AlphaSimple -> do
-        alpha <- getScalar "alpha" -- states by nNullvecs
-        pure $ M.fromList $ fmap (, rescaleAlphaBeta alpha) allStates
+    geoMap <- case modelConfig.stateAlphaModel of
+      StateAlphaSimple -> do
+        alpha <- getScalar "alpha"
+        pure $ M.fromList $ fmap (, alpha) allStates
       _ -> do
         alphaV <- getVector "alpha"
 --        let mRowToList row = SP.getIndexed alphaV row
-        pure $ M.fromList $ fmap (\(stateIdx, stateAbbr) -> (stateAbbr, rescaleAlphaBeta (alphaV V.! (stateIdx - 1)))) $ IM.toList stateIM
+        pure $ M.fromList $ fmap (\(stateIdx, stateAbbr) -> (stateAbbr, alphaV V.! (stateIdx - 1))) $ IM.toList stateIM
     betaSI <- case nPredictors of
       0 -> pure V.empty
       p -> do
         betaV <- getVector "beta"
-        pure $ V.fromList $ zip (fmap rescaleAlphaBeta $ V.toList betaV) mdMeansL
-    pure $ ComponentPredictor geoMap betaSI
-
-{-
-data ASERModelP a = ASERModelP { mASER_PWLogDensity :: a, mASER_FracOver45 :: a, mASER_FracGrad :: a, mASER_FracOfColor :: a , mASER_FracWNG :: a  }
-  deriving stock (Show, Generic)
-  deriving anyclass Flat.Flat
-
-aserModelDatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                   , F.ElemOf rs DT.Age4C
-                   , F.ElemOf rs DT.Education4C
-                   , F.ElemOf rs DT.Race5C
-                   , F.ElemOf rs DT.PopCount
-                   )
-             => FL.Fold (F.Record rs) (ASERModelP Double)
-aserModelDatFld = ASERModelP <$> dFld <*> aFld <*> gFld <*> rFld <*> wngFld
-  where
-    nPeople = realToFrac . view DT.popCount
-    dens r = let x = view DT.pWPopPerSqMile r in if x > 1 then Numeric.log x else 0
-    wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
-    dFld = wgtdFld dens
-    over45 = (`elem` [DT.A4_45To64, DT.A4_65AndOver]) . view DT.age4C
-    grad = (== DT.E4_CollegeGrad) . view DT.education4C
-    ofColor = (/= DT.R5_WhiteNonHispanic) . view DT.race5C
-    fracFld f = safeDiv <$> FL.prefilter f wgtFld <*> wgtFld
-    wng x = not (ofColor x) && not (grad x)
-    aFld = fracFld over45
-    gFld = fracFld grad
-    rFld = fracFld ofColor
-    wngFld = fracFld wng
-
-aserModelFuncs :: ModelDataFuncs ASERModelP a
-aserModelFuncs = ModelDataFuncs aserModelToList aserModelFromList where
-  aserModelToList :: ASERModelP a -> [a]
-  aserModelToList (ASERModelP x y z a b) = [x, y, z, a, b]
-
-  aserModelFromList :: [a] -> Either Text (ASERModelP a)
-  aserModelFromList as = case as of
-    [x, y, z, a, b] -> Right $ ASERModelP x y z a b
-    _ -> Left "aserModelFromList: wrong size list given (n /= 5)"
-
-designMatrixRowASER :: DM.DesignMatrixRow (ASERModelP Double)
-designMatrixRowASER = DM.DesignMatrixRow "ASER"
-                      [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . mASER_PWLogDensity)
-                      , DM.DesignMatrixRowPart "fracOver45" 1 (VU.singleton . mASER_FracOver45)
-                      , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . mASER_FracGrad)
-                      , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . mASER_FracOfColor)
-                      , DM.DesignMatrixRowPart "fracWNG" 1 (VU.singleton . mASER_FracWNG)
-                      ]
-
-
----
-
-data Model1P a = Model1P { m1pPWLogDensity :: a, m1pFracGrad :: a, m1pFracOfColor :: a }
-  deriving stock (Show, Generic)
-  deriving anyclass Flat.Flat
-
-model1DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                , F.ElemOf rs DT.Education4C
-                , F.ElemOf rs DT.Race5C
-                , F.ElemOf rs DT.PopCount
-                )
-             => FL.Fold (F.Record rs) (Model1P Double)
-model1DatFld = Model1P <$> dFld <*> gFld <*> rFld
-  where
-    nPeople = realToFrac . view DT.popCount
-    dens = Numeric.log . view DT.pWPopPerSqMile
-    wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = (/) <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
-    dFld = wgtdFld dens
-    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
-    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
-    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
-
-model1Funcs :: ModelDataFuncs Model1P a
-model1Funcs = ModelDataFuncs model1ToList model1FromList where
-  model1ToList :: Model1P a -> [a]
-  model1ToList (Model1P x y z) = [x, y, z]
-
-  model1FromList :: [a] -> Either Text (Model1P a)
-  model1FromList as = case as of
-    [x, y, z] -> Right $ Model1P x y z
-    _ -> Left "model1FromList: wrong size list given (n /= 3)"
-
-emptyDM :: DM.DesignMatrixRow (Model1P Double)
-emptyDM = DM.DesignMatrixRow "EDM" []
-
-designMatrixRow1 :: DM.DesignMatrixRow (Model1P Double)
-designMatrixRow1 = DM.DesignMatrixRow "PM1"
-                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m1pPWLogDensity)
-                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m1pFracGrad)
-                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m1pFracOfColor)
-                   ]
-
-data Model2P a = Model2P { m2pPWLogDensity :: a, m2pFracCit :: a, m2pFracGrad :: a, m2pFracOfColor :: a }
-  deriving stock (Show, Generic)
-  deriving anyclass Flat.Flat
-
-safeDiv :: Double -> Double -> Double
-safeDiv x y = if y /= 0 then x / y else 0
-{-# INLINE safeDiv #-}
-
-model2DatFld :: (F.ElemOf rs DT.PWPopPerSqMile
-                , F.ElemOf rs DT.CitizenC
-                , F.ElemOf rs DT.Education4C
-                , F.ElemOf rs DT.Race5C
-                , F.ElemOf rs DT.PopCount
-                )
-             => FL.Fold (F.Record rs) (Model2P Double)
-model2DatFld = Model2P <$> dFld <*> cFld <*> gFld <*> rFld
-  where
-    nPeople = realToFrac . view DT.popCount
-    dens r = let pwd = view DT.pWPopPerSqMile r in if pwd > 1 then Numeric.log pwd else 0
-    wgtFld = FL.premap nPeople FL.sum
-    wgtdFld f = safeDiv <$> FL.premap (\r -> nPeople r * f r) FL.sum <*> wgtFld
-    dFld = wgtdFld dens
-    fracFld f = (/) <$> FL.prefilter f wgtFld <*> wgtFld
-    cFld = fracFld ((== DT.Citizen) . view DT.citizenC)
-    gFld = fracFld ((== DT.E4_CollegeGrad) . view DT.education4C)
-    rFld = fracFld ((/= DT.R5_WhiteNonHispanic) . view DT.race5C)
-
-model2Funcs :: ModelDataFuncs Model2P a
-model2Funcs = ModelDataFuncs model2ToList model2FromList where
-  model2ToList :: Model2P a -> [a]
-  model2ToList (Model2P x y z a) = [x, y, z, a]
-
-  model2FromList :: [a] -> Either Text (Model2P a)
-  model2FromList as = case as of
-    [x, y, z, a] -> Right $ Model2P x y z a
-    _ -> Left "model1FromList: wrong size list given (n /= 3)"
-
-designMatrixRow2 :: DM.DesignMatrixRow (Model2P Double)
-designMatrixRow2 = DM.DesignMatrixRow "PM2"
-                   [DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . m2pPWLogDensity)
-                   , DM.DesignMatrixRowPart "fracCit" 1 (VU.singleton . m2pFracCit)
-                   , DM.DesignMatrixRowPart "fracGrad" 1 (VU.singleton . m2pFracGrad)
-                   , DM.DesignMatrixRowPart "fracOC" 1 (VU.singleton . m2pFracOfColor)
-                   ]
--}
--}
+        pure $ V.fromList $ zip (V.toList betaV) mdMeansL
+    pure $ PredictionData geoMap (VU.convert betaSI) Nothing
