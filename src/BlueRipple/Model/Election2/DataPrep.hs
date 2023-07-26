@@ -36,6 +36,7 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -122,6 +123,34 @@ instance Flat.Flat CPSData where
   encode (CPSData c) = Flat.encode (FS.SFrame c)
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
 
+-- general
+withZeros :: forall outerK ks .
+             (
+               (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) F.⊆ (outerK V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , ks F.⊆ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , FI.RecVec (ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , Keyed.FiniteSet (F.Record ks)
+             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PWPopPerSqMile
+             , F.ElemOf (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) DT.PopCount
+             , Ord (F.Record outerK)
+             , outerK F.⊆ (outerK V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             , outerK V.++ (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) ~ ((outerK V.++ ks) V.++ [DT.PopCount, DT.PWPopPerSqMile])
+             )
+          => F.FrameRec (outerK V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+          -> F.FrameRec (outerK V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
+withZeros frame = FL.fold (FMR.concatFold
+                           $ FMR.mapReduceFold
+                           FMR.noUnpack
+                           (FMR.assignKeysAndData @outerK @(ks V.++ [DT.PopCount, DT.PWPopPerSqMile]))
+                           (FMR.foldAndLabel
+                            (fmap F.toFrame $ Keyed.addDefaultRec @ks zc)
+                            (\k r -> fmap (k F.<+>) r)
+                           )
+                          )
+                  frame
+  where
+       zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
+
 -- CPS
 cpsAddDensity ::  (K.KnitEffects r, BR.CacheEffects r)
               => F.FrameRec DDP.ACSa5ByStateR
@@ -129,7 +158,7 @@ cpsAddDensity ::  (K.KnitEffects r, BR.CacheEffects r)
               -> K.Sem r (F.FrameRec CPSByStateR)
 cpsAddDensity acs cps = do
   K.logLE K.Info "Adding people-weighted pop density to CPS"
-  let (joined, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ DCatsR) cps acs
+  let (joined, missing) = FJ.leftJoinWithMissing @(StateKeyR V.++ DCatsR) cps $ withZeros @StateKeyR @DCatsR $ fmap F.rcast acs
   when (not $ null missing) $ K.knitError $ "cpsAddDensity: Missing keys in CPS/ACS join: " <> show missing
   pure $ fmap F.rcast joined
 
@@ -152,8 +181,12 @@ cesAddDensity :: (K.KnitEffects r, BR.CacheEffects r)
               -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR))
 cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding people-weighted pop density to CES"
-  let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
-  when (not $ null missing) $ K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
+  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
+      (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) (fixSingleDistricts ces)
+                          $ withZeros @CDKeyR @DCatsR $ fmap F.rcast $ fixSingleDistricts acs
+  when (not $ null missing) $ do
+    BR.logFrame $ F.filterFrame ((== "DC") . view GT.stateAbbreviation) acs
+    K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
   pure $ fmap F.rcast joined
 
 -- add House Incumbency
@@ -164,7 +197,8 @@ cesAddHouseIncumbency :: (K.KnitEffects r, BR.CacheEffects r)
 cesAddHouseIncumbency houseElections ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding house incumbency to CES (+ density)"
   houseElectionsByContest <- K.knitEither $ FL.foldM (electionF @CDKeyR) $ fmap F.rcast houseElections
-  let (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces houseElectionsByContest
+  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
+      (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces $ fixSingleDistricts houseElectionsByContest
   when (not $ null missing) $ K.knitError $ "cesAddHouseIncumbency: Missing keys in CES/Elections join: " <> show missing
   let g = FT.mutate $ \r -> FT.recordSingleton @HouseIncumbency (F.rgetField @Incumbency r)
   pure $ fmap (F.rcast . g) joined
@@ -179,7 +213,7 @@ cachedPreppedCES cacheE ces_C = do
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
   acs_C <- DDP.cachedACSa5ByCD
-  houseElections_C <- BR.houseElectionsWithIncumbency
+  houseElections_C <- fmap (F.filterFrame ((>= 2008) . view BR.year)) <$> BR.houseElectionsWithIncumbency
   let deps = (,,) <$> ces_C <*> acs_C <*> houseElections_C
   BR.retrieveOrMakeFrame cacheKey deps $ \(ces, acs, elex) -> do
     cesWD <- cesAddDensity acs ces

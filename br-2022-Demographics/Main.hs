@@ -1439,12 +1439,12 @@ errorCompareXYScatter postPaths' postInfo title chartID vc regionName labels (er
       encScatter = GV.encoding
         . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
         . GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
-      markScatter = GV.mark GV.Point [GV.MSize 2]
+      markScatter = GV.mark GV.Point [GV.MSize 1]
       scatterSpec = GV.asSpec [encScatter [], markScatter]
       encXYLine = GV.encoding
                   . GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative]
                   . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
-      markXYLine = GV.mark GV.Line []
+      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MFillOpacity 0.5]
       xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
       layers = GV.layer [scatterSpec, xyLineSpec]
   pure $ FV.configuredVegaLite vc [FV.title title

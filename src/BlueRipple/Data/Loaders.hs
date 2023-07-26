@@ -387,7 +387,7 @@ stateTurnoutLoader =
     fixMaybes
     id
     Nothing
-    "stateTurnout.sbin"
+    "stateTurnout.bin"
   where
     missingOETo0 :: F.Rec (Maybe F.:. F.ElField) '[BR.OverseasEligible] -> F.Rec (Maybe F.:. F.ElField) '[BR.OverseasEligible]
     missingOETo0 = FM.fromMaybeMono 0
@@ -522,11 +522,20 @@ addIncumbency n key sameCand runoff wm r =
         Just prs -> not $ null $ filter (sameCand r) prs
   in r V.<+> ((incumbent F.&: V.RNil) :: F.Record '[ET.Incumbent])
 
-fixAtLargeDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
-fixAtLargeDistricts n = fmap fixOne where
-  statesWithAtLargeCDs = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
-  fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` statesWithAtLargeCDs then F.rputField @GT.CongressionalDistrict n r else r
+atLargeDistrictStates :: [Text]
+atLargeDistrictStates =  ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
 
+fixSingleDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f)
+                   => [Text] -> Int -> f (F.Record rs) -> f (F.Record rs)
+fixSingleDistricts ds n recs = fmap fixOne recs where
+  fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` ds then F.rputField @GT.CongressionalDistrict n r else r
+
+
+fixDCDistrict :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
+fixDCDistrict = fixSingleDistricts ["DC"]
+
+fixAtLargeDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
+fixAtLargeDistricts = fixSingleDistricts atLargeDistrictStates
 
 type SenateElectionCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.StateFIPS] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
 

@@ -21,11 +21,14 @@ where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
+import qualified BlueRipple.Model.Election2.DataPrep as DP
+import qualified BlueRipple.Data.DemographicTypes as DT
 
 import qualified Knit.Report as K hiding (elements)
 
 
 import qualified Control.Foldl as FL
+import Control.Lens (view)
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -33,6 +36,10 @@ import qualified Data.Set as S
 import qualified Data.List as List
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
+
+import qualified Frames as F
+
+import qualified Numeric
 
 import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
@@ -53,6 +60,19 @@ import qualified Flat
 import Flat.Instances.Vector ()
 
 
+-- design matrix rows
+safeLog :: Double -> Double
+safeLog x = if x >= 1 then Numeric.log x else 0
+
+tDesignMatrixRow_d_A_S_E_R :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d_A_S_E_R = DM.DesignMatrixRow "d_A_S_E_R" [dRP, aRP, sRP, eRP, rRP]
+  where
+    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
+    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
+    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
+    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
+    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
+
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
 
@@ -60,7 +80,7 @@ stateG = SMB.GroupTypeTag "State"
 stateGroupBuilder :: (Foldable f, Foldable g, Typeable a)
                   => (a -> Text) -> (md -> f a) -> g Text -> SMB.StanGroupBuilderM md () ()
 stateGroupBuilder saF foldableRows states = do
-  projData <- SMB.addModelDataToGroupBuilder "ModelData" (SMB.ToFoldable foldableRows)
+  projData <- SMB.addModelDataToGroupBuilder "ElectionModelData" (SMB.ToFoldable foldableRows)
   SMB.addGroupIndexForData stateG projData $ SMB.makeIndexFromFoldable show saF states
   SMB.addGroupIntMapForDataSet stateG projData $ SMB.dataToIntMapFromFoldable saF states
 
@@ -202,7 +222,7 @@ modelParameters mc pmd = do
         TNil (\_ _ -> pure ())
   pure $ BinomialLogitModelParameters alpha theta
 
-data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool }
+data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool }
 
 -- not returning anything for now
 model :: Typeable a
@@ -216,11 +236,11 @@ model rc mc = do
       nRowsE = SMB.dataSetSizeE mData.modelDataTag
       pExpr = DAG.parameterExpr
 
-  (covariatesM, _centerF, _mBeta) <- case paramTheta mParams of
+  (covariatesM, _centerF, mBeta) <- case paramTheta mParams of
     Theta (Just thetaP) -> do
       (centeredCovariatesE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly mData.covariatesE Nothing "DM"
-      (dmQ, _, _, mBeta) <- DM.thinQR centeredCovariatesE "DM" $ Just (pExpr thetaP, betaNDS)
-      pure (dmQ, centerF, mBeta)
+      (dmQ, _, _, mBeta') <- DM.thinQR centeredCovariatesE "DM" $ Just (pExpr thetaP, betaNDS)
+      pure (dmQ, centerF, mBeta')
     Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
 
   -- model
@@ -249,6 +269,7 @@ model rc mc = do
           -> SMB.StanBuilderM md gq ()
       llF = SBB.generateLogLikelihood mData.modelDataTag
 
+
   let (sampleStmtF, pp, ll) = case mParams of
         BinomialLogitModelParameters a t ->
           let ssF e = SMB.familySample SMD.binomialLogitDist e (mData.trialsE :> lpE a t :> TNil)
@@ -263,6 +284,11 @@ model rc mc = do
   -- generated quantities
   when rc.rcIncludePPCheck $ void pp
   when rc.rcIncludeLL ll
+  when rc.rcIncludeDMSplits $ case mBeta of
+    Nothing -> pure ()
+    Just beta -> SMB.inBlock SMB.SBGeneratedQuantities $ do
+      _ <- DM.splitToGroupVars mc.designMatrixRow beta Nothing
+      pure()
   pure ()
 
 --cwdF :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
@@ -274,6 +300,7 @@ runModel :: (K.KnitEffects r
             , Typeable a
             )
          => Either Text Text
+         -> Either Text Text
          -> Text
          -> BR.CommandLine
          -> RunConfig
@@ -281,14 +308,14 @@ runModel :: (K.KnitEffects r
          -> ModelConfig a
          -> K.ActionWithCacheTime r md
          -> K.Sem r (K.ActionWithCacheTime r PredictionData)
-runModel cacheDirE modelName _cmdLine runConfig foldableRows modelConfig modelData_C = do
+runModel modelDirE cacheDirE modelName _cmdLine runConfig foldableRows modelConfig modelData_C = do
   cacheRoot <- case cacheDirE of
     Left cd -> BRKU.clearIfPresentD cd >> pure cd
     Right cd -> pure cd
 
   let dataName = dataText modelConfig
       runnerInputNames = SC.RunnerInputNames
-                         ("br-2023-election2/stan/" <> modelName <> "/")
+                         ("br-2023-electionModel/stan/" <> modelName <> "/")
                          (modelText modelConfig)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
@@ -301,7 +328,7 @@ runModel cacheDirE modelName _cmdLine runConfig foldableRows modelConfig modelDa
   let unwraps = [SR.UnwrapNamed modelName ("y" <> modelName)]
 
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
-           cacheDirE
+           modelDirE
            (Right runnerInputNames)
            Nothing
            dw
@@ -328,7 +355,7 @@ modelResultAction foldableRows modelConfig = SC.UseSummary f where
                     $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
         mdMeansL = FL.fold mdMeansFld $ foldableRows modelData
     stateIM <- K.knitEither
-      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @a SC.ModelData "ModelData") stateG
+      $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @a SC.ModelData "ElectionModelData") stateG
     let allStates = IM.elems stateIM
         getScalar n = K.knitEither $ SP.getScalar . fmap CS.mean <$> SP.parseScalar n (CS.paramStats summary)
         getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)

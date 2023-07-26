@@ -64,19 +64,18 @@ cesTurnoutModelConfig dmr sam = MC.ModelConfig (view GT.stateAbbreviation) dmr "
 
 runCESTurnoutModel :: (K.KnitEffects r
                       , BRKU.CacheEffects r
-                      , Foldable f
-                      , Typeable a
                       )
                    => Int
+                   -> Either Text Text
                    -> Either Text Text
                    -> BR.CommandLine
                    -> MC.RunConfig
                    -> DM.DesignMatrixRow (F.Record DP.CESByCDR)
                    -> MC.StateAlphaModel
                    -> K.Sem r (K.ActionWithCacheTime r MC.PredictionData)
-runCESTurnoutModel year cacheDirE cmdLine runConfig dmr sam = do
+runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr sam = do
   let modelConfig = cesTurnoutModelConfig dmr sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   modelData_C <- fmap (DP.CESData . F.filterFrame ((== year) . view BRDF.year))
                  <$> DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
-  MC.runModel cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig DP.unCESData modelConfig modelData_C
+  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig DP.unCESData modelConfig modelData_C
