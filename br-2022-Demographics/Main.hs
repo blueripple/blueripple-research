@@ -256,6 +256,19 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
                             chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders
                             (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionErrCompChartVL
+  byRegionXYChart <- errorCompareXYScatter pp pi' (byRegionErrorF.errLabel <> " XY") chartDataPrefix (FV.ViewConfig 400 400 5)
+                     regionType errColHeaders (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
+  _ <- K.addHvega Nothing Nothing byRegionXYChart
+
+{-      allPairs :: [q] -> [(q, q)]
+      allPairs qs = go qs [] where
+        go [] ps = ps
+        go (q:[]) ps = ps
+        go (q:qs) ps = go qs (ps ++ fmap (q,) qs)
+-}
+
+--  _ <- traverse (uncurry byRegionXY) $ allPairs $ zip errColHeaders byRegionErrTableRows
+
   byCellErrCompChartVL <- errorCompareScatter pp pi' (byCellErrorF.errLabel <> " by Cell")
                           chartDataPrefix (FV.ViewConfig 400 400 5) "Cell" errColHeaders
                           (byCellErrorF.errLabel, byCellErrorF.errChartScale) byCellErrTableRows
@@ -301,7 +314,7 @@ l1Err acsV dV = FL.fold
                 ((/)
                   <$> FL.premap fst FL.sum
                   <*> FL.premap snd FL.sum)
-                $ zipWith (\acs d' -> (abs (acs - d'), acs)) (VS.toList acsV) (VS.toList dV)
+                $ zipWith (\acs d' -> (abs (acs - d') / 2, acs)) (VS.toList acsV) (VS.toList dV)
 
 l2Err :: LA.Vector Double -> LA.Vector Double -> Double
 l2Err acsV dV = FL.fold
@@ -1397,7 +1410,50 @@ errorCompareScatter postPaths' postInfo title chartID vc unitName labels (errLab
                                   , vlData
                                   ]
 
-{-
+errorCompareXYScatter :: K.KnitEffects r
+                      => BR.PostPaths Path.Abs
+                      -> BR.PostInfo
+                      -> Text
+                      -> Text
+                      -> FV.ViewConfig
+                      -> Text
+                      -> [Text]
+                      -> (Text, Double -> Double)
+                      -> [ErrTableRow Text]
+                      -> K.Sem r GV.VegaLite
+errorCompareXYScatter postPaths' postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
+  let n = 2 --length labels
+      (xLabel : yLabel : _) = labels
+      colData k (ErrTableRow l es)
+        = [("Source", GV.Str $ labels List.!! k)
+          , (regionName, GV.Str  l)
+          , (errLabel, GV.Number $ errScale (es List.!! k))
+          ]
+      kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+      jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
+  jsonFilePrefix <- K.getNextUnusedId $ ("errorCompareXYScatter_" <> chartID)
+  jsonUrl <-  BRK.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+      transf = GV.transform . GV.pivot "Source" errLabel [GV.PiGroupBy [regionName]]
+      encScatter = GV.encoding
+        . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+        . GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
+      markScatter = GV.mark GV.Point [GV.MSize 2]
+      scatterSpec = GV.asSpec [encScatter [], markScatter]
+      encXYLine = GV.encoding
+                  . GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative]
+                  . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+      markXYLine = GV.mark GV.Line []
+      xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
+      layers = GV.layer [scatterSpec, xyLineSpec]
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , layers
+                                  , transf []
+                                  , vlData
+                                  ]
+
+  {-
 
 -- NB: as ks - first component and bs is ks - second
 -- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
