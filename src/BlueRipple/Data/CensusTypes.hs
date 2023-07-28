@@ -32,5 +32,3 @@ citizenshipTable = Map.fromList [("JWBE004",(DT.Male, Under, Native))
                                 ,("JWBE022",(DT.Female, Over, Naturalized))
                                 ,("JWBE023",(DT.Female, Over, NonCitizen))
                                 ]
-
-type

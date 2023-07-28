@@ -367,6 +367,14 @@ type family AdultsOnlyC (a :: (Symbol, Type)) :: (Symbol, Type) where
   AdultsOnlyC Age5FC = Age4C
   AdultsOnlyC Age4C = Age4C
 
+age5FromAge6 :: Age6 -> Maybe Age5
+age5FromAge6 A6_Under18 = Nothing
+age5FromAge6 A6_18To24 = Just A5_18To24
+age5FromAge6 A6_25To34 = Just A5_25To34
+age5FromAge6 A6_35To44 = Just A5_35To44
+age5FromAge6 A6_45To64 = Just A5_45To64
+age5FromAge6 A6_65AndOver = Just A5_65AndOver
+
 data Education = L9 | L12 | HS | SC | AS | BA | AD deriving stock (Enum, Bounded, Eq, Ord, Show, Generic)
 --instance S.Serialize Education
 --instance B.Binary Education

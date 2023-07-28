@@ -98,9 +98,9 @@ type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 type CountDataR = [Surveyed, Registered, Voted]
 type DCatsR = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type PredictorsR = DT.PWPopPerSqMile ': DCatsR
-type VotePredictorsR = HouseIncumbency ': PredictorsR
-type VoteDataR = [VotesInRace, DVotes, RVotes]
-type CESByCDR = CDKeyR V.++ VotePredictorsR V.++ CountDataR V.++ VoteDataR
+type PrefPredictorsR = HouseIncumbency ': PredictorsR
+type PrefDataR = [VotesInRace, DVotes, RVotes]
+type CESByCDR = CDKeyR V.++ PrefPredictorsR V.++ CountDataR V.++ PrefDataR
 
 type ElectionDataR = [HouseIncumbency, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
 
@@ -122,6 +122,33 @@ instance Flat.Flat CPSData where
   size (CPSData c) n = Flat.size (FS.SFrame c) n
   encode (CPSData c) = Flat.encode (FS.SFrame c)
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
+
+data ModelData =
+  ModelData
+  {
+    cpsData :: F.FrameRec CPSByStateR
+  , cesData :: F.FrameRec CESByCDR
+  , stateTurnoutData :: F.FrameRec BR.StateTurnoutCols
+  , acsData :: F.FrameRec DDP.ACSa5ByStateR
+  }
+
+instance Flat.Flat ModelData where
+  size (ModelData cps ces st acs) n = Flat.size (FS.SFrame cps, FS.SFrame ces, FS.SFrame st, FS.SFrame acs) n
+  encode (ModelData cps ces st acs)  = Flat.encode (FS.SFrame cps, FS.SFrame ces, FS.SFrame st, FS.SFrame acs)
+  decode = (\(cps', ces', st', acs') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces') (FS.unSFrame st') (FS.unSFrame acs')) <$> Flat.decode
+
+cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
+                       => Either Text Text
+                       -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
+                       -> Either Text Text
+                       -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
+                       -> K.Sem r (K.ActionWithCacheTime r ModelData)
+cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
+  cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
+  ces_C <- cachedPreppedCES cesCacheE cesRaw_C
+  stateTurnout_C <- BR.stateTurnoutLoader
+  acs_C <- DDP.cachedACSa5ByState
+  pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C
 
 -- general
 withZeros :: forall outerK ks .
@@ -177,8 +204,8 @@ cachedPreppedCPS cacheE cps_C = do
 -- Add Density
 cesAddDensity :: (K.KnitEffects r, BR.CacheEffects r)
               => F.FrameRec DDP.ACSa5ByCDR
-              -> F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR)
-              -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR))
+              -> F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)
+              -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR))
 cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding people-weighted pop density to CES"
   let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
@@ -192,7 +219,7 @@ cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
 -- add House Incumbency
 cesAddHouseIncumbency :: (K.KnitEffects r, BR.CacheEffects r)
                       => F.FrameRec BR.HouseElectionColsI
-                      -> F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ VoteDataR)
+                      -> F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR)
                       -> K.Sem r (F.FrameRec CESByCDR)
 cesAddHouseIncumbency houseElections ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding house incumbency to CES (+ density)"
@@ -206,7 +233,7 @@ cesAddHouseIncumbency houseElections ces = K.wrapPrefix "Election2.DataPrep" $ d
 
 cachedPreppedCES :: (K.KnitEffects r, BR.CacheEffects r)
                  => Either Text Text
-                 -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+                 -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESByCDR))
 cachedPreppedCES cacheE ces_C = do
   cacheKey <- case cacheE of
@@ -222,7 +249,7 @@ cachedPreppedCES cacheE ces_C = do
 -- an example for presidential 2020 vote.
 cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
                        ⇒ Bool
-                       → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR)))
+                       → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)))
 cesCountedDemPresVotesByCD clearCaches = do
   ces2020_C ← CCES.ces20Loader
   let cacheKey = "model/election2/ces20ByCD.bin"
@@ -234,7 +261,7 @@ countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.Cata
                => (F.Record rs -> MT.MaybeData ET.PartyT)
                -> FL.Fold
                   (F.Record rs)
-                  (F.Record (CountDataR V.++ VoteDataR))
+                  (F.Record (CountDataR V.++ PrefDataR))
 countCESVotesF votePartyMD =
   let vote (MT.MaybeData x) = maybe False (const True) x
       dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
@@ -279,7 +306,7 @@ cesMR ∷ forall rs f m .
         , F.ElemOf rs CCES.CatalistRegistrationC
         , F.ElemOf rs CCES.CatalistTurnoutC
         )
-      ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ VoteDataR))
+      ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
 cesMR earliestYear votePartyMD =
   BRF.frameCompactMR
   (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
