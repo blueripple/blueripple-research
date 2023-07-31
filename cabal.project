@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/knit-haskell
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/knit-haskell ../../DataScience/Frames-streamly
 jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
@@ -75,10 +75,10 @@ source-repository-package
 --  location: https://github.com/adamConnerSax/Frames-utils
 --  tag: 27d00ed0026577fe443133c70e11317623b857c7
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 1ac784d9dc05fa5611343b74a6f97ca957782981
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/Frames-streamly
+--  tag: 1ac784d9dc05fa5611343b74a6f97ca957782981
 
 source-repository-package
   type: git

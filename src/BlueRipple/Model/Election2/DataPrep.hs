@@ -31,6 +31,7 @@ where
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 
 import qualified BlueRipple.Data.CCES as CCES
+import qualified BlueRipple.Data.CPSVoterPUMS as CPS
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -40,7 +41,7 @@ import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
-import Control.Lens (view)
+import Control.Lens (view, (^.))
 import qualified Control.Foldl as FL
 import qualified Control.MapReduce as FMR
 import qualified Data.Map.Strict as M
@@ -199,6 +200,40 @@ cachedPreppedCPS cacheE cps_C = do
     Right ck -> pure ck
   acs_C <- DDP.cachedACSa5ByState
   BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> cps_C) $ uncurry cpsAddDensity
+
+cpsKeysToASER :: Bool -> F.Record '[DT.Age5C, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC] -> F.Record DCatsR
+cpsKeysToASER addInCollegeToGrads r =
+  let  e4' = DT.educationToEducation4 $ r ^. DT.educationC
+       ic r = addInCollegeToGrads && r ^. DT.inCollege
+       e4 r = if ic r then DT.E4_CollegeGrad else e4'
+       ra4 =  F.rgetField @DT.RaceAlone4C r
+       h = F.rgetField @DT.HispC r
+       ra5 =  DT.race5FromRaceAlone4AndHisp True ra4 h
+  in (r ^. DT.age5C) F.&: (r ^. DT.sexC) F.&: e4 r F.&: ra5 F.&: V.RNil
+
+cpsCountedTurnoutByState ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR)))
+cpsCountedTurnoutByState = do
+  let afterYear y r = F.rgetField @BR.Year r >= y
+      possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
+      citizen r = F.rgetField @DT.CitizenC r == DT.Citizen
+      includeRow r = afterYear 2012 r && possible r && citizen r
+      voted r = CPS.cpsVoted $ r ^. ET.votedYNC
+      registered r = CPS.cpsRegistered $ r ^. ET.registeredYNC
+      unpack r = if includeRow r then Just (cpsKeysToASER True (F.rcast r) F.<+> r) else Nothing
+      innerFld :: FL.Fold (F.Record [ET.RegisteredYNC, ET.VotedYNC]) (F.Record [Surveyed, Registered, Voted])
+      innerFld =
+        let surveyedFld = FL.length
+            registeredFld = FL.prefilter registered FL.length
+            votedFld = FL.prefilter voted FL.length
+        in (\s r v -> s F.&: r F.&: v F.&: V.RNil) <$> surveyedFld <*> registeredFld <*> votedFld
+      fld :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
+      fld = FMR.concatFold
+            $ FMR.mapReduceFold
+            (FMR.Unpack unpack)
+            (FMR.assignKeysAndData @(StateKeyR V.++ DCatsR) @[ET.RegisteredYNC, ET.VotedYNC])
+            (FMR.foldAndAddKey innerFld)
+  cpsRaw_C ← CPS.cpsVoterPUMSLoader
+  BR.retrieveOrMakeFrame "model/election2/cpsByStateRaw.bin" cpsRaw_C $ pure . FL.fold fld
 
 -- CES
 -- Add Density

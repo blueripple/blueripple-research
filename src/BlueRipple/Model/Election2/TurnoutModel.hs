@@ -59,8 +59,8 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import Flat.Instances.Vector ()
 
-cesTurnoutModelConfig :: DM.DesignMatrixRow (F.Record DP.CESByCDR) -> MC.StateAlphaModel -> MC.ModelConfig (F.Record DP.CESByCDR)
-cesTurnoutModelConfig dmr sam = MC.ModelConfig (view GT.stateAbbreviation) dmr "Surveyed" (view DP.surveyed) "Voted" (view DP.voted) sam
+cesTurnoutModelConfig :: DM.DesignMatrixRow (F.Record DP.PredictorsR) -> MC.PSTargets -> MC.StateAlpha -> MC.TurnoutConfig
+cesTurnoutModelConfig dmr pst sam = MC.TurnoutConfig MC.CESSurvey pst dmr sam
 
 runCESTurnoutModel :: (K.KnitEffects r
                       , BRKU.CacheEffects r
@@ -70,12 +70,15 @@ runCESTurnoutModel :: (K.KnitEffects r
                    -> Either Text Text
                    -> BR.CommandLine
                    -> MC.RunConfig
-                   -> DM.DesignMatrixRow (F.Record DP.CESByCDR)
-                   -> MC.StateAlphaModel
-                   -> K.Sem r (K.ActionWithCacheTime r MC.PredictionData)
-runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr sam = do
-  let modelConfig = cesTurnoutModelConfig dmr sam
+                   -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
+                   -> MC.PSTargets
+                   -> MC.StateAlpha
+                   -> K.Sem r (K.ActionWithCacheTime r MC.TurnoutPrediction)
+runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
+  let modelConfig = cesTurnoutModelConfig dmr pst sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
+  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
+  rawCPS_C <- DP.
   modelData_C <- fmap (DP.CESData . F.filterFrame ((== year) . view BRDF.year))
                  <$> DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig DP.unCESData modelConfig modelData_C

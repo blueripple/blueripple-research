@@ -36,7 +36,7 @@ module BlueRipple.Data.CPSVoterPUMS
 --  , cpsKeysToIdentity
   , cpsPossibleVoter
   , cpsVoted
-
+  , cpsRegistered
   ) where
 
 import qualified BlueRipple.Data.CPSVoterPUMS.CPSVoterPUMS_Frame as CPS
@@ -602,6 +602,9 @@ intToRegisteredYN n
   | n == 2 = ET.RYN_Registered
   | otherwise = ET.RYN_Other
 
+cpsRegistered :: ET.RegisteredYN -> Bool
+cpsRegistered ET.RYN_Registered = True
+cpsRegistered _ = False
 
 
 transformCPSVoterPUMSRow :: CPS.CPSVoterPUMS_Raw -> F.Record CPSVoterPUMS'

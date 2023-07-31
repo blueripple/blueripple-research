@@ -238,7 +238,7 @@ FTH.declareColumn "CollegeGradC" ''CollegeGrad
 instance FV.ToVLDataValue (F.ElField CollegeGradC) where
   toVLDataValue x = (toText $ V.getLabel x, GV.Str $ show $ V.getField x)
 
-type InCollege = "InCollege" F.:-> Bool
+FTH.declareColumn "InCollege" ''Bool
 
 data SimpleAge = Under | EqualOrOver deriving stock (Eq, Ord, Enum, Bounded, A.Ix, Show, Generic)
 --instance S.Serialize SimpleAge
