@@ -147,7 +147,8 @@ cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
 cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
-  stateTurnout_C <- BR.stateTurnoutLoader
+  let stFilter r = r ^. BR.year == 2020 && r ^. BR.stateAbbreviation /= "US"
+  stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
   pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C
 
@@ -199,7 +200,8 @@ cachedPreppedCPS cacheE cps_C = do
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
   acs_C <- DDP.cachedACSa5ByState
-  BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> cps_C) $ uncurry cpsAddDensity
+  let only2020 = F.filterFrame ((== 2020) . view BR.year)
+  BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> fmap only2020 cps_C) $ uncurry cpsAddDensity
 
 cpsKeysToASER :: Bool -> F.Record '[DT.Age5C, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC] -> F.Record DCatsR
 cpsKeysToASER addInCollegeToGrads r =

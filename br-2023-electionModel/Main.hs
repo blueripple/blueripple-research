@@ -76,10 +76,10 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-        runConfig = MC.RunConfig True True True
+        runConfig = MC.RunConfig False False True
         dmr = MC.tDesignMatrixRow_d_A_S_E_R
-        stateAlphaModel = MC.StateAlphaHierNonCentered
-    _ <- TM.runCESTurnoutModel 2020 (Right "model/election2/test/stan") (Right "model/election2/test") cmdLine runConfig (contramap F.rcast dmr) stateAlphaModel
+        stateAlphaModel = MC.StateAlphaSimple
+    _ <- TM.runCESTurnoutModel 2020 (Right "model/election2/test/stan") (Right "model/election2/test") cmdLine runConfig (contramap F.rcast dmr) MC.PSTargets stateAlphaModel
     pure ()
   case resE of
     Right namedDocs →

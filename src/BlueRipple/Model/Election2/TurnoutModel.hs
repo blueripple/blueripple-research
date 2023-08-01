@@ -77,8 +77,10 @@ runCESTurnoutModel :: (K.KnitEffects r
 runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
   let modelConfig = cesTurnoutModelConfig dmr pst sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
-  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
-  rawCPS_C <- DP.
-  modelData_C <- fmap (DP.CESData . F.filterFrame ((== year) . view BRDF.year))
-                 <$> DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
-  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig DP.unCESData modelConfig modelData_C
+  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
+  rawCPS_C <- DP.cpsCountedTurnoutByState
+  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
+  modelData_C <- DP.cachedPreppedModelData
+                 (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
+                 (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
+  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig modelConfig modelData_C
