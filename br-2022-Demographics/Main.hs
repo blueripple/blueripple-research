@@ -28,6 +28,7 @@ import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
+import qualified BlueRipple.Data.Loaders as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 
 import qualified Knit.Report as K
@@ -46,6 +47,7 @@ import qualified Data.Set as S
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector.Storable as VS
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.Functor as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Numeric
 import qualified Numeric.LinearAlgebra as LA
@@ -54,9 +56,13 @@ import qualified Control.Foldl.Statistics as FL
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FSI
+import qualified Frames.Streamly.CSV as FCSV
+import Frames.Streamly.Streaming.Streamly (StreamlyStream, Stream)
 import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
+
+--import qualified Streamly.Data.Stream as Streamly
 
 import Control.Lens (view, (^.), _2)
 
@@ -91,7 +97,7 @@ instance Semigroup CountWithDensity where
       avgDens = (realToFrac n1 * d1 + realToFrac n2 * d2) / realToFrac sumN
 
 instance Monoid CountWithDensity where
-  mempty = CountWithDensity 0 0
+mempty = CountWithDensity 0 0
 
 
 {-
@@ -902,13 +908,44 @@ main = do
 -}
 --    compareCSR_ASR cmdLine postInfo
 --    compareASR_ASE cmdLine postInfo
-    compareCSR_ASR_ASE cmdLine postInfo
+--    compareCSR_ASR_ASE cmdLine postInfo
 --    compareCASR_ASE cmdLine postInfo
 --    compareSER_ASR cmdLine postInfo
+    shiroData
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
+shiroData = do
+  let wText = FCSV.formatTextAsIs
+      wPrintf :: (V.KnownField t, V.Snd t ~ Double) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
+      wPrintf n m = FCSV.liftFieldFormatter $ toText @String . PF.printf ("%" <> show n <> "." <> show n <> "g")
+      formatPUMAWgts = FCSV.formatWithShow
+                       V.:& FCSV.formatWithShow
+                       V.:& FCSV.formatWithShow
+                       V.:& wText V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& V.RNil
+  examplePUMAWgts <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> BRDF.cdFromPUMA2012Loader 116)
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exPumaWgts.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatPUMAWgts "," $ FCSV.foldableToStream examplePUMAWgts
+  let formatACSMicro = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+                     V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
+                     V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+  exampleACSMicro <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5)
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSMicro.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSMicro "," $ FCSV.foldableToStream exampleACSMicro
+  let formatACSByPUMA = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+                        V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
+                        V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+  exampleACSByPUMA <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByPUMA)
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByPuma.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSByPUMA "," $ FCSV.foldableToStream exampleACSByPUMA
+  let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+                      V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
+                      V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+  exampleACSByCD <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByCD)
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSByCD "," $ FCSV.foldableToStream exampleACSByCD
+
+
+
 {-
 originalPost ::  (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
 originalPost cmdLine postInfo = do

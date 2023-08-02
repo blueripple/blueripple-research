@@ -20,6 +20,7 @@ module BlueRipple.Model.Election2.TurnoutModel
 where
 
 import qualified BlueRipple.Model.Election2.DataPrep as DP
+import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Configuration as BR
@@ -73,7 +74,7 @@ runCESTurnoutModel :: (K.KnitEffects r
                    -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
                    -> MC.PSTargets
                    -> MC.StateAlpha
-                   -> K.Sem r (K.ActionWithCacheTime r MC.TurnoutPrediction)
+                   -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, Map Text Double))
 runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
   let modelConfig = cesTurnoutModelConfig dmr pst sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
@@ -83,4 +84,5 @@ runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
   modelData_C <- DP.cachedPreppedModelData
                  (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
-  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig modelConfig modelData_C
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig modelConfig modelData_C acsByState_C

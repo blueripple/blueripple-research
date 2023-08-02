@@ -124,6 +124,22 @@ instance Flat.Flat CPSData where
   encode (CPSData c) = Flat.encode (FS.SFrame c)
   decode = (\c → CPSData (FS.unSFrame c)) <$> Flat.decode
 
+type PSDataR k = k V.++ PredictorsR V.++ '[DT.PopCount]
+
+newtype PSData k = PSData { unPSData :: F.FrameRec (PSDataR k) }
+
+instance (FS.RecFlat (PSDataR k)
+         , V.RMap (PSDataR k)
+         , FI.RecVec (PSDataR k)
+         ) => Flat.Flat (PSData k) where
+  size (PSData c) = Flat.size (FS.SFrame c)
+  encode (PSData c) = Flat.encode (FS.SFrame c)
+  decode = (\c -> PSData (FS.unSFrame c)) <$> Flat.decode
+
+acsByStatePS :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (PSData '[BR.Year, GT.StateAbbreviation]))
+acsByStatePS = fmap (PSData . fmap F.rcast) <$> DDP.cachedACSa5ByState
+
+
 data ModelData =
   ModelData
   {

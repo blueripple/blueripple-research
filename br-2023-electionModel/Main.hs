@@ -16,7 +16,12 @@ module Main
 where
 
 import qualified BlueRipple.Configuration as BR
+import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.Loaders as BRDF
+import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
+import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
 import qualified BlueRipple.Model.Election2.TurnoutModel as TM
 
@@ -27,9 +32,12 @@ import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
 --import GHC.TypeLits (Symbol)
-import Control.Lens (view)
+import qualified Control.Foldl as FL
+import Control.Lens (view, (^.))
 
 import qualified Frames as F
+import qualified Frames.MapReduce as FMR
+import qualified Frames.Folds as FF
 
 import Path (Dir, Rel)
 import qualified Path
@@ -41,6 +49,8 @@ import qualified Graphics.Vega.VegaLite as GV
 import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
+
+import qualified Frames.Streamly.TH as FS
 --import Data.Monoid (Sum(getSum))
 
 templateVars ∷ Map String String
@@ -55,6 +65,16 @@ templateVars =
 pandocTemplate ∷ K.TemplatePath
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
+
+acsNByState :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (F.FrameRec [GT.StateAbbreviation, DT.PopCount])
+acsNByState = do
+  acsByState <- K.ignoreCacheTimeM DDP.cachedACSa5ByState
+  let aggFld = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @'[GT.StateAbbreviation] @'[DT.PopCount])
+               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  pure $ FL.fold aggFld acsByState
 
 main :: IO ()
 main = do
@@ -78,9 +98,24 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         runConfig = MC.RunConfig False False True
         dmr = MC.tDesignMatrixRow_d_A_S_E_R
-        stateAlphaModel = MC.StateAlphaSimple
-    _ <- TM.runCESTurnoutModel 2020 (Right "model/election2/test/stan") (Right "model/election2/test") cmdLine runConfig (contramap F.rcast dmr) MC.PSTargets stateAlphaModel
+        stateAlphaModel = MC.StateAlphaHierCentered
+    (_, modeledTurnoutByStateMap) <- K.ignoreCacheTimeM
+                                     $ TM.runCESTurnoutModel 2020
+                                     (Right "model/election2/test/stan") (Right "model/election2/test")
+                                     cmdLine runConfig (contramap F.rcast dmr) MC.NoPSTargets stateAlphaModel
+    turnoutByState <- F.filterFrame ((== 2020) . view BRDF.year) <$> K.ignoreCacheTimeM BRDF.stateTurnoutLoader
+    let toKey r = (r ^. GT.stateAbbreviation, r ^. DT.popCount)
+    acsNByStateMap <- FL.fold (FL.premap toKey FL.map) <$> acsNByState
+    let f turnoutMap acsNByStateMap r = do
+          let sa = r ^. BRDF.stateAbbreviation
+              gt = r ^. BRDF.ballotsCountedVAP
+          (x, y, z) <- fmap (sa, gt, ) $ M.lookup sa turnoutMap
+          fmap (\n -> (x, y, z, n)) $ M.lookup sa acsNByStateMap
+        turnoutComparison = traverse (f modeledTurnoutByStateMap acsNByStateMap) $ FL.fold FL.list turnoutByState
+    K.logLE K.Info $ show turnoutComparison
+
     pure ()
+  pure ()
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
