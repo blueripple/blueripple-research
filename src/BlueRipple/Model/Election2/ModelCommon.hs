@@ -69,7 +69,6 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import Flat.Instances.Vector ()
 
-
 -- design matrix rows
 safeLog :: Double -> Double
 safeLog x = if x >= 1 then Numeric.log x else 0
@@ -88,8 +87,6 @@ stateG = SMB.GroupTypeTag "State"
 
 psGroupTag :: Typeable k => SMB.GroupTypeTag (F.Record k)
 psGroupTag = SMB.GroupTypeTag "PSGrp"
-
-
 
 stateGroupBuilder :: (Foldable g, Typeable (DP.PSDataR k),  Show (F.Record k), Ord (F.Record k)
                      , k F.⊆ DP.PSDataR k
@@ -118,6 +115,7 @@ stateGroupBuilder turnoutConfig states psGtt psKeys = do
       SMB.addGroupIndexForData stateG acsDataTag $ SMB.makeIndexFromFoldable show saF states
   psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
   SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
+  SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
 
 data StateAlpha = StateAlphaSimple | StateAlphaHierCentered | StateAlphaHierNonCentered deriving stock (Show)
 
@@ -174,15 +172,14 @@ predictedTurnoutP tc tp sa p = do
   pure $ invLogit (alpha + VU.sum (VU.zipWith applySI covariatesV tp.tpBetaSI) + logisticAdj)
 
 turnoutModelText :: TurnoutConfig  -> Text
-turnoutModelText (TurnoutConfig ts tPs dmr am) = "Turnout_" <> turnoutSurveyText ts
-                                                 <> "_"
-                                                 <> (if (tPs == PSTargets) then "PSTgt_" else "")
-                                                 <> dmr.dmName <> "_" <> stateAlphaModelText am
+turnoutModelText (TurnoutConfig ts tPs dmr am) = "Turnout" <> turnoutSurveyText ts
+                                                 <> (if (tPs == PSTargets) then "_PSTgt" else "")
+                                                 <> "_" <> dmr.dmName <> "_" <> stateAlphaModelText am
 
 turnoutModelDataText :: TurnoutConfig -> Text
-turnoutModelDataText (TurnoutConfig ts tPs _ _) = "Turnout_" <> turnoutSurveyText ts
-                                                 <> "_"
-                                                 <> (if (tPs == PSTargets) then "PSTgt" else "")
+turnoutModelDataText (TurnoutConfig ts tPs dmr _) = "Turnout_" <> turnoutSurveyText ts
+                                                    <> (if (tPs == PSTargets) then "_PSTgt" else "")
+                                                    <> "_" <> dmr.dmName
 
 
 data CovariatesAndCounts a =
@@ -298,7 +295,7 @@ turnoutTargetsModel mp cc std cM rM = do
   (dmACS, acsNByState) <- turnoutTargetsTD cc std cM rM
   let acsStateIndex = SMB.byGroupIndexE std.stdACSTag stateG
       toVec x = TE.functionE SF.to_vector (x :> TNil)
-      pE = probabilitiesExpr mp std.stdACSTag dmACS
+      pE = probabilitiesExpr mp std.stdACSTag stateG dmACS
   acsPS <- SBB.postStratifiedParameterF False SMB.SBTransformedParameters (Just "psTByState") std.stdACSTag stateG acsStateIndex (toVec std.stdACSWgts) (pure pE) Nothing
   let normalDWA = TE.DensityWithArgs SF.normal (TE.realE 1 :> TE.realE 4 :> TNil)
   sigmaTargetsP <-  DAG.simpleParameterWA
@@ -313,6 +310,7 @@ turnoutTargetsModel mp cc std cM rM = do
     TE.addStmt $ TE.sample acsPS SF.normal (tP :> sd :> TNil)
 
 turnoutPS :: forall md k . (Typeable (DP.PSDataR k)
+                           , Typeable k
                            , F.ElemOf (DP.PSDataR k) DT.PopCount
                            , DP.PredictorsR F.⊆ DP.PSDataR k
                            )
@@ -323,7 +321,7 @@ turnoutPS :: forall md k . (Typeable (DP.PSDataR k)
           -> SMB.StanBuilderM md (DP.PSData k) ()
 turnoutPS mp dmr cM rM = do
   psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
-  psDataStateIndex <- SMB.getGroupIndexVar psDataTag stateG
+  psDataStateIndex <- SMB.getGroupIndexVar psDataTag (psGroupTag @k)
   psWgts <- SBB.addCountData psDataTag "PSWgts" (view DT.popCount)
   let nCovariates = DM.rowLength dmr
   psCovariates <-  if nCovariates > 0
@@ -334,13 +332,13 @@ turnoutPS mp dmr cM rM = do
     Just c -> c psCovariates "dmPS_Centered"
   dmPS <- case rM of
     Nothing -> pure dmPS'
-    Just r -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+    Just r -> SMB.inBlock SMB.SBTransformedDataGQ $ SMB.addFromCodeWriter $ do
       let rowsE = SMB.dataSetSizeE psDataTag
           colsE = SMB.mrfdColumnsE $ DM.matrixFromRowData dmr Nothing
       TE.declareRHSNW (TE.NamedDeclSpec "acsDM_QR" $ TE.matrixSpec rowsE colsE []) $ dmPS' `TE.timesE` r
   let toVec x = TE.functionE SF.to_vector (x :> TNil)
-      psPE = probabilitiesExpr mp psDataTag dmPS
-  _ <- SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "tByState") psDataTag stateG psDataStateIndex (toVec psWgts) (pure psPE) Nothing
+      psPE = probabilitiesExpr mp psDataTag (psGroupTag @k) dmPS
+  _ <- SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "tByState") psDataTag (psGroupTag @k) psDataStateIndex (toVec psWgts) (pure psPE) Nothing
   pure ()
 
 {-
@@ -426,10 +424,10 @@ modelParameters dmr rtt sa = do
 
 data RunConfig = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Bool }
 
-probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> TE.MatrixE -> TE.VectorE
-probabilitiesExpr mps rtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
+probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> SMB.GroupTypeTag b -> TE.MatrixE -> TE.VectorE
+probabilitiesExpr mps rtt gtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
   where
-    stateIndexE = SMB.byGroupIndexE rtt stateG
+    stateIndexE = SMB.byGroupIndexE rtt gtt
     lp = case mps of
       BinomialLogitModelParameters alpha theta ->
         let aV = case alpha of
@@ -440,7 +438,12 @@ probabilitiesExpr mps rtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
              _ -> aV
 
 -- not returning anything for now
-turnoutModel :: (Typeable (DP.PSDataR k), k F.⊆ DP.PSDataR k, F.ElemOf (DP.PSDataR k) DT.PopCount, DP.PredictorsR F.⊆ DP.PSDataR k)
+turnoutModel :: (Typeable k
+                , Typeable (DP.PSDataR k)
+--                , k F.⊆ DP.PSDataR k
+                , F.ElemOf (DP.PSDataR k) DT.PopCount
+                , DP.PredictorsR F.⊆ DP.PSDataR k
+                )
              => RunConfig
              -> TurnoutConfig
              -> SMB.StanBuilderM DP.ModelData (DP.PSData k) ()
@@ -533,7 +536,7 @@ runModel :: forall k r .
             , F.ElemOf (DP.PSDataR k) DT.PopCount
             , DP.PredictorsR F.⊆ DP.PSDataR k
             , Ord (F.Record k)
-            , V.RMap k
+--            , V.RMap k
             , Typeable (DP.PSDataR k)
             , Typeable k
             , Show (F.Record k)
@@ -556,7 +559,7 @@ runModel modelDirE cacheDirE modelName _cmdLine runConfig turnoutConfig modelDat
       runnerInputNames = SC.RunnerInputNames
                          ("br-2023-electionModel/stan/" <> modelName <> "/")
                          (turnoutModelText turnoutConfig)
-                         (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
+                         (Just $ SC.GQNames "GQ" (dataName <> "_GQ"))
                          dataName
 --  modelData <- K.ignoreCacheTime modelData_C
   states <- S.toList . FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) . DP.cesData <$> K.ignoreCacheTime modelData_C
@@ -620,6 +623,6 @@ modelResultAction turnoutConfig = SC.UseSummary f where
       p -> do
         betaV <- getVector "beta"
         pure $ V.fromList $ zip (V.toList betaV) mdMeansL
-    psTByStateV <- getVector "psTByState"
+    psTByStateV <- getVector "tByState"
     let psTByStateM = M.fromList $ zip (IM.elems stateIM) $ V.toList psTByStateV
     pure $ (TurnoutPrediction geoMap (VU.convert betaSI) Nothing, psTByStateM)

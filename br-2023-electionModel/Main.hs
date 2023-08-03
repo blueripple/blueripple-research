@@ -96,7 +96,7 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-        runConfig = MC.RunConfig False False True
+        runConfig = MC.RunConfig False False True True
         dmr = MC.tDesignMatrixRow_d_A_S_E_R
         stateAlphaModel = MC.StateAlphaHierCentered
     (_, modeledTurnoutByStateMap) <- K.ignoreCacheTimeM
