@@ -374,18 +374,19 @@ parseCensusCols r = do
     `V.rappend` (region F.&: division F.&: V.RNil)
     `V.rappend` F.rcast @[BR.OneDistrict, BR.SLDUpperOnly] r
 
-type StateTurnoutCols = F.RecordColumns BR.StateTurnout
+type StateTurnoutColsRaw = F.RecordColumns BR.StateTurnout
+type StateTurnoutCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.BallotsCountedVAP, BR.BallotsCountedVEP, BR.VotesHighestOffice, BR.VAP,BR.VEP,BR.PctNonCitizen,BR.Prison,BR.Probation, BR.Parole,BR.TotalIneligibleFelon, BR.OverseasEligible]
 
 stateTurnoutLoader ::
   (K.KnitEffects r, BR.CacheEffects r) =>
-  K.Sem r (K.ActionWithCacheTime r (F.Frame BR.StateTurnout))
+  K.Sem r (K.ActionWithCacheTime r (F.FrameRec StateTurnoutCols))
 stateTurnoutLoader =
-  cachedMaybeFrameLoader @StateTurnoutCols @StateTurnoutCols
+  cachedMaybeFrameLoader @StateTurnoutColsRaw @_ @_ @StateTurnoutCols
     (DataSets $ toText BR.stateTurnoutCSV)
     Nothing
     Nothing
     fixMaybes
-    id
+    fixSA
     Nothing
     "stateTurnout.bin"
   where
@@ -396,6 +397,8 @@ stateTurnoutLoader =
     missingBCTo0 :: F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCounted] -> F.Rec (Maybe F.:. F.ElField) '[BR.BallotsCounted]
     missingBCTo0 = FM.fromMaybeMono 0
     fixMaybes = (F.rsubset %~ missingOETo0) . (F.rsubset %~ missingBCVEPTo0) . (F.rsubset %~ missingBCTo0)
+    fixSA :: F.Record StateTurnoutColsRaw -> F.Record StateTurnoutCols
+    fixSA = F.rcast . FT.retypeColumn @BR.StateAbbreviation @GT.StateAbbreviation
 
 
 type HouseElectionCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.StateFIPS, GT.CongressionalDistrict] V.++ ([BR.Special, BR.Runoff, BR.Stage] V.++ ElectionDataCols)

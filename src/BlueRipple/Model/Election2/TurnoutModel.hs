@@ -8,7 +8,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -26,6 +28,7 @@ import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ModelingTypes as MT
 
 import qualified Knit.Report as K hiding (elements)
 
@@ -39,8 +42,11 @@ import qualified Data.Set as S
 import qualified Data.List as List
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vinyl as Vinyl
 
 import qualified Frames as F
+import qualified Frames.Streamly.TH as FTH
+import qualified Frames.Serialize as FS
 
 import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
@@ -60,23 +66,28 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import Flat.Instances.Vector ()
 
-cesTurnoutModelConfig :: DM.DesignMatrixRow (F.Record DP.PredictorsR) -> MC.PSTargets -> MC.StateAlpha -> MC.TurnoutConfig
-cesTurnoutModelConfig dmr pst sam = MC.TurnoutConfig MC.CESSurvey pst dmr sam
-
-runCESTurnoutModel :: (K.KnitEffects r
-                      , BRKU.CacheEffects r
-                      )
-                   => Int
-                   -> Either Text Text
-                   -> Either Text Text
-                   -> BR.CommandLine
-                   -> MC.RunConfig
-                   -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
-                   -> MC.PSTargets
-                   -> MC.StateAlpha
-                   -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, Map Text Double))
-runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
-  let modelConfig = cesTurnoutModelConfig dmr pst sam
+runTurnoutModel :: (K.KnitEffects r
+                   , BRKU.CacheEffects r
+                   , Vinyl.RMap l
+                   , Ord (F.Record l)
+                   , FS.RecFlat l
+                   , Typeable l
+                   , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                   , Show (F.Record l)
+                   )
+                => Int
+                -> Either Text Text
+                -> Either Text Text
+                -> Text
+                -> BR.CommandLine
+                -> MC.RunConfig l
+                -> MC.TurnoutSurvey
+                -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
+                -> MC.PSTargets
+                -> MC.StateAlpha
+                -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, MC.PSMap l Double))
+runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts dmr pst sam = do
+  let modelConfig = MC.TurnoutConfig ts pst dmr sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
@@ -85,4 +96,7 @@ runCESTurnoutModel year modelDirE cacheDirE cmdLine runConfig dmr pst sam = do
                  (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
-  MC.runModel modelDirE cacheDirE ("CESTurnout_" <> show year) cmdLine runConfig modelConfig modelData_C acsByState_C
+  MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
+
+FTH.declareColumn "TurnoutP" ''Double
+FTH.declareColumn "TurnoutP_CI" ''MT.ConfidenceInterval

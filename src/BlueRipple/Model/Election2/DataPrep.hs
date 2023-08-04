@@ -163,7 +163,7 @@ cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
 cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
-  let stFilter r = r ^. BR.year == 2020 && r ^. BR.stateAbbreviation /= "US"
+  let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
   pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C

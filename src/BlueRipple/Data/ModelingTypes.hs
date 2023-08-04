@@ -49,7 +49,9 @@ data ConfidenceInterval = ConfidenceInterval
 instance S.Serialize ConfidenceInterval
 instance B.Binary ConfidenceInterval
 instance Flat.Flat ConfidenceInterval
+
 type instance FI.VectorFor ConfidenceInterval = UVec.Vector
+
 derivingUnbox "ConfidenceInterval"
   [t|ConfidenceInterval->(Double, Double, Double)|]
   [|\(ConfidenceInterval x y z) -> (x, y, z)|]

@@ -25,6 +25,7 @@ import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified BlueRipple.Data.CensusLoaders as BRC
+import qualified BlueRipple.Data.ACS_PUMS as PUMS
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -54,6 +55,7 @@ import qualified Numeric.LinearAlgebra as LA
 import qualified Control.Foldl as FL
 import qualified Control.Foldl.Statistics as FL
 import qualified Frames as F
+import qualified Frames.Transform as FT
 import qualified Frames.Melt as F
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Streamly.CSV as FCSV
@@ -62,7 +64,7 @@ import qualified Control.MapReduce as MR
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Serialize as FS
 
---import qualified Streamly.Data.Stream as Streamly
+import qualified Streamly.Prelude as Streamly
 
 import Control.Lens (view, (^.), _2)
 
@@ -917,6 +919,9 @@ main = do
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
+type ShiroACS k = (k V.++ DMC.CASER V.++ '[DT.PopCount])
+type ShiroMicro k = (k V.++ DMC.CASER V.++ '[PUMS.PUMSWeight])
+
 shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
 shiroData = do
   let wText = FCSV.formatTextAsIs
@@ -926,23 +931,42 @@ shiroData = do
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatWithShow
                        V.:& wText V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& V.RNil
+      newHeaderMap = M.fromList [("StateAbbreviation", "state")
+                                , ("PopCount", "pop_count")
+                                , ("CitizenC", "citizen")
+                                , ("Age5C", "age_5")
+                                , ("SexC", "sex")
+                                , ("Education4C", "education_4")
+                                , ("Race5C", "race_5")
+                                , ("Weight", "weight")
+                                ]
   examplePUMAWgts <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> BRDF.cdFromPUMA2012Loader 116)
-  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exPumaWgts.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatPUMAWgts "," $ FCSV.foldableToStream examplePUMAWgts
-  let formatACSMicro = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exPumaWgts.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) M.empty formatPUMAWgts "," $ FCSV.foldableToStream examplePUMAWgts
+  let formatACSMicro = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                      V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
-                     V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+                     V.:& FCSV.formatWithShow V.:& V.RNil
   exampleACSMicro <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5)
-  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSMicro.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSMicro "," $ FCSV.foldableToStream exampleACSMicro
-  let formatACSByPUMA = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSMicro.csv"
+    $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSMicro ","
+    $ FCSV.foldableToStream
+    $ fmap (F.rcast @(ShiroMicro [BRDF.Year,GT.StateAbbreviation,GT.PUMA]))
+    $ exampleACSMicro
+  let formatACSByPUMA = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                         V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
-                        V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+                        V.:& FCSV.formatWithShow V.:& V.RNil
   exampleACSByPUMA <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByPUMA)
-  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByPuma.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSByPUMA "," $ FCSV.foldableToStream exampleACSByPUMA
-  let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- header
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByPuma.csv"
+    $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByPUMA ","
+    $ FCSV.foldableToStream
+    $ fmap (F.rcast @(ShiroACS [BRDF.Year,GT.StateAbbreviation,GT.PUMA])) exampleACSByPUMA
+  let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                       V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
-                      V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& V.RNil
+                      V.:& FCSV.formatWithShow V.:& V.RNil
   exampleACSByCD <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByCD)
-  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) formatACSByCD "," $ FCSV.foldableToStream exampleACSByCD
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv"
+    $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByCD ","
+    $ FCSV.foldableToStream
+    $ fmap (F.rcast @(ShiroACS [BRDF.Year,GT.StateAbbreviation,GT.CongressionalDistrict])) exampleACSByCD
 
 
 
