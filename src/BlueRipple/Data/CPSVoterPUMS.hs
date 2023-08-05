@@ -6,6 +6,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeApplications     #-}
@@ -19,6 +20,7 @@ module BlueRipple.Data.CPSVoterPUMS
   , cpsVoterPUMSWithCDLoader
   , CPSVoterPUMS
   , CPSVoterPUMSWeight
+  , cPSVoterPUMSWeight
   , cpsVoterPUMSRollup
   , cpsVoterPUMSRollupWeightedCounts
   , cpsVoterPUMSElectoralWeights
@@ -58,6 +60,7 @@ import           Data.Vinyl.TypeLevel                     (type (++))
 import qualified Data.Vinyl.TypeLevel          as V
 import qualified Frames                        as F
 import qualified Frames.Streamly.InCore        as FI
+import qualified Frames.Streamly.TH        as FTH
 import qualified Frames.Melt                   as F
 
 import qualified Frames.MapReduce              as FMR
@@ -65,6 +68,8 @@ import qualified Frames.Transform              as FT
 import qualified Frames.SimpleJoins            as FJ
 
 import qualified Knit.Report as K
+
+FTH.declareColumn "CPSVoterPUMSWeight" ''Double
 
 cpsVoterPUMSLoader :: (K.KnitEffects r, BR.CacheEffects r)
                    => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CPSVoterPUMS))
@@ -101,8 +106,6 @@ cpsVoterPUMSWithCDLoader = do
       (F.filterFrame ((> 0) . F.rgetField @BR.CountyFIPS) cpsVoterPUMS)
       (fmap (F.rcast @[BR.CountyFIPS, BR.StateFIPS, BR.CongressionalDistrict, BR.CountyWeight]) countyToCD)
 
-
-type CPSVoterPUMSWeight = "CPSVoterPUMSWeight" F.:-> Double
 
 type CPSVoterPUMS = '[ BR.Year
                      , GT.StateFIPS

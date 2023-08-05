@@ -68,6 +68,12 @@ import Prelude hiding (pred)
 
 FS.declareColumn "Surveyed" ''Int
 FS.declareColumn "Registered" ''Int
+FS.declareColumn "Voted" ''Int
+
+FS.declareColumn "SurveyedW" ''Double
+FS.declareColumn "RegisteredW" ''Double
+FS.declareColumn "VotedW" ''Double
+
 {-
 FS.declareColumn "AHVoted" ''Double
 FS.declareColumn "AHHouseDVotes" ''Double
@@ -79,8 +85,13 @@ FS.declareColumn "AchenHurWeight" ''Double
 FS.declareColumn "VotesInRace" ''Int
 FS.declareColumn "DVotes" ''Int
 FS.declareColumn "RVotes" ''Int
+
+FS.declareColumn "VotesInRaceW" ''Double
+FS.declareColumn "DVotesW" ''Double
+FS.declareColumn "RVotesW" ''Double
+
+
 FS.declareColumn "TVotes" ''Int
-FS.declareColumn "Voted" ''Int
 FS.declareColumn "PresVotes" ''Int
 FS.declareColumn "PresDVotes" ''Int
 FS.declareColumn "PresRVotes" ''Int
@@ -97,11 +108,11 @@ type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
 
 type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 
-type CountDataR = [Surveyed, Registered, Voted]
+type CountDataR = [Surveyed, Registered, Voted, SurveyedW, RegisteredW, VotedW]
 type DCatsR = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type PredictorsR = DT.PWPopPerSqMile ': DCatsR
 type PrefPredictorsR = HouseIncumbency ': PredictorsR
-type PrefDataR = [VotesInRace, DVotes, RVotes]
+type PrefDataR = [VotesInRace, DVotes, RVotes, VotesInRaceW, DVotesW, RVotesW]
 type CESByCDR = CDKeyR V.++ PrefPredictorsR V.++ CountDataR V.++ PrefDataR
 
 type ElectionDataR = [HouseIncumbency, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes]
@@ -230,6 +241,23 @@ cpsKeysToASER addInCollegeToGrads r =
        ra5 =  DT.race5FromRaceAlone4AndHisp True ra4 h
   in (r ^. DT.age5C) F.&: (r ^. DT.sexC) F.&: e4 r F.&: ra5 F.&: V.RNil
 
+designEffect :: FL.LMVSK -> Double
+designEffect lmvsk = 1 + v/m2
+  where
+    v = FL.lmvskVariance lmvsk
+    m2 = FL.lmvskMean lmvsk * FL.lmvskMean lmvsk
+
+designEffectFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
+designEffectFld = fmap designEffect
+
+effSampleSize :: FL.LMVSK -> Double
+effSampleSize lmvsk = sumWeights / deff where
+  sumWeights = realToFrac (FL.lmvskCount lmvsk) * (FL.lmvskMean lmvsk)
+  deff = designEffect lmvsk
+
+effSampleSizeFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
+effSampleSizeFld = fmap effSampleSize
+
 cpsCountedTurnoutByState ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR)))
 cpsCountedTurnoutByState = do
   let afterYear y r = F.rgetField @BR.Year r >= y
@@ -239,17 +267,24 @@ cpsCountedTurnoutByState = do
       voted r = CPS.cpsVoted $ r ^. ET.votedYNC
       registered r = CPS.cpsRegistered $ r ^. ET.registeredYNC
       unpack r = if includeRow r then Just (cpsKeysToASER True (F.rcast r) F.<+> r) else Nothing
-      innerFld :: FL.Fold (F.Record [ET.RegisteredYNC, ET.VotedYNC]) (F.Record [Surveyed, Registered, Voted])
+      innerFld :: FL.Fold (F.Record [CPS.CPSVoterPUMSWeight, ET.RegisteredYNC, ET.VotedYNC]) (F.Record CountDataR)
       innerFld =
         let surveyedFld = FL.length
             registeredFld = FL.prefilter registered FL.length
             votedFld = FL.prefilter voted FL.length
-        in (\s r v -> s F.&: r F.&: v F.&: V.RNil) <$> surveyedFld <*> registeredFld <*> votedFld
+            wgt = view CPS.cPSVoterPUMSWeight
+            wSurveyedFld = FL.premap wgt FL.sum
+            wRegisteredFld = FL.prefilter registered wSurveyedFld
+            wVotedFld = FL.prefilter voted wSurveyedFld
+            lmvskFld = FL.premap wgt FL.fastLMVSK
+            essFld = effSampleSizeFld lmvskFld
+        in (\s r v ess wR wV -> s F.&: r F.&: v F.&: ess F.&: wR F.&: wV F.&: V.RNil)
+           <$> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> wRegisteredFld <*> wVotedFld
       fld :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
       fld = FMR.concatFold
             $ FMR.mapReduceFold
             (FMR.Unpack unpack)
-            (FMR.assignKeysAndData @(StateKeyR V.++ DCatsR) @[ET.RegisteredYNC, ET.VotedYNC])
+            (FMR.assignKeysAndData @(StateKeyR V.++ DCatsR) @[CPS.CPSVoterPUMSWeight, ET.RegisteredYNC, ET.VotedYNC])
             (FMR.foldAndAddKey innerFld)
   cpsRaw_C ← CPS.cpsVoterPUMSLoader
   BR.retrieveOrMakeFrame "model/election2/cpsByStateRaw.bin" cpsRaw_C $ pure . FL.fold fld
@@ -311,7 +346,7 @@ cesCountedDemPresVotesByCD clearCaches = do
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR 2020 (F.rgetField @CCES.MPresVoteParty) ces
 
 
-countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC)
+countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC, F.ElemOf rs CCES.CESWeight)
                => (F.Record rs -> MT.MaybeData ET.PartyT)
                -> FL.Fold
                   (F.Record rs)
@@ -320,19 +355,37 @@ countCESVotesF votePartyMD =
   let vote (MT.MaybeData x) = maybe False (const True) x
       dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
       rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
+      wgt = view CCES.cESWeight
       surveyedF = FL.length
       registeredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) FL.length
       votedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) FL.length
       votesF = FL.prefilter (vote . votePartyMD) votedF
       dVotesF = FL.prefilter (dVote . votePartyMD) votedF
       rVotesF = FL.prefilter (rVote . votePartyMD) votedF
-   in (\s r v vs dvs rvs  → s F.&: r F.&: v F.&: vs F.&: dvs F.&: rvs F.&: V.RNil)
+      wSurveyedF = FL.premap wgt FL.sum
+      lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
+      essSurveyedF = effSampleSizeFld lmvskSurveyedF
+      wRegisteredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) wSurveyedF
+      wVotedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) wSurveyedF
+      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
+      lmvskVotesF = FL.prefilter (vote . votePartyMD) lmvskSurveyedF
+      essVotesF = effSampleSizeFld lmvskVotesF
+      wDVotesF = FL.prefilter (dVote . votePartyMD) wVotedF
+      wRVotesF = FL.prefilter (rVote . votePartyMD) wVotedF
+   in (\s r v eS wR wV vs dvs rvs eV wDV wRV →
+          s F.&: r F.&: v F.&: eS F.&: wR F.&: wV F.&: vs F.&: dvs F.&: rvs F.&: eV F.&: wDV F.&: wRV F.&: V.RNil)
       <$> surveyedF
       <*> registeredF
       <*> votedF
+      <*> essSurveyedF
+      <*> wRegisteredF
+      <*> wVotedF
       <*> votesF
       <*> dVotesF
       <*> rVotesF
+      <*> essVotesF
+      <*> wDVotesF
+      <*> wRVotesF
 
 cesRecodeHispanic ∷ (F.ElemOf rs DT.HispC, F.ElemOf rs DT.Race5C) => F.Record rs -> F.Record rs
 cesRecodeHispanic r =
@@ -359,6 +412,7 @@ cesMR ∷ forall rs f m .
         , rs F.⊆ (DT.Education4C ': rs)
         , F.ElemOf rs CCES.CatalistRegistrationC
         , F.ElemOf rs CCES.CatalistTurnoutC
+        , F.ElemOf rs CCES.CESWeight
         )
       ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
 cesMR earliestYear votePartyMD =
