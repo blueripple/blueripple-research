@@ -66,6 +66,11 @@ import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import Flat.Instances.Vector ()
 
+import qualified Graphics.Vega.VegaLite as GV
+import qualified Graphics.Vega.VegaLite.Compat as FV
+import qualified Graphics.Vega.VegaLite.Configuration as FV
+import qualified Graphics.Vega.VegaLite.JSON as VJ
+
 runTurnoutModel :: (K.KnitEffects r
                    , BRKU.CacheEffects r
                    , Vinyl.RMap l
@@ -96,7 +101,49 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts dmr pst sam
                  (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
-  MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
+  MC.runModel modelDirE (MC.turnoutSurveyText ts <> "TurnoutR_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
 
 FTH.declareColumn "TurnoutP" ''Double
 FTH.declareColumn "TurnoutP_CI" ''MT.ConfidenceInterval
+
+{-
+statePSWithTargetsChart :: K.KnitEffects r
+                      => BR.PostPaths Path.Abs
+                      -> BR.PostInfo
+                      -> Text
+                      -> Text
+                      -> FV.ViewConfig
+                      -> F.FrameRec F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutP, BRDF.BallotsCountedVAP])
+                      -> K.Sem r GV.VegaLite
+statePSWithTargetsChart postPaths' postInfo title chartID vc tableRows = do
+  let colData r
+        = [("State", GV.Str $ r ^. GT.stateAbbreviation)
+          , ("Population", GV.Number $ realToFrac   r ^. DT.popCount)
+          , ("Actual Turnout (VAP)", GV.Number $ 100 * r ^. BRDF.ballotsCountedVAP)
+          , ("Modeled Turnout", GV.Number $ 100 * r ^. TM.turnoutP)
+          , ("Actual - Model", GV.Number $ 100 * (r ^. BRDF.ballotsCountedVAP - r ^. TM.turnoutP) )
+          ]
+--      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) tableRows
+  jsonFilePrefix <- K.getNextUnusedId $ ("statePSWithTargets_" <> chartID)
+  jsonUrl <-  BRK.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+  --
+      encScatter = GV.encoding
+        . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+        . GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
+      markScatter = GV.mark GV.Point [GV.MSize 1]
+      scatterSpec = GV.asSpec [encScatter [], markScatter]
+      encXYLine = GV.encoding
+                  . GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative]
+                  . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MFillOpacity 0.5]
+      xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
+      layers = GV.layer [scatterSpec, xyLineSpec]
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , layers
+                                  , transf []
+                                  , vlData
+                                  ]
+-}

@@ -59,6 +59,7 @@ import qualified Stan.Parameters as SP
 import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Distributions as SMD
+import qualified Stan.ModelBuilder.Distributions.RealBinomial as SMD
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
@@ -399,12 +400,18 @@ newtype Theta = Theta (Maybe (DAG.Parameter TE.ECVec))
 
 data ModelParameters where
   BinomialLogitModelParameters :: Alpha -> Theta -> ModelParameters
+  RealBinomialLogitModelParameters :: Alpha -> Theta -> ModelParameters
+  BetaLogitModelParameters :: Alpha -> Theta -> ModelParameters
 
 paramAlpha :: ModelParameters -> Alpha
 paramAlpha (BinomialLogitModelParameters a _) = a
+paramAlpha (RealBinomialLogitModelParameters a _) = a
+paramAlpha (BetaLogitModelParameters a _) = a
 
 paramTheta :: ModelParameters -> Theta
 paramTheta (BinomialLogitModelParameters _ t) = t
+paramTheta (RealBinomialLogitModelParameters _ t) = t
+paramTheta (BetaLogitModelParameters _ t) = t
 
 modelParameters :: DM.DesignMatrixRow a -> SMB.RowTypeTag a -> StateAlpha -> SMB.StanBuilderM md gq ModelParameters
 modelParameters dmr rtt sa = do
@@ -455,7 +462,7 @@ modelParameters dmr rtt sa = do
         (rawAlphaP :> alphaPs) DAG.TransformedParametersBlock
         (\(rawE :> muAlphaE :> muSigmaE :> TNil) -> DAG.DeclRHS $ muAlphaE `TE.plusE` (muSigmaE `TE.timesE` rawE))
         TNil (\_ _ -> pure ())
-  pure $ BinomialLogitModelParameters alpha theta
+  pure $ RealBinomialLogitModelParameters alpha theta
 
 data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
@@ -463,7 +470,14 @@ probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> SMB.GroupTypeTag b -
 probabilitiesExpr mps rtt gtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
   where
     stateIndexE = SMB.byGroupIndexE rtt gtt
-    lp = case mps of
+    lp =
+      let aV = case paramAlpha mps of
+            SimpleAlpha saP -> TE.functionE SF.rep_vector (DAG.parameterExpr saP :> (SMB.dataSetSizeE rtt) :> TNil)
+            HierarchicalAlpha _ haP -> TE.indexE TEI.s0 stateIndexE $ DAG.parameterExpr haP
+      in case paramTheta mps of
+           (Theta (Just thetaP)) -> aV `TE.plusE` (covariatesM `TE.timesE` DAG.parameterExpr thetaP)
+           _ -> aV
+{-
       BinomialLogitModelParameters alpha theta ->
         let aV = case alpha of
               SimpleAlpha saP -> TE.functionE SF.rep_vector (DAG.parameterExpr saP :> (SMB.dataSetSizeE rtt) :> TNil)
@@ -471,7 +485,21 @@ probabilitiesExpr mps rtt gtt covariatesM = TE.functionE SF.inv_logit (lp :> TNi
         in case theta of
              (Theta (Just thetaP)) -> aV `TE.plusE` (covariatesM `TE.timesE` DAG.parameterExpr thetaP)
              _ -> aV
-
+      RealBinomialLogitModelParameters alpha theta ->
+        let aV = case alpha of
+              SimpleAlpha saP -> TE.functionE SF.rep_vector (DAG.parameterExpr saP :> (SMB.dataSetSizeE rtt) :> TNil)
+              HierarchicalAlpha _ haP -> TE.indexE TEI.s0 stateIndexE $ DAG.parameterExpr haP
+        in case theta of
+             (Theta (Just thetaP)) -> aV `TE.plusE` (covariatesM `TE.timesE` DAG.parameterExpr thetaP)
+             _ -> aV
+      BetaLogitModelParameters alpha theta ->
+        let aV = case alpha of
+              SimpleAlpha saP -> TE.functionE SF.rep_vector (DAG.parameterExpr saP :> (SMB.dataSetSizeE rtt) :> TNil)
+              HierarchicalAlpha _ haP -> TE.indexE TEI.s0 stateIndexE $ DAG.parameterExpr haP
+        in case theta of
+             (Theta (Just thetaP)) -> aV `TE.plusE` (covariatesM `TE.timesE` DAG.parameterExpr thetaP)
+             _ -> aV
+-}
 -- not returning anything for now
 turnoutModel :: (Typeable (DP.PSDataR k)
 --                , k F.⊆ DP.PSDataR k
@@ -520,7 +548,9 @@ turnoutModel rc tmc = do
          Theta Nothing -> TE.indexE TEI.s0 indexE $ pExpr alpha
          Theta (Just thetaP) -> TE.indexE TEI.s0 indexE (pExpr alpha) `TE.plusE` (covariatesM `TE.timesE` pExpr thetaP)
 
-  let ppF :: SMD.StanDist TE.EInt pts xs --((TE.IntE -> TE.ExprList xs) -> TE.IntE -> TE.UExpr TE.EReal)
+  let
+{-
+    ppF :: SMD.StanDist TE.EInt pts xs --((TE.IntE -> TE.ExprList xs) -> TE.IntE -> TE.UExpr TE.EReal)
           -> TE.CodeWriter (TE.IntE -> TE.ExprList xs)
           -> SMB.StanBuilderM md gq (TE.ArrayE TE.EInt)
       ppF dist rngPSCW = withCC (\cc -> SBB.generatePosteriorPrediction
@@ -531,24 +561,63 @@ turnoutModel rc tmc = do
                                 )
                          mData
 --                         (\_ p -> p)
+-}
       llF :: SMD.StanDist t pts rts
           -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
           -> TE.CodeWriter (TE.IntE -> TE.UExpr t)
           -> SMB.StanBuilderM md gq ()
       llF = withCC (SBB.generateLogLikelihood . ccSurveyDataTag) mData
 
-  let (sampleStmtF, pp, ll) = case mParams of
-        BinomialLogitModelParameters a t ->
-          let ssF e = SMB.familySample SMD.binomialLogitDist e (withCC ccTrials mData :> lpE a t :> TNil)
-              rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EInt, TE.EReal])
-              rpF = pure $ \nE -> withCC ccTrials mData `TE.at` nE :> lpE a t `TE.at` nE :> TNil
-              ll' = llF SMD.binomialLogitDist rpF (pure $ \nE -> withCC ccSuccesses mData `TE.at` nE)
-          in (ssF, ppF SMD.binomialLogitDist rpF, ll')
+  case mParams of
+    BinomialLogitModelParameters a t -> do
+      let ssF e = SMB.familySample SMD.binomialLogitDist e (withCC ccTrials mData :> lpE a t :> TNil)
+          rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EInt, TE.EReal])
+          rpF = pure $ \nE -> withCC ccTrials mData `TE.at` nE :> lpE a t `TE.at` nE :> TNil
+          ppF = withCC  (\cc -> SBB.generatePosteriorPrediction cc.ccSurveyDataTag
+                                (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.intSpec [])
+                                SMD.binomialLogitDist rpF
+                        ) mData
+          ll = llF SMD.binomialLogitDist rpF (pure $ \nE -> withCC ccSuccesses mData `TE.at` nE)
+      SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ TE.addStmt $ ssF $ withCC ccSuccesses mData
+      when rc.rcIncludePPCheck $ void ppF
+      when rc.rcIncludeLL ll
+    RealBinomialLogitModelParameters a t -> do
+      realBinomialLogitDistV <- SMD.realBinomialLogitDistM @TE.ECVec
+      realBinomialLogitDistS <- SMD.realBinomialLogitDistSM
+      let toVec x = TE.functionE SF.to_vector (x :> TNil)
+          ssF e = SMB.familySample realBinomialLogitDistV e (toVec (withCC ccTrials mData) :> lpE a t :> TNil)
+          rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
+          rpF = pure $ \nE -> toVec (withCC ccTrials mData) `TE.at` nE :> lpE a t `TE.at` nE :> TNil
+          ppF = withCC (\cc -> SBB.generatePosteriorPrediction cc.ccSurveyDataTag
+                         (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
+                         realBinomialLogitDistS rpF) mData
+          ll = llF realBinomialLogitDistS rpF (pure $ \nE -> toVec (withCC ccSuccesses mData) `TE.at` nE)
+      SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ TE.addStmt $ ssF $ toVec $ withCC ccSuccesses mData
+      when rc.rcIncludePPCheck $ void ppF
+      when rc.rcIncludeLL ll
+    BetaLogitModelParameters a t -> do
+      let toVec x = TE.functionE SF.to_vector (x :> TNil)
+          eDiv = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
+          eTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+          pp = TE.functionE SF.inv_logit (lpE a t :> TNil)
+          pSucc = withCC (\cc -> toVec cc.ccTrials `eTimes` pp) mData
+          op = withCC (\cc -> toVec cc.ccSuccesses `eDiv` toVec cc.ccTrials) mData
+          alpha = pSucc `TE.plusE` TE.realE 1
+          beta = withCC (\cc -> toVec cc.ccTrials `TE.minusE` pSucc `TE.plusE` TE.realE 1) mData
+          ssF e = SMB.familySample SMD.betaDistV e (alpha :> beta :> TNil)
+          rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
+          rpF = pure $ \nE -> alpha `TE.at` nE :> beta `TE.at` nE :> TNil
+          ppF = withCC (\cc -> SBB.generatePosteriorPrediction cc.ccSurveyDataTag
+                         (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
+                         SMD.betaDist rpF) mData
+          ll = llF SMD.betaDist rpF (pure $ \nE -> op `TE.at` nE)
+      SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ TE.addStmt $ ssF op
+      when rc.rcIncludePPCheck $ void ppF
+      when rc.rcIncludeLL ll
 
-  SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ TE.addStmt $ sampleStmtF $ withCC ccSuccesses mData
+--  SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ TE.addStmt $ sampleStmtF $ withCC ccSuccesses mData
   -- generated quantities
-  when rc.rcIncludePPCheck $ void pp
-  when rc.rcIncludeLL ll
+
 {-  when rc.rcIncludeDMSplits $ case mBeta of
     Nothing -> pure ()
     Just beta -> SMB.inBlock SMB.SBGeneratedQuantities $ do

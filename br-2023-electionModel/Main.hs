@@ -152,7 +152,7 @@ main = do
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
         dmr = MC.tDesignMatrixRow_d_A_S_RE
         stateAlphaModel = MC.StateAlphaHierCentered
-    stateComparisonToTgts <- psByState cmdLine MC.CPSSurvey dmr MC.NoPSTargets stateAlphaModel
+    stateComparisonToTgts <- psByState cmdLine MC.CESSurvey dmr MC.NoPSTargets stateAlphaModel
     BRK.logFrame stateComparisonToTgts
     raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" MC.CPSSurvey dmr MC.NoPSTargets stateAlphaModel
     BRK.logFrame raceComparison

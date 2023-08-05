@@ -43,6 +43,7 @@ import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import Control.Lens (view, (^.))
 import qualified Control.Foldl as FL
+import qualified Control.Foldl.Statistics as FL
 import qualified Control.MapReduce as FMR
 import qualified Data.Map.Strict as M
 --import qualified Data.Serialize as S
