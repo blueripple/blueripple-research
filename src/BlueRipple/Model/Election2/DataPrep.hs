@@ -174,7 +174,9 @@ cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
                        -> K.Sem r (K.ActionWithCacheTime r ModelData)
 cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
+  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
+  K.ignoreCacheTime ces_C >>= pure . F.takeRows 100 >>= BR.logFrame
   let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
@@ -242,21 +244,38 @@ cpsKeysToASER addInCollegeToGrads r =
   in (r ^. DT.age5C) F.&: (r ^. DT.sexC) F.&: e4 r F.&: ra5 F.&: V.RNil
 
 designEffect :: FL.LMVSK -> Double
-designEffect lmvsk = 1 + v/m2
+designEffect lmvsk = 1 + x
   where
+    x = if FL.lmvskCount lmvsk < 2 then 0 else v / m2
     v = FL.lmvskVariance lmvsk
     m2 = FL.lmvskMean lmvsk * FL.lmvskMean lmvsk
 
 designEffectFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
 designEffectFld = fmap designEffect
 
+-- NB: sample size is unweighted number of samples, "count" here
 effSampleSize :: FL.LMVSK -> Double
 effSampleSize lmvsk = sumWeights / deff where
-  sumWeights = realToFrac (FL.lmvskCount lmvsk) * (FL.lmvskMean lmvsk)
+  sumWeights = realToFrac (FL.lmvskCount lmvsk)
   deff = designEffect lmvsk
 
 effSampleSizeFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
 effSampleSizeFld = fmap effSampleSize
+
+wgtdAverageFld :: (a -> Double) -> (a -> Double) -> FL.Fold a Double
+wgtdAverageFld wgt f = g <$> wgtF <*> wgtdF
+  where
+    wgtF = FL.premap wgt FL.sum
+    wgtdF = FL.premap (\a -> wgt a * f a) FL.sum
+    g sumWgts sumWgtd = if (sumWgts == 0) then 0 else sumWgtd / sumWgts
+
+wgtdAverageBoolFld :: (a -> Double) -> (a -> Bool) -> FL.Fold a Double
+wgtdAverageBoolFld wgt f = g <$> wgtF <*> wgtdF
+  where
+    wgtF = FL.premap wgt FL.sum
+    wgtdF = FL.prefilter f wgtF
+    g sumWgts sumWgtd = if (sumWgts == 0) then 0 else sumWgtd / sumWgts
+
 
 cpsCountedTurnoutByState ∷ (K.KnitEffects r, BR.CacheEffects r) ⇒ K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR)))
 cpsCountedTurnoutByState = do
@@ -273,13 +292,12 @@ cpsCountedTurnoutByState = do
             registeredFld = FL.prefilter registered FL.length
             votedFld = FL.prefilter voted FL.length
             wgt = view CPS.cPSVoterPUMSWeight
-            wSurveyedFld = FL.premap wgt FL.sum
-            wRegisteredFld = FL.prefilter registered wSurveyedFld
-            wVotedFld = FL.prefilter voted wSurveyedFld
+            waRegisteredFld = wgtdAverageBoolFld wgt registered
+            waVotedFld = wgtdAverageBoolFld wgt voted
             lmvskFld = FL.premap wgt FL.fastLMVSK
             essFld = effSampleSizeFld lmvskFld
-        in (\s r v ess wR wV -> s F.&: r F.&: v F.&: ess F.&: wR F.&: wV F.&: V.RNil)
-           <$> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> wRegisteredFld <*> wVotedFld
+        in (\s r v ess waR waV -> s F.&: r F.&: v F.&: ess F.&: min ess (realToFrac s * waR) F.&: min ess (realToFrac s * waV) F.&: V.RNil)
+           <$> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> waRegisteredFld <*> waVotedFld
       fld :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
       fld = FMR.concatFold
             $ FMR.mapReduceFold
@@ -362,30 +380,33 @@ countCESVotesF votePartyMD =
       votesF = FL.prefilter (vote . votePartyMD) votedF
       dVotesF = FL.prefilter (dVote . votePartyMD) votedF
       rVotesF = FL.prefilter (rVote . votePartyMD) votedF
-      wSurveyedF = FL.premap wgt FL.sum
+--      wSurveyedF = FL.premap wgt FL.sum
       lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
       essSurveyedF = effSampleSizeFld lmvskSurveyedF
-      wRegisteredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) wSurveyedF
-      wVotedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) wSurveyedF
-      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
+      waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
+      waVotedF = wgtdAverageBoolFld wgt (CCES.catalistVoted . view CCES.catalistTurnoutC)
+--      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
       lmvskVotesF = FL.prefilter (vote . votePartyMD) lmvskSurveyedF
       essVotesF = effSampleSizeFld lmvskVotesF
-      wDVotesF = FL.prefilter (dVote . votePartyMD) wVotedF
-      wRVotesF = FL.prefilter (rVote . votePartyMD) wVotedF
-   in (\s r v eS wR wV vs dvs rvs eV wDV wRV →
-          s F.&: r F.&: v F.&: eS F.&: wR F.&: wV F.&: vs F.&: dvs F.&: rvs F.&: eV F.&: wDV F.&: wRV F.&: V.RNil)
+      waDVotesF = wgtdAverageBoolFld wgt (dVote . votePartyMD)
+      waRVotesF = wgtdAverageBoolFld wgt (rVote . votePartyMD)
+   in (\s r v eS waR waV vs dvs rvs eV waDV waRV →
+          s F.&: r F.&: v
+          F.&: eS F.&: min eS (realToFrac s * waR) F.&: min eS (realToFrac s * waV)
+          F.&: vs F.&: dvs F.&: rvs
+          F.&: eV F.&: min eV (realToFrac vs * waDV) F.&: min eV (realToFrac vs * waRV) F.&: V.RNil)
       <$> surveyedF
       <*> registeredF
       <*> votedF
       <*> essSurveyedF
-      <*> wRegisteredF
-      <*> wVotedF
+      <*> waRegisteredF
+      <*> waVotedF
       <*> votesF
       <*> dVotesF
       <*> rVotesF
       <*> essVotesF
-      <*> wDVotesF
-      <*> wRVotesF
+      <*> waDVotesF
+      <*> waRVotesF
 
 cesRecodeHispanic ∷ (F.ElemOf rs DT.HispC, F.ElemOf rs DT.Race5C) => F.Record rs -> F.Record rs
 cesRecodeHispanic r =
