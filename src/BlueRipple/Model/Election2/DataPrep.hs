@@ -174,9 +174,9 @@ cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
                        -> K.Sem r (K.ActionWithCacheTime r ModelData)
 cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
-  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
+--  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
-  K.ignoreCacheTime ces_C >>= pure . F.takeRows 100 >>= BR.logFrame
+--  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000 . F.filterFrame (isNaN . view surveyedW) >>= BR.logFrame
   let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
@@ -246,7 +246,7 @@ cpsKeysToASER addInCollegeToGrads r =
 designEffect :: FL.LMVSK -> Double
 designEffect lmvsk = 1 + x
   where
-    x = if FL.lmvskCount lmvsk < 2 then 0 else v / m2
+    x = if FL.lmvskCount lmvsk < 2 || m2 == 0 || isNaN v then 0 else v / m2
     v = FL.lmvskVariance lmvsk
     m2 = FL.lmvskMean lmvsk * FL.lmvskMean lmvsk
 

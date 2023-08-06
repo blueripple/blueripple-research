@@ -77,7 +77,7 @@ pandocTemplate ∷ K.TemplatePath
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
 
-psBy :: forall ks r .
+psBy :: forall ks r a b.
         (Show (F.Record ks)
         , Typeable ks
         , V.RMap ks
@@ -94,17 +94,18 @@ psBy :: forall ks r .
         )
      => BR.CommandLine
      -> Text
-     -> MC.TurnoutSurvey
+     -> MC.TurnoutSurvey a
+     -> MC.SurveyAggregation b
      -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
      -> MC.PSTargets
      -> MC.StateAlpha
      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutP]))
-psBy cmdLine gqName ts dmr pst sa = do
+psBy cmdLine gqName ts sAgg dmr pst sa = do
     let runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @ks)
     (_, (MC.PSMap psTMap)) <- K.ignoreCacheTimeM
                               $ TM.runTurnoutModel 2020
                               (Right "model/election2/test/stan") (Right "model/election2/test")
-                              gqName cmdLine runConfig ts (contramap F.rcast dmr) pst sa
+                              gqName cmdLine runConfig ts sAgg (contramap F.rcast dmr) pst sa
     pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
     let whenMatched :: F.Record ks -> Double -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, TM.TurnoutP]))
         whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, TM.TurnoutP])
@@ -116,13 +117,14 @@ psBy cmdLine gqName ts dmr pst sa = do
 
 psByState ::  (K.KnitEffects r, BRK.CacheEffects r)
           => BR.CommandLine
-          -> MC.TurnoutSurvey
+          -> MC.TurnoutSurvey a
+          -> MC.SurveyAggregation b
           -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
           -> MC.PSTargets
           -> MC.StateAlpha
           -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutP, BRDF.BallotsCountedVAP]))
-psByState cmdLine ts dmr pst sa = do
-  byStatePS <- psBy @'[GT.StateAbbreviation] cmdLine "State" ts dmr pst sa
+psByState cmdLine ts sAgg dmr pst sa = do
+  byStatePS <- psBy @'[GT.StateAbbreviation] cmdLine "State" ts sAgg dmr pst sa
   turnoutByState <- F.filterFrame ((== 2020) . view BRDF.year) <$> K.ignoreCacheTimeM BRDF.stateTurnoutLoader
   let (joined, missing) = FJ.leftJoinWithMissing @'[GT.StateAbbreviation] byStatePS turnoutByState
   when (not $ null missing) $ K.knitError $ "psByState: missing keys in ps and state turnout target join: " <> show missing
@@ -152,9 +154,9 @@ main = do
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
         dmr = MC.tDesignMatrixRow_d_A_S_RE
         stateAlphaModel = MC.StateAlphaHierCentered
-    stateComparisonToTgts <- psByState cmdLine MC.CESSurvey dmr MC.NoPSTargets stateAlphaModel
+    stateComparisonToTgts <- psByState cmdLine MC.CESSurvey MC.WeightedAggregation dmr MC.NoPSTargets stateAlphaModel
     BRK.logFrame stateComparisonToTgts
-    raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" MC.CPSSurvey dmr MC.NoPSTargets stateAlphaModel
+    raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" MC.CESSurvey MC.WeightedAggregation dmr MC.NoPSTargets stateAlphaModel
     BRK.logFrame raceComparison
     pure ()
   pure ()

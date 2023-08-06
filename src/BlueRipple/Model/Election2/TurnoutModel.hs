@@ -86,13 +86,14 @@ runTurnoutModel :: (K.KnitEffects r
                 -> Text
                 -> BR.CommandLine
                 -> MC.RunConfig l
-                -> MC.TurnoutSurvey
+                -> MC.TurnoutSurvey a
+                -> MC.SurveyAggregation b
                 -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
                 -> MC.PSTargets
                 -> MC.StateAlpha
                 -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, MC.PSMap l Double))
-runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts dmr pst sam = do
-  let modelConfig = MC.TurnoutConfig ts pst dmr sam
+runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst sam = do
+  let modelConfig = MC.TurnoutConfig ts sa pst dmr sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
