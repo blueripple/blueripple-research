@@ -101,8 +101,6 @@ tDesignMatrixRow_d_A_S_RE = DM.DesignMatrixRow "d_A_S_RE" [dRP, aRP, sRP, reRP]
     dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
     aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
     sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
---    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
---    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
     re r = DM.BEProduct2 (r ^. DT.race5C, r ^. DT.education4C)
     reRP = DM.boundedEnumRowPart (Just (DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_NonHSGrad))) "RaceEdu" re
 
@@ -254,10 +252,7 @@ data StateTargetsData td =
 
 data TurnoutModelData a (b :: TE.EType) where
   NoPT_TurnoutModelData :: CovariatesAndCounts a b -> TurnoutModelData a b
---  NoPT_CESTurnoutModelData :: CovariatesAndCounts (F.Record DP.CESByCDR) -> TurnoutModelData
   PT_TurnoutModelData :: CovariatesAndCounts a b -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData a b
---  PT_CESTurnoutModelData :: CovariatesAndCounts (F.Record DP.CESByCDR) -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData
-
 
 withCC :: (forall a b . CovariatesAndCounts a b -> c) -> TurnoutModelData a b -> c
 withCC f (NoPT_TurnoutModelData cc) = f cc
@@ -358,9 +353,6 @@ turnoutTargetsTD cc st cM rM = do
       $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nACSRowsE) $ \kE ->
       [(TE.indexE TEI.s0 acsStateIndex acsNByState `TE.at` kE) `plusEq` (st.stdACSWgts `TE.at` kE)]
     pure acsNByState
-{-  vecOne <-  SMB.inBlock SMB.SBTransformedData
-             $ SMB.addFromCodeWriter
-             $ TE.declareRHSNW (TE.NamedDeclSpec "vStateOnes")  -}
   pure (dmACS, acsNByState)
 
 turnoutTargetsModel :: ModelParameters
@@ -417,17 +409,6 @@ turnoutPS mp dmr cM rM gtt = do
       psPE = probabilitiesExpr mp psDataTag gtt dmPS
   _ <- SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "tByGrp") psDataTag gtt psDataGrpIndex (toVec psWgts) (pure psPE) Nothing
   pure ()
-
-{-
-  modelDataTag <- SMB.dataSetTag @a SC.ModelData "ElectionModelData"
-  let (_, nCovariatesE') = DM.designMatrixColDimBinding mc.designMatrixRow Nothing
-  dmE <- if DM.rowLength mc.designMatrixRow > 0
-         then DM.addDesignMatrix modelDataTag mc.designMatrixRow Nothing
-         else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-  trialsE' <- SBB.addCountData modelDataTag mc.trialsT mc.trialsF
-  successesE' <- SBB.addCountData modelDataTag mc.successesT mc.successesF
-  pure $ ModelData modelDataTag nCovariatesE' dmE trialsE' successesE'
--}
 
 -- given S states
 -- alpha is a scalar or S col-vector
@@ -547,12 +528,10 @@ turnoutModel rc tmc = do
 -}
   case mData of
     PT_TurnoutModelData cc st -> turnoutTargetsModel mParams cc st Nothing Nothing --(Just $ centerF SC.ModelData) (Just r)
---    PT_CESTurnoutModelData cc st -> turnoutTargetsModel mParams cc st Nothing Nothing --(Just $ centerF SC.ModelData) (Just r)
     _ -> pure ()
 
   -- model
-  let --reIndexByState = TE.indexE TEI.s0 $ withCC (\cc -> SMB.byGroupIndexE cc.ccSurveyDataTag stateG) mData
-      covariatesM = withCC ccCovariates mData
+  let covariatesM = withCC ccCovariates mData
       lpE :: Alpha -> Theta -> TE.VectorE
       lpE a t =  case a of
        SimpleAlpha alphaP -> case t of
@@ -612,12 +591,6 @@ turnoutModel rc tmc = do
     Nothing -> pure ()
     Just gtt -> turnoutPS mParams tmc.tDesignMatrixRow Nothing Nothing gtt --(Just $ centerF SC.GQData) (Just r)
   pure ()
-
-
-
-
---cwdF :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
---cwdF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
 
 newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
 

@@ -151,7 +151,6 @@ instance (FS.RecFlat (PSDataR k)
 acsByStatePS :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (PSData '[BR.Year, GT.StateAbbreviation]))
 acsByStatePS = fmap (PSData . fmap F.rcast) <$> DDP.cachedACSa5ByState
 
-
 data ModelData =
   ModelData
   {
@@ -181,6 +180,7 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
   pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C
+
 
 -- general
 withZeros :: forall outerK ks .

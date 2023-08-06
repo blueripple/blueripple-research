@@ -40,13 +40,17 @@ import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 
 import qualified Data.List as List
-import qualified Data.Vector as V
-import qualified Data.Vector.Unboxed as VU
-import qualified Data.Vinyl as Vinyl
+--import qualified Data.Vector as V
+--import qualified Data.Vector.Unboxed as VU
+import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames as F
 import qualified Frames.Streamly.TH as FTH
+import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Serialize as FS
+
+import qualified Frames.MapReduce as FMR
 
 import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
@@ -73,7 +77,7 @@ import qualified Graphics.Vega.VegaLite.JSON as VJ
 
 runTurnoutModel :: (K.KnitEffects r
                    , BRKU.CacheEffects r
-                   , Vinyl.RMap l
+                   , V.RMap l
                    , Ord (F.Record l)
                    , FS.RecFlat l
                    , Typeable l
@@ -102,10 +106,43 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
                  (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
-  MC.runModel modelDirE (MC.turnoutSurveyText ts <> "TurnoutR_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
+  MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
 
 FTH.declareColumn "TurnoutP" ''Double
 FTH.declareColumn "TurnoutP_CI" ''MT.ConfidenceInterval
+
+surveyDataBy :: forall ks rs a .
+                (Ord (F.Record ks)
+                , ks F.⊆ rs
+                , DP.CountDataR F.⊆ rs
+                , FSI.RecVec (ks V.++ '[TurnoutP])
+                )
+             => MC.SurveyAggregation a -> F.FrameRec rs -> F.FrameRec (ks V.++ '[TurnoutP])
+surveyDataBy sa = FL.fold fld
+  where
+    safeDiv :: Double -> Double -> Double
+    safeDiv x y = if (y /= 0) then x / y else 0
+    uwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    uwInnerFld =
+      let sF = fmap realToFrac $ FL.premap (view DP.surveyed) FL.sum
+          vF = fmap realToFrac $ FL.premap (view DP.voted) FL.sum
+      in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
+    wInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    wInnerFld =
+      let sF = FL.premap (view DP.surveyedW) FL.sum
+          vF = FL.premap (view DP.votedW) FL.sum
+      in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
+    innerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    innerFld = case sa of
+      MC.UnweightedAggregation -> uwInnerFld
+      MC.WeightedAggregation -> wInnerFld
+    fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[TurnoutP]))
+    fld = FMR.concatFold
+          $ FMR.mapReduceFold
+          FMR.noUnpack
+          (FMR.assignKeysAndData @ks @DP.CountDataR)
+          (FMR.foldAndAddKey innerFld)
+
 
 {-
 statePSWithTargetsChart :: K.KnitEffects r

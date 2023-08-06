@@ -152,12 +152,25 @@ main = do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
-        dmr = MC.tDesignMatrixRow_d_A_S_RE
-        stateAlphaModel = MC.StateAlphaHierCentered
-    stateComparisonToTgts <- psByState cmdLine MC.CESSurvey MC.WeightedAggregation dmr MC.NoPSTargets stateAlphaModel
+        dmr = MC.tDesignMatrixRow_d_A_S_E_R
+        stateAlphaModel = MC.StateAlphaSimple
+        survey = MC.CPSSurvey
+        aggregation = MC.WeightedAggregation
+        psTargets = MC.NoPSTargets
+    rawCES_C <- DP.cesCountedDemPresVotesByCD False
+    cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
+    rawCPS_C <- DP.cpsCountedTurnoutByState
+    cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
+    cps <- K.ignoreCacheTime cpCPS_C
+    ces <- K.ignoreCacheTime cpCES_C
+    stateComparisonToTgts <- psByState cmdLine survey aggregation dmr psTargets stateAlphaModel
     BRK.logFrame stateComparisonToTgts
-    raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" MC.CESSurvey MC.WeightedAggregation dmr MC.NoPSTargets stateAlphaModel
+    let byStateFromRawCPS = TM.surveyDataBy @'[GT.StateAbbreviation] MC.WeightedAggregation cps
+    BRK.logFrame byStateFromRawCPS
+    raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" survey aggregation dmr psTargets stateAlphaModel
     BRK.logFrame raceComparison
+    let byRaceFromRawCPS = TM.surveyDataBy @'[DT.Race5C] MC.WeightedAggregation cps
+    BRK.logFrame byRaceFromRawCPS
     pure ()
   pure ()
   case resE of
