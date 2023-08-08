@@ -18,6 +18,7 @@ where
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.Loaders as BRDF
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRK
@@ -87,7 +88,7 @@ psBy :: forall ks r a b.
         , ks F.⊆ (ks V.++ '[DT.PopCount])
         , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
         , FSI.RecVec (ks V.++ '[DT.PopCount])
-        , FSI.RecVec (ks V.++ '[DT.PopCount, TM.TurnoutP])
+        , FSI.RecVec (ks V.++ '[DT.PopCount, TM.TurnoutCI])
         , FS.RecFlat ks
         , K.KnitEffects r
         , BRK.CacheEffects r
@@ -99,7 +100,7 @@ psBy :: forall ks r a b.
      -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
      -> MC.PSTargets
      -> MC.StateAlpha
-     -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutP]))
+     -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutCI]))
 psBy cmdLine gqName ts sAgg dmr pst sa = do
     let runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @ks)
     (_, (MC.PSMap psTMap)) <- K.ignoreCacheTimeM
@@ -107,8 +108,8 @@ psBy cmdLine gqName ts sAgg dmr pst sa = do
                               (Right "model/election2/test/stan") (Right "model/election2/test")
                               gqName cmdLine runConfig ts sAgg (contramap F.rcast dmr) pst sa
     pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
-    let whenMatched :: F.Record ks -> Double -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, TM.TurnoutP]))
-        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, TM.TurnoutP])
+    let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, TM.TurnoutCI]))
+        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, TM.TurnoutCI])
         whenMissingPC k _ = Left $ "psBy: " <> show k <> " is missing from PopCount map."
         whenMissingT k _ = Left $ "psBy: " <> show k <> " is missing from ps Turnout map."
     mergedMap <- K.knitEither
@@ -122,13 +123,10 @@ psByState ::  (K.KnitEffects r, BRK.CacheEffects r)
           -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
           -> MC.PSTargets
           -> MC.StateAlpha
-          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutP, BRDF.BallotsCountedVAP]))
+          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutCI, BRDF.BallotsCountedVAP, BRDF.VAP]))
 psByState cmdLine ts sAgg dmr pst sa = do
   byStatePS <- psBy @'[GT.StateAbbreviation] cmdLine "State" ts sAgg dmr pst sa
-  turnoutByState <- F.filterFrame ((== 2020) . view BRDF.year) <$> K.ignoreCacheTimeM BRDF.stateTurnoutLoader
-  let (joined, missing) = FJ.leftJoinWithMissing @'[GT.StateAbbreviation] byStatePS turnoutByState
-  when (not $ null missing) $ K.knitError $ "psByState: missing keys in ps and state turnout target join: " <> show missing
-  pure $ fmap F.rcast joined
+  TM.addBallotsCountedVAP byStatePS
 
 
 main :: IO ()
@@ -154,7 +152,7 @@ main = do
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
         dmr = MC.tDesignMatrixRow_d_A_S_E_R
         stateAlphaModel = MC.StateAlphaSimple
-        survey = MC.CPSSurvey
+        survey = MC.CESSurvey
         aggregation = MC.WeightedAggregation
         psTargets = MC.NoPSTargets
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
@@ -165,12 +163,23 @@ main = do
     ces <- K.ignoreCacheTime cpCES_C
     stateComparisonToTgts <- psByState cmdLine survey aggregation dmr psTargets stateAlphaModel
     BRK.logFrame stateComparisonToTgts
-    let byStateFromRawCPS = TM.surveyDataBy @'[GT.StateAbbreviation] MC.WeightedAggregation cps
-    BRK.logFrame byStateFromRawCPS
-    raceComparison <- psBy @'[DT.Race5C] cmdLine "Race" survey aggregation dmr psTargets stateAlphaModel
-    BRK.logFrame raceComparison
-    let byRaceFromRawCPS = TM.surveyDataBy @'[DT.Race5C] MC.WeightedAggregation cps
-    BRK.logFrame byRaceFromRawCPS
+    byStateFromRawCPS <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
+    byStateFromRawCES <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) ces)
+    BRK.logFrame byStateFromRawCES
+    modelComparison <- psBy @'[DT.Race5C] cmdLine "Race" survey aggregation dmr psTargets stateAlphaModel
+    BRK.logFrame modelComparison
+    let fromRawCPS = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) cps
+        fromRawCES = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) ces
+    BRK.logFrame fromRawCES
+    turnoutModelPostPaths <- postPaths "Turnout Models" cmdLine
+    BRK.brNewPost turnoutModelPostPaths postInfo "Turnout Models" $ do
+      modelCompChart <- TM.stateChart turnoutModelPostPaths postInfo "Model Comparison" "ModelComp" (FV.ViewConfig 500 500 10)
+                        [{-("WeightedCPS", fmap F.rcast byStateFromRawCPS)
+                        , -}("WeightedCES", fmap F.rcast byStateFromRawCES)
+                        , ("ModelCES", fmap (F.rcast . TM.turnoutCIToTurnoutP) stateComparisonToTgts)
+                        ]
+      _ <- K.addHvega Nothing Nothing modelCompChart
+      pure ()
     pure ()
   pure ()
   case resE of

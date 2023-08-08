@@ -21,20 +21,23 @@ module BlueRipple.Model.Election2.TurnoutModel
   )
 where
 
+import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
 import qualified BlueRipple.Data.DataFrames as BRDF
+import qualified BlueRipple.Data.Loaders as BRDF
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ModelingTypes as MT
 
 import qualified Knit.Report as K hiding (elements)
-
+import qualified Path
 
 import qualified Control.Foldl as FL
-import Control.Lens (view)
+import Control.Lens (view, (^.))
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
@@ -46,6 +49,9 @@ import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames as F
+import qualified Frames.Melt as F
+import qualified Frames.Transform as FT
+import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Streamly.TH as FTH
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Serialize as FS
@@ -95,7 +101,7 @@ runTurnoutModel :: (K.KnitEffects r
                 -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
                 -> MC.PSTargets
                 -> MC.StateAlpha
-                -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, MC.PSMap l Double))
+                -> K.Sem r (K.ActionWithCacheTime r (MC.TurnoutPrediction, MC.PSMap l MT.ConfidenceInterval))
 runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst sam = do
   let modelConfig = MC.TurnoutConfig ts sa pst dmr sam
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
@@ -109,7 +115,7 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
   MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
 
 FTH.declareColumn "TurnoutP" ''Double
-FTH.declareColumn "TurnoutP_CI" ''MT.ConfidenceInterval
+FTH.declareColumn "TurnoutCI" ''MT.ConfidenceInterval
 
 surveyDataBy :: forall ks rs a .
                 (Ord (F.Record ks)
@@ -117,8 +123,8 @@ surveyDataBy :: forall ks rs a .
                 , DP.CountDataR F.⊆ rs
                 , FSI.RecVec (ks V.++ '[TurnoutP])
                 )
-             => MC.SurveyAggregation a -> F.FrameRec rs -> F.FrameRec (ks V.++ '[TurnoutP])
-surveyDataBy sa = FL.fold fld
+             => Maybe (MC.SurveyAggregation a) -> F.FrameRec rs -> F.FrameRec (ks V.++ '[TurnoutP])
+surveyDataBy saM = FL.fold fld
   where
     safeDiv :: Double -> Double -> Double
     safeDiv x y = if (y /= 0) then x / y else 0
@@ -127,15 +133,23 @@ surveyDataBy sa = FL.fold fld
       let sF = fmap realToFrac $ FL.premap (view DP.surveyed) FL.sum
           vF = fmap realToFrac $ FL.premap (view DP.voted) FL.sum
       in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
-    wInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
-    wInnerFld =
+    mwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    mwInnerFld =
       let sF = FL.premap (view DP.surveyedW) FL.sum
           vF = FL.premap (view DP.votedW) FL.sum
       in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
+    wInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    wInnerFld =
+      let swF = FL.premap (view DP.surveyWeight) FL.sum
+          swvF = FL.premap (\r -> view DP.surveyWeight r * realToFrac (view DP.voted r) / realToFrac (view DP.surveyed r)) FL.sum
+      in (\s v -> safeDiv v s F.&: V.RNil) <$> swF <*> swvF
+
     innerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
-    innerFld = case sa of
-      MC.UnweightedAggregation -> uwInnerFld
-      MC.WeightedAggregation -> wInnerFld
+    innerFld = case saM of
+      Nothing -> mwInnerFld
+      Just sa -> case sa of
+        MC.UnweightedAggregation -> uwInnerFld
+        MC.WeightedAggregation -> wInnerFld
     fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[TurnoutP]))
     fld = FMR.concatFold
           $ FMR.mapReduceFold
@@ -144,44 +158,61 @@ surveyDataBy sa = FL.fold fld
           (FMR.foldAndAddKey innerFld)
 
 
-{-
-statePSWithTargetsChart :: K.KnitEffects r
-                      => BR.PostPaths Path.Abs
-                      -> BR.PostInfo
-                      -> Text
-                      -> Text
-                      -> FV.ViewConfig
-                      -> F.FrameRec F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutP, BRDF.BallotsCountedVAP])
-                      -> K.Sem r GV.VegaLite
-statePSWithTargetsChart postPaths' postInfo title chartID vc tableRows = do
-  let colData r
+addBallotsCountedVAP :: (K.KnitEffects r, BRKU.CacheEffects r
+                        , F.ElemOf rs GT.StateAbbreviation
+                        , FJ.CanLeftJoinM '[GT.StateAbbreviation] rs BRDF.StateTurnoutCols
+                        , F.ElemOf (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols)) GT.StateAbbreviation
+                        , rs V.++ '[BRDF.BallotsCountedVAP, BRDF.VAP] F.⊆ (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols))
+                        )
+                     => F.FrameRec rs ->  K.Sem r (F.FrameRec (rs V.++ '[BRDF.BallotsCountedVAP, BRDF.VAP]))
+addBallotsCountedVAP fr = do
+  turnoutByState <- F.filterFrame ((== 2020) . view BRDF.year) <$> K.ignoreCacheTimeM BRDF.stateTurnoutLoader
+  let (joined, missing) = FJ.leftJoinWithMissing @'[GT.StateAbbreviation] fr turnoutByState
+  when (not $ null missing) $ K.knitError $ "addBallotysCOuntedVAP: missing keys in state turnout target join: " <> show missing
+  pure $ fmap F.rcast joined
+
+
+turnoutCIToTurnoutP :: (F.RDelete TurnoutCI rs V.++ '[TurnoutP] F.⊆ ('[TurnoutP] V.++ rs)
+                       , F.ElemOf rs TurnoutCI)
+                    => F.Record rs -> F.Record (F.RDelete TurnoutCI rs V.++ '[TurnoutP])
+turnoutCIToTurnoutP r = F.rcast $ FT.recordSingleton @TurnoutP (MT.ciMid $ view turnoutCI r) F.<+> r
+
+
+
+stateChart :: K.KnitEffects r
+           => BR.PostPaths Path.Abs
+           -> BR.PostInfo
+           -> Text
+           -> Text
+           -> FV.ViewConfig
+           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, TurnoutP, BRDF.BallotsCountedVAP]))]
+           -> K.Sem r GV.VegaLite
+stateChart postPaths' postInfo title chartID vc tableRowsByModel = do
+  let colData (t, r)
         = [("State", GV.Str $ r ^. GT.stateAbbreviation)
-          , ("Population", GV.Number $ realToFrac   r ^. DT.popCount)
-          , ("Actual Turnout (VAP)", GV.Number $ 100 * r ^. BRDF.ballotsCountedVAP)
-          , ("Modeled Turnout", GV.Number $ 100 * r ^. TM.turnoutP)
-          , ("Actual - Model", GV.Number $ 100 * (r ^. BRDF.ballotsCountedVAP - r ^. TM.turnoutP) )
+          , ("VAP", GV.Number $ realToFrac  $ r ^. BRDF.vAP)
+          , ("SEP Turnout", GV.Number $ 100 * r ^. BRDF.ballotsCountedVAP)
+          , ("Modeled Turnout", GV.Number $ 100 * r ^. turnoutP)
+          , ("Model - SEP", GV.Number $ 100 * (r ^. turnoutP - r ^. BRDF.ballotsCountedVAP) )
+          , ("Source", GV.Str t)
           ]
+
 --      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
-      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) tableRows
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ concat $ fmap (\(s, fr) -> fmap (s,) $ FL.fold FL.list fr) tableRowsByModel
   jsonFilePrefix <- K.getNextUnusedId $ ("statePSWithTargets_" <> chartID)
-  jsonUrl <-  BRK.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
+  jsonUrl <-  BRKU.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
 
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
   --
       encScatter = GV.encoding
-        . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
-        . GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
-      markScatter = GV.mark GV.Point [GV.MSize 1]
+        . GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
+        . GV.position GV.Y [GV.PName "Model - SEP", GV.PmType GV.Quantitative]
+        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+        . GV.size [GV.MName "VAP", GV.MmType GV.Quantitative]
+      markScatter = GV.mark GV.Circle []
       scatterSpec = GV.asSpec [encScatter [], markScatter]
-      encXYLine = GV.encoding
-                  . GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative]
-                  . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
-      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MFillOpacity 0.5]
-      xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
-      layers = GV.layer [scatterSpec, xyLineSpec]
+      layers = GV.layer [scatterSpec]
   pure $ FV.configuredVegaLite vc [FV.title title
                                   , layers
-                                  , transf []
                                   , vlData
                                   ]
--}

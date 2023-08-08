@@ -76,24 +76,24 @@ ces2020CSV = dataDir ++ "CES20_Common_OUTPUT_vv.csv"
 
 cesCols :: Int -> Int -> S.Set FS.HeaderText
 cesCols yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
-                                                                  , "commonpostweight"
-                                                                  , "inputstate"
-                                                                  , "cdid" <> show congress
-                                                                  , "gender"
-                                                                  , "birthyr"
-                                                                  , "educ"
-                                                                  , "race"
-                                                                  , "hispanic"
-                                                                  , "pid3"
-                                                                  , "pid7"
-                                                                  , "CL_voter_status" -- registration, Catalist
-                                                                  , "CL_20" <> show yrSuffix <> "gvm" -- how voted and thus turnout, Catalist
-                                                                  , "CC" <> show yrSuffix <> "_412" -- house candidate
-                                                                  , "HouseCand1Party"
-                                                                  , "HouseCand2Party"
-                                                                  , "HouseCand3Party"
-                                                                  , "HouseCand4Party"
-                                           ])
+                                                          , "commonpostweight"
+                                                          , "inputstate"
+                                                          , "cdid" <> show congress
+                                                          , "gender"
+                                                          , "birthyr"
+                                                          , "educ"
+                                                          , "race"
+                                                          , "hispanic"
+                                                          , "pid3"
+                                                          , "pid7"
+                                                          , "CL_voter_status" -- registration, Catalist
+                                                          , "CL_20" <> show yrSuffix <> "gvm" -- how voted and thus turnout, Catalist
+                                                          , "CC" <> show yrSuffix <> "_412" -- house candidate
+                                                          , "HouseCand1Party"
+                                                          , "HouseCand2Party"
+                                                          , "HouseCand3Party"
+                                                          , "HouseCand4Party"
+                                                          ])
 cesRenames :: Bool -> Int -> Int -> Map FS.HeaderText FS.ColTypeName
 cesRenames clAsInt yrSuffix congress =
   let nonCL = [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")

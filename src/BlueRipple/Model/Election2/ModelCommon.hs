@@ -30,6 +30,7 @@ import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ModelingTypes as MT
 
 import qualified Knit.Report as K hiding (elements)
 
@@ -621,7 +622,7 @@ runModel :: forall l k r a b .
          -> TurnoutConfig a b
          -> K.ActionWithCacheTime r DP.ModelData
          -> K.ActionWithCacheTime r (DP.PSData k)
-         -> K.Sem r (K.ActionWithCacheTime r (TurnoutPrediction, PSMap l Double))
+         -> K.Sem r (K.ActionWithCacheTime r (TurnoutPrediction, PSMap l MT.ConfidenceInterval))
 runModel modelDirE modelName gqName _cmdLine runConfig turnoutConfig modelData_C psData_C = do
   let dataName = turnoutModelDataText turnoutConfig
       runnerInputNames = SC.RunnerInputNames
@@ -664,7 +665,7 @@ modelResultAction :: forall k l r a b .
                      )
                   => TurnoutConfig a b
                   -> RunConfig l
-                  -> SC.ResultAction r DP.ModelData (DP.PSData k) SMB.DataSetGroupIntMaps () (TurnoutPrediction, PSMap l Double)
+                  -> SC.ResultAction r DP.ModelData (DP.PSData k) SMB.DataSetGroupIntMaps () (TurnoutPrediction, PSMap l MT.ConfidenceInterval)
 modelResultAction turnoutConfig runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
@@ -704,9 +705,10 @@ modelResultAction turnoutConfig runConfig = SC.UseSummary f where
       Just gtt -> case gqDataAndIndexes_CM of
         Nothing -> K.knitError "modelResultAction: Expected gq data and indexes but got Nothing."
         Just gqDaI_C -> do
+          let getVectorPcts n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
           (_, gqIndexesE) <- K.ignoreCacheTime gqDaI_C
           grpIM <- K.knitEither
              $ gqIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData") (psGroupTag @l)
-          psTByGrpV <- getVector "tByGrp"
-          pure $ M.fromList $ zip (IM.elems grpIM) $ V.toList psTByGrpV
+          psTByGrpV <- getVectorPcts "tByGrp"
+          K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
     pure $ (TurnoutPrediction geoMap (VU.convert betaSI) Nothing, PSMap psMap)

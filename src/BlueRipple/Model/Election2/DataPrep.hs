@@ -66,6 +66,7 @@ import Prelude hiding (pred)
 
 --import qualified Control.MapReduce as FMR
 
+FS.declareColumn "SurveyWeight" ''Double
 FS.declareColumn "Surveyed" ''Int
 FS.declareColumn "Registered" ''Int
 FS.declareColumn "Voted" ''Int
@@ -108,7 +109,7 @@ type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
 
 type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 
-type CountDataR = [Surveyed, Registered, Voted, SurveyedW, RegisteredW, VotedW]
+type CountDataR = [SurveyWeight, Surveyed, Registered, Voted, SurveyedW, RegisteredW, VotedW]
 type DCatsR = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
 type PredictorsR = DT.PWPopPerSqMile ': DCatsR
 type PrefPredictorsR = HouseIncumbency ': PredictorsR
@@ -175,7 +176,7 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
 --  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
---  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000 . F.filterFrame (isNaN . view surveyedW) >>= BR.logFrame
+--  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
   let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
   acs_C <- DDP.cachedACSa5ByState
@@ -292,12 +293,13 @@ cpsCountedTurnoutByState = do
             registeredFld = FL.prefilter registered FL.length
             votedFld = FL.prefilter voted FL.length
             wgt = view CPS.cPSVoterPUMSWeight
+            surveyWgtF = FL.premap wgt FL.sum
             waRegisteredFld = wgtdAverageBoolFld wgt registered
             waVotedFld = wgtdAverageBoolFld wgt voted
             lmvskFld = FL.premap wgt FL.fastLMVSK
             essFld = effSampleSizeFld lmvskFld
-        in (\s r v ess waR waV -> s F.&: r F.&: v F.&: ess F.&: min ess (realToFrac s * waR) F.&: min ess (realToFrac s * waV) F.&: V.RNil)
-           <$> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> waRegisteredFld <*> waVotedFld
+        in (\aw s r v ess waR waV -> aw F.&: s F.&: r F.&: v F.&: ess F.&: min ess (ess * waR) F.&: min ess (ess * waV) F.&: V.RNil)
+           <$> surveyWgtF <*> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> waRegisteredFld <*> waVotedFld
       fld :: FL.Fold (F.Record CPS.CPSVoterPUMS) (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
       fld = FMR.concatFold
             $ FMR.mapReduceFold
@@ -380,7 +382,7 @@ countCESVotesF votePartyMD =
       votesF = FL.prefilter (vote . votePartyMD) votedF
       dVotesF = FL.prefilter (dVote . votePartyMD) votedF
       rVotesF = FL.prefilter (rVote . votePartyMD) votedF
---      wSurveyedF = FL.premap wgt FL.sum
+      surveyWgtF = FL.premap wgt FL.sum
       lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
       essSurveyedF = effSampleSizeFld lmvskSurveyedF
       waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
@@ -390,12 +392,13 @@ countCESVotesF votePartyMD =
       essVotesF = effSampleSizeFld lmvskVotesF
       waDVotesF = wgtdAverageBoolFld wgt (dVote . votePartyMD)
       waRVotesF = wgtdAverageBoolFld wgt (rVote . votePartyMD)
-   in (\s r v eS waR waV vs dvs rvs eV waDV waRV →
-          s F.&: r F.&: v
-          F.&: eS F.&: min eS (realToFrac s * waR) F.&: min eS (realToFrac s * waV)
+   in (\sw s r v eS waR waV vs dvs rvs eV waDV waRV →
+          sw F.&: s F.&: r F.&: v
+          F.&: eS F.&: min eS (eS * waR) F.&: min eS (eS * waV)
           F.&: vs F.&: dvs F.&: rvs
-          F.&: eV F.&: min eV (realToFrac vs * waDV) F.&: min eV (realToFrac vs * waRV) F.&: V.RNil)
-      <$> surveyedF
+          F.&: eV F.&: min eV (eV * waDV) F.&: min eV (eV * waRV) F.&: V.RNil)
+      <$> surveyWgtF
+      <*> surveyedF
       <*> registeredF
       <*> votedF
       <*> essSurveyedF
