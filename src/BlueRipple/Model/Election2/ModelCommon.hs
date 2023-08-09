@@ -123,6 +123,7 @@ stateGroupBuilder :: forall g k l a b .
                      , Ord (F.Record l)
                      , l F.⊆ DP.PSDataR k
                      , Typeable l
+                     , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
                      )
                   => TurnoutConfig a b
                   -> g Text
@@ -150,6 +151,8 @@ stateGroupBuilder turnoutConfig states psKeys = do
   psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
   SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
   SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
+  SMB.addGroupIndexForData stateG psTag $ SMB.makeIndexFromFoldable show saF states
+--  SMB.addGroupIntMapForDataSet stateG psTag $ SMB.dataToIntMapFromFoldable saF states
 
 data StateAlpha = StateAlphaSimple | StateAlphaHierCentered | StateAlphaHierNonCentered deriving stock (Show)
 
@@ -365,7 +368,7 @@ turnoutTargetsModel mp cc std cM rM = do
   (dmACS, acsNByState) <- turnoutTargetsTD cc std cM rM
   let acsStateIndex = SMB.byGroupIndexE std.stdACSTag stateG
       toVec x = TE.functionE SF.to_vector (x :> TNil)
-      pE = probabilitiesExpr mp std.stdACSTag stateG dmACS
+      pE = probabilitiesExpr mp std.stdACSTag dmACS
   acsPS <- SBB.postStratifiedParameterF False SMB.SBTransformedParameters (Just "psTByState") std.stdACSTag stateG acsStateIndex (toVec std.stdACSWgts) (pure pE) Nothing
   let normalDWA = TE.DensityWithArgs SF.normal (TE.realE 1 :> TE.realE 4 :> TNil)
   sigmaTargetsP <-  DAG.simpleParameterWA
@@ -407,7 +410,7 @@ turnoutPS mp dmr cM rM gtt = do
           colsE = SMB.mrfdColumnsE $ DM.matrixFromRowData dmr Nothing
       TE.declareRHSNW (TE.NamedDeclSpec "dmPS_QR" $ TE.matrixSpec rowsE colsE []) $ dmPS' `TE.timesE` r
   let toVec x = TE.functionE SF.to_vector (x :> TNil)
-      psPE = probabilitiesExpr mp psDataTag gtt dmPS
+      psPE = probabilitiesExpr mp psDataTag dmPS
   _ <- SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "tByGrp") psDataTag gtt psDataGrpIndex (toVec psWgts) (pure psPE) Nothing
   pure ()
 
@@ -483,10 +486,10 @@ modelParameters dmr rtt sa = do
 
 data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
-probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> SMB.GroupTypeTag b -> TE.MatrixE -> TE.VectorE
-probabilitiesExpr mps rtt gtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
+probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> TE.MatrixE -> TE.VectorE
+probabilitiesExpr mps rtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
   where
-    stateIndexE = SMB.byGroupIndexE rtt gtt
+    stateIndexE = SMB.byGroupIndexE rtt stateG
     lp =
       let aV = case paramAlpha mps of
             SimpleAlpha saP -> TE.functionE SF.rep_vector (DAG.parameterExpr saP :> (SMB.dataSetSizeE rtt) :> TNil)
@@ -519,7 +522,15 @@ turnoutModel rc tmc = do
 
   -- to apply the same transformation to another matrix, we center with centerF and then post-multiply by r
   -- or we could apply beta to centered matrix ?
-  {-
+
+{-
+  (covariatesM, centerF) <- case paramTheta mParams of
+    Theta (Just thetaP) -> do
+      (centeredCovariatesE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly (withCC ccCovariates mData) Nothing "DM"
+      pure (centeredCovariatesE, centerF)
+    Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x)
+-}
+{-
   (covariatesM, r, centerF, mBeta) <- case paramTheta mParams of
     Theta (Just thetaP) -> do
       (centeredCovariatesE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly (withCC ccCovariates mData) Nothing "DM"
@@ -611,6 +622,7 @@ runModel :: forall l k r a b .
             , Ord (F.Record l)
             , FS.RecFlat l
             , Typeable (DP.PSDataR k)
+            , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
             , Show (F.Record l)
             , Typeable l
             )
