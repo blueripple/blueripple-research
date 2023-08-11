@@ -25,6 +25,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
+import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Loaders as BRDF
 import qualified BlueRipple.Configuration as BR
@@ -113,6 +114,41 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
+
+runTurnoutModel2 :: (K.KnitEffects r
+                   , BRKU.CacheEffects r
+                   , V.RMap l
+                   , Ord (F.Record l)
+                   , FS.RecFlat l
+                   , Typeable l
+                   , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                   , Show (F.Record l)
+--                   , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
+--                   , DP.DCatsR F.⊆ DP.PSDataR k
+                   )
+                => Int
+                -> Either Text Text
+                -> Either Text Text
+                -> Text
+                -> BR.CommandLine
+                -> MC.RunConfig l
+                -> MC.TurnoutSurvey a
+                -> MC.SurveyAggregation b
+                -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
+                -> MC.PSTargets
+                -> MC2.Alphas
+                -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
+runTurnoutModel2 year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am = do
+  let modelConfig = MC2.TurnoutConfig ts sa pst am dmr
+  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
+  rawCPS_C <- DP.cpsCountedTurnoutByState
+  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
+  modelData_C <- DP.cachedPreppedModelData
+                 (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
+                 (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout2_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
 
 FTH.declareColumn "TurnoutP" ''Double
 FTH.declareColumn "TurnoutCI" ''MT.ConfidenceInterval
