@@ -393,11 +393,11 @@ setupAlphaSum alphas = do
     StH_A_S_E_R -> do
       stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
       let stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
-          ageAG = SG.firstOrderAlpha ageG (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG) "age")
+          ageAG = SG.firstOrderAlphaDC ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG `TE.minusE` TE.intE 1) "age")
           sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
-          eduAG = SG.firstOrderAlpha eduG (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG) "edu")
-          raceAG = SG.firstOrderAlpha raceG (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG) "race")
-      pure $ SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
+          eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
+          raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
@@ -413,6 +413,9 @@ setupBeta tc = do
   pure betaM
 
 data ParameterSetup md gq = LogitSetup (SG.AlphaByDataVecCW md gq) (Maybe TE.VectorE)
+
+hasBeta :: ParameterSetup md gq -> Bool
+hasBeta (LogitSetup _ mb) = isJust mb
 
 setupParameters :: TurnoutConfig a b -> SMB.StanBuilderM md gq (ParameterSetup md gq)
 setupParameters tc = do
@@ -564,13 +567,12 @@ turnoutModel rc tmc = do
   paramSetup <- setupParameters tmc
   let nRowsE = MC.withCC (SMB.dataSetSizeE . MC.ccSurveyDataTag) mData
       pExpr = DAG.parameterExpr
-{-
-  (covariatesM, centerF) <- case paramTheta mParams of
-    Theta (Just thetaP) -> do
-      (centeredCovariatesE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly (withCC ccCovariates mData) Nothing "DM"
+
+  (covariatesM, centerF) <- case hasBeta paramSetup of
+    True -> do
+      (centeredCovariatesE, centerF) <- DM.centerDataMatrix DM.DMCenterOnly (MC.withCC MC.ccCovariates mData) Nothing "DM"
       pure (centeredCovariatesE, centerF)
-    Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x)
--}
+    False -> pure (TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x)
 {-
   (covariatesM, r, centerF, mBeta) <- case paramTheta mParams of
     Theta (Just thetaP) -> do
@@ -580,12 +582,12 @@ turnoutModel rc tmc = do
     Theta Nothing -> pure (TE.namedE "ERROR" TE.SMat, TE.namedE "ERROR" TE.SMat, \_ x _ -> pure x, Nothing)
 -}
   case mData of
-    MC.PT_TurnoutModelData cc st -> turnoutTargetsModel paramSetup cc st Nothing Nothing --(Just $ centerF SC.ModelData) (Just r)
+    MC.PT_TurnoutModelData cc st -> turnoutTargetsModel paramSetup cc st (Just $ centerF SC.ModelData) Nothing
     _ -> pure ()
 
   -- model
-  let covariatesM = MC.withCC MC.ccCovariates mData
-  lpCW <- MC.withCC (\cc -> logitProbCW paramSetup cc.ccSurveyDataTag cc.ccCovariates) mData
+  let --covariatesM = MC.withCC MC.ccCovariates mData
+  lpCW <- MC.withCC (\cc -> logitProbCW paramSetup cc.ccSurveyDataTag covariatesM) mData
   let llF :: SMD.StanDist t pts rts
           -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
           -> TE.CodeWriter (TE.IntE -> TE.UExpr t)
@@ -633,7 +635,7 @@ turnoutModel rc tmc = do
         MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
   case rc.rcTurnoutPS of
     Nothing -> pure ()
-    Just gtt -> turnoutPS paramSetup tmc.tDesignMatrixRow Nothing Nothing gtt --(Just $ centerF SC.GQData) (Just r)
+    Just gtt -> turnoutPS paramSetup tmc.tDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt --(Just $ centerF SC.GQData) (Just r)
   pure ()
 {-
 newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}

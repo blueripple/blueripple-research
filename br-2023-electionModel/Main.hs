@@ -164,7 +164,7 @@ main = do
     cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
     cps <- K.ignoreCacheTime cpCPS_C
     ces <- K.ignoreCacheTime cpCES_C
-    stateComparisonToTgts <- psByState cmdLine survey aggregation dmr psTargets alphasModel --stateAlphaModel
+    stateComparisonToTgts <- psByState cmdLine survey aggregation dmr2 psTargets alphasModel --stateAlphaModel
     BRK.logFrame stateComparisonToTgts
 {-
     byStateFromRawCPS <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
