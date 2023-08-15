@@ -171,11 +171,11 @@ data TurnoutConfig a (b :: TE.EType) =
   , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
   }
 
-data Alphas = StH_A_S_E_R
+data Alphas = StH_A_S_E_R | StH_A_S_E_R_ER
 
 alphasText :: Alphas -> Text
 alphasText StH_A_S_E_R = "StH_A_S_E_R"
-
+alphasText StH_A_S_E_R_ER = "StH_A_S_E_R_ER"
 {-
 data ModelType = TurnoutMT | RegistrationMT | PreferenceMT | FullMT deriving stock (Eq, Ord, Show)
 
@@ -398,6 +398,22 @@ setupAlphaSum alphas = do
           eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
           raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
+    StH_A_S_E_R_ER -> do
+      sigmaEduRace <-  DAG.simpleParameterWA
+                        (TE.NamedDeclSpec ("sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                        stdNormalDWA
+      let aER_BP :: DAG.Parameter TE.EReal -> DAG.BuildParameter TE.ECVec
+          aER_BP sigma = DAG.UntransformedP (alphaNDS (SMB.groupSizeE eduG `TE.timesE` SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "EduRace") [] (DAG.given (TE.realE 0) :> sigma :> TNil)
+                         $ \(muAlphaE :> sigmaAlphaE :> TNil) m
+                           -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
+      stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
+      let stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
+          ageAG = SG.firstOrderAlphaDC ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG `TE.minusE` TE.intE 1) "age")
+          sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
+          eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
+          raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
+          eduRaceAG = SG.secondOrderAlphaDC eduG raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) (aER_BP sigmaEduRace)
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, eduRaceAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
