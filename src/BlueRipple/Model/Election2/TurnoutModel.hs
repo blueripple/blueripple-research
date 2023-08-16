@@ -245,7 +245,7 @@ stateChart postPaths' postInfo title chartID vc tableRowsByModel = do
         . GV.position GV.Y [GV.PName "Model - SEP", GV.PmType GV.Quantitative]
         . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
         . GV.size [GV.MName "VAP", GV.MmType GV.Quantitative]
-      markScatter = GV.mark GV.Circle []
+      markScatter = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
       scatterSpec = GV.asSpec [encScatter [], markScatter]
       layers = GV.layer [scatterSpec]
   pure $ FV.configuredVegaLite vc [FV.title title

@@ -154,7 +154,7 @@ main = do
         dmr = MC.tDesignMatrixRow_d_A_S_E_R
         dmr2 = MC2.tDesignMatrixRow_d
         stateAlphaModel = MC.StateAlphaHierCentered
-        alphasModel = MC2.StH_A_S_E_R_ER
+        alphasModel = MC2.StH_A_S_E_R_SR
         survey = MC.CESSurvey
         aggregation = MC.WeightedAggregation
         psTargets = MC.NoPSTargets
@@ -164,13 +164,13 @@ main = do
     cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
     cps <- K.ignoreCacheTime cpCPS_C
     ces <- K.ignoreCacheTime cpCES_C
-    stateComparisonToTgts <- psByState cmdLine survey aggregation dmr2 psTargets alphasModel --stateAlphaModel
-    BRK.logFrame stateComparisonToTgts
-{-
+    stateComparisonToTgtsNoPS <- psByState cmdLine survey aggregation dmr2 MC.NoPSTargets alphasModel --stateAlphaModel
+    stateComparisonToTgtsPS <- psByState cmdLine survey aggregation dmr2 MC.PSTargets alphasModel --stateAlphaModel
+    BRK.logFrame stateComparisonToTgtsPS
     byStateFromRawCPS <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
     byStateFromRawCES <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) ces)
     BRK.logFrame byStateFromRawCES
-    modelComparison <- psBy @'[DT.Race5C] cmdLine "Race" survey aggregation dmr psTargets stateAlphaModel
+    modelComparison <- psBy @'[DT.Race5C] cmdLine "Race" survey aggregation dmr2 psTargets alphasModel
     BRK.logFrame modelComparison
     let fromRawCPS = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) cps
         fromRawCES = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) ces
@@ -180,12 +180,11 @@ main = do
       modelCompChart <- TM.stateChart turnoutModelPostPaths postInfo "Model Comparison" "ModelComp" (FV.ViewConfig 500 500 10)
                         [{-("WeightedCPS", fmap F.rcast byStateFromRawCPS)
                         , -}("WeightedCES", fmap F.rcast byStateFromRawCES)
-                        , ("ModelCES", fmap (F.rcast . TM.turnoutCIToTurnoutP) stateComparisonToTgts)
+                        , ("ModelCES_NoPS", fmap (F.rcast . TM.turnoutCIToTurnoutP) stateComparisonToTgtsNoPS)
+                        , ("ModelCES_PS", fmap (F.rcast . TM.turnoutCIToTurnoutP) stateComparisonToTgtsPS)
                         ]
       _ <- K.addHvega Nothing Nothing modelCompChart
       pure ()
--}
-
     pure ()
   pure ()
   case resE of

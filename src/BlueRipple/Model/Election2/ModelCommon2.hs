@@ -144,7 +144,7 @@ groupBuilder turnoutConfig states psKeys = do
       turnoutTargetDataTag <- SMB.addModelDataToGroupBuilder "TurnoutTargetData" (SMB.ToFoldable DP.stateTurnoutData)
       SMB.addGroupIndexForData MC.stateG turnoutTargetDataTag $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
       acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
-      SMB.addGroupIndexForData MC.stateG acsDataTag $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
+      SG.addModelIndexes acsDataTag F.rcast groups'
   let psGtt = MC.psGroupTag @l
   psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
   SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
@@ -171,11 +171,12 @@ data TurnoutConfig a (b :: TE.EType) =
   , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
   }
 
-data Alphas = StH_A_S_E_R | StH_A_S_E_R_ER
+data Alphas = StH_A_S_E_R | StH_A_S_E_R_ER | StH_A_S_E_R_SR
 
 alphasText :: Alphas -> Text
 alphasText StH_A_S_E_R = "StH_A_S_E_R"
 alphasText StH_A_S_E_R_ER = "StH_A_S_E_R_ER"
+alphasText StH_A_S_E_R_SR = "StH_A_S_E_R_SR"
 {-
 data ModelType = TurnoutMT | RegistrationMT | PreferenceMT | FullMT deriving stock (Eq, Ord, Show)
 
@@ -340,36 +341,7 @@ turnoutModelData tc = do
         MC.CESSurvey -> case tc.tSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cesCC_UW
           MC.WeightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cesCC_W
-{-
-turnoutTargetsTD :: CovariatesAndCounts a b
-                 -> StateTargetsData td
-                 -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
-                 -> Maybe TE.MatrixE
-                 -> SMB.StanBuilderM md gq (TE.MatrixE, TE.IntArrayE)
-turnoutTargetsTD cc st cM rM = do
-  dmACS' <- case cM of
-    Nothing -> pure st.stdACSCovariates
-    Just c -> c st.stdACSCovariates "dmACS_Centered"
-  dmACS <- case rM of
-    Nothing -> pure dmACS'
-    Just r -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-      let rowsE = SMB.dataSetSizeE st.stdACSTag
-          colsE = cc.ccNCovariates
-      TE.declareRHSNW (TE.NamedDeclSpec "acsDM_QR" $ TE.matrixSpec rowsE colsE [])
-           $ dmACS' `TE.timesE` r
-  acsNByState <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-    let nStatesE = SMB.groupSizeE stateG
-        nACSRowsE = SMB.dataSetSizeE st.stdACSTag
-        acsStateIndex = SMB.byGroupIndexE st.stdACSTag stateG
-        plusEq = TE.opAssign TEO.SAdd
-        acsNByStateNDS = TE.NamedDeclSpec "acsNByState" $ TE.intArraySpec nStatesE [TE.lowerM $ TE.intE 0]
-    acsNByState <- TE.declareRHSNW acsNByStateNDS $ TE.functionE SF.rep_array (TE.intE 0 :> nStatesE :> TNil)
-    TE.addStmt
-      $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nACSRowsE) $ \kE ->
-      [(TE.indexE TEI.s0 acsStateIndex acsNByState `TE.at` kE) `plusEq` (st.stdACSWgts `TE.at` kE)]
-    pure acsNByState
-  pure (dmACS, acsNByState)
--}
+
 stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
 stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil
 
@@ -389,31 +361,38 @@ setupAlphaSum alphas = do
       aStBP hps = DAG.UntransformedP (alphaNDS (SMB.groupSizeE MC.stateG) "St") [] hps
                   $ \(muAlphaE :> sigmaAlphaE :> TNil) m
                     -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
+      stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
+      ageAG = SG.firstOrderAlphaDC ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG `TE.minusE` TE.intE 1) "age")
+      sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
+      eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
+      raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
   case alphas of
     StH_A_S_E_R -> do
       stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
-      let stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
-          ageAG = SG.firstOrderAlphaDC ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG `TE.minusE` TE.intE 1) "age")
-          sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
-          eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
-          raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
     StH_A_S_E_R_ER -> do
       sigmaEduRace <-  DAG.simpleParameterWA
                         (TE.NamedDeclSpec ("sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
                         stdNormalDWA
       let aER_BP :: DAG.Parameter TE.EReal -> DAG.BuildParameter TE.ECVec
-          aER_BP sigma = DAG.UntransformedP (alphaNDS (SMB.groupSizeE eduG `TE.timesE` SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "EduRace") [] (DAG.given (TE.realE 0) :> sigma :> TNil)
-                         $ \(muAlphaE :> sigmaAlphaE :> TNil) m
-                           -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
+          aER_BP sigma = DAG.UntransformedP
+            (alphaNDS (SMB.groupSizeE eduG `TE.timesE` SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "EduRace")
+            [] (DAG.given (TE.realE 0) :> sigma :> TNil)
+            $ \(muAlphaE :> sigmaAlphaE :> TNil) m
+              -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
       stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
-      let stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
-          ageAG = SG.firstOrderAlphaDC ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE ageG `TE.minusE` TE.intE 1) "age")
-          sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
-          eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
-          raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
-          eduRaceAG = SG.secondOrderAlphaDC eduG raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) (aER_BP sigmaEduRace)
+      let eduRaceAG = SG.secondOrderAlphaDC eduG raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) (aER_BP sigmaEduRace)
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, eduRaceAG])
+    StH_A_S_E_R_SR -> do
+      sigmaStateRace <-  DAG.simpleParameterWA
+                        (TE.NamedDeclSpec ("sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                        stdNormalDWA
+      let aSR_NDS :: TE.NamedDeclSpec TE.EMat = TE.NamedDeclSpec "alpha_State_Race" $ TE.matrixSpec (SMB.groupSizeE MC.stateG) (SMB.groupSizeE raceG) []
+      let aSR_BP :: DAG.Parameter TE.EReal -> DAG.BuildParameter TE.EMat
+          aSR_BP sigma = DAG.iidMatrixBP aSR_NDS [] (DAG.given (TE.realE 0) :> sigma :> TNil) SF.normalS
+      stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
+      let stateRaceAG = SG.secondOrderAlpha MC.stateG raceG (aSR_BP sigmaStateRace)
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, stateRaceAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
@@ -438,58 +417,6 @@ setupParameters tc = do
   as <- setupAlphaSum tc.tAlphas
   bs <- setupBeta tc
   pure $ LogitSetup as bs
-
-{-
-modelParameters :: DM.DesignMatrixRow a -> SMB.RowTypeTag a -> StateAlpha -> SMB.StanBuilderM md gq ModelParameters
-modelParameters dmr rtt sa = do
-  let
-      numPredictors = DM.rowLength dmr
-      (_, nCovariatesE) = DM.designMatrixColDimBinding dmr Nothing
-
-  -- for now all the thetas are iid std normals
-  theta <- if numPredictors > 0 then
-               (Theta . Just)
-               <$> DAG.simpleParameterWA
-               (TE.NamedDeclSpec "theta" $ TE.vectorSpec nCovariatesE [])
-               stdNormalDWA
-             else pure $ Theta Nothing
-  let nStatesE = SMB.groupSizeE stateG
-      hierAlphaNDS = TE.NamedDeclSpec "alpha" $ TE.vectorSpec nStatesE []
-      hierAlphaPs = do
-        muAlphaP <- DAG.simpleParameterWA
-                    (TE.NamedDeclSpec "muAlpha" $ TE.realSpec [])
-                    stdNormalDWA
-        sigmaAlphaP <-  DAG.simpleParameterWA
-                        (TE.NamedDeclSpec "sigmaAlpha" $ TE.realSpec [TE.lowerM $ TE.realE 0])
-                        stdNormalDWA
-        pure (muAlphaP :> sigmaAlphaP :> TNil)
-  alpha <- case sa of
-    StateAlphaSimple -> do
-      fmap SimpleAlpha
-        $ DAG.simpleParameterWA
-        (TE.NamedDeclSpec "alpha" $ TE.realSpec [])
-        stdNormalDWA
-    StateAlphaHierCentered -> do
-      alphaPs <- hierAlphaPs
-      indexE <- SMB.getGroupIndexVar rtt stateG
-      fmap (HierarchicalAlpha indexE)
-        $ DAG.addBuildParameter
-        $ DAG.UntransformedP hierAlphaNDS [] alphaPs
-        $ \(muAlphaE :> sigmaAlphaE :> TNil) m
-          -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
-    StateAlphaHierNonCentered -> do
-      alphaPs <- hierAlphaPs
-      indexE <- SMB.getGroupIndexVar rtt stateG
-      let rawNDS = TE.NamedDeclSpec (TE.declName hierAlphaNDS <> "_raw") $ TE.decl hierAlphaNDS
-      rawAlphaP <- DAG.simpleParameterWA rawNDS stdNormalDWA
-      fmap (HierarchicalAlpha indexE)
-        $ DAG.addBuildParameter
-        $ DAG.TransformedP hierAlphaNDS []
-        (rawAlphaP :> alphaPs) DAG.TransformedParametersBlock
-        (\(rawE :> muAlphaE :> muSigmaE :> TNil) -> DAG.DeclRHS $ muAlphaE `TE.plusE` (muSigmaE `TE.timesE` rawE))
-        TNil (\_ _ -> pure ())
-  pure $ BinomialLogitModelParameters alpha theta
--}
 
 
 logitProbCW :: ParameterSetup md gq -> SMB.RowTypeTag a -> TE.MatrixE -> SMB.StanBuilderM md gq (TE.CodeWriter TE.VectorE)
