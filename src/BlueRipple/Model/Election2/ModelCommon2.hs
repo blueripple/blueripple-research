@@ -177,60 +177,6 @@ alphasText :: Alphas -> Text
 alphasText StH_A_S_E_R = "StH_A_S_E_R"
 alphasText StH_A_S_E_R_ER = "StH_A_S_E_R_ER"
 alphasText StH_A_S_E_R_SR = "StH_A_S_E_R_SR"
-{-
-data ModelType = TurnoutMT | RegistrationMT | PreferenceMT | FullMT deriving stock (Eq, Ord, Show)
-
-data TurnoutSurvey a where
-  CESSurvey :: TurnoutSurvey (F.Record DP.CESByCDR)
-  CPSSurvey :: TurnoutSurvey (F.Record DP.CPSByStateR)
-
-data SurveyAggregation b where
-  UnweightedAggregation :: SurveyAggregation TE.EIntArray
-  WeightedAggregation :: SurveyAggregation TE.ECVec
-
-turnoutSurveyText :: TurnoutSurvey a -> Text
-turnoutSurveyText CESSurvey = "CES"
-turnoutSurveyText CPSSurvey = "CPS"
-
-data PSTargets = NoPSTargets | PSTargets deriving stock (Eq, Ord, Show)
-psTargetsText :: PSTargets -> Text
-psTargetsText NoPSTargets = "noPSTgt"
-psTargetsText PSTargets = "PSTgt"
--}
-
-{-
--- for now we model only alpha hierarchically. Beta will be the same everywhere.
-data TurnoutPrediction =
-  TurnoutPrediction
-  {
-    tpAlphaMap :: Map Text Double
-  , tpBetaSI :: VU.Vector (Double, Double)
-  , tpLogisticAdjMapM :: Maybe (Map Text Double)
-  } deriving stock (Generic)
-
-deriving anyclass instance Flat.Flat TurnoutPrediction
-
-predictedTurnoutP :: TurnoutConfig a b -> TurnoutPrediction -> Text -> F.Record DP.PredictorsR -> Either Text Double
-predictedTurnoutP tc tp sa p = do
-  alpha <- case M.lookup sa tp.tpAlphaMap of
-    Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: alphaMap lookup failed for k=" <> sa
-    Just x -> pure x
-  logisticAdj <- case tp.tpLogisticAdjMapM of
-    Nothing -> pure 0
-    Just m -> case M.lookup sa m of
-      Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: pdLogisticAdjMap lookup failed for k=" <> show sa
-      Just x -> pure x
-  let covariatesV = DM.designMatrixRowF tc.tDesignMatrixRow p
-      invLogit x = 1 / (1 + exp (negate x))
-      applySI x (s, i) = i + s * x
-  pure $ invLogit (alpha + VU.sum (VU.zipWith applySI covariatesV tp.tpBetaSI) + logisticAdj)
--}
-
-{-
-addAggregationText :: SurveyAggregation b -> Text
-addAggregationText UnweightedAggregation = ""
-addAggregationText WeightedAggregation = "_WA"
--}
 
 turnoutModelText :: TurnoutConfig a b -> Text
 turnoutModelText (TurnoutConfig ts tsa tPs alphas dmr) = "Turnout" <> MC.turnoutSurveyText ts
@@ -245,35 +191,6 @@ turnoutModelDataText (TurnoutConfig ts tsa tPs alphas dmr) = "Turnout" <> MC.tur
                                                              <> "_" <> alphasText alphas <> "_" <> dmr.dmName
 
 
-{-
-data CovariatesAndCounts a (b :: TE.EType) =
-  CovariatesAndCounts
-  {
-    ccSurveyDataTag :: SMB.RowTypeTag a
-  , ccNCovariates :: TE.IntE
-  , ccCovariates :: TE.MatrixE
-  , ccTrials :: TE.UExpr b
-  , ccSuccesses :: TE.UExpr b
-  }
-
-data StateTargetsData td =
-  StateTargetsData
-  {
-    stdTargetTypeTag :: SMB.RowTypeTag td
-  , stdStateBallotsCountedVAP :: TE.VectorE
-  , stdACSTag :: SMB.RowTypeTag (F.Record DDP.ACSa5ByStateR)
-  , stdACSWgts :: TE.IntArrayE
-  , stdACSCovariates :: TE.MatrixE
-  }
-
-data TurnoutModelData a (b :: TE.EType) where
-  NoPT_TurnoutModelData :: CovariatesAndCounts a b -> TurnoutModelData a b
-  PT_TurnoutModelData :: CovariatesAndCounts a b -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData a b
-
-withCC :: (forall a b . CovariatesAndCounts a b -> c) -> TurnoutModelData a b -> c
-withCC f (NoPT_TurnoutModelData cc) = f cc
-withCC f (PT_TurnoutModelData cc _) = f cc
--}
 turnoutModelData :: forall a b gq . TurnoutConfig a b
                  -> SMB.StanBuilderM DP.ModelData gq (MC.TurnoutModelData a b)
 turnoutModelData tc = do
@@ -366,33 +283,43 @@ setupAlphaSum alphas = do
       sexAG = SG.binaryAlpha sexG (stdNormalBP $ TE.NamedDeclSpec ("aSex") $ TE.realSpec [])
       eduAG = SG.firstOrderAlphaDC eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE eduG `TE.minusE` TE.intE 1) "edu")
       raceAG = SG.firstOrderAlphaDC raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "race")
+  stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
+  let eduRaceAG = do
+        sigmaEduRace <-  DAG.simpleParameterWA
+                         (TE.NamedDeclSpec ("sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                         stdNormalDWA
+        let aER_NDS = alphaNDS (SMB.groupSizeE eduG `TE.timesE` SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "EduRace"
+            aER_BP :: DAG.BuildParameter TE.ECVec
+            aER_BP = DAG.UntransformedP
+                     aER_NDS [] (sigmaEduRace :> TNil)
+                     $ \(sigmaE :> TNil) m
+                       -> TE.addStmt $ TE.sample m SF.normalS (TE.realE 0 :> sigmaE :> TNil)
+        pure $ SG.secondOrderAlphaDC eduG raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) aER_BP
+      stateRaceAG = do
+        sigmaStateRace <-  DAG.simpleParameterWA
+                           (TE.NamedDeclSpec ("sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                           stdNormalDWA
+        let ds = TE.matrixSpec (SMB.groupSizeE MC.stateG) (SMB.groupSizeE raceG) []
+            toVec x = TE.functionE SF.to_vector (x :> TNil)
+
+            rawNDS = TE.NamedDeclSpec "alpha_State_Race_raw" ds
+        rawAlphaStateRaceP <- DAG.iidMatrixP rawNDS [] TNil SF.std_normal
+        let aSR_NDS = TE.NamedDeclSpec "alpha_State_Race" ds
+        let aSR_BP :: DAG.BuildParameter TE.EMat
+--            aSR_BP sigma = DAG.iidMatrixBP aSR_NDS [] (DAG.given (TE.realE 0) :> sigma :> TNil) SF.normalS
+            aSR_BP = DAG.simpleTransformedP aSR_NDS [] (sigmaStateRace :> rawAlphaStateRaceP :> TNil)
+                     DAG.TransformedParametersBlock
+                     (\(s :> r :> TNil) -> DAG.DeclRHS $ s `TE.timesE` r)
+        pure $ SG.secondOrderAlpha MC.stateG raceG aSR_BP
   case alphas of
     StH_A_S_E_R -> do
-      stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
     StH_A_S_E_R_ER -> do
-      sigmaEduRace <-  DAG.simpleParameterWA
-                        (TE.NamedDeclSpec ("sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
-                        stdNormalDWA
-      let aER_BP :: DAG.Parameter TE.EReal -> DAG.BuildParameter TE.ECVec
-          aER_BP sigma = DAG.UntransformedP
-            (alphaNDS (SMB.groupSizeE eduG `TE.timesE` SMB.groupSizeE raceG `TE.minusE` TE.intE 1) "EduRace")
-            [] (DAG.given (TE.realE 0) :> sigma :> TNil)
-            $ \(muAlphaE :> sigmaAlphaE :> TNil) m
-              -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
-      stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
-      let eduRaceAG = SG.secondOrderAlphaDC eduG raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) (aER_BP sigmaEduRace)
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, eduRaceAG])
+      erAG <- eduRaceAG
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG])
     StH_A_S_E_R_SR -> do
-      sigmaStateRace <-  DAG.simpleParameterWA
-                        (TE.NamedDeclSpec ("sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
-                        stdNormalDWA
-      let aSR_NDS :: TE.NamedDeclSpec TE.EMat = TE.NamedDeclSpec "alpha_State_Race" $ TE.matrixSpec (SMB.groupSizeE MC.stateG) (SMB.groupSizeE raceG) []
-      let aSR_BP :: DAG.Parameter TE.EReal -> DAG.BuildParameter TE.EMat
-          aSR_BP sigma = DAG.iidMatrixBP aSR_NDS [] (DAG.given (TE.realE 0) :> sigma :> TNil) SF.normalS
-      stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
-      let stateRaceAG = SG.secondOrderAlpha MC.stateG raceG (aSR_BP sigmaStateRace)
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, stateRaceAG])
+      srAG <- stateRaceAG
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, srAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
