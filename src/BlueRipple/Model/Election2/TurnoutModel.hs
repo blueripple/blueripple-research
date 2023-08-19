@@ -252,3 +252,60 @@ stateChart postPaths' postInfo title chartID vc tableRowsByModel = do
                                   , layers
                                   , vlData
                                   ]
+
+
+categoryChart :: forall ks rs r . (K.KnitEffects r, F.ElemOf rs DT.PopCount, F.ElemOf rs TurnoutCI, ks F.⊆ rs)
+           => BR.PostPaths Path.Abs
+           -> BR.PostInfo
+           -> Text
+           -> Text
+           -> FV.ViewConfig
+           -> Maybe [F.Record ks]
+           -> Maybe [Text]
+           -> (F.Record ks -> Text)
+           -> [(Text, F.FrameRec rs)] --[k, TurnoutCI, DT.PopCount])]
+           -> K.Sem r GV.VegaLite
+categoryChart postPaths' postInfo title chartID vc catSortM sourceSortM catText tableRowsByModel = do
+  let colData (t, r)
+        = [("Category", GV.Str $ catText $ F.rcast r)
+          , ("Ppl", GV.Number $ realToFrac  $ r ^. DT.popCount)
+          , ("Lo", GV.Number $ MT.ciLower $ r ^. turnoutCI)
+          , ("Mid", GV.Number $ MT.ciMid $ r ^. turnoutCI)
+          , ("Hi", GV.Number $ MT.ciUpper $ r ^. turnoutCI)
+          , ("Source", GV.Str t)
+          ]
+
+--      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ concat $ fmap (\(s, fr) -> fmap (s,) $ FL.fold FL.list fr) tableRowsByModel
+  jsonFilePrefix <- K.getNextUnusedId $ ("statePSWithTargets_" <> chartID)
+  jsonUrl <-  BRKU.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+  --
+      xScale = GV.PScale [GV.SZero False]
+      xSort = case sourceSortM of
+        Nothing -> []
+        Just so -> [GV.PSort [GV.CustomSort $ GV.Strings so]]
+      facetSort = case catSortM of
+        Nothing -> []
+        Just so -> [GV.FSort [GV.CustomSort $ GV.Strings $ fmap catText so]]
+      encMid = GV.encoding
+        . GV.position GV.Y [GV.PName "Source", GV.PmType GV.Nominal]
+        . GV.position GV.X ([GV.PName "Mid", GV.PmType GV.Quantitative, xScale] <> xSort)
+--        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+--        . GV.size [GV.MName "Ppl", GV.MmType GV.Quantitative]
+      markMid = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
+      midSpec = GV.asSpec [encMid [], markMid]
+      encError = GV.encoding
+        . GV.position GV.Y [GV.PName "Source", GV.PmType GV.Nominal]
+        . GV.position GV.X ([GV.PName "Lo", GV.PmType GV.Quantitative, xScale] <> xSort)
+        . GV.position GV.X2 ([GV.PName "Hi", GV.PmType GV.Quantitative, xScale] <> xSort)
+  --      . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+      markError = GV.mark GV.ErrorBar [GV.MTooltip GV.TTEncoding]
+      errorSpec = GV.asSpec [encError [], markError]
+      layers = GV.layer [midSpec, errorSpec]
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , GV.facet [GV.RowBy ([GV.FName "Category", GV.FmType GV.Nominal] <> facetSort)]
+                                  , GV.specification (GV.asSpec [layers])
+                                  , vlData
+                                  ]

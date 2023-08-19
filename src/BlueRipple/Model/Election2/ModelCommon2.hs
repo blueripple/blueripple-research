@@ -171,12 +171,13 @@ data TurnoutConfig a (b :: TE.EType) =
   , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
   }
 
-data Alphas = StH_A_S_E_R | StH_A_S_E_R_ER | StH_A_S_E_R_SR
+data Alphas = St_A_S_E_R | St_A_S_E_R_ER | St_A_S_E_R_StR | St_A_S_E_R_ER_StR
 
 alphasText :: Alphas -> Text
-alphasText StH_A_S_E_R = "StH_A_S_E_R"
-alphasText StH_A_S_E_R_ER = "StH_A_S_E_R_ER"
-alphasText StH_A_S_E_R_SR = "StH_A_S_E_R_SR"
+alphasText St_A_S_E_R = "St_A_S_E_R"
+alphasText St_A_S_E_R_ER = "St_A_S_E_R_ER"
+alphasText St_A_S_E_R_StR = "St_A_S_E_R_StR"
+alphasText St_A_S_E_R_ER_StR = "St_A_S_E_R_ER_StR"
 
 turnoutModelText :: TurnoutConfig a b -> Text
 turnoutModelText (TurnoutConfig ts tsa tPs alphas dmr) = "Turnout" <> MC.turnoutSurveyText ts
@@ -312,14 +313,18 @@ setupAlphaSum alphas = do
                      (\(s :> r :> TNil) -> DAG.DeclRHS $ s `TE.timesE` r)
         pure $ SG.secondOrderAlpha MC.stateG raceG aSR_BP
   case alphas of
-    StH_A_S_E_R -> do
+    St_A_S_E_R -> do
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
-    StH_A_S_E_R_ER -> do
+    St_A_S_E_R_ER -> do
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG])
-    StH_A_S_E_R_SR -> do
+    St_A_S_E_R_StR -> do
       srAG <- stateRaceAG
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, srAG])
+    St_A_S_E_R_ER_StR -> do
+      srAG <- stateRaceAG
+      erAG <- eduRaceAG
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG, srAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
