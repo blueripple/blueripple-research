@@ -171,13 +171,14 @@ data TurnoutConfig a (b :: TE.EType) =
   , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
   }
 
-data Alphas = St_A_S_E_R | St_A_S_E_R_ER | St_A_S_E_R_StR | St_A_S_E_R_ER_StR
+data Alphas = St_A_S_E_R | St_A_S_E_R_ER | St_A_S_E_R_StR | St_A_S_E_R_ER_StR | St_A_S_E_R_ER_StR_StER
 
 alphasText :: Alphas -> Text
 alphasText St_A_S_E_R = "St_A_S_E_R"
 alphasText St_A_S_E_R_ER = "St_A_S_E_R_ER"
 alphasText St_A_S_E_R_StR = "St_A_S_E_R_StR"
 alphasText St_A_S_E_R_ER_StR = "St_A_S_E_R_ER_StR"
+alphasText St_A_S_E_R_ER_StR_StER = "St_A_S_E_R_ER_StR_StER"
 
 turnoutModelText :: TurnoutConfig a b -> Text
 turnoutModelText (TurnoutConfig ts tsa tPs alphas dmr) = "Turnout" <> MC.turnoutSurveyText ts
@@ -301,17 +302,39 @@ setupAlphaSum alphas = do
                            (TE.NamedDeclSpec ("sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
                            stdNormalDWA
         let ds = TE.matrixSpec (SMB.groupSizeE MC.stateG) (SMB.groupSizeE raceG) []
-            toVec x = TE.functionE SF.to_vector (x :> TNil)
 
             rawNDS = TE.NamedDeclSpec "alpha_State_Race_raw" ds
         rawAlphaStateRaceP <- DAG.iidMatrixP rawNDS [] TNil SF.std_normal
-        let aSR_NDS = TE.NamedDeclSpec "alpha_State_Race" ds
-        let aSR_BP :: DAG.BuildParameter TE.EMat
+        let aStR_NDS = TE.NamedDeclSpec "alpha_State_Race" ds
+        let aStR_BP :: DAG.BuildParameter TE.EMat
 --            aSR_BP sigma = DAG.iidMatrixBP aSR_NDS [] (DAG.given (TE.realE 0) :> sigma :> TNil) SF.normalS
-            aSR_BP = DAG.simpleTransformedP aSR_NDS [] (sigmaStateRace :> rawAlphaStateRaceP :> TNil)
+            aStR_BP = DAG.simpleTransformedP aStR_NDS [] (sigmaStateRace :> rawAlphaStateRaceP :> TNil)
                      DAG.TransformedParametersBlock
                      (\(s :> r :> TNil) -> DAG.DeclRHS $ s `TE.timesE` r)
-        pure $ SG.secondOrderAlpha MC.stateG raceG aSR_BP
+        pure $ SG.secondOrderAlpha MC.stateG raceG aStR_BP
+      stateEduRace :: SMB.StanBuilderM md gq SG.GroupAlpha
+      stateEduRace = do
+        sigmaStateEduRaceP :: DAG.Parameter TE.EReal  <-  DAG.simpleParameterWA
+                                                          (TE.NamedDeclSpec ("sigmaStateEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                                                          stdNormalDWA
+        let ds :: TE.DeclSpec (TE.EArray1 TE.EMat) = TE.array1Spec nStatesE $ TE.matrixSpec (SMB.groupSizeE eduG) (SMB.groupSizeE raceG) []
+            aStER_NDS :: TE.NamedDeclSpec (TE.EArray1 TE.EMat) = TE.NamedDeclSpec "alpha_State_Edu_Race" ds
+            aStER_raw_NDS :: TE.NamedDeclSpec (TE.EArray1 TE.EMat) = TE.NamedDeclSpec "alpha_State_Edu_Race_raw" ds
+        rawAlphaStateEduRaceP :: DAG.Parameter (TE.EArray1 TE.EMat) <- DAG.addBuildParameter
+          $ DAG.UntransformedP  aStER_raw_NDS [] TNil
+          $ \_ t -> TE.addStmt
+                    ( TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
+                      $ \s -> [SF.toVec (t `TE.at` s) `TE.sampleW` stdNormalDWA]
+                    )
+        let aStER_BP :: DAG.BuildParameter (TE.EArray1 TE.EMat)
+            aStER_BP =  DAG.simpleTransformedP aStER_NDS [] (sigmaStateEduRaceP :> rawAlphaStateEduRaceP :> TNil)
+                        DAG.TransformedParametersBlock
+                        (\(sigma :> raw :> TNil) -> DAG.DeclCodeF
+                          $ \t -> TE.addStmt
+                                  $ TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
+                                  $ \s -> [(t `TE.at` s) `TE.assign` (sigma `TE.timesE` (raw `TE.at` s))]
+                        )
+        pure $ SG.thirdOrderAlpha MC.stateG eduG raceG aStER_BP
   case alphas of
     St_A_S_E_R -> do
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
@@ -325,6 +348,11 @@ setupAlphaSum alphas = do
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG, srAG])
+    St_A_S_E_R_ER_StR_StER -> do
+      srAG <- stateRaceAG
+      erAG <- eduRaceAG
+      serAG <- stateEduRace
+      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG, srAG, serAG])
 
 
 setupBeta :: TurnoutConfig a b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
@@ -562,7 +590,8 @@ runModel modelDirE modelName gqName _cmdLine runConfig turnoutConfig modelData_C
                     (groupBuilder turnoutConfig states psKeys)
                     (turnoutModel runConfig turnoutConfig)
 
-  let unwraps = [SR.UnwrapNamed "Voted" "yVoted"]
+  let rSuffix = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
+      unwraps = [SR.UnwrapNamed "Voted" ("yVoted_" <> rSuffix)]
 
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            modelDirE

@@ -106,7 +106,7 @@ psBy :: forall ks r a b.
      -> MC2.Alphas
      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutCI]))
 psBy cmdLine gqName ts sAgg dmr pst am = do
-    let runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @ks)
+    let runConfig = MC.RunConfig True True True (Just $ MC.psGroupTag @ks)
     (MC.PSMap psTMap) <- K.ignoreCacheTimeM
                               $ TM.runTurnoutModel2 2020
                               (Right "model/election2/test/stan") (Right "model/election2/test")
@@ -159,7 +159,7 @@ main = do
 --        stateAlphaModel = MC.StateAlphaHierCentered
         survey = MC.CESSurvey
         aggregation = MC.WeightedAggregation
-        alphaModels = [MC2.St_A_S_E_R, MC2.St_A_S_E_R_ER, MC2.St_A_S_E_R_StR, MC2.St_A_S_E_R_ER_StR]
+        alphaModels = [MC2.St_A_S_E_R, MC2.St_A_S_E_R_ER, MC2.St_A_S_E_R_StR, MC2.St_A_S_E_R_ER_StR, MC2.St_A_S_E_R_ER_StR_StER]
         psTs = [MC.NoPSTargets, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
@@ -220,6 +220,8 @@ main = do
       allModelsCompChart @'[DT.SexC] turnoutModelPostPaths "Sex" (show . view DT.sexC) alphaModels psTs
       allModelsCompChart @'[DT.Education4C] turnoutModelPostPaths "Education" (show . view DT.education4C) alphaModels psTs
       allModelsCompChart @'[DT.Race5C] turnoutModelPostPaths "Race" (show . view DT.race5C) alphaModels psTs
+      let srText r = show (r ^. DT.education4C) <> "-" <> show (r ^. DT.race5C)
+      allModelsCompChart @'[DT.Education4C, DT.Race5C] turnoutModelPostPaths "Education_Race" srText alphaModels psTs
 {-
     modelComparisonsByRace <- traverse (uncurry modelCompByRace) [(am, pt) | am <- alphaModels, pt <- psTs]
       let cats = Set.toList $ Keyed.elements @(F.Record '[DT.Race5C])
