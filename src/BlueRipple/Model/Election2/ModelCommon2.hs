@@ -160,6 +160,7 @@ tDesignMatrixRow_d = DM.DesignMatrixRow "d" [dRP]
   where
     dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
 
+
 -- we can use the designMatrixRow to get (a -> Vector Double) for prediction
 data TurnoutConfig a (b :: TE.EType) =
   TurnoutConfig
@@ -191,7 +192,6 @@ turnoutModelDataText (TurnoutConfig ts tsa tPs alphas dmr) = "Turnout" <> MC.tur
                                                              <> (if (tPs == MC.PSTargets) then "_PSTgt" else "")
                                                              <> MC.addAggregationText tsa
                                                              <> "_" <> alphasText alphas <> "_" <> dmr.dmName
-
 
 turnoutModelData :: forall a b gq . TurnoutConfig a b
                  -> SMB.StanBuilderM DP.ModelData gq (MC.TurnoutModelData a b)
@@ -240,10 +240,10 @@ turnoutModelData tc = do
     MC.NoPSTargets -> case tc.tSurvey of
       MC.CPSSurvey -> case tc.tSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_TurnoutModelData cpsCC_UW
-        MC.WeightedAggregation -> fmap MC.NoPT_TurnoutModelData cpsCC_W
+        MC.WeightedAggregation _ -> fmap MC.NoPT_TurnoutModelData cpsCC_W
       MC.CESSurvey -> case tc.tSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_TurnoutModelData cesCC_UW
-        MC.WeightedAggregation -> fmap MC.NoPT_TurnoutModelData cesCC_W
+        MC.WeightedAggregation _ -> fmap MC.NoPT_TurnoutModelData cesCC_W
     MC.PSTargets -> do
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
       turnoutBallotsCountedVAP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVAP" (Just 0) (Just 1) (view BRDF.ballotsCountedVAP)
@@ -256,10 +256,10 @@ turnoutModelData tc = do
       case tc.tSurvey of
         MC.CPSSurvey -> case tc.tSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cpsCC_UW
-          MC.WeightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cpsCC_W
+          MC.WeightedAggregation _ -> fmap (\x -> MC.PT_TurnoutModelData x std) cpsCC_W
         MC.CESSurvey -> case tc.tSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cesCC_UW
-          MC.WeightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) cesCC_W
+          MC.WeightedAggregation _ -> fmap (\x -> MC.PT_TurnoutModelData x std) cesCC_W
 
 stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
 stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil
@@ -516,7 +516,7 @@ turnoutModel rc tmc = do
       case mData of
         MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
         MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-    MC.WeightedAggregation -> do
+    MC.WeightedAggregation MC.ContinuousBinomial-> do
       realBinomialLogitDistV <- SMD.realBinomialLogitDistM @TE.ECVec
       realBinomialLogitDistS <- SMD.realBinomialLogitDistSM
       let model ::  SMB.RowTypeTag a -> TE.VectorE -> TE.VectorE -> SMB.StanBuilderM md gq ()
@@ -531,6 +531,27 @@ turnoutModel rc tmc = do
             SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
               lp <- lpCW
               TE.addStmt $ ssF lp k
+            when rc.rcIncludePPCheck $ void ppF
+            when rc.rcIncludeLL ll
+      case mData of
+        MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
+        MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
+    MC.WeightedAggregation MC.CountScaledBeta -> do
+      let eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
+          model ::  SMB.RowTypeTag a -> TE.VectorE -> TE.VectorE -> SMB.StanBuilderM md gq ()
+          model rtt n k = do
+            let ssF lp e = SMB.familySample SMD.countScaledBetaDistLogit e (n :> lp :> TNil)
+                rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
+                rpF = (\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW
+                ppF = SBB.generatePosteriorPrediction rtt
+                      (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
+                      SMD.scalarCountScaledBetaDistLogit rpF
+                ll = llF SMD.scalarCountScaledBetaDistLogit rpF
+                     ((TE.declareRHSNW (TE.NamedDeclSpec "th" (TE.vectorSpec (TE.functionE SF.size (n :> TNil)) []) ) $ k `eltDivide` n) >>= \x -> pure $ \nE -> x `TE.at` nE)
+--                     (pure $ \nE -> k `TE.at` nE)
+            SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
+              lp <- lpCW
+              TE.addStmt $ ssF lp (k `eltDivide` n)
             when rc.rcIncludePPCheck $ void ppF
             when rc.rcIncludeLL ll
       case mData of

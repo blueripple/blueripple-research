@@ -167,9 +167,16 @@ data TurnoutSurvey a where
   CESSurvey :: TurnoutSurvey (F.Record DP.CESByCDR)
   CPSSurvey :: TurnoutSurvey (F.Record DP.CPSByStateR)
 
+
+data RealCountModel = ContinuousBinomial | CountScaledBeta deriving stock (Eq)
+
+realCountModelText :: RealCountModel -> Text
+realCountModelText ContinuousBinomial = "CB"
+realCountModelText CountScaledBeta = "SB"
+
 data SurveyAggregation b where
   UnweightedAggregation :: SurveyAggregation TE.EIntArray
-  WeightedAggregation :: SurveyAggregation TE.ECVec
+  WeightedAggregation :: RealCountModel -> SurveyAggregation TE.ECVec
 
 turnoutSurveyText :: TurnoutSurvey a -> Text
 turnoutSurveyText CESSurvey = "CES"
@@ -219,7 +226,7 @@ predictedTurnoutP tc tp sa p = do
 
 addAggregationText :: SurveyAggregation b -> Text
 addAggregationText UnweightedAggregation = ""
-addAggregationText WeightedAggregation = "_WA"
+addAggregationText (WeightedAggregation cm) = "_WA" <> if cm == ContinuousBinomial then "" else realCountModelText cm
 
 turnoutModelText :: TurnoutConfig a b -> Text
 turnoutModelText (TurnoutConfig ts tsa tPs dmr am) = "Turnout" <> turnoutSurveyText ts
@@ -309,10 +316,10 @@ turnoutModelData tc = do
     NoPSTargets -> case tc.tSurvey of
       CPSSurvey -> case tc.tSurveyAggregation of
         UnweightedAggregation -> fmap NoPT_TurnoutModelData cpsCC_UW
-        WeightedAggregation -> fmap NoPT_TurnoutModelData cpsCC_W
+        WeightedAggregation _ -> fmap NoPT_TurnoutModelData cpsCC_W
       CESSurvey -> case tc.tSurveyAggregation of
         UnweightedAggregation -> fmap NoPT_TurnoutModelData cesCC_UW
-        WeightedAggregation -> fmap NoPT_TurnoutModelData cesCC_W
+        WeightedAggregation _ -> fmap NoPT_TurnoutModelData cesCC_W
     PSTargets -> do
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
       turnoutBallotsCountedVAP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVAP" (Just 0) (Just 1) (view BRDF.ballotsCountedVAP)
@@ -325,10 +332,10 @@ turnoutModelData tc = do
       case tc.tSurvey of
         CPSSurvey -> case tc.tSurveyAggregation of
           UnweightedAggregation -> fmap (\x -> PT_TurnoutModelData x std) cpsCC_UW
-          WeightedAggregation -> fmap (\x -> PT_TurnoutModelData x std) cpsCC_W
+          WeightedAggregation _ -> fmap (\x -> PT_TurnoutModelData x std) cpsCC_W
         CESSurvey -> case tc.tSurveyAggregation of
           UnweightedAggregation -> fmap (\x -> PT_TurnoutModelData x std) cesCC_UW
-          WeightedAggregation -> fmap (\x -> PT_TurnoutModelData x std) cesCC_W
+          WeightedAggregation _ -> fmap (\x -> PT_TurnoutModelData x std) cesCC_W
 
 turnoutTargetsTD :: CovariatesAndCounts a b
                  -> StateTargetsData td
@@ -359,6 +366,17 @@ turnoutTargetsTD cc st cM rM = do
     pure acsNByState
   pure (dmACS, acsNByState)
 
+data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
+
+newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
+
+instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
+  size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
+  encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
+  decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
+
+
+{-
 turnoutTargetsModel :: ModelParameters
                     -> CovariatesAndCounts a b
                     -> StateTargetsData td
@@ -484,7 +502,6 @@ modelParameters dmr rtt sa = do
         TNil (\_ _ -> pure ())
   pure $ BinomialLogitModelParameters alpha theta
 
-data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
 probabilitiesExpr :: ModelParameters -> SMB.RowTypeTag a -> TE.MatrixE -> TE.VectorE
 probabilitiesExpr mps rtt covariatesM = TE.functionE SF.inv_logit (lp :> TNil)
@@ -604,12 +621,6 @@ turnoutModel rc tmc = do
     Just gtt -> turnoutPS mParams tmc.tDesignMatrixRow Nothing Nothing gtt --(Just $ centerF SC.GQData) (Just r)
   pure ()
 
-newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
-
-instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
-  size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
-  encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
-  decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
 
 
 runModel :: forall l k r a b .
@@ -724,3 +735,4 @@ modelResultAction turnoutConfig runConfig = SC.UseSummary f where
           psTByGrpV <- getVectorPcts "tByGrp"
           K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
     pure $ (TurnoutPrediction geoMap (VU.convert betaSI) Nothing, PSMap psMap)
+-}

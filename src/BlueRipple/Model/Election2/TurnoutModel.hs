@@ -82,6 +82,7 @@ import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
 
+{-
 runTurnoutModel :: (K.KnitEffects r
                    , BRKU.CacheEffects r
                    , V.RMap l
@@ -114,6 +115,7 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
                  (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC.runModel modelDirE (MC.turnoutSurveyText ts <> "Turnout_" <> show year) gqName cmdLine runConfig modelConfig modelData_C acsByState_C
+-}
 
 runTurnoutModel2 :: (K.KnitEffects r
                    , BRKU.CacheEffects r
@@ -185,7 +187,7 @@ surveyDataBy saM = FL.fold fld
       Nothing -> mwInnerFld
       Just sa -> case sa of
         MC.UnweightedAggregation -> uwInnerFld
-        MC.WeightedAggregation -> wInnerFld
+        MC.WeightedAggregation _ -> wInnerFld
     fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[TurnoutP]))
     fld = FMR.concatFold
           $ FMR.mapReduceFold

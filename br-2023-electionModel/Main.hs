@@ -157,9 +157,9 @@ main = do
 --        dmr = MC.tDesignMatrixRow_d_A_S_E_R
         dmr2 = MC2.tDesignMatrixRow_d
         survey = MC.CESSurvey
-        aggregation = MC.WeightedAggregation
-        alphaModels = [MC2.St_A_S_E_R, MC2.St_A_S_E_R_ER, MC2.St_A_S_E_R_StR, MC2.St_A_S_E_R_ER_StR, MC2.St_A_S_E_R_ER_StR_StER]
-        psTs = [MC.NoPSTargets, MC.PSTargets]
+        aggregation = MC.WeightedAggregation MC.CountScaledBeta
+        alphaModels = [MC2.St_A_S_E_R] --, MC2.St_A_S_E_R_ER, MC2.St_A_S_E_R_StR, MC2.St_A_S_E_R_ER_StR, MC2.St_A_S_E_R_ER_StR_StER]
+        psTs = [MC.NoPSTargets] --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
     rawCPS_C <- DP.cpsCountedTurnoutByState
