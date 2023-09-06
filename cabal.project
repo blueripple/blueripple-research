@@ -3,7 +3,7 @@ jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
 allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
-           , aeson, text
+           , aeson, text, ghc:fusion-plugin, streamly-bytestring:bytestring
 
 flags: +streamly9
 

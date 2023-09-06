@@ -156,7 +156,6 @@ main = do
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
 --        dmr = MC.tDesignMatrixRow_d_A_S_E_R
         dmr2 = MC2.tDesignMatrixRow_d
---        stateAlphaModel = MC.StateAlphaHierCentered
         survey = MC.CESSurvey
         aggregation = MC.WeightedAggregation
         alphaModels = [MC2.St_A_S_E_R, MC2.St_A_S_E_R_ER, MC2.St_A_S_E_R_StR, MC2.St_A_S_E_R_ER_StR, MC2.St_A_S_E_R_ER_StR_StER]
