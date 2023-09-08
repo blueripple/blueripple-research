@@ -489,7 +489,6 @@ turnoutModel rc tmc = do
     _ -> pure ()
 
   -- model
-  let --covariatesM = MC.withCC MC.ccCovariates mData
   lpCW <- MC.withCC (\cc -> logitProbCW paramSetup cc.ccSurveyDataTag covariatesM) mData
   let llF :: SMD.StanDist t pts rts
           -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
@@ -536,22 +535,49 @@ turnoutModel rc tmc = do
       case mData of
         MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
         MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-    MC.WeightedAggregation MC.CountScaledBeta -> do
+    MC.WeightedAggregation MC.BetaProportion -> do
       let eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
+--          eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+          inv_logit x = TE.functionE SF.inv_logit (x :> TNil)
+--          ones szE = TE.functionE SF.ones_vector (szE :> TNil)
+          toArray x = TE.functionE SF.to_array_1d (x :> TNil)
+{-          alphaBeta rtt n lp = do
+            let sizeE = SMB.dataSetSizeE rtt
+                oneV = ones sizeE
+            p <- TE.declareRHSNW (TE.NamedDeclSpec "p" $ TE.vectorSpec sizeE []) $ inv_logit lp
+            alpha <- TE.declareRHSNW (TE.NamedDeclSpec "a" $ TE.vectorSpec sizeE []) $ (n `eltTimes` p) `TE.plusE` TE.realE 1 --oneV
+            beta <- TE.declareRHSNW (TE.NamedDeclSpec "b" $ TE.vectorSpec sizeE []) $ (n `eltTimes` (TE.realE 1 `TE.minusE` p)) `TE.plusE` TE.realE 1 --oneV
+            pure (alpha :> beta :> TNil)
+-}
+          muKappa rtt n lp = do
+            let sizeE = SMB.dataSetSizeE rtt
+            mu <- TE.declareRHSNW (TE.NamedDeclSpec "mu" $ TE.vectorSpec sizeE []) $ inv_logit lp
+            kappa <- TE.declareRHSNW (TE.NamedDeclSpec "kappa" $ TE.vectorSpec sizeE []) $ SF.toVec n
+            pure (mu :> kappa :> TNil)
           model ::  SMB.RowTypeTag a -> TE.VectorE -> TE.VectorE -> SMB.StanBuilderM md gq ()
           model rtt n k = do
-            let ssF lp e = SMB.familySample SMD.countScaledBetaDistLogit e (n :> lp :> TNil)
+            th <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+              let size = SMB.dataSetSizeE rtt
+                  vecSpec = TE.vectorSpec size []
+                  vecOf x = TE.functionE SF.rep_vector (TE.realE x :> size :> TNil)
+                  vecMax v1 v2 = TE.functionE SF.fmax (v1 :> v2 :> TNil)
+                  vecMin v1 v2 = TE.functionE SF.fmin (v1 :> v2 :> TNil)
+              lb <- TE.declareRHSNW (TE.NamedDeclSpec "lb" vecSpec) $ vecOf 0.0001
+              ub <- TE.declareRHSNW (TE.NamedDeclSpec "ub" vecSpec) $ vecOf 0.9999
+              TE.declareRHSNW (TE.NamedDeclSpec "tr" vecSpec) $ vecMax lb $ vecMin ub $ k `eltDivide` n
+            let --ssF lp e = SMB.familySample SMD.countScaledBetaDistLogit e (n :> lp :> TNil)
+                ppF = SBB.generatePosteriorPredictionV'
+                      (TE.NamedDeclSpec ("predTR") $ TE.array1Spec nRowsE $ TE.realSpec [])
+                      SMD.betaProportionDist
+                      (TE.NeedsCW $ lpCW >>= muKappa rtt n)
+                      toArray
                 rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
-                rpF = (\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW
-                ppF = SBB.generatePosteriorPrediction rtt
-                      (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
-                      SMD.scalarCountScaledBetaDistLogit rpF
-                ll = llF SMD.scalarCountScaledBetaDistLogit rpF
-                     ((TE.declareRHSNW (TE.NamedDeclSpec "th" (TE.vectorSpec (TE.functionE SF.size (n :> TNil)) []) ) $ k `eltDivide` n) >>= \x -> pure $ \nE -> x `TE.at` nE)
---                     (pure $ \nE -> k `TE.at` nE)
-            SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
+                rpF = (\(mu :> kappa :> TNil) -> (\nE -> mu `TE.at` nE :> kappa `TE.at` nE :> TNil)) <$> (lpCW >>= muKappa rtt n)
+                ll = llF SMD.betaProportionDist rpF (pure $ \nE -> th `TE.at` nE)
+            SMB.inBlock SMB.SBModel $ SMB.addScopedFromCodeWriter $ do
               lp <- lpCW
-              TE.addStmt $ ssF lp (k `eltDivide` n)
+              muKappa <- muKappa rtt n lp
+              TE.addStmt $ SMB.familySample SMD.betaProportionDist th muKappa
             when rc.rcIncludePPCheck $ void ppF
             when rc.rcIncludeLL ll
       case mData of
@@ -611,8 +637,14 @@ runModel modelDirE modelName gqName _cmdLine runConfig turnoutConfig modelData_C
                     (groupBuilder turnoutConfig states psKeys)
                     (turnoutModel runConfig turnoutConfig)
 
-  let rSuffix = SC.rinModel runnerInputNames <> "_" <> SC.rinData runnerInputNames
-      unwraps = [SR.UnwrapNamed "Voted" ("yVoted_" <> rSuffix)]
+  let datSuffix = SC.rinData runnerInputNames
+      jsonData t = "jsonData_" <> datSuffix <> "$" <> t
+      voted = jsonData "Voted"
+      surveyed = jsonData "Surveyed"
+      rSuffix = SC.rinModel runnerInputNames <> "_" <> datSuffix
+      unwraps = case turnoutConfig.tSurveyAggregation of
+        MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (voted <> " / " <> surveyed) ("yTurnoutRate_" <> rSuffix)]
+        _ -> [SR.UnwrapNamed "Voted" ("yVoted_" <> rSuffix)]
 
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            modelDirE

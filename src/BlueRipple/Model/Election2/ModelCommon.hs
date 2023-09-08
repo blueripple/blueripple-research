@@ -168,11 +168,11 @@ data TurnoutSurvey a where
   CPSSurvey :: TurnoutSurvey (F.Record DP.CPSByStateR)
 
 
-data RealCountModel = ContinuousBinomial | CountScaledBeta deriving stock (Eq)
+data RealCountModel = ContinuousBinomial | BetaProportion deriving stock (Eq)
 
 realCountModelText :: RealCountModel -> Text
 realCountModelText ContinuousBinomial = "CB"
-realCountModelText CountScaledBeta = "SB"
+realCountModelText BetaProportion = "BP"
 
 data SurveyAggregation b where
   UnweightedAggregation :: SurveyAggregation TE.EIntArray
