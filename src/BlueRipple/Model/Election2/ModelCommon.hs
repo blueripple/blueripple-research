@@ -46,6 +46,9 @@ import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
 
+import qualified Data.Dependent.Sum as DSum
+import qualified Data.Dependent.HashMap as DHash
+
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Serialize as FS
@@ -61,6 +64,7 @@ import qualified Stan.RScriptBuilder as SR
 import qualified Stan.ModelBuilder.BuildingBlocks as SBB
 import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.Distributions.RealBinomial as SMD
+import qualified Stan.ModelBuilder.BuildingBlocks.GroupAlpha as SG
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
@@ -76,42 +80,261 @@ import Flat.Instances.Vector ()
 safeLog :: Double -> Double
 safeLog x = if x >= 1 then Numeric.log x else 0
 
-tDesignMatrixRow_d_A_S_E_R :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
-tDesignMatrixRow_d_A_S_E_R = DM.DesignMatrixRow "d_A_S_E_R" [dRP, aRP, sRP, eRP, rRP]
-  where
-    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
-    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
-    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
-    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
-    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
-
-tDesignMatrixRow_d_A_S_E_R_RE :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
-tDesignMatrixRow_d_A_S_E_R_RE = DM.DesignMatrixRow "d_A_S_E_R_RE" [dRP, aRP, sRP, eRP, rRP, reRP]
-  where
-    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
-    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
-    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
-    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
-    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
-    re r = DM.BEProduct2 (r ^. DT.race5C, r ^. DT.education4C)
-    reRP = DM.boundedEnumRowPart (Just (DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_NonHSGrad))) "RaceEdu" re
-
-tDesignMatrixRow_d_A_S_RE :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
-tDesignMatrixRow_d_A_S_RE = DM.DesignMatrixRow "d_A_S_RE" [dRP, aRP, sRP, reRP]
-  where
-    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
-    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
-    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
-    re r = DM.BEProduct2 (r ^. DT.race5C, r ^. DT.education4C)
-    reRP = DM.boundedEnumRowPart (Just (DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_NonHSGrad))) "RaceEdu" re
-
 stateG :: SMB.GroupTypeTag Text
 stateG = SMB.GroupTypeTag "State"
 
 psGroupTag :: forall k . Typeable k => SMB.GroupTypeTag (F.Record k)
 psGroupTag = SMB.GroupTypeTag "PSGrp"
 
+ageG :: SMB.GroupTypeTag DT.Age5
+ageG = SMB.GroupTypeTag "Age"
 
+sexG :: SMB.GroupTypeTag DT.Sex
+sexG = SMB.GroupTypeTag "Sex"
+
+eduG :: SMB.GroupTypeTag DT.Education4
+eduG = SMB.GroupTypeTag "Edu"
+
+raceG :: SMB.GroupTypeTag DT.Race5
+raceG = SMB.GroupTypeTag "Race"
+
+--psGroupTag :: forall k . Typeable k => SMB.GroupTypeTag (F.Record k)
+--psGroupTag = SMB.GroupTypeTag "PSGrp"
+
+
+
+data Alphas = St_A_S_E_R | St_A_S_E_R_ER | St_A_S_E_R_StR | St_A_S_E_R_ER_StR | St_A_S_E_R_ER_StR_StER deriving stock (Eq, Ord, Show)
+
+alphasText :: Alphas -> Text
+alphasText = show
+{-
+alphasText St_A_S_E_R = "St_A_S_E_R"
+alphasText St_A_S_E_R_ER = "St_A_S_E_R_ER"
+alphasText St_A_S_E_R_StR = "St_A_S_E_R_StR"
+alphasText St_A_S_E_R_ER_StR = "St_A_S_E_R_ER_StR"
+alphasText St_A_S_E_R_ER_StR_StER = "St_A_S_E_R_ER_StR_StER"
+-}
+
+data CommonConfig (b :: TE.EType) =
+  CommonConfig
+  {
+    cSurveyAggregation :: SurveyAggregation b
+  , cPSTargets :: PSTargets
+  , cAlphas :: Alphas
+  , cDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+  }
+
+commonConfigText :: Config b -> Text
+commonConfigText (Config sa alphas dmr) =  MC.addAggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
+
+
+type GroupsR = GT.StateAbbreviation ': DP.DCatsR
+
+groups :: Foldable g => g Text -> [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
+groups states = [stateG DSum.:=>
+           SG.GroupFromData (view GT.stateAbbreviation)
+           (SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states)
+           (SMB.dataToIntMapFromFoldable (view GT.stateAbbreviation) states)
+         , ageG DSum.:=> SG.groupFromDataEnum (view DT.age5C)
+         , sexG DSum.:=> SG.groupFromDataEnum (view DT.sexC)
+         , eduG DSum.:=> SG.groupFromDataEnum (view DT.education4C)
+         , raceG DSum.:=> SG.groupFromDataEnum (view DT.race5C)
+         ]
+
+addGroupIndexesAndIntMaps :: (GroupsR F.⊆ rs)
+        => [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
+        -> SMB.RowTypeTag (F.Record rs)
+        -> SMB.StanGroupBuilderM DP.ModelData gq ()
+addGroupIndexesAndIntMaps groups' dataTag = do
+  SG.addModelIndexes dataTag F.rcast groups'
+  SG.addGroupIntMaps dataTag F.rcast groups'
+
+surveyDataGroupBuilder :: Foldable g => g Text -> Text -> SMB.ToFoldable d r -> SMB.StanGroupBuilderM DP.ModelData gq ()
+surveyDataGroupBuilder states sName sTF = SMB.addModelDataToGroupBuilder sName sTF >>= addGroupIndexesAndIntMaps
+
+stateTargetsGroupBuilder :: Foldable g => g Text -> SMB.RowTypeTag r -> SMB.StanGroupBuilderM ()
+stateTargetGroupBuilder states rtt =
+  SMB.addGroupIndexForData MC.stateG rtt
+  $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
+
+acsDataGroupBuilder :: [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
+                    ->  SMB.StanGroupBuilderM DP.ModelData gq ()
+acsDataGroupBuilder groups' = do
+   acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
+   SG.addModelIndexes acsDataTag F.rcast groups'
+
+-- NB: often l ~ k, e.g., for predicting district turnout/preference
+-- But say you want to predict turnout by race, nationally.
+-- Now l ~ '[Race5C]
+-- How about turnout by Education in each state? Then l ~ [StateAbbreviation, Education4C]
+psGroupBuilder :: forall g k l b .
+                 (Foldable g
+                 , Typeable (DP.PSDataR k)
+                 , Show (F.Record l)
+                 , Ord (F.Record l)
+                 , l F.⊆ DP.PSDataR k
+                 , Typeable l
+                 , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
+                 , DP.DCatsR F.⊆ DP.PSDataR k
+                 )
+               => CommonConfig b
+               -> g Text
+               -> g (F.Record l)
+               -> SMB.StanGroupBuilderM DP.ModelData (DP.PSData k) ()
+psGroupBuilder config states psKeys = do
+  let groups' = groups states
+  -- the return type must be explcit here so GHC knows the GADT type parameter does not escape its scope
+{-
+  () <- case turnoutConfig.tSurvey of
+    MC.CESSurvey -> SMB.addModelDataToGroupBuilder "SurveyData" (SMB.ToFoldable DP.cesData) >>= addBoth
+    MC.CPSSurvey -> SMB.addModelDataToGroupBuilder "SurveyData" (SMB.ToFoldable DP.cpsData) >>= addBoth
+-}
+{-
+  case config.cPSTargets of
+    MC.NoPSTargets -> pure ()
+    MC.PSTargets -> do
+      targetDataTag <- SMB.addModelDataToGroupBuilder "TurnoutTargetData" (SMB.ToFoldable DP.stateTurnoutData)
+      SMB.addGroupIndexForData MC.stateG turnoutTargetDataTag $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
+      acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
+      SG.addModelIndexes acsDataTag F.rcast groups'
+-}
+  let psGtt = MC.psGroupTag @l
+  psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
+  SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
+  SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
+  SG.addModelIndexes psTag F.rcast groups'
+
+-- design matrix rows
+tDesignMatrixRow_d :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d = DM.DesignMatrixRow "d" [dRP]
+  where
+    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
+
+data ModelType = TurnoutMT | RegistrationMT | PreferenceMT | FullMT deriving stock (Eq, Ord, Show)
+
+data TurnoutSurvey a where
+  CESSurvey :: TurnoutSurvey (F.Record DP.CESByCDR)
+  CPSSurvey :: TurnoutSurvey (F.Record DP.CPSByStateR)
+
+data RealCountModel = ContinuousBinomial | BetaProportion deriving stock (Eq)
+
+realCountModelText :: RealCountModel -> Text
+realCountModelText ContinuousBinomial = "CB"
+realCountModelText BetaProportion = "BP"
+
+data SurveyAggregation b where
+  UnweightedAggregation :: SurveyAggregation TE.EIntArray
+  WeightedAggregation :: RealCountModel -> SurveyAggregation TE.ECVec
+
+turnoutSurveyText :: TurnoutSurvey a -> Text
+turnoutSurveyText CESSurvey = "CES"
+turnoutSurveyText CPSSurvey = "CPS"
+
+data PSTargets = NoPSTargets | PSTargets deriving stock (Eq, Ord, Show)
+psTargetsText :: PSTargets -> Text
+psTargetsText NoPSTargets = "noPSTgt"
+psTargetsText PSTargets = "PSTgt"
+
+aggregationText :: SurveyAggregation b -> Text
+aggregationText UnweightedAggregation = "UW"
+aggregationText (WeightedAggregation cm) = "WA" <> realCountModelText cm
+
+addAggregationText :: SurveyAggregation b -> Text
+addAggregationText UnweightedAggregation = "_UW"
+addAggregationText (WeightedAggregation cm) = "_WA" <> realCountModelText cm
+
+data BinomialData (b :: TE.EType) =
+  BinomialData
+  {
+    bdTrials :: TE.UExpr b
+  , bdSuccesses :: TE.UExpr b
+  }
+
+binomialData :: SMB.RowTypeTag a
+             -> (SMB.RowTypeTag a -> SB.StanBuilderM TE.UExpr b)
+             -> (SMB.RowTypeTag a -> SB.StanBuilderM TE.UExpr b)
+             -> SMB.StanBuilderM md gq (MC.BinomialData b)
+binomialData rtt trialsF succF = do
+  trialsE <- trialsF rtt --SBB.addCountData surveyDataTag "Surveyed" (view DP.surveyed)
+  successesE <- succF rtt --SBB.addCountData surveyDataTag "Voted" (view DP.voted)
+  pure $ BinomialData trialsE successesE
+
+data CovariatesAndCounts a (b :: TE.EType) =
+  CovariatesAndCounts
+  {
+    ccSurveyDataTag :: SMB.RowTypeTag a
+  , ccNCovariates :: TE.IntE
+  , ccCovariates :: TE.MatrixE
+  , ccBinomialData :: BinomialData b
+  }
+
+covariatesAndCounts :: SMB.RowTypeTag a
+                    -> CommonConfig b
+                    -> (SMB.RowTypeTag a -> SMB.StanBuilderM TE.UExpr b)
+                    -> (SMB.RowTypeTag a -> SMB.StanBuilderM TE.UExpr b)
+                    -> SMB.StanBuilderM md gq (MC.CovariatesAndCounts b)
+covariatesAndCounts rtt trialsF succF = do
+  trialsE <- trialsF rtt --SBB.addCountData surveyDataTag "Surveyed" (view DP.surveyed)
+  successesE <- succF rtt --SBB.addCountData surveyDataTag "Voted" (view DP.voted)
+  pure $ MC.BinomialData trialsE successesE
+
+data StateTargetsData td =
+  StateTargetsData
+  {
+    stdTargetTypeTag :: SMB.RowTypeTag td
+  , stdStateBallotsCountedVAP :: TE.VectorE
+  , stdACSTag :: SMB.RowTypeTag (F.Record DDP.ACSa5ByStateR)
+  , stdACSWgts :: TE.IntArrayE
+  , stdACSCovariates :: TE.MatrixE
+  }
+
+data TurnoutModelData a (b :: TE.EType) where
+  NoPT_TurnoutModelData :: CovariatesAndCounts a b -> TurnoutModelData a b
+  PT_TurnoutModelData :: CovariatesAndCounts a b -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData a b
+
+withCC :: (forall a b . CovariatesAndCounts a b -> c) -> TurnoutModelData a b -> c
+withCC f (NoPT_TurnoutModelData cc) = f cc
+withCC f (PT_TurnoutModelData cc _) = f cc
+
+stateTargetsTD :: CovariatesAndCounts a b
+               -> StateTargetsData td
+               -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
+               -> Maybe TE.MatrixE
+               -> SMB.StanBuilderM md gq (TE.MatrixE, TE.IntArrayE)
+stateTargetsTD cc st cM rM = do
+  dmACS' <- case cM of
+    Nothing -> pure st.stdACSCovariates
+    Just c -> c st.stdACSCovariates "dmACS_Centered"
+  dmACS <- case rM of
+    Nothing -> pure dmACS'
+    Just r -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+      let rowsE = SMB.dataSetSizeE st.stdACSTag
+          colsE = cc.ccNCovariates
+      TE.declareRHSNW (TE.NamedDeclSpec "acsDM_QR" $ TE.matrixSpec rowsE colsE [])
+           $ dmACS' `TE.timesE` r
+  acsNByState <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
+    let nStatesE = SMB.groupSizeE stateG
+        nACSRowsE = SMB.dataSetSizeE st.stdACSTag
+        acsStateIndex = SMB.byGroupIndexE st.stdACSTag stateG
+        plusEq = TE.opAssign TEO.SAdd
+        acsNByStateNDS = TE.NamedDeclSpec "acsNByState" $ TE.intArraySpec nStatesE [TE.lowerM $ TE.intE 0]
+    acsNByState <- TE.declareRHSNW acsNByStateNDS $ TE.functionE SF.rep_array (TE.intE 0 :> nStatesE :> TNil)
+    TE.addStmt
+      $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nACSRowsE) $ \kE ->
+      [(TE.indexE TEI.s0 acsStateIndex acsNByState `TE.at` kE) `plusEq` (st.stdACSWgts `TE.at` kE)]
+    pure acsNByState
+  pure (dmACS, acsNByState)
+
+data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
+
+newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
+
+instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
+  size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
+  encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
+  decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
+
+{-
 -- NB: often l ~ k, e.g., for predicting district turnout/preference
 -- But say you want to predict turnout by race, nationally.
 -- Now l ~ '[Race5C]
@@ -153,121 +376,6 @@ stateGroupBuilder turnoutConfig states psKeys = do
   SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
   SMB.addGroupIndexForData stateG psTag $ SMB.makeIndexFromFoldable show saF states
 --  SMB.addGroupIntMapForDataSet stateG psTag $ SMB.dataToIntMapFromFoldable saF states
-
-data StateAlpha = StateAlphaSimple | StateAlphaHierCentered | StateAlphaHierNonCentered deriving stock (Show)
-
-stateAlphaModelText :: StateAlpha -> Text
-stateAlphaModelText StateAlphaSimple = "AS"
-stateAlphaModelText StateAlphaHierCentered = "AHC"
-stateAlphaModelText StateAlphaHierNonCentered = "AHNC"
-
-data ModelType = TurnoutMT | RegistrationMT | PreferenceMT | FullMT deriving stock (Eq, Ord, Show)
-
-data TurnoutSurvey a where
-  CESSurvey :: TurnoutSurvey (F.Record DP.CESByCDR)
-  CPSSurvey :: TurnoutSurvey (F.Record DP.CPSByStateR)
-
-
-data RealCountModel = ContinuousBinomial | BetaProportion deriving stock (Eq)
-
-realCountModelText :: RealCountModel -> Text
-realCountModelText ContinuousBinomial = "CB"
-realCountModelText BetaProportion = "BP"
-
-data SurveyAggregation b where
-  UnweightedAggregation :: SurveyAggregation TE.EIntArray
-  WeightedAggregation :: RealCountModel -> SurveyAggregation TE.ECVec
-
-turnoutSurveyText :: TurnoutSurvey a -> Text
-turnoutSurveyText CESSurvey = "CES"
-turnoutSurveyText CPSSurvey = "CPS"
-
-data PSTargets = NoPSTargets | PSTargets deriving stock (Eq, Ord, Show)
-psTargetsText :: PSTargets -> Text
-psTargetsText NoPSTargets = "noPSTgt"
-psTargetsText PSTargets = "PSTgt"
-
--- we can use the designMatrixRow to get (a -> Vector Double) for prediction
-data TurnoutConfig a (b :: TE.EType) =
-  TurnoutConfig
-  {
-    tSurvey :: TurnoutSurvey a
-  , tSurveyAggregation :: SurveyAggregation b
-  , tPSTargets :: PSTargets
-  , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
-  , tStateAlphaModel :: StateAlpha
-  }
-
--- for now we model only alpha hierarchically. Beta will be the same everywhere.
-data TurnoutPrediction =
-  TurnoutPrediction
-  {
-    tpAlphaMap :: Map Text Double
-  , tpBetaSI :: VU.Vector (Double, Double)
-  , tpLogisticAdjMapM :: Maybe (Map Text Double)
-  } deriving stock (Generic)
-
-deriving anyclass instance Flat.Flat TurnoutPrediction
-
-predictedTurnoutP :: TurnoutConfig a b -> TurnoutPrediction -> Text -> F.Record DP.PredictorsR -> Either Text Double
-predictedTurnoutP tc tp sa p = do
-  alpha <- case M.lookup sa tp.tpAlphaMap of
-    Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: alphaMap lookup failed for k=" <> sa
-    Just x -> pure x
-  logisticAdj <- case tp.tpLogisticAdjMapM of
-    Nothing -> pure 0
-    Just m -> case M.lookup sa m of
-      Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: pdLogisticAdjMap lookup failed for k=" <> show sa
-      Just x -> pure x
-  let covariatesV = DM.designMatrixRowF tc.tDesignMatrixRow p
-      invLogit x = 1 / (1 + exp (negate x))
-      applySI x (s, i) = i + s * x
-  pure $ invLogit (alpha + VU.sum (VU.zipWith applySI covariatesV tp.tpBetaSI) + logisticAdj)
-
-addAggregationText :: SurveyAggregation b -> Text
-addAggregationText UnweightedAggregation = ""
-addAggregationText (WeightedAggregation cm) = "_WA" <> if cm == ContinuousBinomial then "" else realCountModelText cm
-
-turnoutModelText :: TurnoutConfig a b -> Text
-turnoutModelText (TurnoutConfig ts tsa tPs dmr am) = "Turnout" <> turnoutSurveyText ts
-                                                 <> (if (tPs == PSTargets) then "_PSTgt" else "")
-                                                 <> addAggregationText tsa
-                                                 <> "_" <> dmr.dmName <> "_" <> stateAlphaModelText am
-
-turnoutModelDataText :: TurnoutConfig a b -> Text
-turnoutModelDataText (TurnoutConfig ts tsa tPs dmr _) = "Turnout" <> turnoutSurveyText ts
-                                                    <> (if (tPs == PSTargets) then "_PSTgt" else "")
-                                                    <> addAggregationText tsa
-                                                    <> "_" <> dmr.dmName
-
-
-data CovariatesAndCounts a (b :: TE.EType) =
-  CovariatesAndCounts
-  {
-    ccSurveyDataTag :: SMB.RowTypeTag a
-  , ccNCovariates :: TE.IntE
-  , ccCovariates :: TE.MatrixE
-  , ccTrials :: TE.UExpr b
-  , ccSuccesses :: TE.UExpr b
-  }
-
-data StateTargetsData td =
-  StateTargetsData
-  {
-    stdTargetTypeTag :: SMB.RowTypeTag td
-  , stdStateBallotsCountedVAP :: TE.VectorE
-  , stdACSTag :: SMB.RowTypeTag (F.Record DDP.ACSa5ByStateR)
-  , stdACSWgts :: TE.IntArrayE
-  , stdACSCovariates :: TE.MatrixE
-  }
-
-data TurnoutModelData a (b :: TE.EType) where
-  NoPT_TurnoutModelData :: CovariatesAndCounts a b -> TurnoutModelData a b
-  PT_TurnoutModelData :: CovariatesAndCounts a b -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData a b
-
-withCC :: (forall a b . CovariatesAndCounts a b -> c) -> TurnoutModelData a b -> c
-withCC f (NoPT_TurnoutModelData cc) = f cc
-withCC f (PT_TurnoutModelData cc _) = f cc
 
 turnoutModelData :: forall a b gq . TurnoutConfig a b
                  -> SMB.StanBuilderM DP.ModelData gq (TurnoutModelData a b)
@@ -337,46 +445,94 @@ turnoutModelData tc = do
           UnweightedAggregation -> fmap (\x -> PT_TurnoutModelData x std) cesCC_UW
           WeightedAggregation _ -> fmap (\x -> PT_TurnoutModelData x std) cesCC_W
 
-turnoutTargetsTD :: CovariatesAndCounts a b
-                 -> StateTargetsData td
-                 -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
-                 -> Maybe TE.MatrixE
-                 -> SMB.StanBuilderM md gq (TE.MatrixE, TE.IntArrayE)
-turnoutTargetsTD cc st cM rM = do
-  dmACS' <- case cM of
-    Nothing -> pure st.stdACSCovariates
-    Just c -> c st.stdACSCovariates "dmACS_Centered"
-  dmACS <- case rM of
-    Nothing -> pure dmACS'
-    Just r -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-      let rowsE = SMB.dataSetSizeE st.stdACSTag
-          colsE = cc.ccNCovariates
-      TE.declareRHSNW (TE.NamedDeclSpec "acsDM_QR" $ TE.matrixSpec rowsE colsE [])
-           $ dmACS' `TE.timesE` r
-  acsNByState <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-    let nStatesE = SMB.groupSizeE stateG
-        nACSRowsE = SMB.dataSetSizeE st.stdACSTag
-        acsStateIndex = SMB.byGroupIndexE st.stdACSTag stateG
-        plusEq = TE.opAssign TEO.SAdd
-        acsNByStateNDS = TE.NamedDeclSpec "acsNByState" $ TE.intArraySpec nStatesE [TE.lowerM $ TE.intE 0]
-    acsNByState <- TE.declareRHSNW acsNByStateNDS $ TE.functionE SF.rep_array (TE.intE 0 :> nStatesE :> TNil)
-    TE.addStmt
-      $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nACSRowsE) $ \kE ->
-      [(TE.indexE TEI.s0 acsStateIndex acsNByState `TE.at` kE) `plusEq` (st.stdACSWgts `TE.at` kE)]
-    pure acsNByState
-  pure (dmACS, acsNByState)
-
-data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
-
-newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
-
-instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
-  size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
-  encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
-  decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
 
 
-{-
+turnoutModelText :: TurnoutConfig a b -> Text
+turnoutModelText (TurnoutConfig ts tsa tPs dmr am) = "Turnout" <> turnoutSurveyText ts
+                                                 <> (if (tPs == PSTargets) then "_PSTgt" else "")
+                                                 <> addAggregationText tsa
+                                                 <> "_" <> dmr.dmName <> "_" <> stateAlphaModelText am
+
+turnoutModelDataText :: TurnoutConfig a b -> Text
+turnoutModelDataText (TurnoutConfig ts tsa tPs dmr _) = "Turnout" <> turnoutSurveyText ts
+                                                    <> (if (tPs == PSTargets) then "_PSTgt" else "")
+                                                    <> addAggregationText tsa
+                                                    <> "_" <> dmr.dmName
+
+
+-- for now we model only alpha hierarchically. Beta will be the same everywhere.
+data TurnoutPrediction =
+  TurnoutPrediction
+  {
+    tpAlphaMap :: Map Text Double
+  , tpBetaSI :: VU.Vector (Double, Double)
+  , tpLogisticAdjMapM :: Maybe (Map Text Double)
+  } deriving stock (Generic)
+
+deriving anyclass instance Flat.Flat TurnoutPrediction
+
+predictedTurnoutP :: TurnoutConfig a b -> TurnoutPrediction -> Text -> F.Record DP.PredictorsR -> Either Text Double
+predictedTurnoutP tc tp sa p = do
+  alpha <- case M.lookup sa tp.tpAlphaMap of
+    Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: alphaMap lookup failed for k=" <> sa
+    Just x -> pure x
+  logisticAdj <- case tp.tpLogisticAdjMapM of
+    Nothing -> pure 0
+    Just m -> case M.lookup sa m of
+      Nothing -> Left $ "Model.Election2.ModelCommon.predictedP: pdLogisticAdjMap lookup failed for k=" <> show sa
+      Just x -> pure x
+  let covariatesV = DM.designMatrixRowF tc.tDesignMatrixRow p
+      invLogit x = 1 / (1 + exp (negate x))
+      applySI x (s, i) = i + s * x
+  pure $ invLogit (alpha + VU.sum (VU.zipWith applySI covariatesV tp.tpBetaSI) + logisticAdj)
+
+-- we can use the designMatrixRow to get (a -> Vector Double) for prediction
+data TurnoutConfig a (b :: TE.EType) =
+  TurnoutConfig
+  {
+    tSurvey :: TurnoutSurvey a
+  , tSurveyAggregation :: SurveyAggregation b
+  , tPSTargets :: PSTargets
+  , tDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+  , tStateAlphaModel :: StateAlpha
+  }
+
+tDesignMatrixRow_d_A_S_E_R :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d_A_S_E_R = DM.DesignMatrixRow "d_A_S_E_R" [dRP, aRP, sRP, eRP, rRP]
+  where
+    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
+    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
+    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
+    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
+    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
+
+tDesignMatrixRow_d_A_S_E_R_RE :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d_A_S_E_R_RE = DM.DesignMatrixRow "d_A_S_E_R_RE" [dRP, aRP, sRP, eRP, rRP, reRP]
+  where
+    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
+    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
+    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
+    eRP = DM.boundedEnumRowPart (Just DT.E4_NonHSGrad) "Edu" (view DT.education4C)
+    rRP = DM.boundedEnumRowPart (Just DT.R5_WhiteNonHispanic) "Race" (view DT.race5C)
+    re r = DM.BEProduct2 (r ^. DT.race5C, r ^. DT.education4C)
+    reRP = DM.boundedEnumRowPart (Just (DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_NonHSGrad))) "RaceEdu" re
+
+tDesignMatrixRow_d_A_S_RE :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d_A_S_RE = DM.DesignMatrixRow "d_A_S_RE" [dRP, aRP, sRP, reRP]
+  where
+    dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
+    aRP = DM.boundedEnumRowPart (Just DT.A5_18To24) "Age" (view DT.age5C)
+    sRP = DM.boundedEnumRowPart Nothing "Sex" (view DT.sexC)
+    re r = DM.BEProduct2 (r ^. DT.race5C, r ^. DT.education4C)
+    reRP = DM.boundedEnumRowPart (Just (DM.BEProduct2 (DT.R5_WhiteNonHispanic, DT.E4_NonHSGrad))) "RaceEdu" re
+
+data StateAlpha = StateAlphaSimple | StateAlphaHierCentered | StateAlphaHierNonCentered deriving stock (Show)
+
+stateAlphaModelText :: StateAlpha -> Text
+stateAlphaModelText StateAlphaSimple = "AS"
+stateAlphaModelText StateAlphaHierCentered = "AHC"
+stateAlphaModelText StateAlphaHierNonCentered = "AHNC"
+
 turnoutTargetsModel :: ModelParameters
                     -> CovariatesAndCounts a b
                     -> StateTargetsData td
