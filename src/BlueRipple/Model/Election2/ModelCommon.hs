@@ -101,8 +101,6 @@ raceG = SMB.GroupTypeTag "Race"
 --psGroupTag :: forall k . Typeable k => SMB.GroupTypeTag (F.Record k)
 --psGroupTag = SMB.GroupTypeTag "PSGrp"
 
-
-
 data Alphas = St_A_S_E_R | St_A_S_E_R_ER | St_A_S_E_R_StR | St_A_S_E_R_ER_StR | St_A_S_E_R_ER_StR_StER deriving stock (Eq, Ord, Show)
 
 alphasText :: Alphas -> Text
@@ -115,18 +113,38 @@ alphasText St_A_S_E_R_ER_StR = "St_A_S_E_R_ER_StR"
 alphasText St_A_S_E_R_ER_StR_StER = "St_A_S_E_R_ER_StR_StER"
 -}
 
-data CommonConfig (b :: TE.EType) =
-  CommonConfig
+data ModelConfig ps (b :: TE.EType) =
+  ModelConfig
   {
-    cSurveyAggregation :: SurveyAggregation b
-  , cPSTargets :: PSTargets
-  , cAlphas :: Alphas
-  , cDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+    mcSurveyAggregation :: SurveyAggregation b
+  , mcAlphas :: Alphas
+  , mcDesignMatrixRow :: DM.DesignMatrixRow (F.Record ps)
   }
 
-commonConfigText :: Config b -> Text
-commonConfigText (Config sa alphas dmr) =  MC.addAggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
+modelConfigText :: ModelConfig ps b -> Text
+modelConfigText (ModelConfig sa alphas dmr) =  addAggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
 
+data RegistrationConfig a b =
+  RegistrationConfig
+  {
+    rcSurvey :: TurnoutSurvey a
+  , rcModelConfig :: ModelConfig DP.PredictorsR b
+  }
+
+data TurnoutConfig a b =
+  TurnoutConfig
+  {
+    tcSurvey :: TurnoutSurvey a
+  , tcPSTargets :: PSTargets
+  , tcModelConfig :: ModelConfig DP.PredictorsR b
+  }
+
+data PrefConfig b =
+  PrefConfig
+  {
+    pcPSTargets :: PSTargets
+  , pcModelConfig :: ModelConfig DP.PrefPredictorsR b
+  }
 
 type GroupsR = GT.StateAbbreviation ': DP.DCatsR
 
@@ -144,17 +162,19 @@ groups states = [stateG DSum.:=>
 addGroupIndexesAndIntMaps :: (GroupsR F.⊆ rs)
         => [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
         -> SMB.RowTypeTag (F.Record rs)
-        -> SMB.StanGroupBuilderM DP.ModelData gq ()
+        -> SMB.StanGroupBuilderM md gq ()
 addGroupIndexesAndIntMaps groups' dataTag = do
   SG.addModelIndexes dataTag F.rcast groups'
   SG.addGroupIntMaps dataTag F.rcast groups'
 
-surveyDataGroupBuilder :: Foldable g => g Text -> Text -> SMB.ToFoldable d r -> SMB.StanGroupBuilderM DP.ModelData gq ()
-surveyDataGroupBuilder states sName sTF = SMB.addModelDataToGroupBuilder sName sTF >>= addGroupIndexesAndIntMaps
+surveyDataGroupBuilder :: (Foldable g, Typeable rs, GroupsR F.⊆ rs)
+                       => g Text -> Text -> SMB.ToFoldable md (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
+surveyDataGroupBuilder states sName sTF = SMB.addModelDataToGroupBuilder sName sTF >>= addGroupIndexesAndIntMaps (groups states)
 
-stateTargetsGroupBuilder :: Foldable g => g Text -> SMB.RowTypeTag r -> SMB.StanGroupBuilderM ()
-stateTargetGroupBuilder states rtt =
-  SMB.addGroupIndexForData MC.stateG rtt
+stateTargetsGroupBuilder :: (Foldable g, F.ElemOf rs GT.StateAbbreviation, GroupsR F.⊆ rs)
+                         => g Text -> SMB.RowTypeTag (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
+stateTargetsGroupBuilder states rtt =
+  SMB.addGroupIndexForData stateG rtt
   $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
 
 acsDataGroupBuilder :: [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
@@ -167,7 +187,7 @@ acsDataGroupBuilder groups' = do
 -- But say you want to predict turnout by race, nationally.
 -- Now l ~ '[Race5C]
 -- How about turnout by Education in each state? Then l ~ [StateAbbreviation, Education4C]
-psGroupBuilder :: forall g k l b .
+psGroupBuilder :: forall g k l .
                  (Foldable g
                  , Typeable (DP.PSDataR k)
                  , Show (F.Record l)
@@ -177,28 +197,12 @@ psGroupBuilder :: forall g k l b .
                  , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
                  , DP.DCatsR F.⊆ DP.PSDataR k
                  )
-               => CommonConfig b
-               -> g Text
+               => g Text
                -> g (F.Record l)
                -> SMB.StanGroupBuilderM DP.ModelData (DP.PSData k) ()
-psGroupBuilder config states psKeys = do
+psGroupBuilder states psKeys = do
   let groups' = groups states
-  -- the return type must be explcit here so GHC knows the GADT type parameter does not escape its scope
-{-
-  () <- case turnoutConfig.tSurvey of
-    MC.CESSurvey -> SMB.addModelDataToGroupBuilder "SurveyData" (SMB.ToFoldable DP.cesData) >>= addBoth
-    MC.CPSSurvey -> SMB.addModelDataToGroupBuilder "SurveyData" (SMB.ToFoldable DP.cpsData) >>= addBoth
--}
-{-
-  case config.cPSTargets of
-    MC.NoPSTargets -> pure ()
-    MC.PSTargets -> do
-      targetDataTag <- SMB.addModelDataToGroupBuilder "TurnoutTargetData" (SMB.ToFoldable DP.stateTurnoutData)
-      SMB.addGroupIndexForData MC.stateG turnoutTargetDataTag $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
-      acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
-      SG.addModelIndexes acsDataTag F.rcast groups'
--}
-  let psGtt = MC.psGroupTag @l
+      psGtt = psGroupTag @l
   psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
   SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
   SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
@@ -251,9 +255,9 @@ data BinomialData (b :: TE.EType) =
   }
 
 binomialData :: SMB.RowTypeTag a
-             -> (SMB.RowTypeTag a -> SB.StanBuilderM TE.UExpr b)
-             -> (SMB.RowTypeTag a -> SB.StanBuilderM TE.UExpr b)
-             -> SMB.StanBuilderM md gq (MC.BinomialData b)
+             -> (SMB.RowTypeTag a -> SMB.StanBuilderM md gq (TE.UExpr b))
+             -> (SMB.RowTypeTag a -> SMB.StanBuilderM md gq (TE.UExpr b))
+             -> SMB.StanBuilderM md gq (BinomialData b)
 binomialData rtt trialsF succF = do
   trialsE <- trialsF rtt --SBB.addCountData surveyDataTag "Surveyed" (view DP.surveyed)
   successesE <- succF rtt --SBB.addCountData surveyDataTag "Voted" (view DP.voted)
@@ -268,56 +272,67 @@ data CovariatesAndCounts a (b :: TE.EType) =
   , ccBinomialData :: BinomialData b
   }
 
-covariatesAndCounts :: SMB.RowTypeTag a
-                    -> CommonConfig b
-                    -> (SMB.RowTypeTag a -> SMB.StanBuilderM TE.UExpr b)
-                    -> (SMB.RowTypeTag a -> SMB.StanBuilderM TE.UExpr b)
-                    -> SMB.StanBuilderM md gq (MC.CovariatesAndCounts b)
-covariatesAndCounts rtt trialsF succF = do
+covariatesAndCountsFromData :: ps F.⊆ rs
+                    => SMB.RowTypeTag (F.Record rs)
+                    -> ModelConfig ps b
+                    -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
+                    -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
+                    -> SMB.StanBuilderM md gq (CovariatesAndCounts (F.Record rs) b)
+covariatesAndCountsFromData rtt modelConfig trialsF succF = do
   trialsE <- trialsF rtt --SBB.addCountData surveyDataTag "Surveyed" (view DP.surveyed)
   successesE <- succF rtt --SBB.addCountData surveyDataTag "Voted" (view DP.voted)
-  pure $ MC.BinomialData trialsE successesE
+  let (_, nCovariatesE) = DM.designMatrixColDimBinding modelConfig.mcDesignMatrixRow Nothing
+  dmE <- if DM.rowLength modelConfig.mcDesignMatrixRow > 0
+    then DM.addDesignMatrix rtt (contramap F.rcast modelConfig.mcDesignMatrixRow) Nothing
+    else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
+  pure $ CovariatesAndCounts rtt nCovariatesE dmE $ BinomialData trialsE successesE
 
-data StateTargetsData td =
+data StateTargetsData tds =
   StateTargetsData
   {
-    stdTargetTypeTag :: SMB.RowTypeTag td
-  , stdStateBallotsCountedVAP :: TE.VectorE
+    stdTargetTypeTag :: SMB.RowTypeTag (F.Record tds)
+  , stdTarget :: TE.VectorE
   , stdACSTag :: SMB.RowTypeTag (F.Record DDP.ACSa5ByStateR)
   , stdACSWgts :: TE.IntArrayE
   , stdACSCovariates :: TE.MatrixE
   }
 
-data TurnoutModelData a (b :: TE.EType) where
-  NoPT_TurnoutModelData :: CovariatesAndCounts a b -> TurnoutModelData a b
-  PT_TurnoutModelData :: CovariatesAndCounts a b -> StateTargetsData (F.Record BRDF.StateTurnoutCols) -> TurnoutModelData a b
+data ModelData tds a (b :: TE.EType) where
+  NoPT_ModelData :: CovariatesAndCounts a b -> ModelData tds a b
+  PT_ModelData :: CovariatesAndCounts a b -> StateTargetsData tds -> ModelData tds a b
 
-withCC :: (forall a b . CovariatesAndCounts a b -> c) -> TurnoutModelData a b -> c
-withCC f (NoPT_TurnoutModelData cc) = f cc
-withCC f (PT_TurnoutModelData cc _) = f cc
+covariatesAndCounts :: ModelData tds a b -> CovariatesAndCounts a b
+covariatesAndCounts (NoPT_ModelData cc) = cc
+covariatesAndCounts (PT_ModelData cc _) = cc
 
-stateTargetsTD :: CovariatesAndCounts a b
+withCC :: (forall a b . CovariatesAndCounts a b -> c) -> ModelData tds a b -> c
+withCC f (NoPT_ModelData cc) = f cc
+withCC f (PT_ModelData cc _) = f cc
+
+stateTargetsTD :: Maybe Text
+               -> CovariatesAndCounts a b
                -> StateTargetsData td
                -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
                -> Maybe TE.MatrixE
                -> SMB.StanBuilderM md gq (TE.MatrixE, TE.IntArrayE)
-stateTargetsTD cc st cM rM = do
+stateTargetsTD prefixM cc st cM rM = do
+  let prefixed t = maybe t (\p -> p <> "_" <> t) prefixM
   dmACS' <- case cM of
     Nothing -> pure st.stdACSCovariates
-    Just c -> c st.stdACSCovariates "dmACS_Centered"
+    Just c -> c st.stdACSCovariates $ prefixed "dmACS_Centered"
   dmACS <- case rM of
     Nothing -> pure dmACS'
     Just r -> SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
       let rowsE = SMB.dataSetSizeE st.stdACSTag
           colsE = cc.ccNCovariates
-      TE.declareRHSNW (TE.NamedDeclSpec "acsDM_QR" $ TE.matrixSpec rowsE colsE [])
+      TE.declareRHSNW (TE.NamedDeclSpec (prefixed "acsDM_QR") $ TE.matrixSpec rowsE colsE [])
            $ dmACS' `TE.timesE` r
   acsNByState <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
     let nStatesE = SMB.groupSizeE stateG
         nACSRowsE = SMB.dataSetSizeE st.stdACSTag
         acsStateIndex = SMB.byGroupIndexE st.stdACSTag stateG
         plusEq = TE.opAssign TEO.SAdd
-        acsNByStateNDS = TE.NamedDeclSpec "acsNByState" $ TE.intArraySpec nStatesE [TE.lowerM $ TE.intE 0]
+        acsNByStateNDS = TE.NamedDeclSpec (prefixed "acsNByState") $ TE.intArraySpec nStatesE [TE.lowerM $ TE.intE 0]
     acsNByState <- TE.declareRHSNW acsNByStateNDS $ TE.functionE SF.rep_array (TE.intE 0 :> nStatesE :> TNil)
     TE.addStmt
       $ TE.for "k" (TE.SpecificNumbered (TE.intE 1) nACSRowsE) $ \kE ->
@@ -325,7 +340,7 @@ stateTargetsTD cc st cM rM = do
     pure acsNByState
   pure (dmACS, acsNByState)
 
-data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
+data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
 newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
 
