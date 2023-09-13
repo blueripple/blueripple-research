@@ -122,7 +122,7 @@ data ModelConfig ps (b :: TE.EType) =
   }
 
 modelConfigText :: ModelConfig ps b -> Text
-modelConfigText (ModelConfig sa alphas dmr) =  addAggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
+modelConfigText (ModelConfig sa alphas dmr) =  aggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
 
 data RegistrationConfig a b =
   RegistrationConfig

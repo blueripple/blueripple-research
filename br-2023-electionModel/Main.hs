@@ -103,12 +103,12 @@ psBy :: forall ks r a b.
      -> MC.SurveyAggregation b
      -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
      -> MC.PSTargets
-     -> MC2.Alphas
+     -> MC.Alphas
      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutCI]))
 psBy cmdLine gqName ts sAgg dmr pst am = do
-    let runConfig = MC.RunConfig True True False (Just $ MC.psGroupTag @ks)
+    let runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @ks)
     (MC.PSMap psTMap) <- K.ignoreCacheTimeM
-                              $ TM.runTurnoutModel2 2020
+                              $ TM.runTurnoutModel 2020
                               (Right "model/election2/test/stan") (Right "model/election2/test")
                               gqName cmdLine runConfig ts sAgg (contramap F.rcast dmr) pst am
     pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
@@ -126,7 +126,7 @@ psByState ::  (K.KnitEffects r, BRK.CacheEffects r)
           -> MC.SurveyAggregation b
           -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
           -> MC.PSTargets
-          -> MC2.Alphas
+          -> MC.Alphas
           -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutCI, BRDF.BallotsCountedVAP, BRDF.VAP]))
 psByState cmdLine ts sAgg dmr pst am = do
   byStatePS <- psBy @'[GT.StateAbbreviation] cmdLine "State" ts sAgg dmr pst am
@@ -155,10 +155,10 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --        runConfig = MC.RunConfig False False True (Just $ MC.psGroupTag @'[GT.StateAbbreviation])
 --        dmr = MC.tDesignMatrixRow_d_A_S_E_R
-        dmr2 = MC2.tDesignMatrixRow_d
+        dmr2 = MC.tDesignMatrixRow_d
         survey = MC.CESSurvey
         aggregations = [MC.WeightedAggregation MC.BetaProportion, MC.WeightedAggregation MC.ContinuousBinomial]
-        alphaModels = [MC2.St_A_S_E_R, MC2.St_A_S_E_R_ER_StR, MC2.St_A_S_E_R_ER_StR_StER]
+        alphaModels = [MC.St_A_S_E_R, MC.St_A_S_E_R_ER_StR, MC.St_A_S_E_R_ER_StR_StER]
         psTs = [MC.NoPSTargets] --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
@@ -168,19 +168,19 @@ main = do
     ces <- K.ignoreCacheTime cpCES_C
     let stateComp agg am pt = do
           comp <- psByState cmdLine survey agg dmr2 pt am
-          pure (MC.aggregationText agg <> "_" <> MC2.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
     stateComparisons <- traverse (\(agg, am, pt) -> stateComp agg am pt) [(agg, am, pt) | agg <- aggregations, am <- alphaModels, pt <- psTs]
 --    byStateFromRawCPS <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
 --    byStateFromRawCES <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) ces)
 
     let modelCompBy :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
-                    => Text -> MC.SurveyAggregation b -> MC2.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))
+                    => Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))
         modelCompBy catLabel agg am pt = do
           comp <- psBy @ks cmdLine catLabel survey agg dmr2 pt am
-          pure (MC.aggregationText agg <> "_" <> MC2.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
 
         allModelsCompBy :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
-                        => Text -> [MC.SurveyAggregation b] -> [MC2.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))]
+                        => Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))]
         allModelsCompBy catLabel aggs' alphaModels' psTs' = traverse (\(agg, am, pt) -> modelCompBy @ks catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
 
         allModelsCompChart :: forall ks r b . (K.KnitOne r, BRK.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
@@ -188,7 +188,7 @@ main = do
                                             , F.ElemOf (ks V.++ [DT.PopCount, TM.TurnoutCI]) TM.TurnoutCI
                                             , ks F.⊆ (ks V.++ [DT.PopCount, TM.TurnoutCI])
                                             )
-                           =>  BR.PostPaths Path.Abs -> Text -> (F.Record ks -> Text) -> [MC.SurveyAggregation b] -> [MC2.Alphas] -> [MC.PSTargets] -> K.Sem r ()
+                           =>  BR.PostPaths Path.Abs -> Text -> (F.Record ks -> Text) -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r ()
         allModelsCompChart pp catLabel catText aggs' alphaModels' psTs' = do
           allModels <- allModelsCompBy @ks catLabel aggs' alphaModels' psTs'
           let cats = Set.toList $ Keyed.elements @(F.Record ks)
@@ -213,7 +213,7 @@ main = do
       _ <- K.addHvega Nothing Nothing modelCompChart
       let modelCompByRace agg am pt = do
             comp <- psBy @'[DT.Race5C] cmdLine "Race" survey agg dmr2 pt am
-            pure (MC.aggregationText agg <> "_" <> MC2.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+            pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
 
       allModelsCompChart @'[DT.Age5C] turnoutModelPostPaths "Age" (show . view DT.age5C) aggregations alphaModels psTs
       allModelsCompChart @'[DT.SexC] turnoutModelPostPaths "Sex" (show . view DT.sexC) aggregations alphaModels psTs
@@ -275,7 +275,7 @@ acsNByState = DDP.cachedACSa5ByState >>= popCountBy @'[GT.StateAbbreviation]
 
 
 postDir ∷ Path.Path Rel Dir
-postDir = [Path.reldir|br-2023-Demographics/posts|]
+postDir = [Path.reldir|br-2023-electionModel/posts|]
 
 postLocalDraft
   ∷ Path.Path Rel Dir

@@ -129,7 +129,7 @@ usesStateDVoteTargets _ = False
 configText :: Config a b -> Text
 configText (RegistrationOnly (MC.RegistrationConfig rs mc)) = "Reg" <> MC.turnoutSurveyText rs <> "_" <> MC.modelConfigText mc
 configText (TurnoutOnly (MC.TurnoutConfig ts tPST mc)) =
-  "Turnout" <> MC.turnoutSurveyText ts <> "_" <>  (if tPST == MC.PSTargets then "_TTgt" else "") <> "_" <> MC.modelConfigText mc
+  "Turnout" <> MC.turnoutSurveyText ts <> (if tPST == MC.PSTargets then "_TTgt" else "") <> "_" <> MC.modelConfigText mc
 configText (PrefOnly (MC.PrefConfig pPST mc)) =
   "Pref" <> (if pPST == MC.PSTargets then "_PTgt" else "") <> "_" <> MC.modelConfigText mc
 configText (TurnoutAndPref (MC.TurnoutConfig ts tPST tMC) (MC.PrefConfig pPST pMC)) =
@@ -364,7 +364,7 @@ hasBeta (LogitSetup _ mb) = isJust mb
 
 setupParameters :: Maybe Text -> MC.ModelConfig a b -> SMB.StanBuilderM md gq (ParameterSetup md gq)
 setupParameters prefixM mc = do
-  as <- setupAlphaSum prefixM mc.tAlphas
+  as <- setupAlphaSum prefixM mc.mcAlphas
   bs <- setupBeta prefixM mc
   pure $ LogitSetup as bs
 
@@ -411,7 +411,11 @@ stateTargetsModel prefixM ps cc std cM rM = do
         sd = DAG.parameterExpr sigmaTargetsP `TE.timesE` TE.functionE SF.sqrt (sd1 :> TNil)
     TE.addStmt $ TE.sample acsPS SF.normal (tP :> sd :> TNil)
 
-postStratificationWeights :: forall k md . SMB.StanBuilderM md (DP.PSData k) TE.IntArrayE
+postStratificationWeights :: forall k md . (Typeable (DP.PSDataR k)
+                                           , F.ElemOf (DP.PSDataR k) DT.PopCount
+                                           , DP.PredictorsR F.⊆ DP.PSDataR k
+                                           )
+                          => SMB.StanBuilderM md (DP.PSData k) TE.IntArrayE
 postStratificationWeights = do
    psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
    SBB.addCountData psDataTag "PSWgts" (view DT.popCount)
@@ -568,8 +572,8 @@ model :: (Typeable (DP.PSDataR k)
              -> Config a b
              -> SMB.StanBuilderM DP.ModelData (DP.PSData k) ()
 model rc c = case c of
-  RegistrationOnly rc@(MC.RegistrationConfig survey mc) -> do
-    mData <- registrationModelData rc
+  RegistrationOnly regConfig@(MC.RegistrationConfig _ mc) -> do
+    mData <- registrationModelData regConfig
     paramSetup <- setupParameters Nothing mc
     cc <- case mData of
       MC.NoPT_ModelData x -> pure x
@@ -582,8 +586,8 @@ model rc c = case c of
       Nothing -> pure ()
       Just gtt -> postStratifyOne "R" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
-  TurnoutOnly tc@(MC.TurnoutConfig survey _ mc) -> do
-    mData <- turnoutModelData tc
+  TurnoutOnly turnoutConfig@(MC.TurnoutConfig _ _ mc) -> do
+    mData <- turnoutModelData turnoutConfig
     paramSetup <- setupParameters Nothing mc
     (Components modelM llM ppM centerF) <- components Nothing (MC.covariatesAndCounts mData) paramSetup mc.mcSurveyAggregation
     case mData of
@@ -594,112 +598,23 @@ model rc c = case c of
     when rc.rcIncludeLL llM
     case rc.rcPS of
       Nothing -> pure ()
-      Just gtt -> postStratifyOne "R" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
+      Just gtt -> postStratifyOne "T" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
-{-
-  mData <- turnoutModelData tmc
-  paramSetup <- setupParameters tmc
-  let nRowsE = MC.withCC (SMB.dataSetSizeE . MC.ccSurveyDataTag) mData
-      pExpr = DAG.parameterExpr
+  PrefOnly prefConfig@(MC.PrefConfig _ mc) -> do
+    mData <- prefModelData prefConfig
+    paramSetup <- setupParameters Nothing mc
+    (Components modelM llM ppM centerF) <- components Nothing (MC.covariatesAndCounts mData) paramSetup mc.mcSurveyAggregation
+    case mData of
+      MC.NoPT_ModelData _ -> pure ()
+      MC.PT_ModelData cc std -> stateTargetsModel Nothing paramSetup cc std (Just $ centerF SC.ModelData) Nothing
+    modelM
+    when rc.rcIncludePPCheck $ void ppM
+    when rc.rcIncludeLL llM
+    case rc.rcPS of
+      Nothing -> pure ()
+      Just gtt -> postStratifyOne "P" paramSetup (contramap F.rcast mc.mcDesignMatrixRow) (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
 
-  case mData of
-    MC.PT_TurnoutModelData cc st -> turnoutTargetsModel paramSetup cc st (Just $ centerF SC.ModelData) Nothing
-    _ -> pure ()
-
-  -- model
-  lpCW <- MC.withCC (\cc -> logitProbCW paramSetup cc.ccSurveyDataTag covariatesM) mData
-  let llF :: SMD.StanDist t pts rts
-          -> TE.CodeWriter (TE.IntE -> TE.ExprList pts)
-          -> TE.CodeWriter (TE.IntE -> TE.UExpr t)
-          -> SMB.StanBuilderM md gq ()
-      llF = MC.withCC (SBB.generateLogLikelihood . MC.ccSurveyDataTag) mData
-      toArray x = TE.functionE SF.to_array_1d (x :> TNil)
-  () <- case tmc.tSurveyAggregation of
-    MC.UnweightedAggregation -> do
-      let model :: SMB.RowTypeTag a -> TE.IntArrayE -> TE.IntArrayE -> SMB.StanBuilderM md gq ()
-          model rtt n k = do
-            let ssF lp e = SMB.familySample (SMD.binomialLogitDist @TE.EIntArray) e (n :> lp :> TNil)
-                rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EInt, TE.EReal])
-                rpF = (\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW
-                ppF = SBB.generatePosteriorPredictionV
-                      (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.intSpec [])
-                      SMD.binomialLogitDist
-                      (TE.NeedsCW $ lpCW >>= \x -> pure (n :> x :> TNil))
-                ll = llF SMD.binomialLogitDist rpF (pure $ \nE -> k `TE.at` nE)
-            SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
-              lp <- lpCW
-              TE.addStmt $ ssF lp k
-            when rc.rcIncludePPCheck $ void ppF
-            when rc.rcIncludeLL ll
-      case mData of
-        MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-        MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-    MC.WeightedAggregation MC.ContinuousBinomial-> do
-      realBinomialLogitDistV <- SMD.realBinomialLogitDistM @TE.ECVec
-      realBinomialLogitDistS <- SMD.realBinomialLogitDistSM
-      let model ::  SMB.RowTypeTag a -> TE.VectorE -> TE.VectorE -> SMB.StanBuilderM md gq ()
-          model rtt n k = do
-            let ssF lp e = SMB.familySample realBinomialLogitDistV e (n :> lp :> TNil)
-                ppF = SBB.generatePosteriorPredictionV'
-                      (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
-                      realBinomialLogitDistV
-                      (TE.NeedsCW $ lpCW >>= \x -> pure (n :> x :> TNil))
-                      toArray
-                rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
-                rpF = (\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW
-{-                ppF = SBB.generatePosteriorPrediction rtt
-                      (TE.NamedDeclSpec ("predVotes") $ TE.array1Spec nRowsE $ TE.realSpec [])
-                      realBinomialLogitDistS rpF -}
-                ll = llF realBinomialLogitDistS rpF (pure $ \nE -> k `TE.at` nE)
-            SMB.inBlock SMB.SBModel $ SMB.addFromCodeWriter $ do
-              lp <- lpCW
-              TE.addStmt $ ssF lp k
-            when rc.rcIncludePPCheck $ void ppF
-            when rc.rcIncludeLL ll
-      case mData of
-        MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-        MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-    MC.WeightedAggregation MC.BetaProportion -> do
-      let eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
-          inv_logit x = TE.functionE SF.inv_logit (x :> TNil)
-          muKappa rtt n lp = do
-            let sizeE = SMB.dataSetSizeE rtt
-            mu <- TE.declareRHSNW (TE.NamedDeclSpec "mu" $ TE.vectorSpec sizeE []) $ inv_logit lp
-            kappa <- TE.declareRHSNW (TE.NamedDeclSpec "kappa" $ TE.vectorSpec sizeE []) $ SF.toVec n
-            pure (mu :> kappa :> TNil)
-          model ::  SMB.RowTypeTag a -> TE.VectorE -> TE.VectorE -> SMB.StanBuilderM md gq ()
-          model rtt n k = do
-            th <- SMB.inBlock SMB.SBTransformedData $ SMB.addFromCodeWriter $ do
-              let size = SMB.dataSetSizeE rtt
-                  vecSpec = TE.vectorSpec size []
-                  vecOf x = TE.functionE SF.rep_vector (TE.realE x :> size :> TNil)
-                  vecMax v1 v2 = TE.functionE SF.fmax (v1 :> v2 :> TNil)
-                  vecMin v1 v2 = TE.functionE SF.fmin (v1 :> v2 :> TNil)
-              lb <- TE.declareRHSNW (TE.NamedDeclSpec "lb" vecSpec) $ vecOf 0.0001
-              ub <- TE.declareRHSNW (TE.NamedDeclSpec "ub" vecSpec) $ vecOf 0.9999
-              TE.declareRHSNW (TE.NamedDeclSpec "tr" vecSpec) $ vecMax lb $ vecMin ub $ k `eltDivide` n
-            let --ssF lp e = SMB.familySample SMD.countScaledBetaDistLogit e (n :> lp :> TNil)
-                ppF = SBB.generatePosteriorPredictionV'
-                      (TE.NamedDeclSpec ("predTR") $ TE.array1Spec nRowsE $ TE.realSpec [])
-                      SMD.betaProportionDist
-                      (TE.NeedsCW $ lpCW >>= muKappa rtt n)
-                      toArray
-                rpF :: TE.CodeWriter (TE.IntE -> TE.ExprList '[TE.EReal, TE.EReal])
-                rpF = (\(mu :> kappa :> TNil) -> (\nE -> mu `TE.at` nE :> kappa `TE.at` nE :> TNil)) <$> (lpCW >>= muKappa rtt n)
-                ll = llF SMD.betaProportionDist rpF (pure $ \nE -> th `TE.at` nE)
-            SMB.inBlock SMB.SBModel $ SMB.addScopedFromCodeWriter
-              $ lpCW >>= muKappa rtt n >>= TE.addStmt . SMB.familySample SMD.betaProportionDist th
-            when rc.rcIncludePPCheck $ void ppF
-            when rc.rcIncludeLL ll
-      case mData of
-        MC.NoPT_TurnoutModelData cc -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-        MC.PT_TurnoutModelData cc _ -> model cc.ccSurveyDataTag cc.ccTrials cc.ccSuccesses
-  case rc.rcTurnoutPS of
-    Nothing -> pure ()
-    Just gtt -> turnoutPS paramSetup tmc.tDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt --(Just $ centerF SC.GQData) (Just r)
-  pure ()
--}
 {-
 newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
 
@@ -747,7 +662,6 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
                 (model runConfig config)
 
   let datSuffix = SC.rinData runnerInputNames
-      ifWeighted w t = t <> (if w then "W" else "")
       jsonData t = "jsonData_" <> datSuffix <> "$" <> t
       registered = jsonData "Registered"
       voted = jsonData "Voted"
@@ -762,7 +676,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
         TurnoutOnly (MC.TurnoutConfig _ _ mc) -> case mc.mcSurveyAggregation of
           MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (voted <> " / " <> surveyed) ("yTurnoutRate_" <> rSuffix)]
           _ -> [SR.UnwrapNamed "Turnout" ("yTurnout_" <> rSuffix)]
-        PrefOnly (MC.PrefConfig _ _ mc) -> case mc.mcSurveyAggregation of
+        PrefOnly (MC.PrefConfig _ mc) -> case mc.mcSurveyAggregation of
           MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (dVotes <> " / " <> votesInRace) ("yDVotesRate_" <> rSuffix)]
           _ -> [SR.UnwrapNamed "DVotes" ("yDVotes_" <> rSuffix)]
         TurnoutAndPref _ _  -> [] -- what is a PP check for this combo case??
@@ -826,15 +740,20 @@ modelResultAction config runConfig = SC.UseSummary f where
         betaV <- getVector "theta"
         pure $ V.fromList $ zip (V.toList betaV) mdMeansL
 -}
-    psMap <- case runConfig.rcTurnoutPS of
+    psMap <- case runConfig.rcPS of
       Nothing -> mempty
       Just gtt -> case gqDataAndIndexes_CM of
         Nothing -> K.knitError "modelResultAction: Expected gq data and indexes but got Nothing."
         Just gqDaI_C -> do
           let getVectorPcts n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
+              psPrefix = case config of
+                RegistrationOnly _ -> "R"
+                TurnoutOnly _ -> "T"
+                PrefOnly _ -> "P"
+                TurnoutAndPref _ _ -> "VS"
           (_, gqIndexesE) <- K.ignoreCacheTime gqDaI_C
           grpIM <- K.knitEither
              $ gqIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData") (MC.psGroupTag @l)
-          psTByGrpV <- getVectorPcts "tByGrp"
+          psTByGrpV <- getVectorPcts $ psPrefix <> "_byGrp"
           K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
     pure $ MC.PSMap psMap
