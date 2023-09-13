@@ -19,15 +19,14 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
-import qualified BlueRipple.Data.Loaders as BRDF
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
-import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
-import qualified BlueRipple.Model.Election2.TurnoutModel as TM
+--import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
+import qualified BlueRipple.Model.Election2.ModelRunner as MR
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
@@ -89,48 +88,87 @@ type PSByC ks = (Show (F.Record ks)
                  , ks F.⊆ (ks V.++ '[DT.PopCount])
                  , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
                  , FSI.RecVec (ks V.++ '[DT.PopCount])
-                 , FSI.RecVec (ks V.++ '[DT.PopCount, TM.TurnoutCI])
+                 , FSI.RecVec (ks V.++ '[DT.PopCount, MR.ModelCI])
                  , FS.RecFlat ks)
 
-psBy :: forall ks r a b.
-        (PSByC ks
-        , K.KnitEffects r
-        , BRK.CacheEffects r
-        )
-     => BR.CommandLine
-     -> Text
-     -> MC.TurnoutSurvey a
-     -> MC.SurveyAggregation b
-     -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
-     -> MC.PSTargets
-     -> MC.Alphas
-     -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, TM.TurnoutCI]))
-psBy cmdLine gqName ts sAgg dmr pst am = do
+psByT :: forall ks r a b.
+         (PSByC ks
+         , K.KnitEffects r
+         , BRK.CacheEffects r
+         )
+      => BR.CommandLine
+      -> Text
+      -> MC.TurnoutSurvey a
+      -> MC.SurveyAggregation b
+      -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+      -> MC.PSTargets
+      -> MC.Alphas
+      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, MR.ModelCI]))
+psByT cmdLine gqName ts sAgg dmr pst am = do
     let runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @ks)
     (MC.PSMap psTMap) <- K.ignoreCacheTimeM
-                              $ TM.runTurnoutModel 2020
-                              (Right "model/election2/test/stan") (Right "model/election2/test")
-                              gqName cmdLine runConfig ts sAgg (contramap F.rcast dmr) pst am
+                         $ MR.runTurnoutModel 2020
+                         (Right "model/election2/stan/") (Right "model/election2/")
+                         gqName cmdLine runConfig ts sAgg (contramap F.rcast dmr) pst am
     pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
-    let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, TM.TurnoutCI]))
-        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, TM.TurnoutCI])
-        whenMissingPC k _ = Left $ "psBy: " <> show k <> " is missing from PopCount map."
-        whenMissingT k _ = Left $ "psBy: " <> show k <> " is missing from ps Turnout map."
+    let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, MR.ModelCI]))
+        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, MR.ModelCI])
+        whenMissingPC k _ = Left $ "psByT: " <> show k <> " is missing from PopCount map."
+        whenMissingT k _ = Left $ "psByT: " <> show k <> " is missing from ps Turnout map."
     mergedMap <- K.knitEither
                  $ MM.mergeA (MM.traverseMissing whenMissingPC) (MM.traverseMissing whenMissingT) (MM.zipWithAMatched whenMatched) psTMap pcMap
     pure $ F.toFrame $ M.elems mergedMap
 
-psByState ::  (K.KnitEffects r, BRK.CacheEffects r)
+psByStateT ::  (K.KnitEffects r, BRK.CacheEffects r)
           => BR.CommandLine
           -> MC.TurnoutSurvey a
           -> MC.SurveyAggregation b
-          -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
+          -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
           -> MC.PSTargets
           -> MC.Alphas
-          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, TM.TurnoutCI, BRDF.BallotsCountedVAP, BRDF.VAP]))
-psByState cmdLine ts sAgg dmr pst am = do
-  byStatePS <- psBy @'[GT.StateAbbreviation] cmdLine "State" ts sAgg dmr pst am
-  TM.addBallotsCountedVAP byStatePS
+          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, MR.ModelCI, BRDF.BallotsCountedVAP, BRDF.VAP]))
+psByStateT cmdLine ts sAgg dmr pst am = do
+  byStatePS <- psByT @'[GT.StateAbbreviation] cmdLine "State" ts sAgg dmr pst am
+  MR.addBallotsCountedVAP byStatePS
+
+psByP :: forall ks r a b.
+         (PSByC ks
+         , K.KnitEffects r
+         , BRK.CacheEffects r
+         )
+      => BR.CommandLine
+      -> Text
+      -> MC.SurveyAggregation b
+      -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+      -> MC.PSTargets
+      -> MC.Alphas
+      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, MR.ModelCI]))
+psByP cmdLine gqName sAgg dmr pst am = do
+    let runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @ks)
+    (MC.PSMap psMap) <- K.ignoreCacheTimeM
+                         $ MR.runPrefModel 2020
+                         (Right "model/election2/stan/") (Right "model/election2/")
+                         gqName cmdLine runConfig sAgg (contramap F.rcast dmr) pst am
+    pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
+    let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, MR.ModelCI]))
+        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, MR.ModelCI])
+        whenMissingPC k _ = Left $ "psByP: " <> show k <> " is missing from PopCount map."
+        whenMissingT k _ = Left $ "psByP: " <> show k <> " is missing from ps Model map."
+    mergedMap <- K.knitEither
+                 $ MM.mergeA (MM.traverseMissing whenMissingPC) (MM.traverseMissing whenMissingT) (MM.zipWithAMatched whenMatched) psMap pcMap
+    pure $ F.toFrame $ M.elems mergedMap
+
+psByStateP ::  (K.KnitEffects r, BRK.CacheEffects r)
+          => BR.CommandLine
+          -> MC.SurveyAggregation b
+          -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+          -> MC.PSTargets
+          -> MC.Alphas
+          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, MR.ModelCI, BRDF.BallotsCountedVAP, BRDF.VAP]))
+psByStateP cmdLine sAgg dmr pst am = do
+  byStatePS <- psByP @'[GT.StateAbbreviation] cmdLine "State" sAgg dmr pst am
+  MR.addBallotsCountedVAP byStatePS
+
 
 
 main :: IO ()
@@ -157,7 +195,7 @@ main = do
 --        dmr = MC.tDesignMatrixRow_d_A_S_E_R
         dmr2 = MC.tDesignMatrixRow_d
         survey = MC.CESSurvey
-        aggregations = [MC.WeightedAggregation MC.BetaProportion, MC.WeightedAggregation MC.ContinuousBinomial]
+        aggregations = [MC.WeightedAggregation MC.ContinuousBinomial]
         alphaModels = [MC.St_A_S_E_R, MC.St_A_S_E_R_ER_StR, MC.St_A_S_E_R_ER_StR_StER]
         psTs = [MC.NoPSTargets] --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
@@ -166,67 +204,111 @@ main = do
     cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
     cps <- K.ignoreCacheTime cpCPS_C
     ces <- K.ignoreCacheTime cpCES_C
-    let stateComp agg am pt = do
-          comp <- psByState cmdLine survey agg dmr2 pt am
+    let stateCompT agg am pt = do
+          comp <- psByStateT cmdLine survey agg dmr2 pt am
           pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
-    stateComparisons <- traverse (\(agg, am, pt) -> stateComp agg am pt) [(agg, am, pt) | agg <- aggregations, am <- alphaModels, pt <- psTs]
---    byStateFromRawCPS <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
---    byStateFromRawCES <- TM.addBallotsCountedVAP (TM.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) ces)
+    stateComparisonsT <- traverse (\(agg, am, pt) -> stateCompT agg am pt) [(agg, am, pt) | agg <- aggregations, am <- alphaModels, pt <- psTs]
+    let stateCompP agg am pt = do
+          comp <- psByStateP cmdLine agg dmr2 pt am
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+    stateComparisonsP <- traverse (\(agg, am, pt) -> stateCompP agg am pt) [(agg, am, pt) | agg <- aggregations, am <- alphaModels, pt <- psTs]
+--    byStateFromRawCPS <- MR.addBallotsCountedVAP (MR.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) cps)
+--    byStateFromRawCES <- MR.addBallotsCountedVAP (MR.surveyDataBy @'[GT.StateAbbreviation] (Just aggregation) ces)
 
-    let modelCompBy :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
-                    => Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))
-        modelCompBy catLabel agg am pt = do
-          comp <- psBy @ks cmdLine catLabel survey agg dmr2 pt am
+    let modelCompByT :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
+                    => Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, MR.ModelCI]))
+        modelCompByT catLabel agg am pt = do
+          comp <- psByT @ks cmdLine catLabel survey agg dmr2 pt am
           pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
 
-        allModelsCompBy :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
-                        => Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, TM.TurnoutCI]))]
-        allModelsCompBy catLabel aggs' alphaModels' psTs' = traverse (\(agg, am, pt) -> modelCompBy @ks catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
+        allModelsCompByT :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
+                        => Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, MR.ModelCI]))]
+        allModelsCompByT catLabel aggs' alphaModels' psTs' = traverse (\(agg, am, pt) -> modelCompByT @ks catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
 
-        allModelsCompChart :: forall ks r b . (K.KnitOne r, BRK.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
-                                            , F.ElemOf (ks V.++ [DT.PopCount, TM.TurnoutCI]) DT.PopCount
-                                            , F.ElemOf (ks V.++ [DT.PopCount, TM.TurnoutCI]) TM.TurnoutCI
-                                            , ks F.⊆ (ks V.++ [DT.PopCount, TM.TurnoutCI])
+        modelCompByP :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
+                    => Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, MR.ModelCI]))
+        modelCompByP catLabel agg am pt = do
+          comp <- psByP @ks cmdLine catLabel agg dmr2 pt am
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+
+        allModelsCompByP :: forall ks r b . (K.KnitEffects r, BRK.CacheEffects r, PSByC ks)
+                        => Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, MR.ModelCI]))]
+        allModelsCompByP catLabel aggs' alphaModels' psTs' = traverse (\(agg, am, pt) -> modelCompByP @ks catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
+
+        allModelsCompChartT :: forall ks r b . (K.KnitOne r, BRK.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
+                                            , F.ElemOf (ks V.++ [DT.PopCount, MR.ModelCI]) DT.PopCount
+                                            , F.ElemOf (ks V.++ [DT.PopCount, MR.ModelCI]) MR.ModelCI
+                                            , ks F.⊆ (ks V.++ [DT.PopCount, MR.ModelCI])
                                             )
                            =>  BR.PostPaths Path.Abs -> Text -> (F.Record ks -> Text) -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r ()
-        allModelsCompChart pp catLabel catText aggs' alphaModels' psTs' = do
-          allModels <- allModelsCompBy @ks catLabel aggs' alphaModels' psTs'
+        allModelsCompChartT pp catLabel catText aggs' alphaModels' psTs' = do
+          allModels <- allModelsCompByT @ks catLabel aggs' alphaModels' psTs'
           let cats = Set.toList $ Keyed.elements @(F.Record ks)
               numCats = length cats
               numSources = length allModels
-          catCompChart <- TM.categoryChart @ks pp postInfo "Model Comparison By Category" "CatComp"
+          catCompChart <- MR.categoryChart @ks pp postInfo "Model Comparison By Category" "CatComp"
+                          (FV.ViewConfig 300 (15 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
+                          catText allModels
+          _ <- K.addHvega Nothing Nothing catCompChart
+          pure ()
+
+        allModelsCompChartP :: forall ks r b . (K.KnitOne r, BRK.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
+                                            , F.ElemOf (ks V.++ [DT.PopCount, MR.ModelCI]) DT.PopCount
+                                            , F.ElemOf (ks V.++ [DT.PopCount, MR.ModelCI]) MR.ModelCI
+                                            , ks F.⊆ (ks V.++ [DT.PopCount, MR.ModelCI])
+                                            )
+                           =>  BR.PostPaths Path.Abs -> Text -> (F.Record ks -> Text) -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r ()
+        allModelsCompChartP pp catLabel catText aggs' alphaModels' psTs' = do
+          allModels <- allModelsCompByP @ks catLabel aggs' alphaModels' psTs'
+          let cats = Set.toList $ Keyed.elements @(F.Record ks)
+              numCats = length cats
+              numSources = length allModels
+          catCompChart <- MR.categoryChart @ks pp postInfo "Model Comparison By Category" "CatComp"
                           (FV.ViewConfig 300 (15 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
                           catText allModels
           _ <- K.addHvega Nothing Nothing catCompChart
           pure ()
 --    BRK.logFrame modelComparison
---    let fromRawCPS = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) cps
---        fromRawCES = TM.surveyDataBy @'[DT.Race5C] (Just aggregation) ces
+--    let fromRawCPS = MR.surveyDataBy @'[DT.Race5C] (Just aggregation) cps
+--        fromRawCES = MR.surveyDataBy @'[DT.Race5C] (Just aggregation) ces
 --    BRK.logFrame fromRawCES
-    turnoutModelPostPaths <- postPaths "Turnout Models" cmdLine
+    modelPostPaths <- postPaths "Models" cmdLine
 
-    BRK.brNewPost turnoutModelPostPaths postInfo "Turnout Models" $ do
-      modelCompChart <- TM.stateChart turnoutModelPostPaths postInfo "Model Comparison by State" "ModelComp" (FV.ViewConfig 500 500 10)
+    BRK.brNewPost modelPostPaths postInfo "Models" $ do
+      modelCompChartT <- MR.stateChartT modelPostPaths postInfo "Model Comparison by State" "ModelComp" (FV.ViewConfig 500 500 10)
                         ([{-("WeightedCPS", fmap F.rcast byStateFromRawCPS)
                         , ("WeightedCES", fmap F.rcast byStateFromRawCES) -}
-                        ] <> fmap (second $ (fmap (F.rcast . TM.turnoutCIToTurnoutP))) stateComparisons)
-      _ <- K.addHvega Nothing Nothing modelCompChart
+                        ] <> fmap (second $ (fmap (F.rcast . MR.modelCIToModelPr))) stateComparisonsT)
+      _ <- K.addHvega Nothing Nothing modelCompChartT
       let modelCompByRace agg am pt = do
-            comp <- psBy @'[DT.Race5C] cmdLine "Race" survey agg dmr2 pt am
+            comp <- psByT @'[DT.Race5C] cmdLine "Race" survey agg dmr2 pt am
             pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
 
-      allModelsCompChart @'[DT.Age5C] turnoutModelPostPaths "Age" (show . view DT.age5C) aggregations alphaModels psTs
-      allModelsCompChart @'[DT.SexC] turnoutModelPostPaths "Sex" (show . view DT.sexC) aggregations alphaModels psTs
-      allModelsCompChart @'[DT.Education4C] turnoutModelPostPaths "Education" (show . view DT.education4C) aggregations alphaModels psTs
-      allModelsCompChart @'[DT.Race5C] turnoutModelPostPaths "Race" (show . view DT.race5C) aggregations alphaModels psTs
+      allModelsCompChartT @'[DT.Age5C] modelPostPaths "Age" (show . view DT.age5C) aggregations alphaModels psTs
+      allModelsCompChartT @'[DT.SexC] modelPostPaths "Sex" (show . view DT.sexC) aggregations alphaModels psTs
+      allModelsCompChartT @'[DT.Education4C] modelPostPaths "Education" (show . view DT.education4C) aggregations alphaModels psTs
+      allModelsCompChartT @'[DT.Race5C] modelPostPaths "Race" (show . view DT.race5C) aggregations alphaModels psTs
       let srText r = show (r ^. DT.education4C) <> "-" <> show (r ^. DT.race5C)
-      allModelsCompChart @'[DT.Education4C, DT.Race5C] turnoutModelPostPaths "Education_Race" srText aggregations alphaModels psTs
+      allModelsCompChartT @'[DT.Education4C, DT.Race5C] modelPostPaths "Education_Race" srText aggregations alphaModels psTs
+      modelCompChartP <- MR.stateChartP modelPostPaths postInfo "Model Comparison by State" "ModelComp" (FV.ViewConfig 500 500 10)
+                        ([{-("WeightedCPS", fmap F.rcast byStateFromRawCPS)
+                        , ("WeightedCES", fmap F.rcast byStateFromRawCES) -}
+                        ] <> fmap (second $ (fmap (F.rcast . MR.modelCIToModelPr))) stateComparisonsP)
+      _ <- K.addHvega Nothing Nothing modelCompChartP
+      allModelsCompChartP @'[DT.Age5C] modelPostPaths "Age" (show . view DT.age5C) aggregations alphaModels psTs
+      allModelsCompChartP @'[DT.SexC] modelPostPaths "Sex" (show . view DT.sexC) aggregations alphaModels psTs
+      allModelsCompChartP @'[DT.Education4C] modelPostPaths "Education" (show . view DT.education4C) aggregations alphaModels psTs
+      allModelsCompChartP @'[DT.Race5C] modelPostPaths "Race" (show . view DT.race5C) aggregations alphaModels psTs
+      let srText r = show (r ^. DT.education4C) <> "-" <> show (r ^. DT.race5C)
+      allModelsCompChartP @'[DT.Education4C, DT.Race5C] modelPostPaths "Education_Race" srText aggregations alphaModels psTs
 {-
+
+
     modelComparisonsByRace <- traverse (uncurry modelCompByRace) [(am, pt) | am <- alphaModels, pt <- psTs]
       let cats = Set.toList $ Keyed.elements @(F.Record '[DT.Race5C])
           numCats = length cats
           numSources = length modelComparisonsByRace
-      catCompChart <- TM.categoryChart @'[DT.Race5C] turnoutModelPostPaths postInfo "Model Comparison By Category" "CatComp"
+      catCompChart <- MR.categoryChart @'[DT.Race5C] turnoutModelPostPaths postInfo "Model Comparison By Category" "CatComp"
                       (FV.ViewConfig 300 (20 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst modelComparisonsByRace)
                       (show . view DT.race5C)
                       $ modelComparisonsByRace

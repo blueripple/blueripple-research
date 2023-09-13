@@ -22,32 +22,18 @@ module BlueRipple.Model.Election2.ModelCommon
   )
 where
 
-import qualified BlueRipple.Configuration as BR
-import qualified BlueRipple.Data.Loaders as BRDF
-import qualified BlueRipple.Data.DataFrames as BRDF
-import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
-import qualified BlueRipple.Data.ModelingTypes as MT
 
-import qualified Knit.Report as K hiding (elements)
-
-
-import qualified Control.Foldl as FL
 import Control.Lens (view, (^.))
-import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 
-import qualified Data.List as List
-import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
 
 import qualified Data.Dependent.Sum as DSum
-import qualified Data.Dependent.HashMap as DHash
 
 import qualified Frames as F
 import qualified Frames.Melt as F
@@ -55,22 +41,13 @@ import qualified Frames.Serialize as FS
 
 import qualified Numeric
 
-import qualified CmdStan as CS
 import qualified Stan.ModelBuilder as SMB
-import qualified Stan.ModelRunner as SMR
-import qualified Stan.ModelConfig as SC
-import qualified Stan.Parameters as SP
-import qualified Stan.RScriptBuilder as SR
-import qualified Stan.ModelBuilder.BuildingBlocks as SBB
-import qualified Stan.ModelBuilder.Distributions as SMD
-import qualified Stan.ModelBuilder.Distributions.RealBinomial as SMD
 import qualified Stan.ModelBuilder.BuildingBlocks.GroupAlpha as SG
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
 import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
-import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
@@ -113,22 +90,22 @@ alphasText St_A_S_E_R_ER_StR = "St_A_S_E_R_ER_StR"
 alphasText St_A_S_E_R_ER_StR_StER = "St_A_S_E_R_ER_StR_StER"
 -}
 
-data ModelConfig ps (b :: TE.EType) =
+data ModelConfig (b :: TE.EType) =
   ModelConfig
   {
     mcSurveyAggregation :: SurveyAggregation b
   , mcAlphas :: Alphas
-  , mcDesignMatrixRow :: DM.DesignMatrixRow (F.Record ps)
+  , mcDesignMatrixRow :: DM.DesignMatrixRow (F.Record DP.LPredictorsR)
   }
 
-modelConfigText :: ModelConfig ps b -> Text
+modelConfigText :: ModelConfig b -> Text
 modelConfigText (ModelConfig sa alphas dmr) =  aggregationText sa <> "_" <> alphasText alphas <> "_" <> dmr.dmName
 
 data RegistrationConfig a b =
   RegistrationConfig
   {
     rcSurvey :: TurnoutSurvey a
-  , rcModelConfig :: ModelConfig DP.PredictorsR b
+  , rcModelConfig :: ModelConfig b
   }
 
 data TurnoutConfig a b =
@@ -136,14 +113,14 @@ data TurnoutConfig a b =
   {
     tcSurvey :: TurnoutSurvey a
   , tcPSTargets :: PSTargets
-  , tcModelConfig :: ModelConfig DP.PredictorsR b
+  , tcModelConfig :: ModelConfig b
   }
 
 data PrefConfig b =
   PrefConfig
   {
     pcPSTargets :: PSTargets
-  , pcModelConfig :: ModelConfig DP.PrefPredictorsR b
+  , pcModelConfig :: ModelConfig b
   }
 
 type GroupsR = GT.StateAbbreviation ': DP.DCatsR
@@ -171,7 +148,8 @@ surveyDataGroupBuilder :: (Foldable g, Typeable rs, GroupsR F.⊆ rs)
                        => g Text -> Text -> SMB.ToFoldable md (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
 surveyDataGroupBuilder states sName sTF = SMB.addModelDataToGroupBuilder sName sTF >>= addGroupIndexesAndIntMaps (groups states)
 
-stateTargetsGroupBuilder :: (Foldable g, F.ElemOf rs GT.StateAbbreviation, GroupsR F.⊆ rs)
+stateTargetsGroupBuilder :: (Foldable g, F.ElemOf rs GT.StateAbbreviation
+                            )
                          => g Text -> SMB.RowTypeTag (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
 stateTargetsGroupBuilder states rtt =
   SMB.addGroupIndexForData stateG rtt
@@ -209,7 +187,7 @@ psGroupBuilder states psKeys = do
   SG.addModelIndexes psTag F.rcast groups'
 
 -- design matrix rows
-tDesignMatrixRow_d :: DM.DesignMatrixRow (F.Record DP.PredictorsR)
+tDesignMatrixRow_d :: DM.DesignMatrixRow (F.Record DP.LPredictorsR)
 tDesignMatrixRow_d = DM.DesignMatrixRow "d" [dRP]
   where
     dRP = DM.DesignMatrixRowPart "logDensity" 1 (VU.singleton . safeLog . view DT.pWPopPerSqMile)
@@ -272,12 +250,12 @@ data CovariatesAndCounts a (b :: TE.EType) =
   , ccBinomialData :: BinomialData b
   }
 
-covariatesAndCountsFromData :: ps F.⊆ rs
-                    => SMB.RowTypeTag (F.Record rs)
-                    -> ModelConfig ps b
-                    -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
-                    -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
-                    -> SMB.StanBuilderM md gq (CovariatesAndCounts (F.Record rs) b)
+covariatesAndCountsFromData :: DP.LPredictorsR F.⊆ rs
+                            => SMB.RowTypeTag (F.Record rs)
+                            -> ModelConfig b
+                            -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
+                            -> (SMB.RowTypeTag (F.Record rs) -> SMB.StanBuilderM md gq (TE.UExpr b))
+                            -> SMB.StanBuilderM md gq (CovariatesAndCounts (F.Record rs) b)
 covariatesAndCountsFromData rtt modelConfig trialsF succF = do
   trialsE <- trialsF rtt --SBB.addCountData surveyDataTag "Surveyed" (view DP.surveyed)
   successesE <- succF rtt --SBB.addCountData surveyDataTag "Voted" (view DP.voted)
@@ -305,7 +283,7 @@ covariatesAndCounts :: ModelData tds a b -> CovariatesAndCounts a b
 covariatesAndCounts (NoPT_ModelData cc) = cc
 covariatesAndCounts (PT_ModelData cc _) = cc
 
-withCC :: (forall a b . CovariatesAndCounts a b -> c) -> ModelData tds a b -> c
+withCC :: (forall x y . CovariatesAndCounts x y -> c) -> ModelData tds a b -> c
 withCC f (NoPT_ModelData cc) = f cc
 withCC f (PT_ModelData cc _) = f cc
 

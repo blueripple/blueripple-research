@@ -55,6 +55,16 @@ import qualified System.Random.MWC as MWC
 import qualified Text.Pandoc.Options as PA
 --import qualified Streamly.Internal.Memory.ArrayStream as Streamly.ByteString
 
+insureFinalSlash :: Text -> Maybe Text
+insureFinalSlash t = f <$> T.unsnoc t
+  where
+    f (_, l) = if l == '/' then t else T.snoc t '/'
+
+insureFinalSlashE :: Either Text Text -> Maybe (Either Text Text)
+insureFinalSlashE e = case e of
+  Left t -> Left <$> insureFinalSlash t
+  Right t -> Right <$> insureFinalSlash t
+
 knitX ::
   forall r a.
   K.Member (Error K.PandocError) r =>

@@ -15,13 +15,12 @@
 {-# LANGUAGE UnicodeSyntax #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module BlueRipple.Model.Election2.TurnoutModel
+module BlueRipple.Model.Election2.ModelRunner
   (
-    module BlueRipple.Model.Election2.TurnoutModel
+    module BlueRipple.Model.Election2.ModelRunner
   )
 where
 
-import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
@@ -39,13 +38,7 @@ import qualified Path
 
 import qualified Control.Foldl as FL
 import Control.Lens (view, (^.))
-import qualified Data.IntMap.Strict as IM
-import qualified Data.Map.Strict as M
-import qualified Data.Set as S
 
-import qualified Data.List as List
---import qualified Data.Vector as V
---import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -59,22 +52,7 @@ import qualified Frames.Serialize as FS
 
 import qualified Frames.MapReduce as FMR
 
-import qualified CmdStan as CS
-import qualified Stan.ModelBuilder as SMB
-import qualified Stan.ModelRunner as SMR
-import qualified Stan.ModelConfig as SC
-import qualified Stan.Parameters as SP
-import qualified Stan.RScriptBuilder as SR
-import qualified Stan.ModelBuilder.BuildingBlocks as SBB
-import qualified Stan.ModelBuilder.Distributions as SMD
 import qualified Stan.ModelBuilder.DesignMatrix as DM
-import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
-import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
-import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
-import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
-import qualified Flat
 import Flat.Instances.Vector ()
 
 import qualified Graphics.Vega.VegaLite as GV
@@ -90,8 +68,6 @@ runTurnoutModel :: (K.KnitEffects r
                    , Typeable l
                    , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
                    , Show (F.Record l)
---                   , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
---                   , DP.DCatsR F.⊆ DP.PSDataR k
                    )
                 => Int
                 -> Either Text Text
@@ -101,59 +77,135 @@ runTurnoutModel :: (K.KnitEffects r
                 -> MC.RunConfig l
                 -> MC.TurnoutSurvey a
                 -> MC.SurveyAggregation b
-                -> DM.DesignMatrixRow (F.Record DP.PredictorsR)
+                -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
                 -> MC.PSTargets
                 -> MC.Alphas
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
 runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am = do
   let config = MC2.TurnoutOnly (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr))
+  cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runTurnoutModel" $ BRKU.insureFinalSlashE cacheDirE
+  let appendCacheFile :: Text -> Text -> Text
+      appendCacheFile t d = d <> t
+      cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
+      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
 --  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
 --  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
-  modelData_C <- DP.cachedPreppedModelData
-                 (Right "model/election2/test/CPSTurnoutModelData.bin") rawCPS_C
-                 (Right "model/election2/test/CESTurnoutModelData.bin") rawCES_C
+  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
 
-FTH.declareColumn "TurnoutP" ''Double
-FTH.declareColumn "TurnoutCI" ''MT.ConfidenceInterval
+runPrefModel :: (K.KnitEffects r
+                , BRKU.CacheEffects r
+                , V.RMap l
+                , Ord (F.Record l)
+                , FS.RecFlat l
+                , Typeable l
+                , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                , Show (F.Record l)
+                )
+             => Int
+             -> Either Text Text
+             -> Either Text Text
+             -> Text
+             -> BR.CommandLine
+             -> MC.RunConfig l
+             -> MC.SurveyAggregation b
+             -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+             -> MC.PSTargets
+             -> MC.Alphas
+             -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
+runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am = do
+  let config = MC2.PrefOnly (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
+  cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runPrefModel" $ BRKU.insureFinalSlashE cacheDirE
+  let appendCacheFile :: Text -> Text -> Text
+      appendCacheFile t d = d <> t
+      cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
+      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
+  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+--  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
+  rawCPS_C <- DP.cpsCountedTurnoutByState
+--  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
+  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
+
+runFullModel :: (K.KnitEffects r
+                , BRKU.CacheEffects r
+                , V.RMap l
+                , Ord (F.Record l)
+                , FS.RecFlat l
+                , Typeable l
+                , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                , Show (F.Record l)
+                )
+             => Int
+             -> Either Text Text
+             -> Either Text Text
+             -> Text
+             -> BR.CommandLine
+             -> MC.RunConfig l
+             -> MC.TurnoutSurvey a
+             -> MC.SurveyAggregation b
+             -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+             -> MC.PSTargets
+             -> MC.Alphas
+             -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
+runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am = do
+  let config = MC2.TurnoutAndPref (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr)) (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
+  cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runFullModel" $ BRKU.insureFinalSlashE cacheDirE
+  let appendCacheFile :: Text -> Text -> Text
+      appendCacheFile t d = d <> t
+      cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
+      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
+  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+--  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
+  rawCPS_C <- DP.cpsCountedTurnoutByState
+--  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
+  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
+
+
+
+FTH.declareColumn "ModelPr" ''Double
+FTH.declareColumn "ModelCI" ''MT.ConfidenceInterval
 
 surveyDataBy :: forall ks rs a .
                 (Ord (F.Record ks)
                 , ks F.⊆ rs
                 , DP.CountDataR F.⊆ rs
-                , FSI.RecVec (ks V.++ '[TurnoutP])
+                , FSI.RecVec (ks V.++ '[ModelPr])
                 )
-             => Maybe (MC.SurveyAggregation a) -> F.FrameRec rs -> F.FrameRec (ks V.++ '[TurnoutP])
+             => Maybe (MC.SurveyAggregation a) -> F.FrameRec rs -> F.FrameRec (ks V.++ '[ModelPr])
 surveyDataBy saM = FL.fold fld
   where
     safeDiv :: Double -> Double -> Double
     safeDiv x y = if (y /= 0) then x / y else 0
-    uwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    uwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[ModelPr])
     uwInnerFld =
       let sF = fmap realToFrac $ FL.premap (view DP.surveyed) FL.sum
           vF = fmap realToFrac $ FL.premap (view DP.voted) FL.sum
       in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
-    mwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    mwInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[ModelPr])
     mwInnerFld =
       let sF = FL.premap (view DP.surveyedW) FL.sum
           vF = FL.premap (view DP.votedW) FL.sum
       in (\s v -> safeDiv v s F.&: V.RNil) <$> sF <*> vF
-    wInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    wInnerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[ModelPr])
     wInnerFld =
       let swF = FL.premap (view DP.surveyWeight) FL.sum
           swvF = FL.premap (\r -> view DP.surveyWeight r * realToFrac (view DP.voted r) / realToFrac (view DP.surveyed r)) FL.sum
       in (\s v -> safeDiv v s F.&: V.RNil) <$> swF <*> swvF
 
-    innerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[TurnoutP])
+    innerFld :: FL.Fold (F.Record DP.CountDataR) (F.Record '[ModelPr])
     innerFld = case saM of
       Nothing -> mwInnerFld
       Just sa -> case sa of
         MC.UnweightedAggregation -> uwInnerFld
         MC.WeightedAggregation _ -> wInnerFld
-    fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[TurnoutP]))
+    fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[ModelPr]))
     fld = FMR.concatFold
           $ FMR.mapReduceFold
           FMR.noUnpack
@@ -162,7 +214,6 @@ surveyDataBy saM = FL.fold fld
 
 
 addBallotsCountedVAP :: (K.KnitEffects r, BRKU.CacheEffects r
-                        , F.ElemOf rs GT.StateAbbreviation
                         , FJ.CanLeftJoinM '[GT.StateAbbreviation] rs BRDF.StateTurnoutCols
                         , F.ElemOf (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols)) GT.StateAbbreviation
                         , rs V.++ '[BRDF.BallotsCountedVAP, BRDF.VAP] F.⊆ (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols))
@@ -175,28 +226,28 @@ addBallotsCountedVAP fr = do
   pure $ fmap F.rcast joined
 
 
-turnoutCIToTurnoutP :: (F.RDelete TurnoutCI rs V.++ '[TurnoutP] F.⊆ ('[TurnoutP] V.++ rs)
-                       , F.ElemOf rs TurnoutCI)
-                    => F.Record rs -> F.Record (F.RDelete TurnoutCI rs V.++ '[TurnoutP])
-turnoutCIToTurnoutP r = F.rcast $ FT.recordSingleton @TurnoutP (MT.ciMid $ view turnoutCI r) F.<+> r
+modelCIToModelPr :: (F.RDelete ModelCI rs V.++ '[ModelPr] F.⊆ ('[ModelPr] V.++ rs)
+                    , F.ElemOf rs ModelCI)
+                 => F.Record rs -> F.Record (F.RDelete ModelCI rs V.++ '[ModelPr])
+modelCIToModelPr r = F.rcast $ FT.recordSingleton @ModelPr (MT.ciMid $ view modelCI r) F.<+> r
 
 
 
-stateChart :: K.KnitEffects r
+stateChartT :: K.KnitEffects r
            => BR.PostPaths Path.Abs
            -> BR.PostInfo
            -> Text
            -> Text
            -> FV.ViewConfig
-           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, TurnoutP, BRDF.BallotsCountedVAP]))]
+           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, ModelPr, BRDF.BallotsCountedVAP]))]
            -> K.Sem r GV.VegaLite
-stateChart postPaths' postInfo title chartID vc tableRowsByModel = do
+stateChartT postPaths' postInfo title chartID vc tableRowsByModel = do
   let colData (t, r)
         = [("State", GV.Str $ r ^. GT.stateAbbreviation)
           , ("VAP", GV.Number $ realToFrac  $ r ^. BRDF.vAP)
           , ("SEP Turnout", GV.Number $ 100 * r ^. BRDF.ballotsCountedVAP)
-          , ("Modeled Turnout", GV.Number $ 100 * r ^. turnoutP)
-          , ("Model - SEP", GV.Number $ 100 * (r ^. turnoutP - r ^. BRDF.ballotsCountedVAP) )
+          , ("Modeled Turnout", GV.Number $ 100 * r ^. modelPr)
+          , ("Model - SEP", GV.Number $ 100 * (r ^. modelPr - r ^. BRDF.ballotsCountedVAP) )
           , ("Source", GV.Str t)
           ]
 
@@ -221,7 +272,44 @@ stateChart postPaths' postInfo title chartID vc tableRowsByModel = do
                                   ]
 
 
-categoryChart :: forall ks rs r . (K.KnitEffects r, F.ElemOf rs DT.PopCount, F.ElemOf rs TurnoutCI, ks F.⊆ rs)
+stateChartP :: K.KnitEffects r
+           => BR.PostPaths Path.Abs
+           -> BR.PostInfo
+           -> Text
+           -> Text
+           -> FV.ViewConfig
+           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, ModelPr]))]
+           -> K.Sem r GV.VegaLite
+stateChartP postPaths' postInfo title chartID vc tableRowsByModel = do
+  let colData (t, r)
+        = [("State", GV.Str $ r ^. GT.stateAbbreviation)
+          , ("VAP", GV.Number $ realToFrac  $ r ^. BRDF.vAP)
+          , ("Modeled", GV.Number $ 100 * r ^. modelPr)
+          , ("Source", GV.Str t)
+          ]
+
+--      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ concat $ fmap (\(s, fr) -> fmap (s,) $ FL.fold FL.list fr) tableRowsByModel
+  jsonFilePrefix <- K.getNextUnusedId $ ("statePSWithTargets_" <> chartID)
+  jsonUrl <-  BRKU.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
+
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+  --
+      encScatter = GV.encoding
+        . GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
+        . GV.position GV.Y [GV.PName "Modeled", GV.PmType GV.Quantitative]
+        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
+        . GV.size [GV.MName "VAP", GV.MmType GV.Quantitative]
+      markScatter = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
+      scatterSpec = GV.asSpec [encScatter [], markScatter]
+      layers = GV.layer [scatterSpec]
+  pure $ FV.configuredVegaLite vc [FV.title title
+                                  , layers
+                                  , vlData
+                                  ]
+
+
+categoryChart :: forall ks rs r . (K.KnitEffects r, F.ElemOf rs DT.PopCount, F.ElemOf rs ModelCI, ks F.⊆ rs)
            => BR.PostPaths Path.Abs
            -> BR.PostInfo
            -> Text
@@ -236,9 +324,9 @@ categoryChart postPaths' postInfo title chartID vc catSortM sourceSortM catText 
   let colData (t, r)
         = [("Category", GV.Str $ catText $ F.rcast r)
           , ("Ppl", GV.Number $ realToFrac  $ r ^. DT.popCount)
-          , ("Lo", GV.Number $ MT.ciLower $ r ^. turnoutCI)
-          , ("Mid", GV.Number $ MT.ciMid $ r ^. turnoutCI)
-          , ("Hi", GV.Number $ MT.ciUpper $ r ^. turnoutCI)
+          , ("Lo", GV.Number $ MT.ciLower $ r ^. modelCI)
+          , ("Mid", GV.Number $ MT.ciMid $ r ^. modelCI)
+          , ("Hi", GV.Number $ MT.ciUpper $ r ^. modelCI)
           , ("Source", GV.Str t)
           ]
 

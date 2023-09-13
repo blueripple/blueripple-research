@@ -50,6 +50,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import Data.Type.Equality (type (~))
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.MapReduce as FMR
@@ -61,7 +62,6 @@ import qualified Frames.Streamly.TH as FS
 import qualified Frames.Transform as FT
 import qualified Knit.Effect.AtomicCache as K hiding (retrieveOrMake)
 import qualified Knit.Report as K
-import qualified Numeric
 import Prelude hiding (pred)
 
 --import qualified Control.MapReduce as FMR
@@ -111,7 +111,8 @@ type ElectionR = [Incumbency, ET.Unopposed, DVotes, RVotes, TVotes]
 
 type CountDataR = [SurveyWeight, Surveyed, Registered, Voted, SurveyedW, RegisteredW, VotedW]
 type DCatsR = [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C]
-type PredictorsR = DT.PWPopPerSqMile ': DCatsR
+type LPredictorsR = '[DT.PWPopPerSqMile]
+type PredictorsR = LPredictorsR V.++ DCatsR
 type PrefPredictorsR = HouseIncumbency ': PredictorsR
 type PrefDataR = [VotesInRace, DVotes, RVotes, VotesInRaceW, DVotesW, RVotesW]
 type CESByCDR = CDKeyR V.++ PrefPredictorsR V.++ CountDataR V.++ PrefDataR
@@ -212,7 +213,7 @@ withZeros frame = FL.fold (FMR.concatFold
        zc :: F.Record '[DT.PopCount, DT.PWPopPerSqMile] = 0 F.&: 0 F.&: V.RNil
 
 -- CPS
-cpsAddDensity ::  (K.KnitEffects r, BR.CacheEffects r)
+cpsAddDensity ::  (K.KnitEffects r)
               => F.FrameRec DDP.ACSa5ByStateR
               -> F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR)
               -> K.Sem r (F.FrameRec CPSByStateR)
@@ -237,8 +238,8 @@ cachedPreppedCPS cacheE cps_C = do
 cpsKeysToASER :: Bool -> F.Record '[DT.Age5C, DT.SexC, DT.EducationC, DT.InCollege, DT.RaceAlone4C, DT.HispC] -> F.Record DCatsR
 cpsKeysToASER addInCollegeToGrads r =
   let  e4' = DT.educationToEducation4 $ r ^. DT.educationC
-       ic r = addInCollegeToGrads && r ^. DT.inCollege
-       e4 r = if ic r then DT.E4_CollegeGrad else e4'
+       ic r' = addInCollegeToGrads && r' ^. DT.inCollege
+       e4 r' = if ic r' then DT.E4_CollegeGrad else e4'
        ra4 =  F.rgetField @DT.RaceAlone4C r
        h = F.rgetField @DT.HispC r
        ra5 =  DT.race5FromRaceAlone4AndHisp True ra4 h
@@ -284,18 +285,18 @@ cpsCountedTurnoutByState = do
       possible r = CPS.cpsPossibleVoter $ F.rgetField @ET.VotedYNC r
       citizen r = F.rgetField @DT.CitizenC r == DT.Citizen
       includeRow r = afterYear 2012 r && possible r && citizen r
-      voted r = CPS.cpsVoted $ r ^. ET.votedYNC
-      registered r = CPS.cpsRegistered $ r ^. ET.registeredYNC
+      vtd r = CPS.cpsVoted $ r ^. ET.votedYNC
+      rgstd r = CPS.cpsRegistered $ r ^. ET.registeredYNC
       unpack r = if includeRow r then Just (cpsKeysToASER True (F.rcast r) F.<+> r) else Nothing
       innerFld :: FL.Fold (F.Record [CPS.CPSVoterPUMSWeight, ET.RegisteredYNC, ET.VotedYNC]) (F.Record CountDataR)
       innerFld =
         let surveyedFld = FL.length
-            registeredFld = FL.prefilter registered FL.length
-            votedFld = FL.prefilter voted FL.length
+            registeredFld = FL.prefilter rgstd FL.length
+            votedFld = FL.prefilter vtd FL.length
             wgt = view CPS.cPSVoterPUMSWeight
             surveyWgtF = FL.premap wgt FL.sum
-            waRegisteredFld = wgtdAverageBoolFld wgt registered
-            waVotedFld = wgtdAverageBoolFld wgt voted
+            waRegisteredFld = wgtdAverageBoolFld wgt rgstd
+            waVotedFld = wgtdAverageBoolFld wgt vtd
             lmvskFld = FL.premap wgt FL.fastLMVSK
             essFld = effSampleSizeFld lmvskFld
         in (\aw s r v ess waR waV -> aw F.&: s F.&: r F.&: v F.&: ess F.&: min ess (ess * waR) F.&: min ess (ess * waV) F.&: V.RNil)
@@ -311,7 +312,7 @@ cpsCountedTurnoutByState = do
 
 -- CES
 -- Add Density
-cesAddDensity :: (K.KnitEffects r, BR.CacheEffects r)
+cesAddDensity :: (K.KnitEffects r)
               => F.FrameRec DDP.ACSa5ByCDR
               -> F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)
               -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR))
@@ -326,7 +327,7 @@ cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
   pure $ fmap F.rcast joined
 
 -- add House Incumbency
-cesAddHouseIncumbency :: (K.KnitEffects r, BR.CacheEffects r)
+cesAddHouseIncumbency :: (K.KnitEffects r)
                       => F.FrameRec BR.HouseElectionColsI
                       -> F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR)
                       -> K.Sem r (F.FrameRec CESByCDR)
