@@ -14,7 +14,7 @@ dataDir :: [Char]
 dataDir = "../bigData/IPUMS/"
 
 cpsVoterPUMSCSV :: FilePath
-cpsVoterPUMSCSV = dataDir ++ "CPS_Voting_2006to2020.csv"
+cpsVoterPUMSCSV = dataDir ++ "CPS_Voting_2006to2022.csv"
 
 cpsVoterPUMSRowGen :: F.RowGen F.DefaultStream 'F.ColumnByName FCU.CommonColumns
 cpsVoterPUMSRowGen = (F.rowGen cpsVoterPUMSCSV) { F.tablePrefix = "CPS"
