@@ -32,6 +32,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ModelingTypes as MT
+import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified Knit.Report as K hiding (elements)
 import qualified Path
@@ -41,11 +42,15 @@ import Control.Lens (view, (^.))
 
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Set as Set
+import qualified Data.Map.Strict as M
+import qualified Data.Map.Merge.Strict as MM
 
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
 import qualified Frames.SimpleJoins as FJ
+import qualified Frames.Folds as FF
 import qualified Frames.Streamly.TH as FTH
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Serialize as FS
@@ -89,9 +94,7 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
       cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
---  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
---  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
@@ -124,9 +127,7 @@ runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am = d
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
       cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
---  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
---  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
@@ -135,8 +136,7 @@ runFullModel :: (K.KnitEffects r
                 , BRKU.CacheEffects r
                 , V.RMap l
                 , Ord (F.Record l)
-                , FS.RecFlat l
-                , Typeable l
+                , FS.RecFlat l                , Typeable l
                 , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
                 , Show (F.Record l)
                 )
@@ -160,17 +160,123 @@ runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am 
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
       cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
---  cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
   rawCPS_C <- DP.cpsCountedTurnoutByState
---  cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
   acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
 
-
-
 FTH.declareColumn "ModelPr" ''Double
 FTH.declareColumn "ModelCI" ''MT.ConfidenceInterval
+
+modelCompBy :: forall ks r b . (K.KnitEffects r, BRKU.CacheEffects r, PSByC ks)
+            => (MC.RunConfig ks -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+            -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))
+modelCompBy runModel catLabel agg am pt = do
+          comp <- psBy @ks (\rc -> runModel rc catLabel agg am pt)
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+
+allModelsCompBy :: forall ks r b . (K.KnitEffects r, BRKU.CacheEffects r, PSByC ks)
+                => (MC.RunConfig ks -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+                -> Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))]
+allModelsCompBy runModel catLabel aggs' alphaModels' psTs' =
+  traverse (\(agg, am, pt) -> modelCompBy @ks runModel catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
+
+allModelsCompChart :: forall ks r b . (K.KnitOne r, BRKU.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
+                                        , F.ElemOf (ks V.++ [DT.PopCount, ModelCI]) DT.PopCount
+                                        , F.ElemOf (ks V.++ [DT.PopCount, ModelCI]) ModelCI
+                                        , ks F.⊆ (ks V.++ [DT.PopCount, ModelCI])
+                                        )
+                   => BR.PostPaths Path.Abs
+                   -> BR.PostInfo
+                   -> (MC.RunConfig ks -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+                   -> Text
+                   -> Text
+                   -> (F.Record ks -> Text)
+                   -> [MC.SurveyAggregation b]
+                   -> [MC.Alphas]
+                   -> [MC.PSTargets]
+                   -> K.Sem r ()
+allModelsCompChart pp postInfo runModel catLabel modelType catText aggs' alphaModels' psTs' = do
+  allModels <- allModelsCompBy @ks runModel catLabel aggs' alphaModels' psTs'
+  let cats = Set.toList $ Keyed.elements @(F.Record ks)
+      numCats = length cats
+      numSources = length allModels
+  catCompChart <- categoryChart @ks pp postInfo (modelType <> " Comparison By Category") (modelType <> "Comp")
+                  (FV.ViewConfig 300 (30 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
+                  catText allModels
+  _ <- K.addHvega Nothing Nothing catCompChart
+  pure ()
+
+type PSByC ks = (Show (F.Record ks)
+                 , Typeable ks
+                 , V.RMap ks
+                 , Ord (F.Record ks)
+                 , ks F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                 , ks F.⊆ DDP.ACSa5ByStateR
+                 , ks F.⊆ (ks V.++ '[DT.PopCount])
+                 , F.ElemOf (ks V.++ '[DT.PopCount]) DT.PopCount
+                 , FSI.RecVec (ks V.++ '[DT.PopCount])
+                 , FSI.RecVec (ks V.++ '[DT.PopCount, ModelCI])
+                 , FS.RecFlat ks)
+
+psBy :: forall ks r .
+         (PSByC ks
+         , K.KnitEffects r
+         , BRKU.CacheEffects r
+         )
+      => (MC.RunConfig ks -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+      -> K.Sem r (F.FrameRec (ks V.++ [DT.PopCount, ModelCI]))
+psBy runModel = do
+    let runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @ks)
+    (MC.PSMap psMap) <- K.ignoreCacheTimeM $ runModel runConfig
+    pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
+    let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, ModelCI]))
+        whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, ModelCI])
+        whenMissingPC k _ = Left $ "psBy: " <> show k <> " is missing from PopCount map."
+        whenMissingT k _ = Left $ "psBy: " <> show k <> " is missing from ps map."
+    mergedMap <- K.knitEither
+                 $ MM.mergeA (MM.traverseMissing whenMissingPC) (MM.traverseMissing whenMissingT) (MM.zipWithAMatched whenMatched) psMap pcMap
+    pure $ F.toFrame $ M.elems mergedMap
+
+
+psByState ::  (K.KnitEffects r, BRKU.CacheEffects r)
+          => (MC.RunConfig '[GT.StateAbbreviation] -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap '[GT.StateAbbreviation] MT.ConfidenceInterval)))
+          -> (F.FrameRec [GT.StateAbbreviation, DT.PopCount, ModelCI] -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, ModelCI] V.++ bs)))
+          -> K.Sem r (F.FrameRec ([GT.StateAbbreviation, DT.PopCount, ModelCI] V.++ bs))
+psByState runModel addStateFields = psBy @'[GT.StateAbbreviation] runModel >>= addStateFields
+
+popCountBy :: forall ks rs r .
+              (K.KnitEffects r, BRKU.CacheEffects r
+              , ks F.⊆ rs, F.ElemOf rs DT.PopCount, Ord (F.Record ks)
+              , FSI.RecVec (ks V.++ '[DT.PopCount])
+              )
+           => K.ActionWithCacheTime r (F.FrameRec rs)
+           -> K.Sem r (F.FrameRec (ks V.++ '[DT.PopCount]))
+popCountBy counts_C = do
+  counts <- K.ignoreCacheTime counts_C
+  let aggFld = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @ks @'[DT.PopCount])
+               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  pure $ FL.fold aggFld counts
+
+popCountByMap :: forall ks rs r .
+                 (K.KnitEffects r, BRKU.CacheEffects r
+                 , ks F.⊆ rs
+                 , F.ElemOf rs DT.PopCount
+                 , Ord (F.Record ks)
+                 , ks F.⊆ (ks V.++ '[DT.PopCount])
+                 , F.ElemOf (ks V.++ '[DT.PopCount])  DT.PopCount
+                 , FSI.RecVec (ks V.++ '[DT.PopCount])
+                 )
+              => K.ActionWithCacheTime r (F.FrameRec rs)
+              -> K.Sem r (Map (F.Record ks) Int)
+popCountByMap = fmap (FL.fold (FL.premap keyValue FL.map)) . popCountBy @ks where
+  keyValue r = (F.rcast @ks r, r ^. DT.popCount)
+
+
+
 
 surveyDataBy :: forall ks rs a .
                 (Ord (F.Record ks)
@@ -212,7 +318,6 @@ surveyDataBy saM = FL.fold fld
           (FMR.assignKeysAndData @ks @DP.CountDataR)
           (FMR.foldAndAddKey innerFld)
 
-
 addBallotsCountedVAP :: (K.KnitEffects r, BRKU.CacheEffects r
                         , FJ.CanLeftJoinM '[GT.StateAbbreviation] rs BRDF.StateTurnoutCols
                         , F.ElemOf (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols)) GT.StateAbbreviation
@@ -225,31 +330,34 @@ addBallotsCountedVAP fr = do
   when (not $ null missing) $ K.knitError $ "addBallotysCOuntedVAP: missing keys in state turnout target join: " <> show missing
   pure $ fmap F.rcast joined
 
-
 modelCIToModelPr :: (F.RDelete ModelCI rs V.++ '[ModelPr] F.⊆ ('[ModelPr] V.++ rs)
                     , F.ElemOf rs ModelCI)
                  => F.Record rs -> F.Record (F.RDelete ModelCI rs V.++ '[ModelPr])
 modelCIToModelPr r = F.rcast $ FT.recordSingleton @ModelPr (MT.ciMid $ view modelCI r) F.<+> r
 
-
-
-stateChartT :: K.KnitEffects r
+stateChart :: (K.KnitEffects r, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs ModelPr)
            => BR.PostPaths Path.Abs
            -> BR.PostInfo
            -> Text
            -> Text
+           -> Text
            -> FV.ViewConfig
-           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, ModelPr, BRDF.BallotsCountedVAP]))]
+           -> (F.Record rs -> Int)
+           -> Maybe (F.Record rs -> Double)
+           -> [(Text, F.FrameRec rs)]
            -> K.Sem r GV.VegaLite
-stateChartT postPaths' postInfo title chartID vc tableRowsByModel = do
+stateChart postPaths' postInfo chartID title modelType vc vap tgtM tableRowsByModel = do
   let colData (t, r)
         = [("State", GV.Str $ r ^. GT.stateAbbreviation)
-          , ("VAP", GV.Number $ realToFrac  $ r ^. BRDF.vAP)
-          , ("SEP Turnout", GV.Number $ 100 * r ^. BRDF.ballotsCountedVAP)
-          , ("Modeled Turnout", GV.Number $ 100 * r ^. modelPr)
-          , ("Model - SEP", GV.Number $ 100 * (r ^. modelPr - r ^. BRDF.ballotsCountedVAP) )
+          , ("VAP", GV.Number $ realToFrac $ vap r)
+          , (modelType, GV.Number $ 100 * r ^. modelPr)
           , ("Source", GV.Str t)
-          ]
+          ] ++ case tgtM of
+                 Nothing -> []
+                 Just tgt ->
+                   [ ("Tgt " <> modelType, GV.Number $ 100 * tgt r)
+                   , ("Model - Tgt", GV.Number $ 100 * (r ^. modelPr - tgt r))
+                   ]
 
 --      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
       jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ concat $ fmap (\(s, fr) -> fmap (s,) $ FL.fold FL.list fr) tableRowsByModel
@@ -258,46 +366,12 @@ stateChartT postPaths' postInfo title chartID vc tableRowsByModel = do
 
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
   --
+      encY = case tgtM of
+        Nothing -> GV.position GV.Y [GV.PName modelType, GV.PmType GV.Quantitative]
+        Just _ -> GV.position GV.Y [GV.PName "Model - Tgt", GV.PmType GV.Quantitative]
       encScatter = GV.encoding
         . GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
-        . GV.position GV.Y [GV.PName "Model - SEP", GV.PmType GV.Quantitative]
-        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
-        . GV.size [GV.MName "VAP", GV.MmType GV.Quantitative]
-      markScatter = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
-      scatterSpec = GV.asSpec [encScatter [], markScatter]
-      layers = GV.layer [scatterSpec]
-  pure $ FV.configuredVegaLite vc [FV.title title
-                                  , layers
-                                  , vlData
-                                  ]
-
-
-stateChartP :: K.KnitEffects r
-           => BR.PostPaths Path.Abs
-           -> BR.PostInfo
-           -> Text
-           -> Text
-           -> FV.ViewConfig
-           -> [(Text, F.FrameRec ([GT.StateAbbreviation, BRDF.VAP, ModelPr]))]
-           -> K.Sem r GV.VegaLite
-stateChartP postPaths' postInfo title chartID vc tableRowsByModel = do
-  let colData (t, r)
-        = [("State", GV.Str $ r ^. GT.stateAbbreviation)
-          , ("VAP", GV.Number $ realToFrac  $ r ^. BRDF.vAP)
-          , ("Modeled", GV.Number $ 100 * r ^. modelPr)
-          , ("Source", GV.Str t)
-          ]
-
---      toData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
-      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ concat $ fmap (\(s, fr) -> fmap (s,) $ FL.fold FL.list fr) tableRowsByModel
-  jsonFilePrefix <- K.getNextUnusedId $ ("statePSWithTargets_" <> chartID)
-  jsonUrl <-  BRKU.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
-
-  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
-  --
-      encScatter = GV.encoding
-        . GV.position GV.X [GV.PName "State", GV.PmType GV.Nominal]
-        . GV.position GV.Y [GV.PName "Modeled", GV.PmType GV.Quantitative]
+        . encY
         . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
         . GV.size [GV.MName "VAP", GV.MmType GV.Quantitative]
       markScatter = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]

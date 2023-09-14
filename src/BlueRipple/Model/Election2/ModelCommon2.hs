@@ -257,26 +257,26 @@ setupAlphaSum prefixM alphas = do
                         stdNormalDWA
         pure (muAlphaP :> sigmaAlphaP :> TNil)
       aStBP :: DAG.Parameters [TE.EReal, TE.EReal] -> DAG.BuildParameter TE.ECVec
-      aStBP hps = DAG.UntransformedP (alphaNDS (SMB.groupSizeE MC.stateG) (prefixed "St")) [] hps
+      aStBP hps = DAG.UntransformedP (alphaNDS (SMB.groupSizeE MC.stateG) "St") [] hps
                   $ \(muAlphaE :> sigmaAlphaE :> TNil) m
                     -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
       stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
-      ageAG = SG.firstOrderAlphaDC MC.ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.ageG `TE.minusE` TE.intE 1) $ prefixed "age")
-      sexAG = SG.binaryAlpha MC.sexG (stdNormalBP $ TE.NamedDeclSpec (prefixed "aSex") $ TE.realSpec [])
-      eduAG = SG.firstOrderAlphaDC MC.eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.eduG `TE.minusE` TE.intE 1) $ prefixed "edu")
-      raceAG = SG.firstOrderAlphaDC MC.raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) $ prefixed "race")
-  stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs $ prefixed "St"
+      ageAG = SG.firstOrderAlphaDC MC.ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.ageG `TE.minusE` TE.intE 1) "Age")
+      sexAG = SG.binaryAlpha prefixM MC.sexG (stdNormalBP $ TE.NamedDeclSpec (prefixed "aSex") $ TE.realSpec [])
+      eduAG = SG.firstOrderAlphaDC MC.eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.eduG `TE.minusE` TE.intE 1) "Edu")
+      raceAG = SG.firstOrderAlphaDC MC.raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) "Race")
+  stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
   let eduRaceAG = do
         sigmaEduRace <-  DAG.simpleParameterWA
                          (TE.NamedDeclSpec (prefixed "sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
                          stdNormalDWA
-        let aER_NDS = alphaNDS (SMB.groupSizeE MC.eduG `TE.timesE` SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) $ prefixed "EduRace"
+        let aER_NDS = alphaNDS (SMB.groupSizeE MC.eduG `TE.timesE` SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) "EduRace"
             aER_BP :: DAG.BuildParameter TE.ECVec
             aER_BP = DAG.UntransformedP
                      aER_NDS [] (sigmaEduRace :> TNil)
                      $ \(sigmaE :> TNil) m
                        -> TE.addStmt $ TE.sample m SF.normalS (TE.realE 0 :> sigmaE :> TNil)
-        pure $ SG.secondOrderAlphaDC MC.eduG MC.raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) aER_BP
+        pure $ SG.secondOrderAlphaDC prefixM MC.eduG MC.raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) aER_BP
       stateRaceAG = do
         sigmaStateRace <-  DAG.simpleParameterWA
                            (TE.NamedDeclSpec (prefixed "sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -291,7 +291,7 @@ setupAlphaSum prefixM alphas = do
             aStR_BP = DAG.simpleTransformedP aStR_NDS [] (sigmaStateRace :> rawAlphaStateRaceP :> TNil)
                      DAG.TransformedParametersBlock
                      (\(s :> r :> TNil) -> DAG.DeclRHS $ s `TE.timesE` r)
-        pure $ SG.secondOrderAlpha MC.stateG MC.raceG aStR_BP
+        pure $ SG.secondOrderAlpha prefixM MC.stateG MC.raceG aStR_BP
       stateEduRace :: SMB.StanBuilderM md gq SG.GroupAlpha
       stateEduRace = do
         sigmaStateEduRaceP :: DAG.Parameter TE.EReal  <-  DAG.simpleParameterWA
@@ -314,7 +314,7 @@ setupAlphaSum prefixM alphas = do
                                   $ TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
                                   $ \s -> [(t `TE.at` s) `TE.assign` (sigma `TE.timesE` (raw `TE.at` s))]
                         )
-        pure $ SG.thirdOrderAlpha MC.stateG MC.eduG MC.raceG aStER_BP
+        pure $ SG.thirdOrderAlpha prefixM MC.stateG MC.eduG MC.raceG aStER_BP
   case alphas of
     MC.St_A_S_E_R -> do
       SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
@@ -631,14 +631,6 @@ model rc c = case c of
             wgtsMCW = TE.NeedsCW $ fmap (`eltMultiply` SF.toVec psWgts) tProbsCW
         SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "DVS_byGrp") psDataTag gtt psDataGrpIndex wgtsMCW pProbsCW Nothing >> pure ()
 
-{-
-newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
-
-instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
-  size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
-  encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
-  decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
--}
 runModel :: forall l k r a b .
             (K.KnitEffects r
             , BRKU.CacheEffects r
@@ -723,39 +715,6 @@ modelResultAction :: forall k l r a b .
 modelResultAction config runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
-    -- compute means of predictors because model was zero-centered in them
-{-
-    let mdMeansFld :: DM.DesignMatrixRow (F.Record rs) -> FL.Fold (F.Record rs) [Double]
-        mdMeansFld dmr =
-          let  covariates = DM.designMatrixRowF dmr
-               nPredictors = DM.rowLength dmr
-          in FL.premap (VU.toList . covariates)
-             $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
-        mdMeansL = case turnoutConfig.tSurvey of
-          CESSurvey -> FL.fold (FL.premap (F.rcast @DP.PredictorsR) $ mdMeansFld turnoutConfig.tDesignMatrixRow) $ DP.cesData modelData
-          CPSSurvey -> FL.fold (FL.premap (F.rcast @DP.PredictorsR) $ mdMeansFld turnoutConfig.tDesignMatrixRow) $ DP.cpsData modelData
-    stateIM <- case turnoutConfig.tSurvey of
-      CESSurvey -> K.knitEither
-                   $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record DP.CESByCDR) SC.ModelData "SurveyData") stateG
-      CPSSurvey -> K.knitEither
-                   $ resultIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record DP.CPSByStateR) SC.ModelData "SurveyData") stateG
-    let allStates = IM.elems stateIM
-        getScalar n = K.knitEither $ SP.getScalar . fmap CS.mean <$> SP.parseScalar n (CS.paramStats summary)
-        getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
-    K.logLE K.Info $ "stateIM=" <> show stateIM
-    geoMap <- case turnoutConfig.tStateAlphaModel of
-      StateAlphaSimple -> do
-        alpha <- getScalar "alpha"
-        pure $ M.fromList $ fmap (, alpha) allStates
-      _ -> do
-        alphaV <- getVector "alpha"
-        pure $ M.fromList $ fmap (\(stateIdx, stateAbbr) -> (stateAbbr, alphaV V.! (stateIdx - 1))) $ IM.toList stateIM
-    betaSI <- case DM.rowLength turnoutConfig.tDesignMatrixRow of
-      0 -> pure V.empty
-      p -> do
-        betaV <- getVector "theta"
-        pure $ V.fromList $ zip (V.toList betaV) mdMeansL
--}
     psMap <- case runConfig.rcPS of
       Nothing -> mempty
       Just gtt -> case gqDataAndIndexes_CM of
