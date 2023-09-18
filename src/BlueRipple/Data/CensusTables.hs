@@ -207,9 +207,10 @@ type instance FI.VectorFor Employment = UVec.Vector
 F.declareColumn "EmploymentC" ''Employment
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving stock (Eq, Ord, Show)
-data TableYear = TY2020 | TY2018 | TY2016 | TY2014 | TY2012
+data TableYear = TY2021 | TY2020 | TY2018 | TY2016 | TY2014 | TY2012
 
 tableYear :: TableYear -> Int
+tableYear TY2021 = 2021
 tableYear TY2020 = 2020
 tableYear TY2018 = 2018
 tableYear TY2016 = 2016
@@ -291,18 +292,25 @@ sexByAgeByEducation (NHGISPrefix p) =
                ]
 
 sexByAgeByEducationPrefix :: TableYear -> NHGISPrefix
+sexByAgeByEducationPrefix TY2021 = NHGISPrefix "AO4V"
 sexByAgeByEducationPrefix TY2020 = NHGISPrefix "AM6L"
 sexByAgeByEducationPrefix TY2018 = error "No 2018 sex by age by education data" -- NHGISPrefix "AM6L"
 sexByAgeByEducationPrefix TY2016 = error "No 2016 sex by age by education data" -- NHGISPrefix "AM6L"
 sexByAgeByEducationPrefix TY2014 = error "No 2014 sex by age by education data" -- NHGISPrefix "AM6L"
 sexByAgeByEducationPrefix TY2012 = error "No 2012 sex by age by education data" -- NHGISPrefix "Q8Z"
 
-
 sexByAgeByEmploymentPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByAgeByEmploymentPrefix TY2021 R_White = [NHGISPrefix "APGN"]
+sexByAgeByEmploymentPrefix TY2021 R_Black = [NHGISPrefix "APGO"]
+sexByAgeByEmploymentPrefix TY2021 R_Asian = NHGISPrefix <$> ["APGQ","APGR"] -- AAPI
+sexByAgeByEmploymentPrefix TY2021 R_Other = NHGISPrefix <$> ["APGP", "APGS", "APGT"]
+sexByAgeByEmploymentPrefix TY2021 E_Hispanic = [NHGISPrefix "APGV"]
+sexByAgeByEmploymentPrefix TY2021 E_WhiteNonHispanic = [NHGISPrefix "APGU"]
+
 sexByAgeByEmploymentPrefix TY2020 R_White = [NHGISPrefix "ANH9"]
 sexByAgeByEmploymentPrefix TY2020 R_Black = [NHGISPrefix "ANIA"]
-sexByAgeByEmploymentPrefix TY2020 R_Asian = [NHGISPrefix "ANIC"]
-sexByAgeByEmploymentPrefix TY2020 R_Other = NHGISPrefix <$> ["ANIB", "ANID", "ANIE", "ANIF"]
+sexByAgeByEmploymentPrefix TY2020 R_Asian = NHGISPrefix <$> ["ANIC", "ANID"]
+sexByAgeByEmploymentPrefix TY2020 R_Other = NHGISPrefix <$> ["ANIB", "ANIE", "ANIF"]
 sexByAgeByEmploymentPrefix TY2020 E_Hispanic = [NHGISPrefix "ANIH"]
 sexByAgeByEmploymentPrefix TY2020 E_WhiteNonHispanic = [NHGISPrefix "ANIG"]
 sexByAgeByEmploymentPrefix TY2018 R_White = [NHGISPrefix "AKJD"]
@@ -358,10 +366,16 @@ sexByAgeByEmployment (NHGISPrefix p) =
                ]
 
 sexByAgePrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByAgePrefix TY2021 R_White = [NHGISPrefix "AOYA"]
+sexByAgePrefix TY2021 R_Black = [NHGISPrefix "AOYB"]
+sexByAgePrefix TY2021 R_Asian = NHGISPrefix <$> ["AOYD", "AOYE"] -- AAPI
+sexByAgePrefix TY2021 R_Other = NHGISPrefix <$> ["AOYC", "AOYF", "AOYG"]
+sexByAgePrefix TY2021 E_Hispanic = [NHGISPrefix "AOYI"]
+sexByAgePrefix TY2021 E_WhiteNonHispanic = [NHGISPrefix "AOYH"]
 sexByAgePrefix TY2020 R_White = [NHGISPrefix "AMZ0"]
 sexByAgePrefix TY2020 R_Black = [NHGISPrefix "AMZ1"]
-sexByAgePrefix TY2020 R_Asian = [NHGISPrefix "AMZ3"]
-sexByAgePrefix TY2020 R_Other = NHGISPrefix <$> ["AMZ2", "AMZ4", "AMZ5", "AMZ6"]
+sexByAgePrefix TY2020 R_Asian = NHGISPrefix <$> ["AMZ3",  "AMZ4"]
+sexByAgePrefix TY2020 R_Other = NHGISPrefix <$> ["AMZ2", "AMZ5", "AMZ6"]
 sexByAgePrefix TY2020 E_Hispanic = [NHGISPrefix "AMZ8"]
 sexByAgePrefix TY2020 E_WhiteNonHispanic = [NHGISPrefix "AMZ7"]
 sexByAgePrefix TY2018 R_White = [NHGISPrefix "AJ6O"]
@@ -423,10 +437,17 @@ sexByAge (NHGISPrefix p) =
                ]
 
 sexByCitizenshipPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByCitizenshipPrefix TY2021 R_White = [NHGISPrefix "AOYY"]
+sexByCitizenshipPrefix TY2021 R_Black = [NHGISPrefix "AOYZ"]
+sexByCitizenshipPrefix TY2021 R_Asian = NHGISPrefix <$> ["AOY1", "AOY2"]
+sexByCitizenshipPrefix TY2021 R_Other = NHGISPrefix <$> ["AOY0", "AOY3", "AOY4"]
+sexByCitizenshipPrefix TY2021 E_Hispanic = [NHGISPrefix "AOY6"]
+sexByCitizenshipPrefix TY2021 E_WhiteNonHispanic = [NHGISPrefix "AOY5"]
+
 sexByCitizenshipPrefix TY2020 R_White = [NHGISPrefix "AM0O"]
 sexByCitizenshipPrefix TY2020 R_Black = [NHGISPrefix "AM0P"]
-sexByCitizenshipPrefix TY2020 R_Asian = [NHGISPrefix "AM0R"]
-sexByCitizenshipPrefix TY2020 R_Other = NHGISPrefix <$> ["AM0Q", "AM0S", "AM0T", "AM0U"]
+sexByCitizenshipPrefix TY2020 R_Asian = NHGISPrefix <$> ["AM0R", "AM0S"]
+sexByCitizenshipPrefix TY2020 R_Other = NHGISPrefix <$> ["AM0Q", "AM0T", "AM0U"]
 sexByCitizenshipPrefix TY2020 E_Hispanic = [NHGISPrefix "AM0W"]
 sexByCitizenshipPrefix TY2020 E_WhiteNonHispanic = [NHGISPrefix "AM0V"]
 
@@ -468,6 +489,13 @@ sexByCitizenship (NHGISPrefix p) = Map.fromList [((DT.Male, Native), p <> "E009"
                                                 ]
 
 sexByEducationPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByEducationPrefix TY2021 R_White = [NHGISPrefix "APFZ"]
+sexByEducationPrefix TY2021 R_Black = [NHGISPrefix "APF0"]
+sexByEducationPrefix TY2021 R_Asian = NHGISPrefix <$> ["APF2", "APF3"]
+sexByEducationPrefix TY2021 R_Other = NHGISPrefix <$> ["APF1", "APF4", "APF5"]
+sexByEducationPrefix TY2021 E_Hispanic = [NHGISPrefix "APF7"]
+sexByEducationPrefix TY2021 E_WhiteNonHispanic = [NHGISPrefix "APF6"]
+
 sexByEducationPrefix TY2020 R_White = [NHGISPrefix "ANHL"]
 sexByEducationPrefix TY2020 R_Black = [NHGISPrefix "ANHM"]
 sexByEducationPrefix TY2020 R_Asian = [NHGISPrefix "ANHO"]

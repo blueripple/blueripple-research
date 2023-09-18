@@ -228,6 +228,19 @@ censusTablesForProposedCDs = do
       fileByYear = fmap (\sa -> (BRC.TY2020, censusDataDir <> "/cd117_" <> sa <> ".csv")) states
   censusTablesByDistrict fileByYear "proposedCDs"
 
+censusTables2022CDsACS2021 :: (K.KnitEffects r
+                              , BR.CacheEffects r)
+                           => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTables2022CDsACS2021 = do
+  stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
+  let states = FL.fold (FL.premap (F.rgetField @GT.StateAbbreviation) FL.list)
+               $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
+                                 && not (F.rgetField @BR.OneDistrict r)
+                                 && not (F.rgetField @GT.StateAbbreviation r `Set.member` noMaps)
+                               ) stateInfo
+      fileByYear = fmap (\sa -> (BRC.TY2021, censusDataDir <> "/cd117_ACS2021/" <> sa <> ".csv")) states
+  censusTablesByDistrict fileByYear "proposedCDs"
+
 {-
 censusTablesForSLDs ::  (K.KnitEffects r
                         , BR.CacheEffects r)
@@ -256,6 +269,20 @@ censusTablesFor2022SLDs = do
                    $ fmap (\(sa, uo) -> [(BRC.TY2020, censusDataDir <> "/" <> sa <> "_2022_sldu.csv")] ++
                                         if uo then [] else [(BRC.TY2020, censusDataDir <> "/" <> sa <> "_2022_sldl.csv")]) statesAnd
   censusTablesByDistrict fileByYear "SLDs_2022"
+
+censusTablesFor2022SLD_ACS2021 ::  (K.KnitEffects r
+                        , BR.CacheEffects r)
+                    => K.Sem r (K.ActionWithCacheTime r LoadedCensusTablesByLD)
+censusTablesFor2022SLD_ACS2021 = do
+  stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
+  let statesAnd = FL.fold (FL.premap (\r -> (F.rgetField @GT.StateAbbreviation r, F.rgetField @BR.SLDUpperOnly r)) FL.list)
+                  $ F.filterFrame (\r -> (F.rgetField @BR.StateFIPS r < 60)
+                                         && not (F.rgetField @GT.StateAbbreviation r `Set.member` Set.insert "DC" noMaps)
+                                  ) stateInfo
+      fileByYear = concat
+                   $ fmap (\(sa, uo) -> [(BRC.TY2021, censusDataDir <> "/sldu2022_ACS2021/" <> sa <> ".csv")] ++
+                                        if uo then [] else [(BRC.TY2020, censusDataDir <> "/sldl2022_ACS_2021" <> sa <> ".csv")]) statesAnd
+  censusTablesByDistrict fileByYear "SLDs2022_ACS2021"
 
 
 checkAllCongressionalAndConvert :: forall r a b.
