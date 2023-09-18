@@ -932,20 +932,27 @@ shiroData = do
                        V.:& FCSV.formatWithShow
                        V.:& wText V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "state")
+                                ,("CongressionalDistrict","cd")
+                                ,("PUMA","puma")
                                 , ("PopCount", "pop_count")
-                                , ("CitizenC", "citizen")
+                                , ("CitizenC", "citizen_2")
                                 , ("Age5C", "age_5")
-                                , ("SexC", "sex")
+                                , ("SexC", "sex_2")
                                 , ("Education4C", "education_4")
                                 , ("Race5C", "race_5")
                                 , ("Weight", "weight")
+                                ,("StateFIPS","fips")
+                                ,("Population2016","pop_count")
+                                ,("FracCDInPUMA","frac_cd_in_puma")
+                                ,("FracPUMAInCD","frac_puma_in_cd")
                                 ]
-  examplePUMAWgts <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> BRDF.cdFromPUMA2012Loader 116)
-  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exPumaWgts.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) M.empty formatPUMAWgts "," $ FCSV.foldableToStream examplePUMAWgts
+      exampleF = id -- F.takeRows 100
+  examplePUMAWgts <- K.ignoreCacheTimeM (fmap exampleF <$> BRDF.cdFromPUMA2012Loader 116)
+  K.liftKnit @IO $ FCSV.writeLines "../forShiro/exPumaWgts.csv" $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatPUMAWgts "," $ FCSV.foldableToStream examplePUMAWgts
   let formatACSMicro = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                      V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                      V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSMicro <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5)
+  exampleACSMicro <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSMicro.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSMicro ","
     $ FCSV.foldableToStream
@@ -954,7 +961,7 @@ shiroData = do
   let formatACSByPUMA = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                         V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                         V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSByPUMA <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByPUMA)
+  exampleACSByPUMA <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByPUMA)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByPuma.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByPUMA ","
     $ FCSV.foldableToStream
@@ -962,7 +969,7 @@ shiroData = do
   let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                       V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                       V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSByCD <- K.ignoreCacheTimeM (fmap (F.takeRows 100) <$> DDP.cachedACSa5ByCD)
+  exampleACSByCD <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByCD)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByCD ","
     $ FCSV.foldableToStream
