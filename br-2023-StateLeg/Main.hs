@@ -17,12 +17,17 @@ where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as ACS
+import qualified BlueRipple.Data.Loaders.Redistricting as DRA
 import qualified BlueRipple.Data.CensusLoaders as BRC
+import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
+import qualified BlueRipple.Data.Loaders as BRL
+
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.DataPrep as DP
@@ -84,6 +89,8 @@ templateVars =
 pandocTemplate ∷ K.TemplatePath
 pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic.html"
 
+type SLDKeyR = '[GT.StateAbbreviation] V.++ BRC.LDLocationR
+type ModeledR = SLDKeyR V.++ '[MR.ModelCI]
 
 main :: IO ()
 main = do
@@ -109,25 +116,45 @@ main = do
         survey = MC.CESSurvey
         aggregation = MC.WeightedAggregation MC.ContinuousBinomial
         alphaModel = MC.St_A_S_E_R_ER_StR_StER
-        psTs = [MC.NoPSTargets] --, MC.PSTargets]
+        psT = MC.NoPSTargets --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
     rawCPS_C <- DP.cpsCountedTurnoutByState
     cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
     let modelDirE = Right "model/election2/stan/"
         cacheDirE = Right "model/election2/"
-        runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
-        runPrefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am
-        runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
-        g f (a, b) = f b >>= pure . (a, )
-        h f = traverse (g f)
 
-    modelPostPaths <- postPaths "VA" cmdLine
-    modeledACSBySLD_C <- modeledACSBySLD cmdLine
-    K.ignoreCacheTime modeledACSBySLD_C >>= BRK.logFrame . F.takeRows 100
-{-    BRK.brNewPost modelPostPaths postInfo "VA" $ do
+    let state = "VA"
+    modelPostPaths <- postPaths state cmdLine
+
+    let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
+        psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
+
+    BRK.brNewPost modelPostPaths postInfo state $ do
+      modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+      let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
+          turnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
+          prefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am
+          dVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
+          g f (a, b) = f b >>= pure . (a, )
+          h f = traverse (g f)
+          runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @SLDKeyR)
+      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      let modeledDVs = modeledMapToFrame modeledDVSMap
+      dra <- do
+        allPlansMap <- DRA.allPassedSLDPlans
+        upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
+        lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
+        pure $ upper <> lower
+      let (modeledAndDRA, missing) = FJ.leftJoinWithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra
+      when (not $ null missing) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missing
+--      BRK.logFrame modeledAndDRA
+      compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
+                   (FV.ViewConfig 500 500 10) modeledAndDRA
+      _ <- K.addHvega Nothing Nothing compChart
       pure ()
--}
     pure ()
   pure ()
   case resE of
@@ -135,7 +162,46 @@ main = do
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
-modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DMC.CensusCASER))
+
+modelDRAComparisonChart :: (K.KnitEffects r
+                           , F.ElemOf rs GT.StateAbbreviation
+                           , F.ElemOf rs MR.ModelCI
+                           , F.ElemOf rs ET.DemShare
+                           , F.ElemOf rs GT.DistrictName
+                           )
+                        => BR.PostPaths Path.Abs -> BR.PostInfo -> Text -> Text -> FV.ViewConfig -> F.FrameRec rs -> K.Sem r GV.VegaLite
+modelDRAComparisonChart pp pi chartID title vc rows = do
+  let colData r = [("State", GV.Str $ r ^. GT.stateAbbreviation)
+                  ,("District", GV.Str $ r ^. GT.districtName)
+                  ,("Model_Lo" , GV.Number $ MT.ciLower $ r ^. MR.modelCI)
+                  ,("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
+                  ,("Model_Hi" , GV.Number $ MT.ciUpper $ r ^. MR.modelCI)
+                  ,("Historical", GV.Number $ r ^. ET.demShare)
+                  ]
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) rows
+  jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
+  jsonUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
+  let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
+      encHistorical = GV.position GV.X [GV.PName "Historical", GV.PmType GV.Quantitative]
+      encModel = GV.position GV.Y [GV.PName "Model", GV.PmType GV.Quantitative]
+      markMid = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
+      midSpec = GV.asSpec [(GV.encoding . encHistorical . encModel) [], markMid]
+      encModelLo = GV.position GV.Y [GV.PName "Model_Lo", GV.PmType GV.Quantitative]
+      encModelHi = GV.position GV.Y2 [GV.PName "Model_Hi", GV.PmType GV.Quantitative]
+      markError = GV.mark GV.ErrorBar [GV.MTooltip GV.TTEncoding]
+      errorSpec = GV.asSpec [(GV.encoding . encHistorical . encModelLo . encModelHi) [], markError]
+      encHistoricalY = GV.position GV.Y [GV.PName "Historical", GV.PmType GV.Quantitative]
+      lineSpec = GV.asSpec [(GV.encoding . encHistorical . encHistoricalY) [], GV.mark GV.Line []]
+      layers = GV.layer [midSpec, errorSpec, lineSpec]
+  pure $  FV.configuredVegaLite vc [FV.title title
+                                  , layers
+                                  , vlData
+                                  ]
+
+modeledMapToFrame :: MC.PSMap SLDKeyR MT.ConfidenceInterval -> F.FrameRec ModeledR
+modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR.ModelCI ci) . M.toList . MC.unPSMap
+
+modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD cmdLine = do
   (jointFromMarginalPredictorCSR_ASR_C, _, _) <- CDDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
                                                  >>= DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.SRCA @DMC.SR
@@ -145,11 +211,12 @@ modeledACSBySLD cmdLine = do
                                                   >>= DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
                                                   (Right "model/demographic/casr_ase_PUMA") "CASR_SER_ByPUMA"
                                                   cmdLine . fmap (fmap F.rcast)
-  (acsCA5SERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
-                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) False "model/election2/sldDemographics"
-                                 jointFromMarginalPredictorCSR_ASR_C
-                                 jointFromMarginalPredictorCASR_ASE_C
-  pure acsCA5SERBySLD
+  (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
+                                >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) False "model/election2/sldDemographics"
+                                jointFromMarginalPredictorCSR_ASR_C
+                                jointFromMarginalPredictorCASR_ASE_C
+  BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD
+    $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
 
 postDir ∷ Path.Path Rel Dir
 postDir = [Path.reldir|br-2023-StateLeg/posts|]

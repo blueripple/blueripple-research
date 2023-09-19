@@ -72,7 +72,12 @@ runTurnoutModel :: (K.KnitEffects r
                    , Ord (F.Record l)
                    , FS.RecFlat l
                    , Typeable l
-                   , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                   , Typeable (DP.PSDataR ks)
+                   , F.ElemOf (DP.PSDataR ks) GT.StateAbbreviation
+                   , DP.LPredictorsR F.⊆ DP.PSDataR ks
+                   , F.ElemOf (DP.PSDataR ks) DT.PopCount
+                   , DP.DCatsR F.⊆ DP.PSDataR ks
+                   , l F.⊆ DP.PSDataR ks --'[GT.StateAbbreviation]
                    , Show (F.Record l)
                    )
                 => Int
@@ -86,8 +91,9 @@ runTurnoutModel :: (K.KnitEffects r
                 -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
                 -> MC.PSTargets
                 -> MC.Alphas
+                -> K.ActionWithCacheTime r (DP.PSData ks)
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am = do
+runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am psData_C = do
   let config = MC2.TurnoutOnly (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr))
   cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runTurnoutModel" $ BRKU.insureFinalSlashE cacheDirE
   let appendCacheFile :: Text -> Text -> Text
@@ -97,8 +103,8 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
-  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
+--  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
+  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
 runPrefModel :: (K.KnitEffects r
                 , BRKU.CacheEffects r
@@ -106,7 +112,12 @@ runPrefModel :: (K.KnitEffects r
                 , Ord (F.Record l)
                 , FS.RecFlat l
                 , Typeable l
-                , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                , Typeable (DP.PSDataR ks)
+                , F.ElemOf (DP.PSDataR ks) GT.StateAbbreviation
+                , DP.LPredictorsR F.⊆ DP.PSDataR ks
+                , F.ElemOf (DP.PSDataR ks) DT.PopCount
+                , DP.DCatsR F.⊆ DP.PSDataR ks
+                , l F.⊆ DP.PSDataR ks
                 , Show (F.Record l)
                 )
              => Int
@@ -119,8 +130,9 @@ runPrefModel :: (K.KnitEffects r
              -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
              -> MC.PSTargets
              -> MC.Alphas
+             -> K.ActionWithCacheTime r (DP.PSData ks)
              -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am = do
+runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am psData_C = do
   let config = MC2.PrefOnly (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
   cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runPrefModel" $ BRKU.insureFinalSlashE cacheDirE
   let appendCacheFile :: Text -> Text -> Text
@@ -130,15 +142,21 @@ runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am = d
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
-  MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
+--  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
+  MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
 runFullModel :: (K.KnitEffects r
                 , BRKU.CacheEffects r
                 , V.RMap l
                 , Ord (F.Record l)
-                , FS.RecFlat l                , Typeable l
-                , l F.⊆ DP.PSDataR '[GT.StateAbbreviation]
+                , FS.RecFlat l
+                , Typeable l
+                , Typeable (DP.PSDataR ks)
+                , F.ElemOf (DP.PSDataR ks) GT.StateAbbreviation
+                , DP.LPredictorsR F.⊆ DP.PSDataR ks
+                , F.ElemOf (DP.PSDataR ks) DT.PopCount
+                , DP.DCatsR F.⊆ DP.PSDataR ks
+                , l F.⊆ DP.PSDataR ks
                 , Show (F.Record l)
                 )
              => Int
@@ -152,8 +170,9 @@ runFullModel :: (K.KnitEffects r
              -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
              -> MC.PSTargets
              -> MC.Alphas
+             -> K.ActionWithCacheTime r (DP.PSData ks)
              -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am = do
+runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am psData_C = do
   let config = MC2.TurnoutAndPref (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr)) (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
   cacheDirE' <- K.knitMaybe "ModelRunner: Empty cacheDir given to runFullModel" $ BRKU.insureFinalSlashE cacheDirE
   let appendCacheFile :: Text -> Text -> Text
@@ -163,8 +182,8 @@ runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am 
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
-  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
+--  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
+  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
 FTH.declareColumn "ModelPr" ''Double
 FTH.declareColumn "ModelCI" ''MT.ConfidenceInterval

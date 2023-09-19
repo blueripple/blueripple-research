@@ -19,6 +19,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Utilities.KnitUtils as BRK
@@ -113,18 +114,20 @@ main = do
     ces <- K.ignoreCacheTime cpCES_C
     let modelDirE = Right "model/election2/stan/"
         cacheDirE = Right "model/election2/"
-        runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
-        runPrefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am
-        runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
-        g f (a, b) = f b >>= pure . (a, )
-        h f = traverse (g f)
-    stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
-    stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
-    stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
 
     modelPostPaths <- postPaths "Models" cmdLine
 
     BRK.brNewPost modelPostPaths postInfo "Models" $ do
+      acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
+      let runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
+          runPrefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am acsByState_C
+          runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
+          g f (a, b) = f b >>= pure . (a, )
+          h f = traverse (g f)
+      stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
+      stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
+      stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
+
       turnoutStateChart <- MR.stateChart -- @[GT.StateAbbreviation, MR.ModelPr, BRDF.VAP, BRDF.BallotsCounted]
                            modelPostPaths postInfo "TComp" "Turnout Model Comparison by State" "Turnout" (FV.ViewConfig 500 500 10)
                            (view BRDF.vAP) (Just $ view BRDF.ballotsCountedVAP)
