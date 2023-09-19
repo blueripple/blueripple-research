@@ -493,6 +493,26 @@ executable br-2023-ElectionModel
          , Relude.Extra)
 
 
+executable br-2023-StateLeg
+  import: common-options
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: br-2023-StateLeg
+  main-is: Main.hs
+  other-modules:
+  build-depends: base
+               , blueripple-research
+               , blueripple-data-sets
+               , cmdargs
+               , colonnade
+               , blaze-colonnade
+               , haskell-stan
+               , hs-cmdstan
+               , pandoc
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+
+
 executable ga-work
   import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16

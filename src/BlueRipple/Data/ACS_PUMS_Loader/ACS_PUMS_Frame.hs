@@ -28,3 +28,4 @@ import qualified Frames.Streamly.TH                     as F
 
 F.tableTypes' pumsACS1YrRowGen
 F.tableTypes' pumsACS1YrRowGen'
+--F.tableTypes' pumsACS1Yr2012_21RowGen'

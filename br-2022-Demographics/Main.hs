@@ -25,7 +25,7 @@ import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified BlueRipple.Data.CensusLoaders as BRC
-import qualified BlueRipple.Data.ACS_PUMS as PUMS
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -546,7 +546,7 @@ compareCSR_ASR_ASE cmdLine postInfo = do
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
         pumaKey r = (r ^. GT.stateAbbreviation, r ^. GT.pUMA)
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASER . fmap F.rcast)
-                <$> DDP.cachedACSa5ByPUMA
+                <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
 {-    testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
@@ -618,11 +618,11 @@ compareCSR_ASR cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for CSR x ASR -> CASR"
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
-                <$> DDP.cachedACSa5ByPUMA
+                <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
     testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
-                 <$> DDP.cachedACSa5ByCD
+                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
     testCDs <- K.ignoreCacheTime testCDs_C
 
 --    byPUMA <- K.ignoreCacheTime byPUMA_C
@@ -703,12 +703,12 @@ compareASR_ASE cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for ASR x ASE -> ASER"
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.ASER . fmap F.rcast)
-                <$> DDP.cachedACSa5ByPUMA
+                <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
 
     testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
-                 <$> DDP.cachedACSa5ByCD
+                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
     testCDs <- K.ignoreCacheTime testCDs_C
     pumaTest_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                    (DTP.viaOptimalWeights DTP.euclideanFull)
@@ -777,10 +777,10 @@ compareCASR_ASE cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for CASR x ASE -> CASER"
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASER . fmap F.rcast)
-                <$> DDP.cachedACSa5ByPUMA
+                <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "RI") -} byPUMA_C
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASER . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD
+              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
     byCD <- K.ignoreCacheTime byCD_C
     byPUMA <- K.ignoreCacheTime byPUMA_C
     (product_CASR_ASE, modeled_CASR_ASE) <- K.ignoreCacheTimeM
@@ -826,9 +826,9 @@ compareSER_ASR :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.Comm
 compareSER_ASR cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for SER x A6SR -> A6SER"
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.ASER . fmap F.rcast)
-                <$> DDP.cachedACSa5ByPUMA
+                <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD
+              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
     byCD <- K.ignoreCacheTime byCD_C
     byPUMA <- K.ignoreCacheTime byPUMA_C
     (product_SER_ASR, modeled_SER_ASR) <- K.ignoreCacheTimeM
@@ -920,7 +920,7 @@ main = do
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
 type ShiroACS k = (k V.++ DMC.CASER V.++ '[DT.PopCount])
-type ShiroMicro k = (k V.++ DMC.CASER V.++ '[PUMS.PUMSWeight])
+type ShiroMicro k = (k V.++ DMC.CASER V.++ '[ACS.PUMSWeight])
 
 shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
 shiroData = do
@@ -952,7 +952,7 @@ shiroData = do
   let formatACSMicro = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                      V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                      V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSMicro <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5)
+  exampleACSMicro <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5 ACS.acs1Yr2010_20 2020)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSMicro.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSMicro ","
     $ FCSV.foldableToStream
@@ -961,7 +961,7 @@ shiroData = do
   let formatACSByPUMA = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                         V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                         V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSByPUMA <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByPUMA)
+  exampleACSByPUMA <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByPuma.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByPUMA ","
     $ FCSV.foldableToStream
@@ -969,7 +969,7 @@ shiroData = do
   let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                       V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                       V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSByCD <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByCD)
+  exampleACSByCD <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByCD ","
     $ FCSV.foldableToStream

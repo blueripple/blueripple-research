@@ -71,7 +71,15 @@ typedPUMSRowsLoader' dataPath mCacheKey =
 
 typedPUMSRowsLoader :: (K.KnitEffects r, BR.CacheEffects r)
                     => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
-typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1YrCSV') Nothing
+typedPUMSRowsLoader = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1Yr2010_20CSV) Nothing
+
+acs1Yr2010_20 :: (K.KnitEffects r, BR.CacheEffects r)
+           => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
+acs1Yr2010_20 = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1Yr2010_20CSV) Nothing
+
+acs1Yr2012_21 :: (K.KnitEffects r, BR.CacheEffects r)
+              => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS_Typed))
+acs1Yr2012_21 = typedPUMSRowsLoader' (BR.LocalData $ T.pack BR.pumsACS1Yr2012_21CSV) (Just "acs1YR_Typed_2010_2021.bin")
 
 pumsRowsLoader' :: (K.KnitEffects r, BR.CacheEffects r)
                 => BR.DataPath
@@ -736,8 +744,6 @@ pumsEDUCDToEducation n
 -- GRADEATT
 intToInCollege :: Int -> Bool
 intToInCollege n = n == 6
-
-
 
 -- PUMSSEX
 intToSex :: Int -> DT.Sex

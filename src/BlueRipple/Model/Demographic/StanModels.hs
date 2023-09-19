@@ -23,6 +23,7 @@ import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 
@@ -90,7 +91,7 @@ runModel clearCaches cmdLine mc (modeledT, modeledK) (fromT, cKey, dmr) = do
                          dataName
       _postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --  _ageModelPaths <- postPaths ("Model" cmdLine
-  acs_C <- DDP.cachedACSa6ByState
+  acs_C <- DDP.cachedACSa6ByState ACS.acs1Yr2012_21 2021 -- most recent available
 --  K.ignoreCacheTime acs_C >>= BRK.logFrame
   logLengthC acs_C "acsByState"
   let acsMN_C = fmap (DDP.acsByStateMN cKey modeledK) acs_C

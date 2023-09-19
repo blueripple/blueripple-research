@@ -32,6 +32,7 @@ import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ElectionTypes as ET
@@ -151,7 +152,7 @@ instance (FS.RecFlat (PSDataR k)
   decode = (\c -> PSData (FS.unSFrame c)) <$> Flat.decode
 
 acsByStatePS :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (PSData '[BR.Year, GT.StateAbbreviation]))
-acsByStatePS = fmap (PSData . fmap F.rcast) <$> DDP.cachedACSa5ByState
+acsByStatePS = fmap (PSData . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
 
 data ModelData =
   ModelData
@@ -180,7 +181,7 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
 --  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
   let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
-  acs_C <- DDP.cachedACSa5ByState
+  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data year
   pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C
 
 
@@ -231,7 +232,7 @@ cachedPreppedCPS cacheE cps_C = do
   cacheKey <- case cacheE of
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
-  acs_C <- DDP.cachedACSa5ByState
+  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- so we get density from the same year as the CPS data
   let only2020 = F.filterFrame ((== 2020) . view BR.year)
   BR.retrieveOrMakeFrame cacheKey ((,) <$> acs_C <*> fmap only2020 cps_C) $ uncurry cpsAddDensity
 
@@ -349,7 +350,7 @@ cachedPreppedCES cacheE ces_C = do
   cacheKey <- case cacheE of
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
-  acs_C <- DDP.cachedACSa5ByCD
+  acs_C <- DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 -- so we get density from same year as survey
   houseElections_C <- fmap (F.filterFrame ((>= 2008) . view BR.year)) <$> BR.houseElectionsWithIncumbency
   let deps = (,,) <$> ces_C <*> acs_C <*> houseElections_C
   BR.retrieveOrMakeFrame cacheKey deps $ \(ces, acs, elex) -> do

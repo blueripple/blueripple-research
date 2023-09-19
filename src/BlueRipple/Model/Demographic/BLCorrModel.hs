@@ -33,6 +33,7 @@ import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 
 import qualified Knit.Report as K
 
@@ -485,7 +486,7 @@ runProjModel clearCaches _cmdLine rc mc margKeyF predKeyF predF = do
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
       statesFilter = maybe id (\(_, sts) -> F.filterFrame ((`elem` sts) . view GT.stateAbbreviation)) rc.statesM
-  acsByPUMA_C <- fmap statesFilter <$> DDP.cachedACSa5ByPUMA
+  acsByPUMA_C <- fmap statesFilter <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
   let dataCacheKey = cacheRoot <> "/acsCounts_" <> mc.alphaDMR.dmName <> maybe "" fst rc.statesM
   when clearCaches $ BRK.clearIfPresentD dataCacheKey
   acsCountedByPUMA_C <- BRK.retrieveOrMakeD

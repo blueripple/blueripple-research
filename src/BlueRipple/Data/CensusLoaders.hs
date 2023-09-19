@@ -281,7 +281,7 @@ censusTablesFor2022SLD_ACS2021 = do
                                   ) stateInfo
       fileByYear = concat
                    $ fmap (\(sa, uo) -> [(BRC.TY2021, censusDataDir <> "/sldu2022_ACS2021/" <> sa <> ".csv")] ++
-                                        if uo then [] else [(BRC.TY2020, censusDataDir <> "/sldl2022_ACS_2021" <> sa <> ".csv")]) statesAnd
+                                        if uo then [] else [(BRC.TY2021, censusDataDir <> "/sldl2022_ACS2021/" <> sa <> ".csv")]) statesAnd
   censusTablesByDistrict fileByYear "SLDs2022_ACS2021"
 
 

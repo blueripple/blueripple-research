@@ -32,6 +32,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ModelingTypes as MT
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.Keyed as Keyed
 
 import qualified Knit.Report as K hiding (elements)
@@ -96,7 +97,7 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
 
 runPrefModel :: (K.KnitEffects r
@@ -129,7 +130,7 @@ runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am = d
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
   MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
 
 runFullModel :: (K.KnitEffects r
@@ -162,7 +163,7 @@ runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am 
   rawCES_C <- DP.cesCountedDemPresVotesByCD False
   rawCPS_C <- DP.cpsCountedTurnoutByState
   modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
-  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState
+  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C acsByState_C
 
 FTH.declareColumn "ModelPr" ''Double
@@ -229,7 +230,7 @@ psBy :: forall ks r .
 psBy runModel = do
     let runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @ks)
     (MC.PSMap psMap) <- K.ignoreCacheTimeM $ runModel runConfig
-    pcMap <- DDP.cachedACSa5ByState >>= popCountByMap @ks
+    pcMap <- DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 >>= popCountByMap @ks
     let whenMatched :: F.Record ks -> MT.ConfidenceInterval -> Int -> Either Text (F.Record  (ks V.++ [DT.PopCount, ModelCI]))
         whenMatched k t p = pure $ k F.<+> (p F.&: t F.&: V.RNil :: F.Record [DT.PopCount, ModelCI])
         whenMissingPC k _ = Left $ "psBy: " <> show k <> " is missing from PopCount map."

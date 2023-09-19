@@ -30,6 +30,7 @@ import qualified BlueRipple.Model.Demographic.TableProducts as DTP
 import qualified BlueRipple.Data.Keyed as BRK
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.ACS_PUMS as ACS
 
 import qualified Knit.Report as K
 
@@ -414,7 +415,7 @@ runProjModel clearCaches _cmdLine rc mc ms datFld = do
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
-  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
+  acsByPUMA_C <- DDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021
 --  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
   let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
