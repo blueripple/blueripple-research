@@ -107,6 +107,31 @@ usesCES (TurnoutOnly (MC.TurnoutConfig ts _ _)) = case ts of
   _ -> False
 usesCES _ = True
 
+whichCES :: Config a b -> Maybe (DP.ModelData -> F.FrameRec DP.CESByCDR)
+whichCES (RegistrationOnly (MC.RegistrationConfig rs mc)) = case rs of
+  MC.CESSurvey -> case mc.mcSurveyAggregation of
+    MC.WeightedAggregation _ MC.UseAchenHur -> Just DP.ahCESData
+    _ -> Just DP.cesData
+  _ -> Nothing
+
+whichCES  (TurnoutOnly (MC.TurnoutConfig ts _ mc)) = case ts of
+  MC.CESSurvey -> case mc.mcSurveyAggregation of
+    MC.WeightedAggregation _ MC.UseAchenHur -> Just DP.ahCESData
+    _ -> Just DP.cesData
+  _ -> Nothing
+
+whichCES (PrefOnly (MC.PrefConfig _ mc)) =
+  case mc.mcSurveyAggregation of
+    MC.WeightedAggregation _ MC.UseAchenHur -> Just DP.ahCESData
+    _ -> Just DP.cesData
+
+whichCES (TurnoutAndPref _ (MC.PrefConfig _ mc)) =
+  case mc.mcSurveyAggregation of
+    MC.WeightedAggregation _ MC.UseAchenHur -> Just DP.ahCESData
+    _ -> Just DP.cesData
+
+
+
 usesStateTurnoutTargets :: Config a b -> Bool
 usesStateTurnoutTargets (TurnoutOnly (MC.TurnoutConfig _ MC.PSTargets _)) = True
 usesStateTurnoutTargets (TurnoutAndPref (MC.TurnoutConfig _ MC.PSTargets _) _) = True
@@ -148,7 +173,9 @@ groupBuilder :: forall g k l a b .
 groupBuilder config states psKeys = do
   let groups' = MC.groups states
   when (usesCPS config) $ SMB.addModelDataToGroupBuilder "CPS" (SMB.ToFoldable DP.cpsData) >>= MC.addGroupIndexesAndIntMaps groups'
-  when (usesCES config) $ SMB.addModelDataToGroupBuilder "CES" (SMB.ToFoldable DP.cesData) >>= MC.addGroupIndexesAndIntMaps groups'
+  case whichCES config of
+    Just f -> SMB.addModelDataToGroupBuilder "CES" (SMB.ToFoldable f) >>= MC.addGroupIndexesAndIntMaps groups'
+    Nothing -> pure ()
   when (usesStateTurnoutTargets config) $ do
      targetDataTag <- SMB.addModelDataToGroupBuilder "TurnoutTargetData" (SMB.ToFoldable DP.stateTurnoutData)
      SMB.addGroupIndexForData MC.stateG targetDataTag $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
@@ -170,10 +197,10 @@ registrationModelData (MC.RegistrationConfig ts mc) = do
   case ts of
       MC.CPSSurvey -> case mc.mcSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-        MC.WeightedAggregation _ -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+        MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
       MC.CESSurvey -> case mc.mcSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-        MC.WeightedAggregation _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+        MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
 
 turnoutModelData :: forall a b gq . MC.TurnoutConfig a b
                  -> SMB.StanBuilderM DP.ModelData gq (MC.ModelData BRDF.StateTurnoutCols a b)
@@ -188,10 +215,10 @@ turnoutModelData (MC.TurnoutConfig ts pst mc) = do
     MC.NoPSTargets -> case ts of
       MC.CPSSurvey -> case mc.mcSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-        MC.WeightedAggregation _ -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+        MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
       MC.CESSurvey -> case mc.mcSurveyAggregation of
         MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-        MC.WeightedAggregation _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+        MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
     MC.PSTargets -> do
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
       turnoutBallotsCountedVAP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVAP" (Just 0) (Just 1) (view BRDF.ballotsCountedVAP)
@@ -204,10 +231,10 @@ turnoutModelData (MC.TurnoutConfig ts pst mc) = do
       case ts of
         MC.CPSSurvey -> case mc.mcSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_ModelData x std) $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-          MC.WeightedAggregation _ -> fmap (\x -> MC.PT_ModelData x std) $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+          MC.WeightedAggregation _ _ -> fmap (\x -> MC.PT_ModelData x std) $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
         MC.CESSurvey -> case mc.mcSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_ModelData x std) $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
-          MC.WeightedAggregation _ -> fmap (\x -> MC.PT_ModelData x std) $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
+          MC.WeightedAggregation _ _ -> fmap (\x -> MC.PT_ModelData x std) $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
 
 prefModelData :: forall b gq . MC.PrefConfig b
               -> SMB.StanBuilderM DP.ModelData gq (MC.ModelData '[] (F.Record DP.CESByCDR) b)
@@ -220,7 +247,7 @@ prefModelData (MC.PrefConfig pst mc) = do
   case pst of
     MC.NoPSTargets -> case mc.mcSurveyAggregation of
       MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwVoted uwVotedD
-      MC.WeightedAggregation _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wVoted wVotedD
+      MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wVoted wVotedD
     MC.PSTargets -> SMB.stanBuildError "Targets currently unimplemented for D-votes"
 {-
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
@@ -513,7 +540,7 @@ components prefixM cc paramSetup sa = do
                  ((\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW)
                  (pure $ (k `TE.at`))
       pure $ Components modelCo llCo (void ppCo) centerF
-    MC.WeightedAggregation MC.ContinuousBinomial -> do
+    MC.WeightedAggregation MC.ContinuousBinomial _ -> do
       realBinomialLogitDistV <- SMD.realBinomialLogitDistM @TE.ECVec
       realBinomialLogitDistS <- SMD.realBinomialLogitDistSM
       let ssf e lp = SMB.familySample realBinomialLogitDistV e (n :> lp :> TNil)
@@ -527,7 +554,7 @@ components prefixM cc paramSetup sa = do
                  ((\x -> (\nE -> n `TE.at` nE :> x `TE.at` nE :> TNil)) <$> lpCW)
                  (pure $ (k `TE.at`))
       pure $ Components modelCo llCo (void ppCo) centerF
-    MC.WeightedAggregation MC.BetaProportion -> do
+    MC.WeightedAggregation MC.BetaProportion _ -> do
       let eltDivide = TE.binaryOpE (TEO.SElementWise TEO.SDivide)
           inv_logit x = TE.functionE SF.inv_logit (x :> TNil)
           muKappa lp = do
@@ -679,13 +706,13 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
       rSuffix = SC.rinModel runnerInputNames <> "_" <> datSuffix
       unwraps = case config of
         RegistrationOnly (MC.RegistrationConfig _ mc) -> case mc.mcSurveyAggregation of
-          MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (registered <> " / " <> surveyed) ("yRegistrationRate_" <> rSuffix)]
+          MC.WeightedAggregation MC.BetaProportion _ -> [SR.UnwrapExpr (registered <> " / " <> surveyed) ("yRegistrationRate_" <> rSuffix)]
           _ -> [SR.UnwrapNamed "Registered" ("yRegistered_" <> rSuffix)]
         TurnoutOnly (MC.TurnoutConfig _ _ mc) -> case mc.mcSurveyAggregation of
-          MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (voted <> " / " <> surveyed) ("yTurnoutRate_" <> rSuffix)]
+          MC.WeightedAggregation MC.BetaProportion _ -> [SR.UnwrapExpr (voted <> " / " <> surveyed) ("yTurnoutRate_" <> rSuffix)]
           _ -> [SR.UnwrapNamed "Turnout" ("yTurnout_" <> rSuffix)]
         PrefOnly (MC.PrefConfig _ mc) -> case mc.mcSurveyAggregation of
-          MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (dVotes <> " / " <> votesInRace) ("yDVotesRate_" <> rSuffix)]
+          MC.WeightedAggregation MC.BetaProportion _ -> [SR.UnwrapExpr (dVotes <> " / " <> votesInRace) ("yDVotesRate_" <> rSuffix)]
           _ -> [SR.UnwrapNamed "DVotes" ("yDVotes_" <> rSuffix)]
         TurnoutAndPref _ _  -> [] -- what is a PP check for this combo case??
 

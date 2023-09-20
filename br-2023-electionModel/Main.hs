@@ -103,8 +103,10 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         dmr = MC.tDesignMatrixRow_d
         survey = MC.CESSurvey
-        aggregations = [MC.WeightedAggregation MC.ContinuousBinomial]
-        alphaModels = [MC.St_A_S_E_R, MC.St_A_S_E_R_ER_StR, MC.St_A_S_E_R_ER_StR_StER]
+        aggregations = [MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur
+                       , MC.WeightedAggregation MC.ContinuousBinomial MC.UseAchenHur
+                       ]
+        alphaModels = [MC.St_A_S_E_R] --, MC.St_A_S_E_R_ER_StR, MC.St_A_S_E_R_ER_StR_StER]
         psTs = [MC.NoPSTargets] --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C

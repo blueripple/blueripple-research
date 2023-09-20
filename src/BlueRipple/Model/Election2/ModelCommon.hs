@@ -204,9 +204,15 @@ realCountModelText :: RealCountModel -> Text
 realCountModelText ContinuousBinomial = "CB"
 realCountModelText BetaProportion = "BP"
 
+data UseAchenHur = UseAchenHur | NoAchenHur deriving stock (Eq)
+
+useAchenHurText :: UseAchenHur -> Text
+useAchenHurText UseAchenHur = "AH"
+useAchenHurText NoAchenHur = ""
+
 data SurveyAggregation b where
   UnweightedAggregation :: SurveyAggregation TE.EIntArray
-  WeightedAggregation :: RealCountModel -> SurveyAggregation TE.ECVec
+  WeightedAggregation :: RealCountModel -> UseAchenHur -> SurveyAggregation TE.ECVec
 
 turnoutSurveyText :: TurnoutSurvey a -> Text
 turnoutSurveyText CESSurvey = "CES"
@@ -219,11 +225,11 @@ psTargetsText PSTargets = "PSTgt"
 
 aggregationText :: SurveyAggregation b -> Text
 aggregationText UnweightedAggregation = "UW"
-aggregationText (WeightedAggregation cm) = "WA" <> realCountModelText cm
+aggregationText (WeightedAggregation cm ah) = "WA" <> realCountModelText cm <> useAchenHurText ah
 
 addAggregationText :: SurveyAggregation b -> Text
 addAggregationText UnweightedAggregation = "_UW"
-addAggregationText (WeightedAggregation cm) = "_WA" <> realCountModelText cm
+addAggregationText (WeightedAggregation cm ah) = "_WA" <> realCountModelText cm <> useAchenHurText ah
 
 data BinomialData (b :: TE.EType) =
   BinomialData

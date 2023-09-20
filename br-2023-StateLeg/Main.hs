@@ -154,6 +154,7 @@ main = do
       compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
                    (FV.ViewConfig 500 500 10) modeledAndDRA
       _ <- K.addHvega Nothing Nothing compChart
+      K.ignoreCacheTimeM BRL.stateTurnoutLoader >>= BRK.logFrame
       pure ()
     pure ()
   pure ()
@@ -182,15 +183,15 @@ modelDRAComparisonChart pp pi chartID title vc rows = do
   jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
   jsonUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
-      encHistorical = GV.position GV.X [GV.PName "Historical", GV.PmType GV.Quantitative]
-      encModel = GV.position GV.Y [GV.PName "Model", GV.PmType GV.Quantitative]
+      encHistorical = GV.position GV.X [GV.PName "Historical", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
+      encModel = GV.position GV.Y [GV.PName "Model", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
       markMid = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
       midSpec = GV.asSpec [(GV.encoding . encHistorical . encModel) [], markMid]
-      encModelLo = GV.position GV.Y [GV.PName "Model_Lo", GV.PmType GV.Quantitative]
-      encModelHi = GV.position GV.Y2 [GV.PName "Model_Hi", GV.PmType GV.Quantitative]
+      encModelLo = GV.position GV.Y [GV.PName "Model_Lo", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
+      encModelHi = GV.position GV.Y2 [GV.PName "Model_Hi", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
       markError = GV.mark GV.ErrorBar [GV.MTooltip GV.TTEncoding]
       errorSpec = GV.asSpec [(GV.encoding . encHistorical . encModelLo . encModelHi) [], markError]
-      encHistoricalY = GV.position GV.Y [GV.PName "Historical", GV.PmType GV.Quantitative]
+      encHistoricalY = GV.position GV.Y [GV.PName "Historical", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
       lineSpec = GV.asSpec [(GV.encoding . encHistorical . encHistoricalY) [], GV.mark GV.Line []]
       layers = GV.layer [midSpec, errorSpec, lineSpec]
   pure $  FV.configuredVegaLite vc [FV.title title

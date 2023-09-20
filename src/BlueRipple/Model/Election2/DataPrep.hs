@@ -29,6 +29,7 @@ module BlueRipple.Model.Election2.DataPrep
 where
 
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+import qualified BlueRipple.Model.TurnoutAdjustment as BRT
 
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.CPSVoterPUMS as CPS
@@ -159,14 +160,15 @@ data ModelData =
   {
     cpsData :: F.FrameRec CPSByStateR
   , cesData :: F.FrameRec CESByCDR
+  , ahCESData :: F.FrameRec CESByCDR
   , stateTurnoutData :: F.FrameRec BR.StateTurnoutCols
   , acsData :: F.FrameRec DDP.ACSa5ByStateR
   }
 
 instance Flat.Flat ModelData where
-  size (ModelData cps ces st acs) n = Flat.size (FS.SFrame cps, FS.SFrame ces, FS.SFrame st, FS.SFrame acs) n
-  encode (ModelData cps ces st acs)  = Flat.encode (FS.SFrame cps, FS.SFrame ces, FS.SFrame st, FS.SFrame acs)
-  decode = (\(cps', ces', st', acs') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces') (FS.unSFrame st') (FS.unSFrame acs')) <$> Flat.decode
+  size (ModelData cps ces ahCES st acs) n = Flat.size (FS.SFrame cps, FS.SFrame ces, FS.SFrame ahCES, FS.SFrame st, FS.SFrame acs) n
+  encode (ModelData cps ces ahCES st acs)  = Flat.encode (FS.SFrame cps, FS.SFrame ces,  FS.SFrame ahCES, FS.SFrame st, FS.SFrame acs)
+  decode = (\(cps', ces', ahCES', st', acs') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces') (FS.unSFrame ahCES') (FS.unSFrame st') (FS.unSFrame acs')) <$> Flat.decode
 
 cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Either Text Text
@@ -180,9 +182,25 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
 --  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
   let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
+      demFilter r = r ^. ET.party == ET.Democratic
+      bothFilter r = stFilter r && demFilter r
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
-  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data year
-  pure $ ModelData <$> cps_C <*> ces_C <*> stateTurnout_C <*> acs_C
+  presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
+  acsByCD_C <- DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
+  let acsByCDWZ_C = fmap (fmap $ F.rcast @(CDKeyR V.++ DCatsR V.++ '[DT.PopCount]))
+                    $ fmap (fmap $ FT.fieldEndo @GT.CongressionalDistrict (\n -> if n == 0 || n == 98 then 1 else n))
+                    $ fmap (withZeros @[BR.Year, GT.StateAbbreviation, GT.CongressionalDistrict] @DCatsR)
+                    $ fmap (fmap F.rcast)
+                    $ fmap (F.filterFrame $ (== DT.Citizen) . view DT.citizenC)
+                    $ acsByCD_C
+--  K.ignoreCacheTime acsByCDWZ_C >>= BR.logFrame . F.filterFrame ((== "DC") . view GT.stateAbbreviation)
+  ahTurnoutCES_C <- achenHurStateTurnoutAdj "ahTurnout" stateTurnout_C acsByCDWZ_C ces_C
+  ahBothCES_C <- achenHurStatePresDVoteAdj "ahDVoteTurnout" presElex_C acsByCDWZ_C ahTurnoutCES_C
+  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
+  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
+  K.ignoreCacheTime ahBothCES_C >>= pure . F.takeRows 1000  >>= BR.logFrame
+
+  pure $ ModelData <$> cps_C <*> ces_C <*> ahBothCES_C <*> stateTurnout_C <*> acs_C
 
 
 -- general
@@ -356,6 +374,48 @@ cachedPreppedCES cacheE ces_C = do
   BR.retrieveOrMakeFrame cacheKey deps $ \(ces, acs, elex) -> do
     cesWD <- cesAddDensity acs ces
     cesAddHouseIncumbency elex cesWD
+
+achenHurStateTurnoutAdj :: (K.KnitEffects r, BR.CacheEffects r)
+                        => Text
+                        -> K.ActionWithCacheTime r (F.FrameRec BR.StateTurnoutCols)
+                        -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ '[DT.PopCount]))
+                        -> K.ActionWithCacheTime r (F.FrameRec CESByCDR)
+                        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESByCDR))
+achenHurStateTurnoutAdj cacheKey turnout_C acsByCD_C cesByCD_C = do
+  let turnoutFraction tRow = tRow ^. BR.ballotsCountedVAP
+      wnd :: F.Record (CESByCDR V.++ '[DT.PopCount]) -> (Double, Double, Double)
+      wnd r = (realToFrac $ r ^. DT.popCount, r ^. votedW, r ^. surveyedW)
+      updateN = F.rputField @VotedW
+      deps = (,,) <$> turnout_C <*> acsByCD_C <*> cesByCD_C
+      fullCacheKey = "model/election2/" <> cacheKey <> ".bin"
+  BR.retrieveOrMakeFrame fullCacheKey deps $ \(st, acs, ces) -> do
+    K.logLE K.Info $ "achenHurStateTurnoutAdj: cached result (" <> fullCacheKey <> ") missing or out of date. Running computation."
+    let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
+    when (not $ null missing) $ K.knitError $ "achenHurStateTurnoutAdjustment: missing keys in ces/acs join" <> show missing
+    fmap F.rcast <$> (FL.foldM (BRT.adjWgtdSurveyFoldG @[BR.Year, GT.StateAbbreviation] turnoutFraction wnd updateN st) $ fmap F.rcast joined)
+
+
+-- NB: we are updating dVotes but not rVotes
+achenHurStatePresDVoteAdj :: (K.KnitEffects r, BR.CacheEffects r)
+                          => Text
+                          -> K.ActionWithCacheTime r (F.FrameRec BR.PresidentialElectionCols)
+                          -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ '[DT.PopCount]))
+                          -> K.ActionWithCacheTime r (F.FrameRec CESByCDR)
+                          -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESByCDR))
+achenHurStatePresDVoteAdj cacheKey presVote_C acsByCD_C cesByCD_C = do
+  let dVoteFraction pvRow = realToFrac (pvRow ^. ET.votes) / realToFrac (pvRow ^. ET.totalVotes)
+      wnd :: F.Record (CESByCDR V.++ '[DT.PopCount]) -> (Double, Double, Double)
+      wnd r = (realToFrac $ r ^. DT.popCount, r ^. dVotesW, r ^. votesInRaceW)
+      updateN  = F.rputField @DVotesW
+      deps = (,,) <$> presVote_C <*> acsByCD_C <*> cesByCD_C
+      fullCacheKey = "model/election2/" <> cacheKey <> ".bin"
+  BR.retrieveOrMakeFrame fullCacheKey deps $ \(pv, acs, ces) -> do
+    K.logLE K.Info $ "achenHurStatePresDVoteAdj: cached result (" <> fullCacheKey <> ") missing or out of date. Running computation."
+    let (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) ces acs
+    when (not $ null missing) $ K.knitError $ "achenHurStateTurnoutAdjustment: missing keys in ces/acs join" <> show missing
+    fmap F.rcast <$> (FL.foldM (BRT.adjWgtdSurveyFoldG @[BR.Year, GT.StateAbbreviation] dVoteFraction wnd updateN pv) $ fmap F.rcast joined)
+
+
 
 -- an example for presidential 2020 vote.
 cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)

@@ -330,7 +330,7 @@ surveyDataBy saM = FL.fold fld
       Nothing -> mwInnerFld
       Just sa -> case sa of
         MC.UnweightedAggregation -> uwInnerFld
-        MC.WeightedAggregation _ -> wInnerFld
+        MC.WeightedAggregation _ _ -> wInnerFld
     fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[ModelPr]))
     fld = FMR.concatFold
           $ FMR.mapReduceFold
