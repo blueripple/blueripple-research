@@ -114,7 +114,7 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         dmr = MC.tDesignMatrixRow_d
         survey = MC.CESSurvey
-        aggregation = MC.WeightedAggregation MC.ContinuousBinomial
+        aggregation = MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur
         alphaModel = MC.St_A_S_E_R_ER_StR_StER
         psT = MC.NoPSTargets --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False

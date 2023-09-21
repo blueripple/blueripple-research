@@ -415,21 +415,41 @@ adjTurnoutFold
 adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, BR.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
 
 
+surveyRatioFld :: (a -> (Double, Double, Double)) -> FL.Fold a Double
+surveyRatioFld wnd =
+  let  totalN = FL.premap (\(_, n, _) -> n) FL.sum
+       totalD = FL.premap (\(_, _, d) -> d) FL.sum
+   in FL.premap wnd $ (/) <$> totalN <*> totalD
+
+wgtdSurveyRatioFld :: (a -> (Double, Double, Double)) -> FL.Fold a Double
+wgtdSurveyRatioFld wnd =
+  let wgt x = let (w, _, _) = wnd x in w
+      wgtSumF = FL.premap wgt FL.sum
+      den x = let (_, _, d) = wnd x in d
+      wgtdRatio x = let (w, n, d) = wnd x in w * n / d
+      wgtdRatioSumF = FL.premap wgtdRatio FL.sum
+  in FL.prefilter ((> 0) . den) $ (/) <$> wgtdRatioSumF <*> wgtSumF
+
+
 -- this gets probabilities as (n / d) and adjusts numerators
 adjWgtdSurvey  :: (Foldable f, Functor f)
-               => Double
+               => Text
+               -> Double
                -> (F.Record rs -> (Double, Double, Double))
                -> (Double -> F.Record rs -> F.Record rs)
-               -> f (F.Record rs) --(cs V.++ '[p, t])
-               -> IO (f (F.Record rs)) --(cs V.++ '[p, t])
-adjWgtdSurvey total wnd updateN unAdj = do
+               -> f (F.Record rs)
+               -> IO (f (F.Record rs))
+adjWgtdSurvey keyT total wnd updateN unAdj = do
   let adj d x = adjP x d -- invLogit (logit x + d)
 --      prob r = let (_, n, d) = wnd r in n / d
-      toPair r = let (w, n, d) = wnd r in Pair w (n / d)
+      hasDataMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) unAdj
+      toPair r = let (w, n, d) = wnd r in if d > 0 then Pair w (n / d) else Pair w hasDataMeanRatio
       initial = FL.fold (FL.premap toPair $ votesErrorF' total 0) unAdj
-  when (isNaN initial) $ error "adjWgtdSurvey: NaN result in initial votesError function!"
+  when (isNaN initial) $ error $ "adjWgtdSurvey: NaN result in initial votesError function for key=" <> keyT
+    <> " with total=" <> show total <> " and pairs=" <> show (FL.fold FL.list $ toPair <$> unAdj)
   delta <- findDelta' total $ fmap toPair unAdj
-  let res =  fmap (\r -> let (_, n, d) = wnd r in updateN (d * adj delta (n / d)) r) unAdj
+  let res =  fmap (\r -> let (_, n, d) = wnd r
+                         in if d > 0 then updateN (d * adj delta (n / d)) r else r) unAdj
   pure res
 
 -- Want a generic fold such that given:
@@ -483,7 +503,16 @@ adjWgtdSurveyFoldG getTotal wnd updateN totalsFrame =
             Just t -> K.liftKnit $ do
               let wgt r = let (w, _, _) = wnd r in w
                   totalW = FL.fold (FL.premap wgt FL.sum) x
-              adjWgtdSurvey (t * totalW) wnd updateN x
+                  hasDataMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) x
+                  toPair r = let (w, n, d) = wnd r in if d > 0 then Pair w (n / d) else Pair w hasDataMeanRatio
+                  initial = FL.fold (FL.premap toPair $ votesErrorF' (t * totalW) 0) x
+              adj <- adjWgtdSurvey (show ks) (t * totalW) wnd updateN x
+              let adjMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) adj
+              putTextLn $ "Achen-Hur for " <> show ks <> ": Given ratio=" <> show t <> "; <Survey Ratio>=" <> show hasDataMeanRatio
+                <> "; total weights=" <> show totalW <> "; inital error=" <> show initial
+                <> "; <adj Survey Ratio>=" <> show adjMeanRatio
+                <> "; Final Error=" <> show ( FL.fold (FL.premap toPair $ votesErrorF' (t * totalW) 0) adj)
+              pure adj
         in
           FMR.postMapM f $ FL.generalize FL.list
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)

@@ -170,13 +170,15 @@ instance Flat.Flat ModelData where
   encode (ModelData cps ces ahCES st acs)  = Flat.encode (FS.SFrame cps, FS.SFrame ces,  FS.SFrame ahCES, FS.SFrame st, FS.SFrame acs)
   decode = (\(cps', ces', ahCES', st', acs') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces') (FS.unSFrame ahCES') (FS.unSFrame st') (FS.unSFrame acs')) <$> Flat.decode
 
+type DiagR = [GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DCatsR V.++ [SurveyedW, VotedW, VotesInRaceW, DVotesW]
+
 cachedPreppedModelData :: (K.KnitEffects r, BR.CacheEffects r)
                        => Either Text Text
                        -> K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR))
                        -> Either Text Text
                        -> K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
                        -> K.Sem r (K.ActionWithCacheTime r ModelData)
-cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
+cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix "cachedPreppedModelData" $ do
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
 --  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
   ces_C <- cachedPreppedCES cesCacheE cesRaw_C
@@ -185,7 +187,6 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
       demFilter r = r ^. ET.party == ET.Democratic
       bothFilter r = stFilter r && demFilter r
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
-  presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
   acsByCD_C <- DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
   let acsByCDWZ_C = fmap (fmap $ F.rcast @(CDKeyR V.++ DCatsR V.++ '[DT.PopCount]))
                     $ fmap (fmap $ FT.fieldEndo @GT.CongressionalDistrict (\n -> if n == 0 || n == 98 then 1 else n))
@@ -195,11 +196,14 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = do
                     $ acsByCD_C
 --  K.ignoreCacheTime acsByCDWZ_C >>= BR.logFrame . F.filterFrame ((== "DC") . view GT.stateAbbreviation)
   ahTurnoutCES_C <- achenHurStateTurnoutAdj "ahTurnout" stateTurnout_C acsByCDWZ_C ces_C
+  presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
   ahBothCES_C <- achenHurStatePresDVoteAdj "ahDVoteTurnout" presElex_C acsByCDWZ_C ahTurnoutCES_C
-  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
-  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
-  K.ignoreCacheTime ahBothCES_C >>= pure . F.takeRows 1000  >>= BR.logFrame
 
+  K.ignoreCacheTime ces_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
+  K.ignoreCacheTime ahBothCES_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
+
+  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
+  K.knitError "STOP"
   pure $ ModelData <$> cps_C <*> ces_C <*> ahBothCES_C <*> stateTurnout_C <*> acs_C
 
 
