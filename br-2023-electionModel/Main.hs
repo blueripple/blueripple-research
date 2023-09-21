@@ -120,7 +120,9 @@ main = do
     modelPostPaths <- postPaths "Models" cmdLine
 
     BRK.brNewPost modelPostPaths postInfo "Models" $ do
-      acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
+      acsA5ByState_C <- DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
+      acsByState_C <- BRK.retrieveOrMakeD "model/election2/acsByStatePS.bin" acsA5ByState_C $ \acsFull ->
+        pure $ DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast . F.filterFrame ((== DT.Citizen) . view DT.citizenC) $ acsFull
       let runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
           runPrefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am acsByState_C
           runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
@@ -132,7 +134,7 @@ main = do
 
       turnoutStateChart <- MR.stateChart -- @[GT.StateAbbreviation, MR.ModelPr, BRDF.VAP, BRDF.BallotsCounted]
                            modelPostPaths postInfo "TComp" "Turnout Model Comparison by State" "Turnout" (FV.ViewConfig 500 500 10)
-                           (view BRDF.vAP) (Just $ view BRDF.ballotsCountedVAP)
+                           (view BRDF.vAP) Nothing --(Just $ view BRDF.ballotsCountedVAP)
                            (fmap (second $ (fmap (MR.modelCIToModelPr))) stateComparisonsT)
       _ <- K.addHvega Nothing Nothing turnoutStateChart
       MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModel "Age" "Turnout" (show . view DT.age5C) aggregations alphaModels psTs

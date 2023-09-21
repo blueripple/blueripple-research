@@ -56,6 +56,7 @@ import Data.Type.Equality (type (~))
 import qualified Flat
 import qualified Frames as F
 import qualified Frames.MapReduce as FMR
+import qualified Frames.Folds as FF
 import qualified Frames.Melt as F
 import qualified Frames.Serialize as FS
 import qualified Frames.SimpleJoins as FJ
@@ -194,16 +195,23 @@ cachedPreppedModelData cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix "cac
                     $ fmap (fmap F.rcast)
                     $ fmap (F.filterFrame $ (== DT.Citizen) . view DT.citizenC)
                     $ acsByCD_C
+      sumFld = FMR.concatFold
+               $ FMR.mapReduceFold
+               FMR.noUnpack
+               (FMR.assignKeysAndData @'[GT.StateAbbreviation] @'[DT.PopCount])
+               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
+  acsWDWZByCD <- FL.fold sumFld <$> K.ignoreCacheTime acsByCDWZ_C
+  BR.logFrame acsWDWZByCD
 --  K.ignoreCacheTime acsByCDWZ_C >>= BR.logFrame . F.filterFrame ((== "DC") . view GT.stateAbbreviation)
   ahTurnoutCES_C <- achenHurStateTurnoutAdj "ahTurnout" stateTurnout_C acsByCDWZ_C ces_C
   presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
   ahBothCES_C <- achenHurStatePresDVoteAdj "ahDVoteTurnout" presElex_C acsByCDWZ_C ahTurnoutCES_C
 
-  K.ignoreCacheTime ces_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
-  K.ignoreCacheTime ahBothCES_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
+--  K.ignoreCacheTime ces_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
+--  K.ignoreCacheTime ahBothCES_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
 
-  acs_C <- DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
-  K.knitError "STOP"
+  acs_C <-  fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
+--  K.knitError "STOP"
   pure $ ModelData <$> cps_C <*> ces_C <*> ahBothCES_C <*> stateTurnout_C <*> acs_C
 
 
@@ -386,7 +394,7 @@ achenHurStateTurnoutAdj :: (K.KnitEffects r, BR.CacheEffects r)
                         -> K.ActionWithCacheTime r (F.FrameRec CESByCDR)
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESByCDR))
 achenHurStateTurnoutAdj cacheKey turnout_C acsByCD_C cesByCD_C = do
-  let turnoutFraction tRow = tRow ^. BR.ballotsCountedVAP
+  let turnoutFraction tRow = tRow ^. BR.ballotsCountedVEP
       wnd :: F.Record (CESByCDR V.++ '[DT.PopCount]) -> (Double, Double, Double)
       wnd r = (realToFrac $ r ^. DT.popCount, r ^. votedW, r ^. surveyedW)
       updateN = F.rputField @VotedW

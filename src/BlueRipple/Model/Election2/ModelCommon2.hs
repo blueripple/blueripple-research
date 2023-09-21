@@ -221,13 +221,13 @@ turnoutModelData (MC.TurnoutConfig ts pst mc) = do
         MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
     MC.PSTargets -> do
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
-      turnoutBallotsCountedVAP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVAP" (Just 0) (Just 1) (view BRDF.ballotsCountedVAP)
+      turnoutBallotsCountedVEP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVEP" (Just 0) (Just 1) (view BRDF.ballotsCountedVEP)
       acsTag <- SMB.dataSetTag @(F.Record DDP.ACSa5ByStateR) SC.ModelData "ACSData"
       acsWgts <- SBB.addCountData acsTag "ACSWgts" (view DT.popCount)
       acsCovariates <- if DM.rowLength mc.mcDesignMatrixRow > 0
           then DM.addDesignMatrix acsTag (contramap F.rcast mc.mcDesignMatrixRow) Nothing
           else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-      let std = MC.StateTargetsData stateTurnoutTargetTag turnoutBallotsCountedVAP acsTag acsWgts acsCovariates
+      let std = MC.StateTargetsData stateTurnoutTargetTag turnoutBallotsCountedVEP acsTag acsWgts acsCovariates
       case ts of
         MC.CPSSurvey -> case mc.mcSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_ModelData x std) $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
@@ -251,13 +251,13 @@ prefModelData (MC.PrefConfig pst mc) = do
     MC.PSTargets -> SMB.stanBuildError "Targets currently unimplemented for D-votes"
 {-
       stateTurnoutTargetTag <- SMB.dataSetTag @(F.Record BRDF.StateTurnoutCols) SC.ModelData "TurnoutTargetData"
-      turnoutBallotsCountedVAP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVAP" (Just 0) (Just 1) (view BRDF.ballotsCountedVAP)
+      turnoutBallotsCountedVEP <- SBB.addRealData stateTurnoutTargetTag "BallotsCountedVEP" (Just 0) (Just 1) (view BRDF.ballotsCountedVEP)
       acsTag <- SMB.dataSetTag @(F.Record DDP.ACSa5ByStateR) SC.ModelData "ACSData"
       acsWgts <- SBB.addCountData acsTag "ACSWgts" (view DT.popCount)
       acsCovariates <- if DM.rowLength mc.mcDesignMatrixRow > 0
           then DM.addDesignMatrix acsTag (contramap F.rcast mc.mcDesignMatrixRow) Nothing
           else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
-      let std = MC.StateTargetsData stateTurnoutTargetTag turnoutBallotsCountedVAP acsTag acsWgts acsCovariates
+      let std = MC.StateTargetsData stateTurnoutTargetTag turnoutBallotsCountedVEP acsTag acsWgts acsCovariates
       case tc.tSurvey of
         MC.CPSSurvey -> case tc.tSurveyAggregation of
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_TurnoutModelData x std) $ cpsSurveyDataTag >>= \rtt -> MC.covariatesAndCounts rtt mc uwSurveyed uwVoted
