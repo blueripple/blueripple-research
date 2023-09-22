@@ -107,7 +107,7 @@ usesCES (TurnoutOnly (MC.TurnoutConfig ts _ _)) = case ts of
   _ -> False
 usesCES _ = True
 
-whichCES :: Config a b -> Maybe (DP.ModelData -> F.FrameRec DP.CESByCDR)
+whichCES :: Config a b -> Maybe (DP.ModelData lk -> F.FrameRec (DP.CESByR lk))
 whichCES (RegistrationOnly (MC.RegistrationConfig rs mc)) = case rs of
   MC.CESSurvey -> case mc.mcSurveyAggregation of
     MC.WeightedAggregation _ MC.UseAchenHur -> Just DP.ahCESData
@@ -156,7 +156,7 @@ configText (TurnoutAndPref (MC.TurnoutConfig ts tPST tMC) (MC.PrefConfig pPST pM
   <> "_" <> MC.modelConfigText pMC
 
 
-groupBuilder :: forall g k l a b .
+groupBuilder :: forall g k lk l a b .
                  (Foldable g
                  , Typeable (DP.PSDataR k)
                  , Show (F.Record l)
@@ -164,12 +164,15 @@ groupBuilder :: forall g k l a b .
                  , l F.⊆ DP.PSDataR k
                  , Typeable l
                  , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
+                 , F.ElemOf (DP.CESByR lk) GT.StateAbbreviation
                  , DP.DCatsR F.⊆ DP.PSDataR k
+                 , DP.DCatsR F.⊆ DP.CESByR lk
+                 , Typeable (DP.CESByR lk)
                  )
                => Config a b
                -> g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM DP.ModelData (DP.PSData k) ()
+               -> SMB.StanGroupBuilderM (DP.ModelData lk) (DP.PSData k) ()
 groupBuilder config states psKeys = do
   let groups' = MC.groups states
   when (usesCPS config) $ SMB.addModelDataToGroupBuilder "CPS" (SMB.ToFoldable DP.cpsData) >>= MC.addGroupIndexesAndIntMaps groups'
@@ -185,8 +188,8 @@ groupBuilder config states psKeys = do
   when (usesStateTurnoutTargets config || usesStateDVoteTargets config) $ MC.acsDataGroupBuilder groups'
   MC.psGroupBuilder states psKeys
 
-registrationModelData :: forall a b gq . MC.RegistrationConfig a b
-                 -> SMB.StanBuilderM DP.ModelData gq (MC.ModelData '[] a b)
+registrationModelData :: forall a b gq lk . MC.RegistrationConfig a b
+                 -> SMB.StanBuilderM (DP.ModelData lk) gq (MC.ModelData '[] a b)
 registrationModelData (MC.RegistrationConfig ts mc) = do
   let cpsSurveyDataTag = SMB.dataSetTag @(F.Record DP.CPSByStateR) SC.ModelData "CPS"
       cesSurveyDataTag = SMB.dataSetTag @(F.Record DP.CESByCDR) SC.ModelData "CES"
@@ -202,8 +205,8 @@ registrationModelData (MC.RegistrationConfig ts mc) = do
         MC.UnweightedAggregation -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
         MC.WeightedAggregation _ _ -> fmap MC.NoPT_ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
 
-turnoutModelData :: forall a b gq . MC.TurnoutConfig a b
-                 -> SMB.StanBuilderM DP.ModelData gq (MC.ModelData BRDF.StateTurnoutCols a b)
+turnoutModelData :: forall a b gq lk . MC.TurnoutConfig a b
+                 -> SMB.StanBuilderM (DP.ModelData lk) gq (MC.ModelData BRDF.StateTurnoutCols a b)
 turnoutModelData (MC.TurnoutConfig ts pst mc) = do
   let cpsSurveyDataTag = SMB.dataSetTag @(F.Record DP.CPSByStateR) SC.ModelData "CPS"
       cesSurveyDataTag = SMB.dataSetTag @(F.Record DP.CESByCDR) SC.ModelData "CES"
@@ -236,8 +239,8 @@ turnoutModelData (MC.TurnoutConfig ts pst mc) = do
           MC.UnweightedAggregation -> fmap (\x -> MC.PT_ModelData x std) $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc uwSurveyed uwVoted
           MC.WeightedAggregation _ _ -> fmap (\x -> MC.PT_ModelData x std) $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wVoted
 
-prefModelData :: forall b gq . MC.PrefConfig b
-              -> SMB.StanBuilderM DP.ModelData gq (MC.ModelData '[] (F.Record DP.CESByCDR) b)
+prefModelData :: forall b gq lk . MC.PrefConfig b
+              -> SMB.StanBuilderM (DP.ModelData lk) gq (MC.ModelData '[] (F.Record DP.CESByCDR) b)
 prefModelData (MC.PrefConfig pst mc) = do
   let cesSurveyDataTag = SMB.dataSetTag @(F.Record DP.CESByCDR) SC.ModelData "CES"
       uwVoted rtt = SBB.addCountData rtt "VotesInRace" (view DP.votesInRace)
@@ -580,14 +583,14 @@ components prefixM cc paramSetup sa = do
       pure $ Components modelCo llCo (void ppCo) centerF
 
 -- not returning anything for now
-model :: forall k l a b .
+model :: forall k lk l a b .
          (Typeable (DP.PSDataR k)
          , F.ElemOf (DP.PSDataR k) DT.PopCount
          , DP.LPredictorsR F.⊆ DP.PSDataR k
          )
       => MC.RunConfig l
       -> Config a b
-      -> SMB.StanBuilderM DP.ModelData (DP.PSData k) ()
+      -> SMB.StanBuilderM (DP.ModelData lk) (DP.PSData k) ()
 model rc c = case c of
   RegistrationOnly regConfig@(MC.RegistrationConfig _ mc) -> do
     mData <- registrationModelData regConfig
@@ -658,7 +661,7 @@ model rc c = case c of
             wgtsMCW = TE.NeedsCW $ fmap (`eltMultiply` SF.toVec psWgts) tProbsCW
         SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "DVS_byGrp") psDataTag gtt psDataGrpIndex wgtsMCW pProbsCW Nothing >> pure ()
 
-runModel :: forall l k r a b .
+runModel :: forall l k lk r a b .
             (K.KnitEffects r
             , BRKU.CacheEffects r
             , l F.⊆ DP.PSDataR k
@@ -669,9 +672,12 @@ runModel :: forall l k r a b .
             , FS.RecFlat l
             , Typeable (DP.PSDataR k)
             , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
+            , F.ElemOf (DP.CESByR lk) GT.StateAbbreviation
             , DP.DCatsR F.⊆ DP.PSDataR k
+            , DP.DCatsR F.⊆ DP.CESByR lk
             , Show (F.Record l)
             , Typeable l
+            , Typeable (DP.CESByR lk)
             )
          => Either Text Text
          -> Text
@@ -679,7 +685,7 @@ runModel :: forall l k r a b .
          -> BR.CommandLine
          -> MC.RunConfig l
          -> Config a b
-         -> K.ActionWithCacheTime r DP.ModelData
+         -> K.ActionWithCacheTime r (DP.ModelData lk)
          -> K.ActionWithCacheTime r (DP.PSData k)
          -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
 runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData_C = do
@@ -730,7 +736,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
   pure res_C
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
-modelResultAction :: forall k l r a b .
+modelResultAction :: forall k lk l r a b .
                      (Ord (F.Record l)
                      , K.KnitEffects r
                      , Typeable (DP.PSDataR k)
@@ -738,7 +744,7 @@ modelResultAction :: forall k l r a b .
                      )
                   => Config a b
                   -> MC.RunConfig l
-                  -> SC.ResultAction r DP.ModelData (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval)
+                  -> SC.ResultAction r (DP.ModelData lk) (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval)
 modelResultAction config runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C

@@ -30,7 +30,7 @@ import qualified Data.Map                      as M
 import qualified Data.Vector.Storable          as VS
 import Data.Type.Equality (type (~))
 import qualified Control.Foldl                 as FL
-
+import qualified Control.MapReduce             as MR
 import qualified Frames                        as F
 import qualified Frames.Melt                   as F
 import qualified Frames.InCore                 as FI
@@ -66,14 +66,6 @@ adjSumA' x population unadjTurnoutP =
 adjSumA :: Floating a => a -> A.Array b Int -> A.Array b a -> a
 adjSumA x population = adjSumA' x (realToFrac <$> population)
 
-{-
-adjSumA :: Floating a => a -> A.Array b Int -> A.Array b a -> a
-adjSumA x population unadjTurnoutP =
-  let popAndUT =
-        zip (realToFrac <$> A.elems population) (A.elems unadjTurnoutP)
-      f (n, sigma) = n * invLogit (logit sigma + x)
-  in  FL.fold (FL.premap f FL.sum) popAndUT
--}
 votesErrorA'
   :: Floating a => Double -> A.Array b Double -> A.Array b a -> a -> a
 votesErrorA' totalVotes population unadjTurnoutP delta =
@@ -82,13 +74,6 @@ votesErrorA' totalVotes population unadjTurnoutP delta =
 votesErrorA
   :: Floating a => Int -> A.Array b Int -> A.Array b a -> a -> a
 votesErrorA totalVotes population = votesErrorA' (fromIntegral totalVotes) (fromIntegral <$> population)
-
-{-
-votesErrorA
-  :: Floating a => Int -> A.Array b Int -> A.Array b a -> a -> a
-votesErrorA totalVotes population unadjTurnoutP delta =
-  abs (realToFrac totalVotes - adjSumA delta population unadjTurnoutP)
--}
 
 findDeltaA'
   :: Real a
@@ -117,26 +102,6 @@ findDeltaA
   -> IO Double
 findDeltaA totalVotes population = findDeltaA' (realToFrac totalVotes) (realToFrac <$> population)
 
-{-
-findDeltaA
-  :: Real a
-  => Int
-  -> A.Array b Int
-  -> A.Array b a
-  -> IO Double
-findDeltaA totalVotes population unadjTurnoutP = do
-  let cost :: Floating a => [a] -> a
-      cost [x] =
-        votesErrorA totalVotes population (fmap realToFrac unadjTurnoutP) x
-      cost _ = 0 -- this should not happen, but...
-      params = CG.defaultParameters { CG.printFinal  = False
-                                    , CG.printParams = False
-                                    , CG.verbose     = CG.Verbose
-                                    }
-      grad_tol = 0.0000001
-  ([delta], _result, _stat) <- CG.optimize params grad_tol [0] cost
-  return delta
--}
 
 adjTurnoutP :: Floating a => a -> A.Array b a -> A.Array b a
 adjTurnoutP delta unadjTurnoutP =
@@ -162,13 +127,6 @@ adjSumF' delta =
 adjSumF :: (Ord a, Floating a) => a -> FL.Fold (Pair Int a) a
 adjSumF delta = FL.premap (mapPairFirst fromIntegral) $ adjSumF' delta
 
-{-
-adjSumF :: (Ord a, Floating a) => a -> FL.Fold (Pair Int a) a
-adjSumF delta =
-  let f (Pair n sigma) = realToFrac n * adjP sigma delta --invLogit (logit sigma + delta)
-  in  FL.premap f FL.sum
--}
-
 adjSumdF' :: Floating a => a -> FL.Fold (Pair Double a) a
 adjSumdF' delta =
   let f (Pair n sigma) = realToFrac n * dInvLogit (logit sigma + delta)
@@ -177,24 +135,12 @@ adjSumdF' delta =
 adjSumdF :: Floating a => a -> FL.Fold (Pair Int a) a
 adjSumdF delta = FL.premap (mapPairFirst fromIntegral) $ adjSumdF' delta
 
-{-
-adjSumdF :: Floating a => a -> FL.Fold (Pair Int a) a
-adjSumdF delta =
-  let f (Pair n sigma) = realToFrac n * dInvLogit (logit sigma + delta)
-  in  FL.premap f FL.sum
--}
 votesErrorF' :: (Ord a, Floating a) => Double -> a -> FL.Fold (Pair Double a) a
 votesErrorF' totalVotes delta = abs (votes - adjSumF' delta) where
   votes = realToFrac totalVotes
 
 votesErrorF :: (Ord a, Floating a) => Int -> a -> FL.Fold (Pair Int a) a
 votesErrorF totalVotes delta = FL.premap (mapPairFirst fromIntegral) $ votesErrorF' (fromIntegral totalVotes) delta
-
-{-
-votesErrorF :: (Ord a, Floating a) => Int -> a -> FL.Fold (Pair Int a) a
-votesErrorF totalVotes delta = abs (votes - adjSumF delta) where
-  votes = realToFrac totalVotes
--}
 
 dVotesErrorF' :: (Floating a, Ord a) => a -> FL.Fold (Pair Double a) a
 dVotesErrorF' delta =
@@ -203,13 +149,6 @@ dVotesErrorF' delta =
 
 dVotesErrorF :: (Floating a, Ord a) => a -> FL.Fold (Pair Int a) a
 dVotesErrorF delta = FL.premap (mapPairFirst fromIntegral) $ dVotesErrorF' delta
-
-{-
-dVotesErrorF :: (Floating a, Ord a) => Int -> a -> FL.Fold (Pair Int a) a
-dVotesErrorF _totalVotes delta =
-  let f c dc = if c >= 0 then dc else -dc
-  in f <$> adjSumF delta <*> adjSumdF delta
--}
 
 {-
 given
@@ -249,25 +188,6 @@ findDelta
   -> IO Double
 findDelta totalVotes dat = findDelta' (realToFrac totalVotes) (mapPairFirst fromIntegral <$> dat)
 
-{-
-findDelta
-  :: (Real a, Foldable f, Functor f)
-  => Int
-  -> f (Pair Int a)
-  -> IO Double
-findDelta totalVotes dat = do
-  let toAnyRealFrac (Pair n x) = Pair n $ realToFrac x
-      mappedDat = fmap toAnyRealFrac dat
-      cost x = FL.fold (votesErrorF totalVotes x) mappedDat
-      costNL v = cost (v VS.! 0)
-      stopNL = NL.MinimumValue 0.5 :| [NL.ObjectiveRelativeTolerance 1e-6]
-      algoNL = NL.NELDERMEAD costNL [NL.LowerBounds (VS.fromList [-10])] Nothing
-      problemNL = NL.LocalProblem 1 stopNL algoNL
-  case NL.minimizeLocal problemNL (VS.fromList [0]) of
-    Left res -> error $ show res
-    Right (NL.Solution _c dv _res) -> do
-      pure $ dv VS.! 0
--}
 
 -- now perform the adjustment to a set of records where the fields are identified
 adjTurnoutLong'
@@ -440,17 +360,126 @@ adjWgtdSurvey  :: (Foldable f, Functor f)
                -> f (F.Record rs)
                -> IO (f (F.Record rs))
 adjWgtdSurvey keyT total wnd updateN unAdj = do
-  let adj d x = adjP x d -- invLogit (logit x + d)
---      prob r = let (_, n, d) = wnd r in n / d
-      hasDataMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) unAdj
+  delta <- surveyAHDelta keyT total wnd unAdj
+  let nd r = let (_, n, d) = wnd r in (n, d)
+  pure $ fmap (adjSurveyRec nd updateN delta) unAdj
+
+adjSurveyRec :: (F.Record rs -> (Double, Double))
+             -> (Double -> F.Record rs -> F.Record rs)
+             -> Double
+             -> F.Record rs
+             -> F.Record rs
+adjSurveyRec nd updateN delta =
+ let adj d x = adjP x d
+     g r = let (n, d) = nd r
+           in if d > 0 then updateN (d * adj delta (n / d)) r else r
+ in g
+
+surveyAHDelta  :: (Foldable f, Functor f)
+               => Text
+               -> Double
+               -> (F.Record rs -> (Double, Double, Double))
+               -> f (F.Record rs)
+               -> IO Double
+surveyAHDelta keyT total wnd unAdj = do
+  let hasDataMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) unAdj
       toPair r = let (w, n, d) = wnd r in if d > 0 then Pair w (n / d) else Pair w hasDataMeanRatio
       initial = FL.fold (FL.premap toPair $ votesErrorF' total 0) unAdj
   when (isNaN initial) $ error $ "adjWgtdSurvey: NaN result in initial votesError function for key=" <> keyT
     <> " with total=" <> show total <> " and pairs=" <> show (FL.fold FL.list $ toPair <$> unAdj)
-  delta <- findDelta' total $ fmap toPair unAdj
-  let res =  fmap (\r -> let (_, n, d) = wnd r
-                         in if d > 0 then updateN (d * adj delta (n / d)) r else r) unAdj
-  pure res
+  findDelta' total $ fmap toPair unAdj
+
+
+wgtdSurveyDeltaFld
+  :: forall ks rs qs f effs
+   . ( Foldable f
+     , K.KnitEffects effs
+     , rs F.⊆ (ks V.++ rs)
+     , ks F.⊆ (ks V.++ rs)
+     , ks F.⊆ qs
+--     , F.RDeleteAll ks (ks V.++ rs) ~ rs
+--     , FI.RecVec (ks V.++ rs)
+--     , Show (F.Record rs)
+     , Show (F.Record ks)
+     , Ord (F.Record ks)
+     )
+  => (F.Record qs -> Double)
+  -> (F.Record rs -> (Double, Double, Double))
+  -> f (F.Record qs)
+  -> FL.FoldM
+       (K.Sem effs)
+       (F.Record (ks V.++ rs))
+       (Map (F.Record ks) Double)
+wgtdSurveyDeltaFld getTotal wnd totalsFrame =
+  let getKey  = F.rcast @ks
+      vtbsMap = FL.fold
+        (FL.premap
+         (\r ->
+            ( getKey r
+            , getTotal r
+            )
+         )
+         FL.map
+        )
+        totalsFrame
+      unpackM = MR.generalizeUnpack MR.noUnpack
+      assignM = MR.generalizeAssign $ MR.Assign (\r -> (F.rcast @ks r, F.rcast @rs r)) -- @(cs V.++ '[p, t])
+      deltaF ks =
+        let
+          tM = M.lookup ks vtbsMap
+          f x = case tM of
+            Nothing ->
+              K.knitError
+                ("Failed to find " <> show ks <> " in given totals."
+                )
+            Just t -> K.liftKnit $ do
+              let wgt r = let (w, _, _) = wnd r in w
+                  totalW = FL.fold (FL.premap wgt FL.sum) x
+                  hasDataMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) x
+                  toPair r = let (w, n, d) = wnd r in if d > 0 then Pair w (n / d) else Pair w hasDataMeanRatio
+                  initial = FL.fold (FL.premap toPair $ votesErrorF' (t * totalW) 0) x
+              delta <- surveyAHDelta (show ks) (t * totalW) wnd x
+--              adj <- adjWgtdSurvey (show ks) (t * totalW) wnd updateN x
+--              let adjMeanRatio = FL.fold (wgtdSurveyRatioFld wnd) adj
+              putTextLn $ "Achen-Hur for " <> show ks <> ": Given ratio=" <> show t <> "; <Survey Ratio>=" <> show hasDataMeanRatio
+                <> "; total weights=" <> show totalW <> "; inital error=" <> show initial
+                <> "; delta=" <> show delta
+--                <> "; <adj Survey Ratio>=" <> show adjMeanRatio
+--                <> "; Final Error=" <> show ( FL.fold (FL.premap toPair $ votesErrorF' (t * totalW) 0) adj)
+              pure (ks, delta)
+        in
+          MR.postMapM f $ FL.generalize FL.list
+      reduceM = MR.ReduceFoldM deltaF
+    in
+      fmap M.fromList $ MR.mapReduceFoldM unpackM assignM reduceM
+
+adjSurveyWithDeltaMapFld :: forall ks rs r .
+                         (K.KnitEffects r
+                         , Ord (F.Record ks)
+                         , FI.RecVec (ks V.++ rs)
+                         , rs F.⊆ (ks V.++ rs)
+                         , ks  F.⊆ (ks V.++ rs)
+                         , Show (F.Record ks)
+                         )
+                         =>  (F.Record rs -> (Double, Double))
+                         -> (Double -> F.Record rs -> F.Record rs)
+                         -> Map (F.Record ks) Double
+                         -> FL.FoldM (K.Sem r) (F.Record (ks V.++ rs)) (F.FrameRec (ks V.++ rs))
+adjSurveyWithDeltaMapFld nd updateN deltaMap =
+  let adjustF ks =
+        let dM = M.lookup ks deltaMap
+            f x = case dM of
+              Nothing -> K.knitError $ "adjSurveyWithDeltaMap: " <> show ks <> " not found in delta map!"
+              Just delta -> pure $ fmap (adjSurveyRec nd updateN delta) x
+        in FMR.postMapM f $ FL.generalize FL.list
+      reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
+  in FMR.concatFoldM
+     $ FMR.mapReduceFoldM
+     (FMR.generalizeUnpack FMR.noUnpack)
+     (FMR.generalizeAssign $ FMR.assignKeysAndData @ks @rs)
+     reduceM
+
+
 
 -- Want a generic fold such that given:
 -- 1. a Map (F.Record [State, Year]) Double -- TurnoutPct
@@ -458,7 +487,7 @@ adjWgtdSurvey keyT total wnd updateN unAdj = do
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
 adjWgtdSurveyFoldG
-  :: forall ks qs rs f effs
+  :: forall ks rs qs f effs
    . ( Foldable f
      , K.KnitEffects effs
      , rs F.⊆ (ks V.++ rs)

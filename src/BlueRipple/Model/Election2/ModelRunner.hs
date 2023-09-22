@@ -99,10 +99,12 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
   let appendCacheFile :: Text -> Text -> Text
       appendCacheFile t d = d <> t
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
-      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
-  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+      cesByStateModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByStateModelData.bin") cacheDirE'
+      cesByCDModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByCDModelData.bin") cacheDirE'
+  rawCESByCD_C <- DP.cesCountedDemPresVotesByCD False
+  rawCESByState_C <- DP.cesCountedDemPresVotesByState False
   rawCPS_C <- DP.cpsCountedTurnoutByState
-  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
+  modelData_C <- DP.cachedPreppedModelDataCD cpsModelCacheE rawCPS_C cesByStateModelCacheE rawCESByState_C cesByCDModelCacheE rawCESByCD_C
 --  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
@@ -138,10 +140,13 @@ runPrefModel year modelDirE cacheDirE gqName cmdLine runConfig sa dmr pst am psD
   let appendCacheFile :: Text -> Text -> Text
       appendCacheFile t d = d <> t
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
-      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
-  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+      cesByStateModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByStateModelData.bin") cacheDirE'
+      cesByCDModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByCDModelData.bin") cacheDirE'
+  rawCESByCD_C <- DP.cesCountedDemPresVotesByCD False
+  rawCESByState_C <- DP.cesCountedDemPresVotesByState False
+
   rawCPS_C <- DP.cpsCountedTurnoutByState
-  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
+  modelData_C <- DP.cachedPreppedModelDataCD cpsModelCacheE rawCPS_C cesByStateModelCacheE rawCESByState_C cesByCDModelCacheE rawCESByCD_C
 --  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
   MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
@@ -178,10 +183,12 @@ runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am 
   let appendCacheFile :: Text -> Text -> Text
       appendCacheFile t d = d <> t
       cpsModelCacheE = bimap (appendCacheFile "CPSModelData.bin") (appendCacheFile "CPSModelData.bin") cacheDirE'
-      cesModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESModelData.bin") cacheDirE'
-  rawCES_C <- DP.cesCountedDemPresVotesByCD False
+      cesByStateModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByStateModelData.bin") cacheDirE'
+      cesByCDModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByCDModelData.bin") cacheDirE'
+  rawCESByCD_C <- DP.cesCountedDemPresVotesByCD False
+  rawCESByState_C <- DP.cesCountedDemPresVotesByState False
   rawCPS_C <- DP.cpsCountedTurnoutByState
-  modelData_C <- DP.cachedPreppedModelData cpsModelCacheE rawCPS_C cesModelCacheE rawCES_C
+  modelData_C <- DP.cachedPreppedModelDataCD cpsModelCacheE rawCPS_C cesByStateModelCacheE rawCESByState_C cesByCDModelCacheE rawCESByCD_C
 --  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
@@ -219,7 +226,7 @@ allModelsCompChart :: forall ks r b . (K.KnitOne r, BRKU.CacheEffects r, PSByC k
 allModelsCompChart pp postInfo runModel catLabel modelType catText aggs' alphaModels' psTs' = do
   allModels <- allModelsCompBy @ks runModel catLabel aggs' alphaModels' psTs'
   let cats = Set.toList $ Keyed.elements @(F.Record ks)
-      numCats = length cats
+      _numCats = length cats
       numSources = length allModels
   catCompChart <- categoryChart @ks pp postInfo (modelType <> " Comparison By Category") (modelType <> "Comp")
                   (FV.ViewConfig 300 (30 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
@@ -266,8 +273,9 @@ psByState ::  (K.KnitEffects r, BRKU.CacheEffects r)
 psByState runModel addStateFields = psBy @'[GT.StateAbbreviation] runModel >>= addStateFields
 
 popCountBy :: forall ks rs r .
-              (K.KnitEffects r, BRKU.CacheEffects r
-              , ks F.⊆ rs, F.ElemOf rs DT.PopCount, Ord (F.Record ks)
+              (--K.KnitEffects r
+--              , BRKU.CacheEffects r
+                ks F.⊆ rs, F.ElemOf rs DT.PopCount, Ord (F.Record ks)
               , FSI.RecVec (ks V.++ '[DT.PopCount])
               )
            => K.ActionWithCacheTime r (F.FrameRec rs)
@@ -282,7 +290,8 @@ popCountBy counts_C = do
   pure $ FL.fold aggFld counts
 
 popCountByMap :: forall ks rs r .
-                 (K.KnitEffects r, BRKU.CacheEffects r
+                 (K.KnitEffects r
+--                 , BRKU.CacheEffects r
                  , ks F.⊆ rs
                  , F.ElemOf rs DT.PopCount
                  , Ord (F.Record ks)
@@ -349,6 +358,20 @@ addBallotsCountedVAP fr = do
   let (joined, missing) = FJ.leftJoinWithMissing @'[GT.StateAbbreviation] fr turnoutByState
   when (not $ null missing) $ K.knitError $ "addBallotysCOuntedVAP: missing keys in state turnout target join: " <> show missing
   pure $ fmap F.rcast joined
+
+addBallotsCountedVEP :: (K.KnitEffects r, BRKU.CacheEffects r
+                        , FJ.CanLeftJoinM '[GT.StateAbbreviation] rs BRDF.StateTurnoutCols
+                        , F.ElemOf (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols)) GT.StateAbbreviation
+                        , rs V.++ '[BRDF.BallotsCountedVEP, BRDF.VAP] F.⊆ (rs V.++ (F.RDelete GT.StateAbbreviation BRDF.StateTurnoutCols))
+                        )
+                     => F.FrameRec rs ->  K.Sem r (F.FrameRec (rs V.++ '[BRDF.BallotsCountedVEP, BRDF.VAP]))
+addBallotsCountedVEP fr = do
+  turnoutByState <- F.filterFrame ((== 2020) . view BRDF.year) <$> K.ignoreCacheTimeM BRDF.stateTurnoutLoader
+  let (joined, missing) = FJ.leftJoinWithMissing @'[GT.StateAbbreviation] fr turnoutByState
+  when (not $ null missing) $ K.knitError $ "addBallotysCOuntedVAP: missing keys in state turnout target join: " <> show missing
+  pure $ fmap F.rcast joined
+
+
 
 modelCIToModelPr :: (F.RDelete ModelCI rs V.++ '[ModelPr] F.⊆ ('[ModelPr] V.++ rs)
                     , F.ElemOf rs ModelCI)

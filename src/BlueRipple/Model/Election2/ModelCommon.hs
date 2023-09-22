@@ -156,7 +156,7 @@ stateTargetsGroupBuilder states rtt =
   $ SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states
 
 acsDataGroupBuilder :: [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
-                    ->  SMB.StanGroupBuilderM DP.ModelData gq ()
+                    ->  SMB.StanGroupBuilderM (DP.ModelData lk) gq ()
 acsDataGroupBuilder groups' = do
    acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
    SG.addModelIndexes acsDataTag F.rcast groups'
@@ -165,7 +165,7 @@ acsDataGroupBuilder groups' = do
 -- But say you want to predict turnout by race, nationally.
 -- Now l ~ '[Race5C]
 -- How about turnout by Education in each state? Then l ~ [StateAbbreviation, Education4C]
-psGroupBuilder :: forall g k l .
+psGroupBuilder :: forall g k lk l .
                  (Foldable g
                  , Typeable (DP.PSDataR k)
                  , Show (F.Record l)
@@ -177,7 +177,7 @@ psGroupBuilder :: forall g k l .
                  )
                => g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM DP.ModelData (DP.PSData k) ()
+               -> SMB.StanGroupBuilderM (DP.ModelData lk) (DP.PSData k) ()
 psGroupBuilder states psKeys = do
   let groups' = groups states
       psGtt = psGroupTag @l

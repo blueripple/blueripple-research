@@ -128,13 +128,13 @@ main = do
           runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
-      stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
-      stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
-      stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVAP
+      stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
+      stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
+      stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
 
       turnoutStateChart <- MR.stateChart -- @[GT.StateAbbreviation, MR.ModelPr, BRDF.VAP, BRDF.BallotsCounted]
                            modelPostPaths postInfo "TComp" "Turnout Model Comparison by State" "Turnout" (FV.ViewConfig 500 500 10)
-                           (view BRDF.vAP) Nothing --(Just $ view BRDF.ballotsCountedVAP)
+                           (view BRDF.vAP) (Just $ view BRDF.ballotsCountedVEP)
                            (fmap (second $ (fmap (MR.modelCIToModelPr))) stateComparisonsT)
       _ <- K.addHvega Nothing Nothing turnoutStateChart
       MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModel "Age" "Turnout" (show . view DT.age5C) aggregations alphaModels psTs
