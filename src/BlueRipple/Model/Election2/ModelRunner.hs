@@ -425,6 +425,24 @@ stateChart postPaths' postInfo chartID title modelType vc vap tgtM tableRowsByMo
                                   , vlData
                                   ]
 
+allCellProbsPS :: Set Text -> Double -> DP.PSData (GT.StateAbbreviation ': DP.DCatsR)
+allCellProbsPS states avgPWDensity =
+  let catRec ::  DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5 -> F.Record DP.DCatsR
+      catRec a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+      densRec :: F.Record '[DT.PWPopPerSqMile]
+      densRec = FT.recordSingleton avgPWDensity
+      popRec :: F.Record '[DT.PopCount]
+      popRec = FT.recordSingleton 1
+      allCellRec :: Text -> DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5
+                 -> F.Record (DP.PSDataR (GT.StateAbbreviation ': DP.DCatsR))
+      allCellRec st a s e r = (st F.&: catRec a s e r) F.<+> densRec F.<+> catRec a s e r F.<+> popRec
+      allCellRecList = [allCellRec st a s e r | st <- Set.toList states
+                                              , a <- Set.toList Keyed.elements
+                                              , s <- Set.toList Keyed.elements
+                                              , e <- Set.toList Keyed.elements
+                                              , r <- Set.toList Keyed.elements
+                                              ]
+  in DP.PSData $ F.toFrame allCellRecList
 
 categoryChart :: forall ks rs r . (K.KnitEffects r, F.ElemOf rs DT.PopCount, F.ElemOf rs ModelCI, ks F.⊆ rs)
            => BR.PostPaths Path.Abs

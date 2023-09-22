@@ -22,6 +22,7 @@ import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
+import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Election2.DataPrep as DP
@@ -121,6 +122,18 @@ main = do
 
     BRK.brNewPost modelPostPaths postInfo "Models" $ do
       acsA5ByState_C <- DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
+      allStates <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
+      acsByState <- K.ignoreCacheTime acsA5ByState_C
+      let avgACSPWDensity = FL.fold (FL.premap (view DT.pWPopPerSqMile) FL.mean) acsByState
+      allCellProbsPS_C <-  BRK.retrieveOrMakeD "model/election2/allCellProbsPS.bin" (pure ())
+                           $ \_ -> pure $ MR.allCellProbsPS allStates avgACSPWDensity
+      allCellProbs_C <-  MR.runTurnoutModel 2020 modelDirE cacheDirE "allCellProbs" cmdLine
+                         (MC.RunConfig False False (Just $ MC.psGroupTag @(GT.StateAbbreviation ': DP.DCatsR)))
+                         survey (MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur)
+                         (contramap F.rcast dmr) MC.NoPSTargets MC.St_A_S_E_R
+                         allCellProbsPS_C
+      show . take 100 . M.toList . MC.unPSMap <$> K.ignoreCacheTime allCellProbs_C
+
       acsByState_C <- BRK.retrieveOrMakeD "model/election2/acsByStatePS.bin" acsA5ByState_C $ \acsFull ->
         pure $ DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast . F.filterFrame ((== DT.Citizen) . view DT.citizenC) $ acsFull
       let runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
