@@ -127,14 +127,14 @@ type GroupsR = GT.StateAbbreviation ': DP.DCatsR
 
 groups :: Foldable g => g Text -> [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]
 groups states = [stateG DSum.:=>
-           SG.GroupFromData (view GT.stateAbbreviation)
-           (SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states)
-           (SMB.dataToIntMapFromFoldable (view GT.stateAbbreviation) states)
-         , ageG DSum.:=> SG.groupFromDataEnum (view DT.age5C)
-         , sexG DSum.:=> SG.groupFromDataEnum (view DT.sexC)
-         , eduG DSum.:=> SG.groupFromDataEnum (view DT.education4C)
-         , raceG DSum.:=> SG.groupFromDataEnum (view DT.race5C)
-         ]
+                 SG.GroupFromData (view GT.stateAbbreviation)
+                 (SMB.makeIndexFromFoldable show (view GT.stateAbbreviation) states)
+                 (SMB.dataToIntMapFromFoldable (view GT.stateAbbreviation) states)
+                , ageG DSum.:=> SG.groupFromDataEnum (view DT.age5C)
+                , sexG DSum.:=> SG.groupFromDataEnum (view DT.sexC)
+                , eduG DSum.:=> SG.groupFromDataEnum (view DT.education4C)
+                , raceG DSum.:=> SG.groupFromDataEnum (view DT.race5C)
+                ]
 
 addGroupIndexesAndIntMaps :: (GroupsR F.⊆ rs)
         => [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record GroupsR))]

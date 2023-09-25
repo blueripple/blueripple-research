@@ -122,17 +122,17 @@ main = do
 
     BRK.brNewPost modelPostPaths postInfo "Models" $ do
       acsA5ByState_C <- DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
-      allStates <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
       acsByState <- K.ignoreCacheTime acsA5ByState_C
-      let avgACSPWDensity = FL.fold (FL.premap (view DT.pWPopPerSqMile) FL.mean) acsByState
+      let allStates = FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsByState
+          avgACSPWDensity = FL.fold (FL.premap (view DT.pWPopPerSqMile) FL.mean) acsByState
       allCellProbsPS_C <-  BRK.retrieveOrMakeD "model/election2/allCellProbsPS.bin" (pure ())
                            $ \_ -> pure $ MR.allCellProbsPS allStates avgACSPWDensity
-      allCellProbs_C <-  MR.runTurnoutModel 2020 modelDirE cacheDirE "allCellProbs" cmdLine
+      allCellProbsT_C <-  MR.runTurnoutModel 2020 modelDirE cacheDirE "allCellProbs" cmdLine
                          (MC.RunConfig False False (Just $ MC.psGroupTag @(GT.StateAbbreviation ': DP.DCatsR)))
                          survey (MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur)
                          (contramap F.rcast dmr) MC.NoPSTargets MC.St_A_S_E_R
                          allCellProbsPS_C
-      show . take 100 . M.toList . MC.unPSMap <$> K.ignoreCacheTime allCellProbs_C
+      K.ignoreCacheTime allCellProbsT_C >>= K.logLE K.Info . show . take 100 . M.toList . MC.unPSMap
 
       acsByState_C <- BRK.retrieveOrMakeD "model/election2/acsByStatePS.bin" acsA5ByState_C $ \acsFull ->
         pure $ DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast . F.filterFrame ((== DT.Citizen) . view DT.citizenC) $ acsFull

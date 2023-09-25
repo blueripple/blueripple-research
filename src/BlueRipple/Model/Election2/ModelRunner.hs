@@ -34,6 +34,8 @@ import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.Keyed as Keyed
+import qualified BlueRipple.Model.PostStratify as PS
+import qualified BlueRipple.Model.TurnoutAdjustment as TA
 
 import qualified Knit.Report as K hiding (elements)
 import qualified Path
@@ -107,6 +109,47 @@ runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst 
   modelData_C <- DP.cachedPreppedModelDataCD cpsModelCacheE rawCPS_C cesByStateModelCacheE rawCESByState_C cesByCDModelCacheE rawCESByCD_C
 --  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021 -- most recent available
   MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
+
+{-
+runTurnoutModelAH :: (K.KnitEffects r
+                     , BRKU.CacheEffects r
+                     , V.RMap l
+                     , Ord (F.Record l)
+                     , FS.RecFlat l
+                     , Typeable l
+                     , Typeable (DP.PSDataR ks)
+                     , F.ElemOf (DP.PSDataR ks) GT.StateAbbreviation
+                     , DP.LPredictorsR F.⊆ DP.PSDataR ks
+                     , F.ElemOf (DP.PSDataR ks) DT.PopCount
+                     , DP.DCatsR F.⊆ DP.PSDataR ks
+                     , l F.⊆ DP.PSDataR ks --'[GT.StateAbbreviation]
+                     , Show (F.Record l)
+                     )
+                  => Int
+                  -> Either Text Text
+                  -> Either Text Text
+                  -> Text
+                  -> BR.CommandLine
+                  -> MC.RunConfig l
+                  -> MC.TurnoutSurvey a
+                  -> MC.SurveyAggregation b
+                  -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+                  -> MC.PSTargets
+                  -> MC.Alphas
+                  -> K.ActionWithCacheTime r (DP.PSData ks)
+                  -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
+runTurnoutModelAH year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am psData_C = do
+--  turnoutRes_C <- runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am psData_C
+  allCellProbsPS_C <-  BRK.retrieveOrMakeD "model/election2/allCellProbsPS.bin" (pure ())
+                       $ \_ -> pure $ MR.allCellProbsPS allStates avgACSPWDensity
+  turnoutCP_C <- runTurnoutModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am allCellProbsPS_C
+  let cachePrefix = "model/election2/" <> MC2.turnoutSurveyText ts <> show year <> "_" <> aggregationText sa <> "_" <> alphasText am <> "/"
+      ahDeps = (,) <$> turnoutCP_C <*> psData_C
+  turnoutCPAH_C <- BRK.retrieveOrMakeFrame (cachePrefix <> gqName <> "_ACProbsAH.bin") ahDeps $ \(tCP, psD) -> do
+    let (joined, missing) = FJ.leftJoinWithMissing @([BR.Year,GT.StateAbbreviation] V.++ DP.DCatsR) psD (fmap modelCIToModelPr tCP)
+-}
+
+
 
 runPrefModel :: (K.KnitEffects r
                 , BRKU.CacheEffects r
@@ -194,6 +237,25 @@ runFullModel year modelDirE cacheDirE gqName cmdLine runConfig ts sa dmr pst am 
 
 FTH.declareColumn "ModelPr" ''Double
 FTH.declareColumn "ModelCI" ''MT.ConfidenceInterval
+
+allCellProbsPS :: Set Text -> Double -> DP.PSData (GT.StateAbbreviation ': DP.DCatsR)
+allCellProbsPS states avgPWDensity =
+  let catRec ::  DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5 -> F.Record DP.DCatsR
+      catRec a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
+      densRec :: F.Record '[DT.PWPopPerSqMile]
+      densRec = FT.recordSingleton avgPWDensity
+      popRec :: F.Record '[DT.PopCount]
+      popRec = FT.recordSingleton 1
+      allCellRec :: Text -> DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5
+                 -> F.Record (DP.PSDataR (GT.StateAbbreviation ': DP.DCatsR))
+      allCellRec st a s e r = (st F.&: catRec a s e r) F.<+> densRec F.<+> catRec a s e r F.<+> popRec
+      allCellRecList = [allCellRec st a s e r | st <- Set.toList states
+                                              , a <- Set.toList Keyed.elements
+                                              , s <- Set.toList Keyed.elements
+                                              , e <- Set.toList Keyed.elements
+                                              , r <- Set.toList Keyed.elements
+                                              ]
+  in DP.PSData $ F.toFrame allCellRecList
 
 modelCompBy :: forall ks r b . (K.KnitEffects r, BRKU.CacheEffects r, PSByC ks)
             => (MC.RunConfig ks -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
@@ -425,24 +487,7 @@ stateChart postPaths' postInfo chartID title modelType vc vap tgtM tableRowsByMo
                                   , vlData
                                   ]
 
-allCellProbsPS :: Set Text -> Double -> DP.PSData (GT.StateAbbreviation ': DP.DCatsR)
-allCellProbsPS states avgPWDensity =
-  let catRec ::  DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5 -> F.Record DP.DCatsR
-      catRec a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil
-      densRec :: F.Record '[DT.PWPopPerSqMile]
-      densRec = FT.recordSingleton avgPWDensity
-      popRec :: F.Record '[DT.PopCount]
-      popRec = FT.recordSingleton 1
-      allCellRec :: Text -> DT.Age5 -> DT.Sex -> DT.Education4 -> DT.Race5
-                 -> F.Record (DP.PSDataR (GT.StateAbbreviation ': DP.DCatsR))
-      allCellRec st a s e r = (st F.&: catRec a s e r) F.<+> densRec F.<+> catRec a s e r F.<+> popRec
-      allCellRecList = [allCellRec st a s e r | st <- Set.toList states
-                                              , a <- Set.toList Keyed.elements
-                                              , s <- Set.toList Keyed.elements
-                                              , e <- Set.toList Keyed.elements
-                                              , r <- Set.toList Keyed.elements
-                                              ]
-  in DP.PSData $ F.toFrame allCellRecList
+
 
 categoryChart :: forall ks rs r . (K.KnitEffects r, F.ElemOf rs DT.PopCount, F.ElemOf rs ModelCI, ks F.⊆ rs)
            => BR.PostPaths Path.Abs

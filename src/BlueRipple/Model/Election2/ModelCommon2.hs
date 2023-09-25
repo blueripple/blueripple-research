@@ -45,6 +45,7 @@ import qualified Data.Set as S
 
 import qualified Data.Vector as V
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames as F
 import qualified Frames.Melt as F
@@ -273,8 +274,10 @@ prefModelData (MC.PrefConfig pst mc) = do
 stdNormalDWA :: (TE.TypeOneOf t [TE.EReal, TE.ECVec, TE.ERVec], TE.GenSType t) => TE.DensityWithArgs t
 stdNormalDWA = TE.DensityWithArgs SF.std_normal TNil
 
-setupAlphaSum :: Maybe Text -> MC.Alphas -> SMB.StanBuilderM md gq (SG.AlphaByDataVecCW md gq)
-setupAlphaSum prefixM alphas = do
+type GroupR = GT.StateAbbreviation ': DP.DCatsR
+
+setupAlphaSum :: Maybe Text -> [Text] -> MC.Alphas -> SMB.StanBuilderM md gq (SG.AlphaByDataVecCW md gq)
+setupAlphaSum prefixM states alphas = do
   let nStatesE = SMB.groupSizeE MC.stateG
       prefixed t = maybe t (<> "_" <> t) prefixM
       alphaNDS n t = TE.NamedDeclSpec (prefixed "a" <> t) $ TE.vectorSpec n []
@@ -291,11 +294,22 @@ setupAlphaSum prefixM alphas = do
                   $ \(muAlphaE :> sigmaAlphaE :> TNil) m
                     -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
       stdNormalBP nds =  DAG.UntransformedP nds [] TNil (\TNil m -> TE.addStmt $ TE.sample m SF.std_normal TNil)
-      ageAG = SG.firstOrderAlphaDC MC.ageG DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.ageG `TE.minusE` TE.intE 1) "Age")
-      sexAG = SG.binaryAlpha prefixM MC.sexG (stdNormalBP $ TE.NamedDeclSpec (prefixed "aSex") $ TE.realSpec [])
-      eduAG = SG.firstOrderAlphaDC MC.eduG DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.eduG `TE.minusE` TE.intE 1) "Edu")
-      raceAG = SG.firstOrderAlphaDC MC.raceG DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) "Race")
-  stAG <- fmap (\hps -> SG.firstOrderAlpha MC.stateG (aStBP hps)) $ hierAlphaPs "St"
+      enumI :: Enum e => e -> Either Text Int
+      enumI e = Right $ fromEnum e + 1
+      enumS :: forall e . (Enum e, Bounded e) => Int
+      enumS = length [(minBound :: e)..(maxBound :: e)]
+      stateIndexMap = M.fromList $ zip states [1..]
+      stateI s = maybe (Left $ "setupAlphaSum: " <> s <> " is missing from given list of states") Right $ M.lookup s stateIndexMap
+      stateS = M.size stateIndexMap
+      ageAG :: SG.GroupAlpha (F.Record GroupR) TE.ECVec = SG.contramapGroupAlpha (view DT.age5C)
+              $ SG.firstOrderAlphaDC MC.ageG enumI DT.A5_45To64 (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.ageG `TE.minusE` TE.intE 1) "Age")
+      sexAG  :: SG.GroupAlpha (F.Record GroupR) TE.EReal = SG.contramapGroupAlpha (view DT.sexC)
+              $ SG.binaryAlpha prefixM MC.sexG ((\x -> realToFrac x - 0.5) . fromEnum) (stdNormalBP $ TE.NamedDeclSpec (prefixed "aSex") $ TE.realSpec [])
+      eduAG  :: SG.GroupAlpha (F.Record GroupR) TE.ECVec = SG.contramapGroupAlpha (view DT.education4C)
+              $ SG.firstOrderAlphaDC MC.eduG enumI DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.eduG `TE.minusE` TE.intE 1) "Edu")
+      raceAG  :: SG.GroupAlpha (F.Record GroupR) TE.ECVec = SG.contramapGroupAlpha (view DT.race5C)
+               $ SG.firstOrderAlphaDC MC.raceG enumI DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) "Race")
+  stAG <- fmap (\hps -> SG.contramapGroupAlpha (view GT.stateAbbreviation) $ SG.firstOrderAlpha MC.stateG stateI (aStBP hps)) $ hierAlphaPs "St"
   let eduRaceAG = do
         sigmaEduRace <-  DAG.simpleParameterWA
                          (TE.NamedDeclSpec (prefixed "sigmaEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -306,7 +320,8 @@ setupAlphaSum prefixM alphas = do
                      aER_NDS [] (sigmaEduRace :> TNil)
                      $ \(sigmaE :> TNil) m
                        -> TE.addStmt $ TE.sample m SF.normalS (TE.realE 0 :> sigmaE :> TNil)
-        pure $ SG.secondOrderAlphaDC prefixM MC.eduG MC.raceG (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) aER_BP
+        pure $ SG.contramapGroupAlpha (\r -> (r ^. DT.education4C, r ^. DT.race5C ))
+          $ SG.secondOrderAlphaDC prefixM MC.eduG (enumI, enumS @DT.Education4) MC.raceG (enumI, enumS @DT.Race5) (DT.E4_HSGrad, DT.R5_WhiteNonHispanic) aER_BP
       stateRaceAG = do
         sigmaStateRace <-  DAG.simpleParameterWA
                            (TE.NamedDeclSpec (prefixed "sigmaStateRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -321,8 +336,9 @@ setupAlphaSum prefixM alphas = do
             aStR_BP = DAG.simpleTransformedP aStR_NDS [] (sigmaStateRace :> rawAlphaStateRaceP :> TNil)
                      DAG.TransformedParametersBlock
                      (\(s :> r :> TNil) -> DAG.DeclRHS $ s `TE.timesE` r)
-        pure $ SG.secondOrderAlpha prefixM MC.stateG MC.raceG aStR_BP
-      stateEduRace :: SMB.StanBuilderM md gq SG.GroupAlpha
+        pure $ SG.contramapGroupAlpha (\r -> (r ^. GT.stateAbbreviation, r ^. DT.race5C))
+          $ SG.secondOrderAlpha prefixM MC.stateG stateI MC.raceG enumI aStR_BP
+      stateEduRace :: SMB.StanBuilderM md gq (SG.GroupAlpha (F.Record GroupR) (TE.EArray1 TE.EMat))
       stateEduRace = do
         sigmaStateEduRaceP :: DAG.Parameter TE.EReal  <-  DAG.simpleParameterWA
                                                           (TE.NamedDeclSpec (prefixed "sigmaStateEduRace") $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -344,25 +360,26 @@ setupAlphaSum prefixM alphas = do
                                   $ TE.for "s" (TE.SpecificNumbered (TE.intE 1) nStatesE)
                                   $ \s -> [(t `TE.at` s) `TE.assign` (sigma `TE.timesE` (raw `TE.at` s))]
                         )
-        pure $ SG.thirdOrderAlpha prefixM MC.stateG MC.eduG MC.raceG aStER_BP
+        pure $ SG.contramapGroupAlpha (\r -> (r ^. GT.stateAbbreviation, r ^. DT.education4C, r ^. DT.race5C))
+          $ SG.thirdOrderAlpha prefixM MC.stateG stateI MC.eduG enumI MC.raceG enumI aStER_BP
   case alphas of
     MC.St_A_S_E_R -> do
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG])
+      SG.setupAlphaSum @_ @_ @_ @(F.Record GroupR) (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> TNil)
     MC.St_A_S_E_R_ER -> do
       erAG <- eduRaceAG
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG])
+      SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> TNil)
     MC.St_A_S_E_R_StR -> do
       srAG <- stateRaceAG
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, srAG])
+      SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StR -> do
       srAG <- stateRaceAG
       erAG <- eduRaceAG
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG, srAG])
+      SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StR_StER -> do
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       serAG <- stateEduRace
-      SG.setupAlphaSum (stAG :| [ageAG, sexAG, eduAG, raceAG, erAG, srAG, serAG])
+      SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> srAG :> serAG :> TNil)
 
 
 setupBeta :: Maybe Text -> MC.ModelConfig b -> SMB.StanBuilderM md gq (Maybe TE.VectorE)
@@ -383,9 +400,9 @@ data ParameterSetup md gq = LogitSetup (SG.AlphaByDataVecCW md gq) (Maybe TE.Vec
 hasBeta :: ParameterSetup md gq -> Bool
 hasBeta (LogitSetup _ mb) = isJust mb
 
-setupParameters :: Maybe Text -> MC.ModelConfig b -> SMB.StanBuilderM md gq (ParameterSetup md gq)
-setupParameters prefixM mc = do
-  as <- setupAlphaSum prefixM mc.mcAlphas
+setupParameters :: Maybe Text -> [Text] -> MC.ModelConfig b -> SMB.StanBuilderM md gq (ParameterSetup md gq)
+setupParameters prefixM states mc = do
+  as <- setupAlphaSum prefixM states mc.mcAlphas
   bs <- setupBeta prefixM mc
   pure $ LogitSetup as bs
 
@@ -590,11 +607,12 @@ model :: forall k lk l a b .
          )
       => MC.RunConfig l
       -> Config a b
+      -> [Text]
       -> SMB.StanBuilderM (DP.ModelData lk) (DP.PSData k) ()
-model rc c = case c of
+model rc c states = case c of
   RegistrationOnly regConfig@(MC.RegistrationConfig _ mc) -> do
     mData <- registrationModelData regConfig
-    paramSetup <- setupParameters Nothing mc
+    paramSetup <- setupParameters Nothing states mc
     cc <- case mData of
       MC.NoPT_ModelData x -> pure x
       _ -> SMB.stanBuildError "ModelCommon2: PT_ModelData given for registration only model"
@@ -608,7 +626,7 @@ model rc c = case c of
 
   TurnoutOnly turnoutConfig@(MC.TurnoutConfig _ _ mc) -> do
     mData <- turnoutModelData turnoutConfig
-    paramSetup <- setupParameters Nothing mc
+    paramSetup <- setupParameters Nothing states mc
     (Components modelM llM ppM centerF) <- components Nothing (MC.covariatesAndCounts mData) paramSetup mc.mcSurveyAggregation
     case mData of
       MC.NoPT_ModelData _ -> pure ()
@@ -622,7 +640,7 @@ model rc c = case c of
 
   PrefOnly prefConfig@(MC.PrefConfig _ mc) -> do
     mData <- prefModelData prefConfig
-    paramSetup <- setupParameters Nothing mc
+    paramSetup <- setupParameters Nothing states mc
     (Components modelM llM ppM centerF) <- components Nothing (MC.covariatesAndCounts mData) paramSetup mc.mcSurveyAggregation
     case mData of
       MC.NoPT_ModelData _ -> pure ()
@@ -637,8 +655,8 @@ model rc c = case c of
   TurnoutAndPref tConfig@(MC.TurnoutConfig _ _ tMC) pConfig@(MC.PrefConfig _ pMC) -> do
     tData <- turnoutModelData tConfig
     pData <- prefModelData pConfig
-    tParamS <- setupParameters (Just "T") tMC
-    pParamS <- setupParameters (Just "P") pMC
+    tParamS <- setupParameters (Just "T") states tMC
+    pParamS <- setupParameters (Just "P") states pMC
     (Components tModelM _ _ tCenterF) <- components (Just "T") (MC.covariatesAndCounts tData) tParamS tMC.mcSurveyAggregation
     case tData of
       MC.NoPT_ModelData _ -> pure ()
@@ -700,7 +718,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
   psKeys <- S.toList . FL.fold (FL.premap (F.rcast @l) FL.set) . DP.unPSData <$> K.ignoreCacheTime psData_C
   (dw, code) <- SMR.dataWranglerAndCode modelData_C psData_C
                 (groupBuilder config states psKeys)
-                (model runConfig config)
+                (model runConfig config states)
 
   let datSuffix = SC.rinData runnerInputNames
       jsonData t = "jsonData_" <> datSuffix <> "$" <> t
