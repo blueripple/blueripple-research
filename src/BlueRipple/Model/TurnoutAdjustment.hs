@@ -22,6 +22,8 @@ module BlueRipple.Model.TurnoutAdjustment
 where
 
 import qualified BlueRipple.Data.DataFrames    as BR
+import qualified BlueRipple.Data.Loaders    as BRL
+import qualified BlueRipple.Data.GeographicTypes    as GT
 
 import qualified Knit.Report                   as K
 
@@ -309,7 +311,7 @@ adjTurnoutFoldG getTotal totalsFrame =
     in
       FMR.concatFoldM $ FMR.mapReduceFoldM unpackM assignM reduceM
 
-type WithYS rs = ([BR.Year, BR.StateAbbreviation] V.++ rs)
+type WithYS rs = ([BR.Year, GT.StateAbbreviation] V.++ rs)
 
 adjTurnoutFold
   :: forall p t rs f effs
@@ -317,7 +319,7 @@ adjTurnoutFold
      , K.KnitEffects effs
      , F.ElemOf rs p
      , F.ElemOf rs t
-     , F.ElemOf (WithYS rs) BR.StateAbbreviation
+     , F.ElemOf (WithYS rs) GT.StateAbbreviation
      , F.ElemOf (WithYS rs) BR.Year
      , rs F.⊆ WithYS rs
      , V.KnownField p
@@ -327,12 +329,12 @@ adjTurnoutFold
      , FI.RecVec (WithYS rs)
 --     , Show (F.Record rs)
      )
-  => f BR.StateTurnout
+  => f (F.Record BRL.StateTurnoutCols)
   -> FL.FoldM
        (K.Sem effs)
        (F.Record (WithYS rs))
        (F.FrameRec (WithYS rs))
-adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, BR.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
+adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, GT.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
 
 
 surveyRatioFld :: (a -> (Double, Double, Double)) -> FL.Fold a Double

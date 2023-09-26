@@ -39,8 +39,12 @@ import qualified Knit.Report                   as K
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.DataFrames    as BR
+import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Data.DemographicTypes
                                                as DT
+
+import qualified BlueRipple.Data.GeographicTypes
+                                               as GT
 
 import qualified BlueRipple.Data.ElectionTypes
                                                as ET
@@ -155,14 +159,14 @@ adjustWeightsForStateTotals
   . (K.KnitEffects r
     , V.KnownField p
     , V.Snd p ~ Int
-    , F.ElemOf (BR.WithYS ks) BR.StateAbbreviation
+    , F.ElemOf (BR.WithYS ks) GT.StateAbbreviation
     , (ks V.++ PCols p V.++ ET.EWCols) F.⊆ BR.WithYS (ks V.++ PCols p V.++ ET.EWCols)
     , F.ElemOf (ks V.++ PCols p V.++ ET.EWCols) p
     , F.ElemOf (ks V.++ PCols p V.++ ET.EWCols) ET.ElectoralWeight
     , FI.RecVec (ks V.++ PCols p V.++ ET.EWCols)
 --    , Show (F.Record ((ks V.++ PCols '(V.Fst p, Int)) V.++ ET.EWCols))
     )
-  => F.Frame BR.StateTurnout
+  => F.Frame (F.Record BRL.StateTurnoutCols)
   -> F.FrameRec (BR.WithYS ks V.++ PCols p V.++ ET.EWCols)
   -> K.Sem r (F.FrameRec (BR.WithYS ks V.++ PCols p  V.++ ET.EWCols))
 adjustWeightsForStateTotals stateTurnout unadj =
@@ -205,7 +209,7 @@ demographicsWithAdjTurnoutByState
 --                                   ET.ElectoralWeightSource, ET.ElectoralWeightOf,
 --                                   ET.ElectoralWeight]))
     )
-  => F.Frame BR.StateTurnout
+  => F.Frame (F.Record BRL.StateTurnoutCols)
   -> F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PCols p))
   -> F.FrameRec (js V.++ catCols V.++ ET.EWCols)
   -> K.Sem effs (F.FrameRec ((BR.WithYS ks) V.++ catCols V.++ (PEWCols p)))
@@ -274,7 +278,7 @@ rollupAdjustAndJoin
    , (((ks V.++ catCols) V.++ '[DT.PopCountOf]) V.++ '[p]) ~ ((ks V.++ catCols) V.++ PCols p)
    , Ord (F.Record ((ks V.++ catCols) V.++ '[DT.PopCountOf]))
    , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p]) p
-   , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p]) BR.StateAbbreviation
+   , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p]) GT.StateAbbreviation
    , F.ElemOf  (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p]) BR.Year
    , ((ks V.++ catCols) V.++ '[DT.PopCountOf]) F.⊆ (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p])
    , FI.RecVec (as V.++ BR.WithYS (ks V.++ catCols V.++ '[DT.PopCountOf]) V.++ '[p] V.++  F.RDeleteAll (ks V.++ catCols) ((ks V.++ catCols) V.++ ET.EWCols))
@@ -298,7 +302,7 @@ rollupAdjustAndJoin
 --                                   ET.ElectoralWeightSource, ET.ElectoralWeightOf,
 --                                   ET.ElectoralWeight]))
    )
-  => F.Frame BR.StateTurnout
+  => F.Frame (F.Record BRL.StateTurnoutCols)
   -> F.FrameRec (as V.++ (BR.WithYS ks) V.++ catCols V.++ (PCols p))
   -> F.FrameRec (js V.++ catCols V.++ ET.EWCols)
   -> K.Sem effs (F.FrameRec (as V.++ (BR.WithYS ks) V.++ catCols V.++ PCols p V.++ ET.EWCols))
@@ -314,9 +318,10 @@ rollupAdjustAndJoin stateTurnout demos ews = do
       $ F.leftJoin @(BR.WithYS ks V.++ catCols) demos adjustedWithoutDemo
 
 type TurnoutCols = [BR.Population, BR.Citizen, BR.Registered, BR.Voted]
-type ACSColsCD = [BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
-type ACSCols = [BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName]
+type ACSColsCD = [GT.CongressionalDistrict, BR.Year, GT.StateAbbreviation, BR.StateFIPS, BR.StateName]
+type ACSCols = [BR.Year, GT.StateAbbreviation, BR.StateFIPS, BR.StateName]
 
+{-
 -- This is also monstrous.  Which is surprising??
 acsDemographicsWithAdjCensusTurnoutByCD
   :: forall catCols r
@@ -372,16 +377,16 @@ acsDemographicsWithAdjCensusTurnoutByCD
   => T.Text
   -> K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ catCols V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ('[BR.Year] V.++ catCols V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
-  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
+  -> K.ActionWithCacheTime r (F.FrameRec BRL.StateTurnoutCols)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ catCols V.++ '[BR.ACSCount, BR.VotedPctOfAll])))
 acsDemographicsWithAdjCensusTurnoutByCD cacheKey cachedDemo cachedTurnout cachedStateTurnout = do
   let cachedDeps = (,,) <$> cachedDemo <*> cachedTurnout <*> cachedStateTurnout
   BR.retrieveOrMakeFrame cacheKey cachedDeps $ \(demoF, turnoutF, stateTurnoutF) -> do
     let demo' = fmap (FT.mutate $ const $ FT.recordSingleton @DT.PopCountOf DT.PC_All) demoF
-        demo'' = fmap (F.rcast @([BR.CongressionalDistrict, BR.Year, BR.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
+        demo'' = fmap (F.rcast @([GT.CongressionalDistrict, BR.Year, GT.StateAbbreviation, BR.StateFIPS, BR.StateName] V.++ catCols V.++ (PCols BR.ACSCount))) demo'
         vpa r = realToFrac (F.rgetField @BR.Voted r) / realToFrac (F.rgetField @BR.Population r)
     let turnout' = fmap (F.rcast @('[BR.Year] V.++ catCols V.++ ET.EWCols) . addElectoralWeight ET.EW_Census ET.EW_All vpa) turnoutF
-    result <- rollupAdjustAndJoin @'[BR.CongressionalDistrict] @catCols @BR.ACSCount @[BR.StateFIPS, BR.StateName] @'[BR.Year] stateTurnoutF demo'' turnout'
+    result <- rollupAdjustAndJoin @'[GT.CongressionalDistrict] @catCols @BR.ACSCount @[BR.StateFIPS, BR.StateName] @'[BR.Year] stateTurnoutF demo'' turnout'
     return $ F.toFrame $ fmap (F.rcast . FT.retypeColumn @ET.ElectoralWeight @BR.VotedPctOfAll) result
 
 
@@ -391,7 +396,7 @@ cachedASEDemographicsWithAdjTurnoutByCD
      )
   => K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ DT.CatColsASE V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ DT.CatColsASE V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
-  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
+  -> K.ActionWithCacheTime r (F.FrameRec BRL.StateTurnoutCols)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ DT.CatColsASE V.++'[BR.ACSCount, BR.VotedPctOfAll])))
 cachedASEDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @DT.CatColsASE "turnout/aseDemoWithStateAdjTurnoutByCD.bin"
 
@@ -401,6 +406,7 @@ cachedASRDemographicsWithAdjTurnoutByCD
      )
   => K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ DT.CatColsASR V.++ '[BR.ACSCount]))
   -> K.ActionWithCacheTime r (F.FrameRec ( '[BR.Year] V.++ DT.CatColsASR V.++ '[BR.Population, BR.Citizen, BR.Registered, BR.Voted]))
-  -> K.ActionWithCacheTime r (F.Frame BR.StateTurnout)
+  -> K.ActionWithCacheTime r (F.FrameRec BRL.StateTurnoutCols)
   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DT.ACSKeys V.++ DT.CatColsASR V.++'[BR.ACSCount, BR.VotedPctOfAll])))
 cachedASRDemographicsWithAdjTurnoutByCD = acsDemographicsWithAdjCensusTurnoutByCD @DT.CatColsASR "turnout/asrDemoWithStateAdjTurnoutByCD.bin"
+-}

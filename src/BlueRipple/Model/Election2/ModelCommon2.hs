@@ -36,14 +36,16 @@ import qualified BlueRipple.Model.Election2.ModelCommon as MC
 
 import qualified Knit.Report as K hiding (elements)
 
-
+import qualified Numeric
 import qualified Control.Foldl as FL
-import Control.Lens (view, (^.))
+import Control.Lens (view, (^.), over)
 import qualified Data.IntMap.Strict as IM
+import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
 
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 
@@ -69,6 +71,7 @@ import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
 import qualified Stan.ModelBuilder.TypedExpressions.DAG as DAG
 import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
 import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
+import qualified Flat
 import Flat.Instances.Vector ()
 
 --stateG :: SMB.GroupTypeTag Text
@@ -77,7 +80,7 @@ import Flat.Instances.Vector ()
 data Config a b where
   RegistrationOnly :: MC.RegistrationConfig a b -> Config a b
   TurnoutOnly :: MC.TurnoutConfig a b -> Config a b
-  PrefOnly :: MC.PrefConfig b -> Config () b
+  PrefOnly :: MC.PrefConfig b -> Config (F.Record DP.CESByCDR) b
   TurnoutAndPref :: MC.TurnoutConfig a b -> MC.PrefConfig b -> Config a b
 
 turnoutSurvey :: Config a b -> Maybe (MC.TurnoutSurvey a)
@@ -693,6 +696,7 @@ runModel :: forall l k lk r a b .
             , F.ElemOf (DP.CESByR lk) GT.StateAbbreviation
             , DP.DCatsR F.⊆ DP.PSDataR k
             , DP.DCatsR F.⊆ DP.CESByR lk
+            , DP.LPredictorsR F.⊆ DP.CESByR lk
             , Show (F.Record l)
             , Typeable l
             , Typeable (DP.CESByR lk)
@@ -705,7 +709,7 @@ runModel :: forall l k lk r a b .
          -> Config a b
          -> K.ActionWithCacheTime r (DP.ModelData lk)
          -> K.ActionWithCacheTime r (DP.PSData k)
-         -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
+         -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, Maybe ModelParameters))
 runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData_C = do
   let dataName = configText config
       runnerInputNames = SC.RunnerInputNames
@@ -753,19 +757,89 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
   K.logLE K.Info $ modelName <> " run complete."
   pure res_C
 
+-- for now this just carries beta *and* assumes beta is first-order, does not interact
+-- with other predictors.
+data ModelParameters =
+  ModelParameters
+  {
+    mpBetaSI :: VU.Vector (Double, Double)
+  } deriving stock (Generic)
+
+
+applyBetas :: VU.Vector (Double, Double) -> VU.Vector Double -> Double
+applyBetas vSI vX = VU.sum $ VU.zipWith (\(s, i) x -> s * (x - i)) vSI vX
+
+adjustPredictionsForDensity :: (F.ElemOf rs DT.PWPopPerSqMile, DP.LPredictorsR F.⊆ rs)
+                            => (F.Record rs -> Double)
+                            -> (Double -> F.Record rs -> F.Record rs)
+                            -> ModelParameters
+                            -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+                            -> F.Record rs
+                            -> F.Record rs
+adjustPredictionsForDensity getP setP mp dmr row = setP p' row
+  where
+    g x = 1 / (1 + Numeric.exp (negate x))
+    f x y |  x == 0 = 0
+          |  x == 1 = 1
+          |  otherwise = g $ Numeric.log (x / (1 - x)) + y
+    p = getP row
+    d = row ^. DT.pWPopPerSqMile
+    lps = DM.designMatrixRowF dmr (F.rcast row)
+    p' = f p $ applyBetas mp.mpBetaSI lps
+
+
+deriving anyclass instance Flat.Flat ModelParameters
+
+turnoutSurveyA :: Config a b -> Maybe (MC.TurnoutSurvey a)
+turnoutSurveyA (RegistrationOnly (MC.RegistrationConfig rs _)) = Just rs
+turnoutSurveyA (TurnoutOnly (MC.TurnoutConfig ts _ _)) = Just ts
+turnoutSurveyA (PrefOnly _) = Just MC.CESSurvey
+turnoutSurveyA (TurnoutAndPref (MC.TurnoutConfig ts _ _) _) = Nothing
+
+dmrA :: Config a b -> Maybe (DM.DesignMatrixRow (F.Record DP.LPredictorsR))
+dmrA (RegistrationOnly (MC.RegistrationConfig _ mc)) = Just mc.mcDesignMatrixRow
+dmrA (TurnoutOnly (MC.TurnoutConfig _ _ (MC.ModelConfig _ _ dmr))) = Just dmr
+dmrA (PrefOnly (MC.PrefConfig _ (MC.ModelConfig _ _ dmr))) = Just dmr
+dmrA (TurnoutAndPref (MC.TurnoutConfig ts _ _) _) = Nothing
+
+
+
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
+--NB: Will return no prediction (Nothing) for "both" model for now. Might eventually return both predictions?
 modelResultAction :: forall k lk l r a b .
                      (Ord (F.Record l)
                      , K.KnitEffects r
                      , Typeable (DP.PSDataR k)
                      , Typeable l
+                     , DP.LPredictorsR F.⊆ DP.CESByR lk
                      )
                   => Config a b
                   -> MC.RunConfig l
-                  -> SC.ResultAction r (DP.ModelData lk) (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval)
+                  -> SC.ResultAction r (DP.ModelData lk) (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval, Maybe ModelParameters)
 modelResultAction config runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
+     -- compute means of predictors because model was zero-centered in them
+    let mdMeansFld :: DP.LPredictorsR F.⊆ rs
+                   => DM.DesignMatrixRow (F.Record DP.LPredictorsR) -> FL.Fold (F.Record rs) [Double]
+        mdMeansFld dmr =
+          let  covariates = DM.designMatrixRowF $ contramap F.rcast dmr
+               nPredictors = DM.rowLength dmr
+          in FL.premap (VU.toList . covariates)
+             $ traverse (\n -> FL.premap (List.!! n) FL.mean) [0..(nPredictors - 1)]
+        mdMeansLM :: MC.TurnoutSurvey a -> DM.DesignMatrixRow (F.Record DP.LPredictorsR) -> [Double]
+        mdMeansLM ts dmr = case ts of
+          MC.CESSurvey -> FL.fold (FL.premap (F.rcast @DP.LPredictorsR) $ mdMeansFld dmr) $ DP.cesData modelData
+          MC.CPSSurvey -> FL.fold (FL.premap (F.rcast @DP.LPredictorsR) $ mdMeansFld dmr) $ DP.cpsData modelData
+        getVector n = K.knitEither $ SP.getVector . fmap CS.mean <$> SP.parse1D n (CS.paramStats summary)
+        betaSIF :: DM.DesignMatrixRow (F.Record DP.LPredictorsR) -> [Double] -> K.Sem r (VU.Vector (Double, Double))
+        betaSIF dmr mdMeansL = do
+          case DM.rowLength dmr of
+            0 -> pure VU.empty
+            p -> do
+              betaV <- getVector "beta"
+              pure $ VU.fromList $ zip (V.toList betaV) mdMeansL
+    betaSIM <- sequence $ (betaSIF <$> dmrA config <*> (mdMeansLM <$> turnoutSurveyA config <*> dmrA config))
     psMap <- case runConfig.rcPS of
       Nothing -> mempty
       Just gtt -> case gqDataAndIndexes_CM of
@@ -782,4 +856,4 @@ modelResultAction config runConfig = SC.UseSummary f where
              $ gqIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData") (MC.psGroupTag @l)
           psTByGrpV <- getVectorPcts $ psPrefix <> "_byGrp"
           K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
-    pure $ MC.PSMap psMap
+    pure $ (MC.PSMap psMap, ModelParameters <$> betaSIM)

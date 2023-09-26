@@ -121,6 +121,7 @@ main = do
     modelPostPaths <- postPaths "Models" cmdLine
 
     BRK.brNewPost modelPostPaths postInfo "Models" $ do
+
       acsA5ByState_C <- DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
       acsByState <- K.ignoreCacheTime acsA5ByState_C
       let allStates = FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) acsByState
@@ -132,13 +133,16 @@ main = do
                          survey (MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur)
                          (contramap F.rcast dmr) MC.NoPSTargets MC.St_A_S_E_R
                          allCellProbsPS_C
-      K.ignoreCacheTime allCellProbsT_C >>= K.logLE K.Info . show . take 100 . M.toList . MC.unPSMap
+--      K.ignoreCacheTime allCellProbsT_C >>= K.logLE K.Info . show . take 100 . M.toList . MC.unPSMap
 
       acsByState_C <- BRK.retrieveOrMakeD "model/election2/acsByStatePS.bin" acsA5ByState_C $ \acsFull ->
         pure $ DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast . F.filterFrame ((== DT.Citizen) . view DT.citizenC) $ acsFull
-      let runTurnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
-          runPrefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am acsByState_C
-          runDVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
+      ahTResMap <- MR.runTurnoutModelAH @'[GT.StateAbbreviation] 2020 modelDirE cacheDirE "State" cmdLine survey
+                   (MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur) (contramap F.rcast dmr) MC.NoPSTargets MC.St_A_S_E_R acsByState_C
+      K.knitError "STOP"
+      let runTurnoutModel rc gqName agg am pt = fst <<$>> MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
+          runPrefModel rc gqName agg am pt = fst <<$>> MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am acsByState_C
+          runDVSModel rc gqName agg am pt = fst <<$>> MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am acsByState_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
       stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
