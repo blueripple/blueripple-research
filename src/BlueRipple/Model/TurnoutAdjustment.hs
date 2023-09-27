@@ -256,14 +256,14 @@ adjTurnoutLong total unAdj = do
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
 adjTurnoutFoldG
-  :: forall p t ks qs rs f effs
+  :: forall p t ks qs rs k f effs
    . ( Foldable f
      , K.KnitEffects effs
      , F.ElemOf rs p
      , F.ElemOf rs t
      , rs F.⊆ (ks V.++ rs)
      , ks F.⊆ (ks V.++ rs)
-     , ks F.⊆ qs
+--     , ks F.⊆ qs
      , F.RDeleteAll ks (ks V.++ rs) ~ rs
      , V.KnownField p
      , V.KnownField t
@@ -273,19 +273,21 @@ adjTurnoutFoldG
 --     , Show (F.Record rs)
      , Show (F.Record ks)
      , Ord (F.Record ks)
+     , Ord k
      )
-  => (F.Record qs -> Double)
+  => (F.Record ks -> k)
+  -> (F.Record qs -> k)
+  -> (F.Record qs -> Double)
   -> f (F.Record qs)
   -> FL.FoldM
        (K.Sem effs)
        (F.Record (ks V.++ rs))
        (F.FrameRec (ks V.++ rs))
-adjTurnoutFoldG getTotal totalsFrame =
-  let getKey  = F.rcast @ks
-      vtbsMap = FL.fold
+adjTurnoutFoldG keyFromKs keyFromQs getTotal totalsFrame =
+  let vtbsMap = FL.fold
         (FL.premap
          (\r ->
-            ( getKey r
+            ( keyFromQs r
             , getTotal r
             )
          )
@@ -296,7 +298,7 @@ adjTurnoutFoldG getTotal totalsFrame =
       assignM = FMR.generalizeAssign $ FMR.splitOnKeys @ks -- @(cs V.++ '[p, t])
       adjustF ks =
         let
-          tM = M.lookup ks vtbsMap
+          tM = M.lookup (keyFromKs ks) vtbsMap
           f x = case tM of
             Nothing ->
               K.knitError
@@ -334,7 +336,7 @@ adjTurnoutFold
        (K.Sem effs)
        (F.Record (WithYS rs))
        (F.FrameRec (WithYS rs))
-adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, GT.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
+adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, GT.StateAbbreviation] id F.rcast (F.rgetField  @BR.BallotsCountedVEP)
 
 
 surveyRatioFld :: (a -> (Double, Double, Double)) -> FL.Fold a Double

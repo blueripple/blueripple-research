@@ -131,17 +131,17 @@ main = do
         psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
     BRK.brNewPost modelPostPaths postInfo state $ do
+      presidentialElections_C <- BRL.presidentialByStateFrame
       modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
       let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-          turnoutModel rc gqName agg am pt = MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
-          prefModel rc gqName agg am pt = MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine rc agg (contramap F.rcast dmr) pt am
-          dVSModel rc gqName agg am pt = MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine rc survey agg (contramap F.rcast dmr) pt am
+          turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am
+          prefModel gqName agg am pt = MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
+          dVSModel gqName agg am pt = MR.runFullModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
-          runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @SLDKeyR)
-      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
-      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
-      modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel runConfig (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+      modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
       let modeledDVs = modeledMapToFrame modeledDVSMap
       dra <- do
         allPlansMap <- DRA.allPassedSLDPlans
