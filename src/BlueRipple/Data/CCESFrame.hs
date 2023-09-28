@@ -44,6 +44,7 @@ FS.declarePrefixedColumn "hispanic" "CCES" ''Int
 
 --FS.tableTypes' ccesRowGen2018
 FS.tableTypes' ccesRowGen2020C
+--FS.tableTypes' cesRowGen2022
 FS.tableTypes' cesRowGen2020
 FS.tableTypes' cesRowGen2018
 FS.tableTypes' cesRowGen2016
@@ -85,6 +86,11 @@ catalistRegistrationFromNText n t
 cesIntToRegistration :: Int -> CatalistRegistration
 cesIntToRegistration = fromMaybe CR_Missing . Relude.safeToEnum . minus1
 
+tsBoolToRegistration :: Bool -> CatalistRegistration
+tsBoolToRegistration True = CR_Active
+tsBoolToRegistration True = CR_UnRegistered
+
+
 catalistRegistered :: CatalistRegistration -> Bool
 catalistRegistered CR_Active = True
 catalistRegistered _ = False
@@ -120,6 +126,15 @@ catalistTurnoutFromNText n t
 
 cesIntToTurnout :: Int -> CatalistTurnout
 cesIntToTurnout = fromMaybe CT_Missing . Relude.safeToEnum . minus1
+
+tsIntToTurnout :: Int -> CatalistTurnout
+tsIntToTurnout n | n == 1 = CT_Absentee
+                 | n == 2 = CT_Early
+                 | n == 3 = CT_Mail
+                 | n == 4 = CT_Polling
+                 | n == 5 = CT_Polling -- this is actually provisional but we have no field for that
+                 | n == 6 = CT_Unknown
+                 | otherwise = CT_Missing -- this is also bad since missing is not the same as did not vote
 
 catalistVoted :: CatalistTurnout -> Bool
 catalistVoted CT_Missing = False

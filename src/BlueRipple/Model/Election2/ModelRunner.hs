@@ -542,7 +542,7 @@ runFullModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtY
                                           (DP.unPSData psData) turnoutFrame prefFrame
     when (not $ null missingNT) $ K.knitError $ "runFullModelAH: Missing keys in psData/turnoutAH join: " <> show missingNT
     when (not $ null missingNTP) $ K.knitError $ "runFullModelAH: Missing keys in psData|turnoutAH/prefAH join: " <> show missingNTP
-    K.logLE K.Info "Doing post-stratification..."
+      K.logLE K.Info "Doing post-stratification..."
     let ppl r = realToFrac $ r ^. DT.popCount
         t r = r ^. modelT
         p r = r ^. modelP

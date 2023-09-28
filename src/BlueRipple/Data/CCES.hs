@@ -104,6 +104,26 @@ cesLoader = do
   let ces_C = mconcat <$> sequenceA [ces2020_C, ces2018_C, ces2016_C]
   return $ ces_C
 
+{-
+ces22Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESR))
+ces22Loader = K.wrapPrefix "ces22Loader" $ do
+  let cacheKey = "data/ces_2022.bin"
+  let fixCES22 :: F.Rec (Maybe F.:. F.ElField) (F.RecordColumns CES22) -> F.Rec (Maybe F.:. F.ElField) (FixHouseVote (F.RecordColumns CES22))
+      fixCES22 = fixCESCLInt . fixCES
+  K.logLE (K.Debug 3) "Loading/Re-building CES 2022 data"
+  stateXWalk_C <- BR.stateAbbrCrosswalkLoader
+  cesFileDep <- K.fileDependency (toString ces2022CSV)
+  let deps = (,) <$> stateXWalk_C <*> cesFileDep
+  BR.retrieveOrMakeFrame cacheKey deps $ \(stateXWalk, _) -> do
+    K.logLE K.Diagnostic "Re-building CES 2022 data"
+    allButStateAbbrevs <- BR.maybeFrameLoader  @(F.RecordColumns CES22)
+                          (BR.LocalData $ toText ces2022CSV)
+                          (Just cES22Parser)
+                          Nothing
+                          fixCES22
+                          (transformCESTS . transformCES 2022)
+    addStateAbbreviations stateXWalk allButStateAbbrevs
+-}
 ces20Loader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CESPR))
 ces20Loader = K.wrapPrefix "ces20Loader" $ do
   let cacheKey = "data/ces_2020.bin"
@@ -288,6 +308,14 @@ transformCESCLInt :: (F.ElemOf rs CESCVoterStatus
 transformCESCLInt =   (FT.addOneFromOne @CESCVoterStatus @CatalistRegistrationC cesIntToRegistration)
                       . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC cesIntToTurnout)
 
+{-
+transformCESTS :: (F.ElemOf rs CESCVoterStatus
+                     , F.ElemOf rs CESCTurnout)
+                  =>  F.Record rs -> F.Record ([CatalistRegistrationC, CatalistTurnoutC] V.++ rs)
+transformCESTS =   (FT.addOneFromOne @CESCVoterStatus @CatalistRegistrationC tsBoolToRegistration)
+                      . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC tsIntToTurnout)
+-}
+
 transformCESCLText :: (F.ElemOf rs CESCVoterStatusT
                      , F.ElemOf rs CESCTurnoutT)
                   =>  F.Record rs -> F.Record ([CatalistRegistrationC, CatalistTurnoutC] V.++ rs)
@@ -392,6 +420,13 @@ intToSex n = case n of
   1 -> DT.Male
   2 -> DT.Female
   _ -> error "Int other 1 or 2 in \"intToSex\""
+
+-- NB: THis needs fixing but not until ACS also has multi-category gender.
+gender4ToSex :: Int -> DT.Sex
+gender4ToSex n | n == 1 = DT.Male
+               | n == 2 = DT.Female
+               | otherwise = DT.Female
+
 
 intToEducation :: Int -> DT.Education
 intToEducation 1 = DT.L9

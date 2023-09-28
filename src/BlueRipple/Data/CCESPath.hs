@@ -71,8 +71,12 @@ ccesRowGen2020C = FS.modifyColumnSelector colSubset ccesRowGen2020CAllCols where
   colSubset = FS.columnSubset ccesCols2020C
 
 
+
 ces2020CSV :: FilePath
 ces2020CSV = dataDir ++ "CES20_Common_OUTPUT_vv.csv"
+
+ces2022CSV :: FilePath
+ces2022CSV = dataDir ++ "CCES22_Common_OUTPUT_vv_topost.csv"
 
 cesCols :: Int -> Int -> S.Set FS.HeaderText
 cesCols yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
@@ -94,6 +98,7 @@ cesCols yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
                                                           , "HouseCand3Party"
                                                           , "HouseCand4Party"
                                                           ])
+
 cesRenames :: Bool -> Int -> Int -> Map FS.HeaderText FS.ColTypeName
 cesRenames clAsInt yrSuffix congress =
   let nonCL = [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
@@ -110,6 +115,43 @@ cesRenames clAsInt yrSuffix congress =
 
   in M.fromList (nonCL <> cl)
 
+cesCols22 :: Int -> Int -> S.Set FS.HeaderText
+cesCols22 yrSuffix congress = S.fromList (FS.HeaderText <$> ["caseid"
+                                                            , "commonpostweight"
+                                                            , "inputstate"
+                                                            , "cdid" <> show congress
+                                                            , "gender4"
+                                                            , "birthyr"
+                                                            , "educ"
+                                                            , "race"
+                                                            , "hispanic"
+                                                            , "pid3"
+                                                            , "pid7"
+                                                            , "TS_voterstatus" -- registration, TargetSmart
+                                                            , "TS_g20" <> show yrSuffix  -- how voted and thus turnout, TargetSmart
+                                                            , "CC" <> show yrSuffix <> "_412" -- house candidate
+                                                            , "HouseCand1Party"
+                                                            , "HouseCand2Party"
+                                                            , "HouseCand3Party"
+                                                            , "HouseCand4Party"
+                                                            ])
+
+
+cesRenames22 :: Bool -> Int -> Int -> Map FS.HeaderText FS.ColTypeName
+cesRenames22 clAsInt yrSuffix congress =
+  let nonCL = [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
+              , (FS.HeaderText "commonpostweight", FS.ColTypeName "Weight")
+              , (FS.HeaderText "inputstate", FS.ColTypeName "StateFips")
+              , (FS.HeaderText ("cdid" <> show congress), FS.ColTypeName "CD")
+              , (FS.HeaderText ("CC" <> show yrSuffix <> "_412"), FS.ColTypeName "HouseVote")
+              ]
+      cl = if clAsInt
+        then [(FS.HeaderText ("TS_g20" <> show yrSuffix), FS.ColTypeName "CTurnout")
+             ,(FS.HeaderText ("TS_voterstatus"), FS.ColTypeName "CVoterStatus")]
+        else [(FS.HeaderText ("TS_g20" <> show yrSuffix), FS.ColTypeName "CTurnoutT")
+             ,(FS.HeaderText ("TS_voterstatus"), FS.ColTypeName "CVoterStatusT")]
+
+  in M.fromList (nonCL <> cl)
 --
 unRenameHeader :: FS.HeaderText
                -> FS.HeaderText
@@ -125,6 +167,13 @@ unRenameHeader shouldBe is (cols, renames) = (newCols, newRenames) where
 addPresVote :: FS.HeaderText -> S.Set FS.HeaderText ->  Map FS.HeaderText FS.ColTypeName -> (S.Set FS.HeaderText, Map FS.HeaderText FS.ColTypeName)
 addPresVote header cols renames = (S.insert header cols, M.insert header (FS.ColTypeName "PresVote") renames)
 
+ccesRowGen2022AllCols :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
+ccesRowGen2022AllCols = (FS.rowGen ces2022CSV) { FS.tablePrefix = "CES"
+                                               , FS.separator   = FS.CharSeparator ','
+                                               , FS.rowTypeName = "CES22"
+                                               }
+
+
 ccesRowGen2020AllCols :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"
                                                , FS.separator   = FS.CharSeparator ','
@@ -132,6 +181,10 @@ ccesRowGen2020AllCols = (FS.rowGen ces2020CSV) { FS.tablePrefix = "CES"
                                                }
 
 -- "CC20_410" -- 2020 pres vote
+
+cesRowGen2022 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
+cesRowGen2022 = FS.modifyColumnSelector modF ccesRowGen2022AllCols where
+  modF = FS.renameSomeUsingNames (cesRenames22 True 22 117) . FS.columnSubset (cesCols22 22 117)
 
 cesRowGen2020 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 cesRowGen2020 = FS.modifyColumnSelector modF ccesRowGen2020AllCols where
