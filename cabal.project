@@ -53,7 +53,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-utils
-  tag: a2c83cd66d0af8c26e2aa254d3df023f4aa52c41
+  tag: f56631ab7669b653ffe1652666e8dbf883fdeeec
 
 source-repository-package
   type: git
@@ -70,10 +70,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/heidi
   tag: 83e0f7e6ba80baaa18ab7daafe7083828fc74d60
 
---source-repository-package
---  type: git
---  location: https://github.com/adamConnerSax/Frames-utils
---  tag: 27d00ed0026577fe443133c70e11317623b857c7
+source-repository-package
+  type: git
+  location: https://github.com/adamConnerSax/Frames-utils
+  tag: f56631ab7669b653ffe1652666e8dbf883fdeeec
 
 --source-repository-package
 --  type: git

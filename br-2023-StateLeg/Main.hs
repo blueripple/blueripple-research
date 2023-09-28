@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QuasiQuotes #-}
@@ -27,6 +28,8 @@ import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.Loaders as BRL
+import qualified BlueRipple.Utilities.TableUtils as BR
+import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import qualified BlueRipple.Utilities.KnitUtils as BRK
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
@@ -49,6 +52,7 @@ import qualified Control.Foldl as FL
 import Control.Lens (view, (^.))
 
 import qualified Frames as F
+import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Map.Merge.Strict as MM
@@ -57,6 +61,7 @@ import qualified Frames.Melt as F
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.Transform as FT
+import qualified Frames.Constraints as FC
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Streamly.TH as FSTH
@@ -136,11 +141,12 @@ main = do
       let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
           turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
           prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
-          dVSModel gqName agg am pt = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
+          dVSModel gqName agg am pt
+            = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
-      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
-      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+--      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+--      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
       modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
       let modeledDVs = modeledMapToFrame modeledDVSMap
       dra <- do
@@ -151,10 +157,55 @@ main = do
       let (modeledAndDRA, missing) = FJ.leftJoinWithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra
       when (not $ null missing) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missing
 --      BRK.logFrame modeledAndDRA
+
       compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
-                   (FV.ViewConfig 500 500 10) modeledAndDRA
+                   (FV.ViewConfig 700 700 10) modeledAndDRA
       _ <- K.addHvega Nothing Nothing compChart
-      K.ignoreCacheTimeM BRL.stateTurnoutLoader >>= BRK.logFrame
+      let byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
+          draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
+          dlcc = [(GT.StateLower,"41","Lily Franklin")
+                 , (GT.StateUpper,"31", "Russet Perry")
+                 , (GT.StateUpper, "24", "Monty Mason")
+                 , (GT.StateUpper, "30", "Danica Roem")
+                 , (GT.StateUpper, "22", "Aaron Rouse")
+                 , (GT.StateUpper, "16", "Schuyler VanValkenburg")
+                 , (GT.StateLower, "94", "Phil Hernandez")
+                 , (GT.StateLower, "84", "Nadarius Clark")
+                 , (GT.StateLower, "82", "Kimberly Pope Adams")
+                 , (GT.StateLower, "71", "Jessica Anderson")
+                 , (GT.StateLower, "65", "Joshua Cole")
+                 , (GT.StateLower, "58", "Rodney Willet")
+                 , (GT.StateLower, "57", "Susanna Gibson")
+                 , (GT.StateLower, "22", "Joshua Thomas")
+                 , (GT.StateLower, "89", "Karen Jenkins")
+                 ]
+          toDistrict (x, y, _) = (x, y)
+          isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
+          bordered c = "border: 3px solid " <> c
+          dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
+          longShot ci = MT.ciUpper ci < 0.48
+          leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
+          leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
+          safeD ci = MT.ciLower ci > 0.52
+          mi = F.rgetField @MR.ModelCI
+          eRes = F.rgetField @ET.DemShare
+          longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
+          leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
+          leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
+          safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
+          resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
+          resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
+          resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
+          resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
+          cellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
+      BR.brAddRawHtmlTable "VA Model (2020 data): Senate" (BHA.class_ "brTable") (sldColonnade cellStyle)
+        $ sortBy byDistrictName $ FL.fold FL.list
+        $ F.filterFrame draCompetitive
+        $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
+      BR.brAddRawHtmlTable "VA Model (2020 data): House" (BHA.class_ "brTable") (sldColonnade cellStyle)
+        $ sortBy byDistrictName $ FL.fold FL.list
+        $ F.filterFrame draCompetitive
+        $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
       pure ()
     pure ()
   pure ()
@@ -163,6 +214,25 @@ main = do
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
+sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
+             => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+sldColonnade cas =
+  let state = F.rgetField @GT.StateAbbreviation
+      dType r = case (r ^. GT.districtTypeC) of
+        GT.StateUpper -> "Upper"
+        GT.StateLower -> "Lower"
+        _ -> "Not State Leg!"
+      dName = F.rgetField @GT.DistrictName
+      fullName = \r -> (dType r <> "-" <> dName r)
+      share5 = MT.ciLower . F.rgetField @MR.ModelCI
+      share50 = MT.ciMid . F.rgetField @MR.ModelCI
+      share95 = MT.ciUpper . F.rgetField @MR.ModelCI
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullName))
+     <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @ET.DemShare))
+     <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
+     <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
 modelDRAComparisonChart :: (K.KnitEffects r
                            , F.ElemOf rs GT.StateAbbreviation
