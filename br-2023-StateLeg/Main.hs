@@ -134,9 +134,9 @@ main = do
       presidentialElections_C <- BRL.presidentialByStateFrame
       modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
       let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-          turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am
-          prefModel gqName agg am pt = MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
-          dVSModel gqName agg am pt = MR.runFullModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
+          turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
+          prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
+          dVSModel gqName agg am pt = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
       modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
