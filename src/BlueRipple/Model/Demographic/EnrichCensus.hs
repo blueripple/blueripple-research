@@ -736,6 +736,11 @@ predictedCensusCASER' onSimplexM rebuild cacheRoot predictSRCA_C predictACSRE_C 
       recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
       recodedASR_C = fmap (fmap F.rcast . filterA6FrameToA5 . recodeA6SR . BRC.ageSexRace) censusTables_C
       ase_C = fmap (fmap F.rcast . BRC.ageSexEducation) censusTables_C
+  let densityFilter r = let x = r ^. DT.pWPopPerSqMile in x < 0 || x > 1e6
+  K.logLE K.Info "RecodedCSR"
+  K.ignoreCacheTime recodedCSR_C >>= BRK.logFrame . F.filterFrame densityFilter
+  K.logLE K.Info "RecodedASR"
+  K.ignoreCacheTime recodedASR_C >>= BRK.logFrame . F.filterFrame densityFilter
   (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CSR_ASR")
                             geoTextMF predictSRCA_C recodedCSR_C recodedASR_C
   predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CASR_ASE") geoTextMF predictACSRE_C casrPrediction_C ase_C

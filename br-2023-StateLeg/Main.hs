@@ -115,6 +115,7 @@ dlccVA = [(GT.StateLower,"41","Lily Franklin")
          ]
 main :: IO ()
 main = do
+
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
   pandocWriterConfig ←
     K.mkPandocWriterConfig
@@ -131,6 +132,8 @@ main = do
           , K.persistCache = KC.persistStrictByteString (\t → toString (cacheDir <> "/" <> t))
           }
   resE ← K.knitHtmls knitConfig $ do
+    testCensusPredictions cmdLine
+    K.knitError "STOP"
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         dmr = MC.tDesignMatrixRow_d
@@ -349,6 +352,39 @@ modeledACSBySLD cmdLine = do
                                 jointFromMarginalPredictorCASR_ASE_C
   BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD
     $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
+
+modeledACSBySLD' :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
+modeledACSBySLD' cmdLine = do
+  (jointFromMarginalPredictorCSR_ASR_C, _, _) <- CDDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
+                                                 >>= DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.SRCA @DMC.SR
+                                                 (Right "model/demographic/csr_asr_PUMA") "CSR_ASR_ByPUMA"
+                                                 cmdLine . fmap (fmap F.rcast)
+  (jointFromMarginalPredictorCASR_ASE_C, _, _) <- CDDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
+                                                  >>= DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
+                                                  (Right "model/demographic/casr_ase_PUMA") "CASR_SER_ByPUMA"
+                                                  cmdLine . fmap (fmap F.rcast)
+  (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
+                                >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) True "test"
+                                jointFromMarginalPredictorCSR_ASR_C
+                                jointFromMarginalPredictorCASR_ASE_C
+  BRK.retrieveOrMakeD "test/data/sldPSData.bin" acsCASERBySLD
+    $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
+
+testCensusPredictions :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+testCensusPredictions cmdLine = do
+  let densityFilter r = let x = r ^. DT.pWPopPerSqMile in x < 0 || x > 1e6
+  inputFilteredASE <- F.filterFrame densityFilter . BRC.ageSexEducation <$> K.ignoreCacheTimeM BRC.censusTablesFor2022SLD_ACS2021
+  K.logLE K.Info "Weird densities in Input?"
+  K.logLE K.Info "CSR"
+  (F.filterFrame densityFilter . BRC.citizenshipSexRace <$> K.ignoreCacheTimeM BRC.censusTablesFor2022SLD_ACS2021) >>= BRK.logFrame
+  K.logLE K.Info "ASR"
+  (F.filterFrame densityFilter . BRC.ageSexRace <$> K.ignoreCacheTimeM BRC.censusTablesFor2022SLD_ACS2021) >>= BRK.logFrame
+  K.logLE K.Info "ASE"
+  (F.filterFrame densityFilter . BRC.ageSexEducation <$> K.ignoreCacheTimeM BRC.censusTablesFor2022SLD_ACS2021) >>= BRK.logFrame
+  result <- K.ignoreCacheTimeM $  modeledACSBySLD' cmdLine
+--  K.logLE K.Info "Result"
+--  BRK.logFrame $ F.filterFrame densityFilter $ DP.unPSData result
+  pure ()
 
 postDir ∷ Path.Path Rel Dir
 postDir = [Path.reldir|br-2023-StateLeg/posts|]
