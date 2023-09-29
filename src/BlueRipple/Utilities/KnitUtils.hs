@@ -263,8 +263,43 @@ brAddJSON pp postInfo jsonName jsonVal = do
   K.liftKnit $ SD.createDirectoryIfMissing True (Path.toFilePath destDir)
   jsonPath' <- K.knitEither $ BRC.jsonPath pp postInfo jsonFileName
   K.liftKnit $ A.encodeFile (Path.toFilePath jsonPath') jsonVal
-  K.knitEither $ BRC.jsonURL pp postInfo jsonFileName
+  K.knitEither $ BRC.dataURL pp postInfo jsonFileName
 
+-- Copy data from an absolute path into data directory so it's available for, e.g.,
+-- hvega
+data WhenDestExists = ReplaceExisting | ExistsIsError | LeaveExisting deriving stock (Eq)
+brCopyDataForPost ::  K.KnitEffects r
+                => BRC.PostPaths Path.Abs
+                -> BRC.PostInfo
+                -> WhenDestExists
+                -> Path.Path Path.Abs Path.File
+                -> Maybe Text
+                -> K.Sem r Text
+brCopyDataForPost pp postInfo whenExists srcFile destFileNameM = do
+  let destDir = BRC.dataDir pp postInfo
+  srcExists <- K.liftKnit $ SD.doesFileExist (Path.toFilePath srcFile)
+  destFileName <- K.liftKnit @IO -- FIXME: this is a hack to handle the possible thrown error
+                  $ maybe (pure $ Path.filename srcFile) (Path.parseRelFile)
+                  $ fmap toString destFileNameM
+  let tgtFile = destDir Path.</> Path.filename destFileName
+      doCopy = K.liftKnit $ SD.copyFile (Path.toFilePath srcFile) (Path.toFilePath tgtFile)
+      createDirIfNec = K.liftKnit $ SD.createDirectoryIfMissing True (Path.toFilePath destDir)
+      url = K.knitEither $ BRC.dataURL pp postInfo (toText $ Path.toFilePath $ Path.filename tgtFile)
+  when (not srcExists) $ K.knitError $ "brCopyDataForPost: source file (" <> show srcFile <> ") does not exist."
+  destExists <- K.liftKnit $ SD.doesFileExist (Path.toFilePath tgtFile)
+  when (destExists && whenExists == ExistsIsError)
+    $ K.knitError
+    $ "brCopyDataForPost: file (" <> show (Path.filename srcFile) <> ") exists in destination and whenExisting==ExistsIsError."
+  if destExists && whenExists == LeaveExisting
+    then K.logLE K.Info $ "brCopyDataForPost: target (" <> show tgtFile <> ") exists. Not copying since whenExists==LeaveExisting"
+    else (do
+             if destExists
+               then K.logLE K.Info $ "brCopyDataForPost: overwriting " <> show tgtFile <> " with " <> show srcFile <> ", since whenExists==ReplaceExisting"
+               else K.logLE K.Info $ "brCopyDataForPost: copying " <> show srcFile <> " to " <> show tgtFile
+             createDirIfNec
+             doCopy
+         )
+  url
 --  let noteParent = Path.parent notePath
 --  K.logLE K.Info $ "If necessary, creating note path \"" <> toText (Path.toFilePath noteParent)
 

@@ -69,7 +69,7 @@ import qualified Frames.Serialize as FS
 
 import Path (Dir, Rel)
 import qualified Path
-
+import qualified Numeric
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 
 import qualified Data.Map.Strict as M
@@ -97,6 +97,22 @@ pandocTemplate = K.FullySpecifiedTemplatePath "pandoc-templates/blueripple_basic
 type SLDKeyR = '[GT.StateAbbreviation] V.++ BRC.LDLocationR
 type ModeledR = SLDKeyR V.++ '[MR.ModelCI]
 
+dlccVA = [(GT.StateLower,"41","Lily Franklin")
+         , (GT.StateUpper,"31", "Russet Perry")
+         , (GT.StateUpper, "24", "Monty Mason")
+         , (GT.StateUpper, "30", "Danica Roem")
+         , (GT.StateUpper, "22", "Aaron Rouse")
+         , (GT.StateUpper, "16", "Schuyler VanValkenburg")
+         , (GT.StateLower, "94", "Phil Hernandez")
+         , (GT.StateLower, "84", "Nadarius Clark")
+         , (GT.StateLower, "82", "Kimberly Pope Adams")
+         , (GT.StateLower, "71", "Jessica Anderson")
+         , (GT.StateLower, "65", "Joshua Cole")
+         , (GT.StateLower, "58", "Rodney Willet")
+         , (GT.StateLower, "57", "Susanna Gibson")
+         , (GT.StateLower, "22", "Joshua Thomas")
+         , (GT.StateLower, "89", "Karen Jenkins")
+         ]
 main :: IO ()
 main = do
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
@@ -139,7 +155,9 @@ main = do
       presidentialElections_C <- BRL.presidentialByStateFrame
       modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
       let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-          turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
+      K.ignoreCacheTime stateSLDs_C >>= BRK.logFrame . F.filterFrame (\r -> r ^. GT.districtTypeC == GT.StateLower && r ^. GT.districtName == "15") . DP.unPSData
+      sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
+      let turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
           prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
           dVSModel gqName agg am pt
             = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
@@ -154,31 +172,34 @@ main = do
         upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
         lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
         pure $ upper <> lower
-      let (modeledAndDRA, missing) = FJ.leftJoinWithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra
-      when (not $ null missing) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missing
+      let (modeledAndDRA, missingModelDRA, missingSummary)
+            = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
+      when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
+      when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
 --      BRK.logFrame modeledAndDRA
 
       compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
-                   (FV.ViewConfig 700 700 10) modeledAndDRA
+                   (FV.ViewConfig 500 500 10) modeledAndDRA
       _ <- K.addHvega Nothing Nothing compChart
+      let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
+      geoDeltaChartL <- geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
+                       (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("delta", delta) modeledAndDRA
+      _ <- K.addHvega Nothing Nothing geoDeltaChartL
+      geoDeltaChartU <- geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
+                       (FV.ViewConfig 500 300 10) "VA" GT.StateUpper ("delta", delta) modeledAndDRA
+      _ <- K.addHvega Nothing Nothing geoDeltaChartU
+      geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
+        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("log density", Numeric.log . view DT.pWPopPerSqMile) modeledAndDRA
+        >>= K.addHvega Nothing Nothing
+      geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
+        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus)) modeledAndDRA
+        >>= K.addHvega Nothing Nothing
+      geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
+        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
+        >>= K.addHvega Nothing Nothing
       let byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
           draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
-          dlcc = [(GT.StateLower,"41","Lily Franklin")
-                 , (GT.StateUpper,"31", "Russet Perry")
-                 , (GT.StateUpper, "24", "Monty Mason")
-                 , (GT.StateUpper, "30", "Danica Roem")
-                 , (GT.StateUpper, "22", "Aaron Rouse")
-                 , (GT.StateUpper, "16", "Schuyler VanValkenburg")
-                 , (GT.StateLower, "94", "Phil Hernandez")
-                 , (GT.StateLower, "84", "Nadarius Clark")
-                 , (GT.StateLower, "82", "Kimberly Pope Adams")
-                 , (GT.StateLower, "71", "Jessica Anderson")
-                 , (GT.StateLower, "65", "Joshua Cole")
-                 , (GT.StateLower, "58", "Rodney Willet")
-                 , (GT.StateLower, "57", "Susanna Gibson")
-                 , (GT.StateLower, "22", "Joshua Thomas")
-                 , (GT.StateLower, "89", "Karen Jenkins")
-                 ]
+          dlcc = dlccVA
           toDistrict (x, y, _) = (x, y)
           isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
           bordered c = "border: 3px solid " <> c
@@ -265,6 +286,49 @@ modelDRAComparisonChart pp pi chartID title vc rows = do
                                   , layers
                                   , vlData
                                   ]
+
+geoCompChart :: (K.KnitEffects r
+                , FC.ElemsOf rs [MR.ModelCI, ET.DemShare, GT.DistrictName, GT.DistrictTypeC]
+                , FSI.RecVec rs
+                 )
+              => BR.PostPaths Path.Abs
+              -> BR.PostInfo
+              -> Text
+              -> Text
+              -> FV.ViewConfig
+              -> Text
+              -> GT.DistrictType
+              -> (Text, F.Record rs -> Double)
+              -> F.FrameRec rs
+              -> K.Sem r GV.VegaLite
+geoCompChart pp pi chartID title vc sa dType (label, f) rows = do
+  let colData r = [ ("District", GV.Str $ r ^. GT.districtName)
+                  , ("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
+                  , ("Historical", GV.Number $ r ^. ET.demShare)
+                  , (label, GV.Number $ f r) --100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare))
+                  ]
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ F.filterFrame ((== dType) . view GT.districtTypeC)rows
+  jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
+  jsonDataUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
+  (geoJsonPrefix, titleSuffix) <- case dType of
+    GT.StateUpper -> pure $ (sa <> "_2022_sldu", " (Upper Chamber)")
+    GT.StateLower -> pure $ (sa <> "_2022_sldl", " (Lower Chamber)")
+    _ -> K.knitError $ "modelGeoChart: Bad district type (" <> show dType <> ") specified"
+
+  geoJsonSrc <- K.liftKnit @IO $ Path.parseAbsFile $ toString $ "/Users/adam/BlueRipple/GeoData/input_data/StateLegDistricts/" <> sa <> "/" <> geoJsonPrefix <> "_topo.json"
+  jsonGeoUrl <- BRK.brCopyDataForPost pp pi BRK.LeaveExisting geoJsonSrc Nothing
+  let rowData = GV.dataFromUrl jsonDataUrl [GV.JSON "values"]
+      geoData = GV.dataFromUrl jsonGeoUrl [GV.TopojsonFeature geoJsonPrefix]
+      encQty = GV.color [GV.MName label, GV.MmType GV.Quantitative]
+      encoding = (GV.encoding . encQty) []
+      tLookup = (GV.transform . GV.lookup "properties.NAME" rowData "District" (GV.LuFields [label])) []
+      mark = GV.mark GV.Geoshape [GV.MTooltip GV.TTData]
+      projection = GV.projection [GV.PrType GV.Identity, GV.PrReflectY True]
+  pure $ FV.configuredVegaLite vc [FV.title (title <> titleSuffix), geoData, tLookup, projection, encoding, mark]
+
+
+
+
 
 modeledMapToFrame :: MC.PSMap SLDKeyR MT.ConfidenceInterval -> F.FrameRec ModeledR
 modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR.ModelCI ci) . M.toList . MC.unPSMap

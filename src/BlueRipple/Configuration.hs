@@ -282,9 +282,9 @@ jsonPath pp postInfo jn = do
       dataPath = dataDir pp postInfo
   (dataPath </>) <$> parseRel jn
 
--- | Given PostPaths and PostInfo and a relative JSON path, construct URL for hvega
-jsonURL :: PostPaths Abs -> PostInfo -> Text -> Either Text Text
-jsonURL pp (PostInfo ps _) jsonName = do
+-- | Given PostPaths and PostInfo and a relative data-file path, construct URL (e.g., for hvega)
+dataURL :: PostPaths Abs -> PostInfo -> Text -> Either Text Text
+dataURL pp (PostInfo ps _) jsonName = do
   jsonNameRelFile <- first show $ Path.parseRelFile (toString $ jsonName)
   let jsonRelFile :: Path Rel File = dataRelDir </> jsonNameRelFile
       jsonUrl' = case ps of

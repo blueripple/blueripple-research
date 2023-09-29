@@ -29,6 +29,7 @@ module BlueRipple.Model.Election2.DataPrep
 where
 
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+import qualified BlueRipple.Model.Demographic.EnrichCensus as DEC
 import qualified BlueRipple.Model.TurnoutAdjustment as BRT
 
 import qualified BlueRipple.Data.CCES as CCES
@@ -59,6 +60,7 @@ import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
 import qualified Frames.Melt as F
 import qualified Frames.Serialize as FS
+import qualified Frames.Constraints as FC
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.TH as FS
@@ -78,14 +80,6 @@ FS.declareColumn "SurveyedW" ''Double
 FS.declareColumn "RegisteredW" ''Double
 FS.declareColumn "VotedW" ''Double
 
-{-
-FS.declareColumn "AHVoted" ''Double
-FS.declareColumn "AHHouseDVotes" ''Double
-FS.declareColumn "AHHouseRVotes" ''Double
-FS.declareColumn "AHPresDVotes" ''Double
-FS.declareColumn "AHPresRVotes" ''Double
-FS.declareColumn "AchenHurWeight" ''Double
--}
 FS.declareColumn "VotesInRace" ''Int
 FS.declareColumn "DVotes" ''Int
 FS.declareColumn "RVotes" ''Int
@@ -93,7 +87,6 @@ FS.declareColumn "RVotes" ''Int
 FS.declareColumn "VotesInRaceW" ''Double
 FS.declareColumn "DVotesW" ''Double
 FS.declareColumn "RVotesW" ''Double
-
 
 FS.declareColumn "TVotes" ''Int
 FS.declareColumn "PresVotes" ''Int
@@ -107,6 +100,23 @@ FS.declareColumn "HouseRVotes" ''Int
 FS.declareColumn "Incumbency" ''Int
 FS.declareColumn "HouseIncumbency" ''Int
 
+FS.declareColumn "Frac18To24" ''Double
+FS.declareColumn "Frac25To34" ''Double
+FS.declareColumn "Frac35To44" ''Double
+FS.declareColumn "Frac45To64" ''Double
+FS.declareColumn "Frac65plus" ''Double
+FS.declareColumn "FracFemale" ''Double
+FS.declareColumn "FracMale" ''Double
+FS.declareColumn "FracNonHSGrad" ''Double
+FS.declareColumn "FracHSGrad" ''Double
+FS.declareColumn "FracSomeCollege" ''Double
+FS.declareColumn "FracCollegeGrad" ''Double
+FS.declareColumn "FracOther" ''Double
+FS.declareColumn "FracBlack" ''Double
+FS.declareColumn "FracHispanic" ''Double
+FS.declareColumn "FracAAPI" ''Double
+FS.declareColumn "FracWhite" ''Double
+
 type StateKeyR = [BR.Year, GT.StateAbbreviation]
 type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
 
@@ -118,8 +128,6 @@ type LPredictorsR = '[DT.PWPopPerSqMile]
 type PredictorsR = LPredictorsR V.++ DCatsR
 type PrefPredictorsR = HouseIncumbency ': PredictorsR
 type PrefDataR = [VotesInRace, DVotes, RVotes, VotesInRaceW, DVotesW, RVotesW]
---type CESByCDR = CDKeyR V.++ PrefPredictorsR V.++ CountDataR V.++ PrefDataR
---type CESByStateR = StateKeyR V.++ PrefPredictorsR V.++ CountDataR V.++ PrefDataR
 
 type CESByR k = k V.++  PrefPredictorsR V.++ CountDataR V.++ PrefDataR
 type CESByCDR = CESByR CDKeyR
@@ -256,6 +264,48 @@ cachedPreppedModelDataState cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix
 
 
 -- general
+type SummaryR = [Frac18To24, Frac25To34, Frac35To44, Frac45To64, Frac65plus
+                ,FracFemale, FracMale
+                ,FracNonHSGrad, FracHSGrad, FracSomeCollege, FracCollegeGrad
+                ,FracOther, FracBlack, FracHispanic, FracAAPI, FracWhite
+                , DT.PopCount, DT.PWPopPerSqMile
+                ]
+
+type SummaryDataR = DT.PopCount ': DT.PWPopPerSqMile ': DEC.ASER
+
+summarizeASER_Fld :: forall ks rs .
+                     (ks F.⊆ rs, FC.ElemsOf rs SummaryDataR, Ord (F.Record ks), FI.RecVec (ks V.++ SummaryR))
+                  => FL.Fold (F.Record rs) (F.FrameRec (ks V.++ SummaryR))
+summarizeASER_Fld = FMR.concatFold
+                $ FMR.mapReduceFold
+                FMR.noUnpack
+                (FMR.assignKeysAndData @ks @SummaryDataR)
+                (FMR.foldAndAddKey innerFld)
+  where
+    innerFld :: FL.Fold (F.Record SummaryDataR) (F.Record SummaryR)
+    innerFld =
+      let wgtF = FL.premap (realToFrac . view DT.popCount) FL.sum
+          fracWgt f = FL.prefilter f wgtF
+          fracOfF f = (/) <$> fracWgt f <*> wgtF
+          ageFF a = fracOfF $ (== a) . view DT.age5C
+          sexFF s = fracOfF $ (== s) . view DT.sexC
+          eduFF e = fracOfF $ (== e) . view DT.education4C
+          raceFF r = fracOfF $ (== r) . view DT.race5C
+          safeDFilter r = let d = r ^. DT.pWPopPerSqMile in d > 0 && d < 1e6
+      in
+        (\a1 a2 a3 a4 a5 s1 s2 e1 e2 e3 e4 r1 r2 r3 r4 r5 pd
+          -> a1 F.&: a2 F.&: a3 F.&: a4 F.&: a5
+             F.&: s1 F.&: s2
+             F.&: e1 F.&: e2 F.&: e3 F.&: e4
+             F.&: r1 F.&: r2 F.&: r3 F.&: r4 F.&: r5
+             F.&: pd
+        )
+        <$> ageFF DT.A5_18To24 <*> ageFF DT.A5_25To34 <*> ageFF DT.A5_35To44 <*> ageFF DT.A5_45To64 <*> ageFF DT.A5_65AndOver
+        <*> sexFF DT.Female <*> sexFF DT.Male
+        <*> eduFF DT.E4_NonHSGrad <*> eduFF DT.E4_HSGrad <*> eduFF DT.E4_SomeCollege <*> eduFF DT.E4_CollegeGrad
+        <*> raceFF DT.R5_Other <*> raceFF DT.R5_Black <*> raceFF DT.R5_Hispanic <*> raceFF DT.R5_Asian <*> raceFF DT.R5_WhiteNonHispanic
+        <*> FL.prefilter safeDFilter DT.pwDensityAndPopFldRec
+
 withZeros :: forall outerK ks .
              (
                (ks V.++ [DT.PopCount, DT.PWPopPerSqMile]) F.⊆ (outerK V.++ ks V.++ [DT.PopCount, DT.PWPopPerSqMile])
