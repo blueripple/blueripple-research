@@ -235,15 +235,12 @@ sldColonnade cas =
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
 
 modelDRAComparisonChart :: (K.KnitEffects r
-                           , F.ElemOf rs GT.StateAbbreviation
-                           , F.ElemOf rs MR.ModelCI
-                           , F.ElemOf rs ET.DemShare
-                           , F.ElemOf rs GT.DistrictName
+                           , FC.ElemsOf rs [GT.StateAbbreviation, MR.ModelCI, ET.DemShare, GT.DistrictName, GT.DistrictTypeC]
                            )
                         => BR.PostPaths Path.Abs -> BR.PostInfo -> Text -> Text -> FV.ViewConfig -> F.FrameRec rs -> K.Sem r GV.VegaLite
 modelDRAComparisonChart pp pi chartID title vc rows = do
   let colData r = [("State", GV.Str $ r ^. GT.stateAbbreviation)
-                  ,("District", GV.Str $ r ^. GT.districtName)
+                  ,("District", GV.Str $ show (r ^. GT.districtTypeC) <> "-" <> r ^. GT.districtName)
                   ,("Model_Lo" , GV.Number $ MT.ciLower $ r ^. MR.modelCI)
                   ,("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
                   ,("Model_Hi" , GV.Number $ MT.ciUpper $ r ^. MR.modelCI)
@@ -255,7 +252,7 @@ modelDRAComparisonChart pp pi chartID title vc rows = do
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
       encHistorical = GV.position GV.X [GV.PName "Historical", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
       encModel = GV.position GV.Y [GV.PName "Model", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
-      markMid = GV.mark GV.Circle [GV.MTooltip GV.TTEncoding]
+      markMid = GV.mark GV.Circle [GV.MTooltip GV.TTData]
       midSpec = GV.asSpec [(GV.encoding . encHistorical . encModel) [], markMid]
       encModelLo = GV.position GV.Y [GV.PName "Model_Lo", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
       encModelHi = GV.position GV.Y2 [GV.PName "Model_Hi", GV.PmType GV.Quantitative,  GV.PScale [GV.SZero False]]
