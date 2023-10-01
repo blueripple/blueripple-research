@@ -52,7 +52,7 @@ lookupAndLoadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               -> RedistrictingPlanId
                               -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
 lookupAndLoadRedistrictingPlanAnalysis plans pi' = do
-  let noPlanErr = "No plan found for info:" <> show (pi :: Double)
+  let noPlanErr = "No plan found for info:" <> show pi'
   pf <- K.knitMaybe noPlanErr $ M.lookup pi' plans
   loadRedistrictingPlanAnalysis pi' pf
 

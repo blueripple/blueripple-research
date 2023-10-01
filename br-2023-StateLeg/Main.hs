@@ -113,9 +113,23 @@ dlccVA = [(GT.StateLower,"41","Lily Franklin")
          , (GT.StateLower, "22", "Joshua Thomas")
          , (GT.StateLower, "89", "Karen Jenkins")
          ]
+
+dlccNJ = [(GT.StateUpper, "38", "Joseph Lagana/Lisa Swain/Chris Tully")
+         ,(GT.StateUpper, "11", "Vin Gopal/Margie Donlon/Luanne Peterpaul")
+         ,(GT.StateUpper, "16", "Andrew Zwicker/Mitchelle Drulis/Roy Freiman")
+         ]
+
+dlccMS = [(GT.StateLower,"86","Annita Bonner")
+          ,(GT.StateLower,"24","David Olds")
+          ,(GT.StateUpper,"2","Pam McKelvy Hammer")
+          ,(GT.StateUpper,"10","Andre DeBerry")
+          , (GT.StateLower,"12","Donna Niewiaroski")
+         ]
+
+dlccMap = M.fromList [("LA",[]), ("MS",dlccMS), ("NJ", dlccNJ), ("VA", dlccVA)]
+
 main :: IO ()
 main = do
-
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
   pandocWriterConfig ←
     K.mkPandocWriterConfig
@@ -134,106 +148,119 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-        dmr = MC.tDesignMatrixRow_d
-        survey = MC.CESSurvey
-        aggregation = MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur
-        alphaModel = MC.St_A_S_E_R_ER_StR_StER
-        psT = MC.NoPSTargets --, MC.PSTargets]
-    rawCES_C <- DP.cesCountedDemPresVotesByCD False
-    cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
-    rawCPS_C <- DP.cpsCountedTurnoutByState
-    cpCPS_C <- DP.cachedPreppedCPS (Right "model/election2/test/CPSTurnoutModelDataRaw.bin") rawCPS_C
-    let modelDirE = Right "model/election2/stan/"
-        cacheDirE = Right "model/election2/"
+    stateUpperOnlyMap <- FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BRDF.sLDUpperOnly)) FL.map)
+                         <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
 
-    let state = "VA"
-    modelPostPaths <- postPaths state cmdLine
-
-    let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
-        psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
-
-    BRK.brNewPost modelPostPaths postInfo state $ do
-      presidentialElections_C <- BRL.presidentialByStateFrame
-      modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
-      let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-      sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
-      let turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
-          prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
-          dVSModel gqName agg am pt
-            = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
-          g f (a, b) = f b >>= pure . (a, )
-          h f = traverse (g f)
---      modeledTurnoutMap <- K.ignoreCacheTimeM $ turnoutModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
---      modeledPrefMap <- K.ignoreCacheTimeM $ prefModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
-      modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
-      let modeledDVs = modeledMapToFrame modeledDVSMap
-      dra <- do
-        allPlansMap <- DRA.allPassedSLDPlans
-        upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
-        lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
-        pure $ upper <> lower
-      let (modeledAndDRA, missingModelDRA, missingSummary)
-            = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
-      when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
-      when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
---      BRK.logFrame modeledAndDRA
-
-      compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
-                   (FV.ViewConfig 500 500 10) modeledAndDRA
-      _ <- K.addHvega Nothing Nothing compChart
-      let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
-      geoDeltaChartL <- geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
-                       (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("delta", delta) modeledAndDRA
-      _ <- K.addHvega Nothing Nothing geoDeltaChartL
-      geoDeltaChartU <- geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
-                       (FV.ViewConfig 500 300 10) "VA" GT.StateUpper ("delta", delta) modeledAndDRA
-      _ <- K.addHvega Nothing Nothing geoDeltaChartU
-      geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
-        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("log density", Numeric.log . view DT.pWPopPerSqMile) modeledAndDRA
-        >>= K.addHvega Nothing Nothing
-      geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
-        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus)) modeledAndDRA
-        >>= K.addHvega Nothing Nothing
-      geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
-        (FV.ViewConfig 500 300 10) "VA" GT.StateLower ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
-        >>= K.addHvega Nothing Nothing
-      let byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
-          draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
-          dlcc = dlccVA
-          toDistrict (x, y, _) = (x, y)
-          isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
-          bordered c = "border: 3px solid " <> c
-          dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
-          longShot ci = MT.ciUpper ci < 0.48
-          leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
-          leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
-          safeD ci = MT.ciLower ci > 0.52
-          mi = F.rgetField @MR.ModelCI
-          eRes = F.rgetField @ET.DemShare
-          longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
-          leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
-          leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
-          safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
-          resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
-          resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
-          resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
-          resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
-          cellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
-      BR.brAddRawHtmlTable "VA Model (2020 data): Senate" (BHA.class_ "brTable") (sldColonnade cellStyle)
-        $ sortBy byDistrictName $ FL.fold FL.list
-        $ F.filterFrame draCompetitive
-        $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
-      BR.brAddRawHtmlTable "VA Model (2020 data): House" (BHA.class_ "brTable") (sldColonnade cellStyle)
-        $ sortBy byDistrictName $ FL.fold FL.list
-        $ F.filterFrame draCompetitive
-        $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
-      pure ()
-    pure ()
-  pure ()
+    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap) ["LA", "MS", "NJ", "VA"]
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
+                 => BR.CommandLine
+                 -> BR.PostInfo
+                 -> Map Text Bool
+                 -> Map Text [(GT.DistrictType, Text, Text)]
+                 -> Text
+                 -> K.Sem r ()
+analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
+  modelPostPaths <- postPaths state cmdLine
+  let modelDirE = Right "model/election2/stan/"
+      cacheDirE = Right "model/election2/"
+      dmr = MC.tDesignMatrixRow_d
+      survey = MC.CESSurvey
+      aggregation = MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur
+      alphaModel = MC.St_A_S_E_R_ER_StR_StER
+      psT = MC.NoPSTargets
+      psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
+      psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
+
+  BRK.brNewPost modelPostPaths postInfo state $ do
+    presidentialElections_C <- BRL.presidentialByStateFrame
+    modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+    let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
+    sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
+    let --turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
+        --prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
+        dVSModel gqName agg am pt
+          = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
+        g f (a, b) = f b >>= pure . (a, )
+        h f = traverse (g f)
+    modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+    allPlansMap <- DRA.allPassedSLDPlans
+    upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
+    let modeledDVs = modeledMapToFrame modeledDVSMap
+    dra <- do
+      upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
+      if upperOnly then pure upper
+        else (do
+                 lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
+                 pure $ upper <> lower
+             )
+    let (modeledAndDRA, missingModelDRA, missingSummary)
+          = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
+    when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
+    when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
+--      BRK.logFrame modeledAndDRA
+
+    compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
+                 (FV.ViewConfig 500 500 10) modeledAndDRA
+    _ <- K.addHvega Nothing Nothing compChart
+    let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
+        detailChamber = if upperOnly then GT.StateUpper else GT.StateLower
+--        chamberName uo dt =
+    when (not upperOnly) $ do
+      void $ geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
+        (FV.ViewConfig 500 300 10) state GT.StateLower ("delta", delta) modeledAndDRA
+        >>= K.addHvega Nothing Nothing
+    geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
+      (FV.ViewConfig 500 300 10) state GT.StateUpper ("delta", delta) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
+      (FV.ViewConfig 500 300 10) state detailChamber ("log density", Numeric.log . view DT.pWPopPerSqMile) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
+      (FV.ViewConfig 500 300 10) state detailChamber ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus)) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
+      (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    let byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
+        draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
+        dlcc = fromMaybe [] $ M.lookup state dlccMap
+        toDistrict (x, y, _) = (x, y)
+        isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
+        bordered c = "border: 3px solid " <> c
+        dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
+        longShot ci = MT.ciUpper ci < 0.48
+        leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
+        leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
+        safeD ci = MT.ciLower ci > 0.52
+        mi = F.rgetField @MR.ModelCI
+        eRes = F.rgetField @ET.DemShare
+        longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
+        leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
+        leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
+        safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
+        resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
+        resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
+        resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
+        resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
+        cellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
+    BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade cellStyle)
+      $ sortBy byDistrictName $ FL.fold FL.list
+      $ F.filterFrame draCompetitive
+      $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
+    when (not upperOnly)
+      $ BR.brAddRawHtmlTable (state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade cellStyle)
+      $ sortBy byDistrictName $ FL.fold FL.list
+      $ F.filterFrame draCompetitive
+      $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
+    pure ()
+  pure ()
+
+
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
              => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
@@ -325,10 +352,6 @@ geoCompChart pp pi chartID title vc sa dType (label, f) rows = do
       mark = GV.mark GV.Geoshape [GV.MTooltip GV.TTData]
       projection = GV.projection [GV.PrType GV.Identity, GV.PrReflectY True]
   pure $ FV.configuredVegaLite vc [FV.title (title <> titleSuffix), geoData, tLookup, projection, encoding, mark]
-
-
-
-
 
 modeledMapToFrame :: MC.PSMap SLDKeyR MT.ConfidenceInterval -> F.FrameRec ModeledR
 modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR.ModelCI ci) . M.toList . MC.unPSMap
