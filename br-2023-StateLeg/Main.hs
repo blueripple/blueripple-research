@@ -132,8 +132,6 @@ main = do
           , K.persistCache = KC.persistStrictByteString (\t → toString (cacheDir <> "/" <> t))
           }
   resE ← K.knitHtmls knitConfig $ do
-    testCensusPredictions cmdLine
-    K.knitError "STOP"
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         dmr = MC.tDesignMatrixRow_d
@@ -158,7 +156,6 @@ main = do
       presidentialElections_C <- BRL.presidentialByStateFrame
       modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
       let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-      K.ignoreCacheTime stateSLDs_C >>= BRK.logFrame . F.filterFrame (\r -> r ^. GT.districtTypeC == GT.StateLower && r ^. GT.districtName == "15") . DP.unPSData
       sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
       let turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
           prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
@@ -352,7 +349,7 @@ modeledACSBySLD cmdLine = do
                                 jointFromMarginalPredictorCASR_ASE_C
   BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD
     $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
-
+{-
 modeledACSBySLD' :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD' cmdLine = do
   (jointFromMarginalPredictorCSR_ASR_C, _, _) <- CDDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
@@ -372,7 +369,7 @@ modeledACSBySLD' cmdLine = do
 
 testCensusPredictions :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 testCensusPredictions cmdLine = do
-  let densityFilter r = let x = r ^. DT.pWPopPerSqMile in x < 0 || x > 1e6
+  let densityFilter r = let x = r ^. DT.pWPopPerSqMile in x <= 0 || x > 1e6
   inputFilteredASE <- F.filterFrame densityFilter . BRC.ageSexEducation <$> K.ignoreCacheTimeM BRC.censusTablesFor2022SLD_ACS2021
   K.logLE K.Info "Weird densities in Input?"
   K.logLE K.Info "CSR"
@@ -385,6 +382,7 @@ testCensusPredictions cmdLine = do
 --  K.logLE K.Info "Result"
 --  BRK.logFrame $ F.filterFrame densityFilter $ DP.unPSData result
   pure ()
+-}
 
 postDir ∷ Path.Path Rel Dir
 postDir = [Path.reldir|br-2023-StateLeg/posts|]

@@ -398,20 +398,20 @@ innerProductCWD'' ma mb =
 
 
 positiveConstrainedSolve :: LA.Matrix Double -> LA.Vector Double -> LA.Vector Double -> LA.Vector Double
-positiveConstrainedSolve m rhs v0 =
-  let mTm = LA.tr m LA.<> m
-      vLen = VS.length v0
-      objective v = (LA.norm_2 $ (m LA.#> v) - rhs, 2 * mTm LA.#> v)
+positiveConstrainedSolve m rhs v0 =  if fst (objective v0) < 1 then v0 else g where
+  mTm = LA.tr m LA.<> m
+  vLen = VS.length v0
+  objective v = (LA.norm_2 $ (m LA.#> v) - rhs, 2 * mTm LA.#> v)
 --      constraintD n v = (negate $ v VS.! n, (LA.assoc vLen 0 [(n, negate 1)] :: LA.Vector Double))
 --      nlConstraintsD cTol = fmap (\n -> NLOPT.InequalityConstraint (NLOPT.Scalar (constraintD n)) cTol) [0..(vLen - 1)]
-      maxIters = 1000
-      absTol = 1e-6
-      absTolV = VS.replicate vLen absTol
-      nlStop = NLOPT.ParameterAbsoluteTolerance absTolV :| [NLOPT.MaximumEvaluations maxIters, NLOPT.MinimumValue 0]
-      nlAlgo = NLOPT.SLSQP objective [NLOPT.LowerBounds $ VS.replicate vLen 0] [] []
-      nlProblem = NLOPT.LocalProblem (fromIntegral vLen) nlStop nlAlgo
-      nlSol = NLOPT.minimizeLocal nlProblem v0
-  in case nlSol of
+  maxIters = 1000
+  relTol = 1
+  relTolV = VS.replicate vLen relTol
+  nlStop = NLOPT.ParameterRelativeTolerance relTol :| [NLOPT.MaximumEvaluations maxIters, NLOPT.MinimumValue 1]
+  nlAlgo = NLOPT.SLSQP objective [NLOPT.LowerBounds $ VS.replicate vLen 0] [] []
+  nlProblem = NLOPT.LocalProblem (fromIntegral vLen) nlStop nlAlgo
+  nlSol = NLOPT.minimizeLocal nlProblem v0
+  g = case nlSol of
     Left result -> let x = v0 in trace ("positiveConstrainedSolve failed. Returning v0") x
     Right solution -> case NLOPT.solutionResult solution of
       NLOPT.MAXEVAL_REACHED -> let x = NLOPT.solutionParams solution in trace ("positiveConstrainedSolve: NLOPT Solver hit max evaluations (" <> show maxIters
