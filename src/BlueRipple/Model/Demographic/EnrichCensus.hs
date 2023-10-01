@@ -261,7 +261,7 @@ type ProductC cs as bs = (
 tableProductWithDensity :: forall cs as bs . ProductC cs as bs
                         => F.FrameRec (KeysWD (cs V.++ as)) -> F.FrameRec (KeysWD (cs V.++ bs)) -> F.FrameRec (KeysWD (cs V.++ as V.++ bs))
 tableProductWithDensity ca cb =   F.toFrame $ fmap toRecord $ concat $ fmap pushOuterIn $ M.toList $ fmap M.toList
-                                  $ DMS.tableProduct DMS.innerProductCWD' caMap cbMap
+                                  $ DMS.tableProduct DMS.innerProductCWD'' caMap cbMap
   where
     pushOuterIn (o, xs) = fmap (o,) xs
     tcwd :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
@@ -335,6 +335,12 @@ type TableProductsC outerK cs as bs =
   , FS.RecFlat (outerK V.++ KeysWD (cs V.++ as V.++ bs))
   , V.RMap (outerK V.++ KeysWD (cs V.++ as V.++ bs))
   , FSI.RecVec (outerK V.++ KeysWD (cs V.++ as V.++ bs))
+  , F.ElemOf (KeysWD (cs V.++ as V.++ bs)) DT.PWPopPerSqMile
+  , F.ElemOf (KeysWD (cs V.++ as V.++ bs)) DT.PopCount
+  , V.RMap (KeysWD (cs V.++ as V.++ bs))
+  , V.ReifyConstraint Show F.ElField (KeysWD (cs V.++ as V.++ bs))
+  , V.RecordToList (KeysWD (cs V.++ as V.++ bs))
+  , Show (F.Record (KeysWD (cs V.++ as V.++ bs)))
   )
 
 tableProducts :: forall outerK cs as bs r .
@@ -363,6 +369,7 @@ tableProducts cacheKey caTables_C cbTables_C = do
                               (MR.assign kF dF)
                               (MR.foldAndLabel (fmap F.toFrame FL.list) (,))
                            )
+          densityFilter r = let x = r ^. DT.pWPopPerSqMile in x < 0  || x > 1e6 && r ^. DT.popCount > 0
           outerKeyF :: (outerK F.⊆ rs) => F.Record rs -> F.Record outerK
           outerKeyF = F.rcast
           caF :: (KeysWD (cs V.++ as) F.⊆ rs) => F.Record rs -> F.Record (KeysWD (cs V.++ as))
@@ -378,7 +385,14 @@ tableProducts cacheKey caTables_C cbTables_C = do
                 nb = FL.fold (FL.premap (view DT.popCount) FL.sum) tb
             when (abs (na - nb) > 20) $ K.logLE K.Error $ "tableProducts: Mismatched tables at k=" <> show k <> ". N(ca)=" <> show na <> "; N(cb)=" <> show nb
             pure ()
-          whenMatchedF k ca' cb' = checkFrames k ca' cb' >> pure (tableProductWithDensity @cs @as @bs ca' cb')
+          whenMatchedF k ca' cb' = do
+            checkFrames k ca' cb'
+            let res = tableProductWithDensity @cs @as @bs ca' cb'
+                resExc = F.filterFrame densityFilter res
+            when (FL.fold FL.length resExc > 0) $ do
+              K.logLE K.Error $ "Bad densities after tableProductWithDensity at k=" <> show k
+              BRK.logFrame resExc
+            pure res
           whenMissingCAF k _ = K.knitError $ "Missing ca table for k=" <> show k
           whenMissingCBF k _ = K.knitError $ "Missing cb table for k=" <> show k
       productMap <- MM.mergeA

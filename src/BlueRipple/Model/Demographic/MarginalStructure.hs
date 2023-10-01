@@ -36,6 +36,7 @@ import qualified Data.Vector.Unboxed as VU
 import qualified Frames as F
 
 import qualified Numeric.LinearAlgebra as LA
+import qualified Numeric.NLOPT as NLOPT
 import qualified Data.Vector.Storable as VS
 import qualified BlueRipple.Data.DemographicTypes as DT
 
@@ -364,6 +365,66 @@ innerProductCWD' ma mb =
       mkAssoc (k, wgt) d = (k, CellWithDensity wgt d)
   in M.fromList $ zipWith mkAssoc countsAB solL
 {-# INLINEABLE innerProductCWD' #-}
+
+innerProductCWD'' :: (BRK.FiniteSet a, Ord a, BRK.FiniteSet b, Ord b, Show a, Show b) => Map a CellWithDensity -> Map b CellWithDensity -> Map (a, b) CellWithDensity
+innerProductCWD'' ma mb =
+  let la = FL.fold FL.length ma
+      lb = FL.fold FL.length mb
+      na = let x = FL.fold (FL.premap cwdWgt FL.sum) ma in x -- trace (show ma) x
+      nb = let x = FL.fold (FL.premap cwdWgt FL.sum) mb in x -- trace (show mb) x -- this should be the same and maybe we shoudl check?
+      ma' = if na == 0 then ma else fmap (over cwdWgtLens (/ na)) ma
+      mb' = if nb == 0 then mb else fmap (over cwdWgtLens (/ nb)) mb
+      probAB ((a, p), (b, q)) = ((a, b), cwdWgt p * cwdWgt q)
+      ab = [(a, b) | a <- M.toList ma', b <- M.toList mb']
+      probsAB = fmap probAB ab
+      vecA x =  VS.fromList $ fmap (\((a, _), (_, q)) -> if x == a then cwdWgt q else 0) ab
+      vecB x = VS.fromList $ fmap (\((_, p), (b, _)) -> if x == b then cwdWgt p else 0) ab
+      rows = (fmap vecA $ M.keys ma') <> (fmap vecB $ M.keys mb')
+      m = let x = LA.fromRows rows in x --trace ("m=" ++ toString (LA.dispf 2 x)) x
+      rhsV = let x = VS.fromList $ fmap cwdDensity (M.elems ma') <> fmap cwdDensity (M.elems mb') in x
+      gmDens ((_, wa), (_, wb)) = sqrt $ cwdDensity wa * cwdDensity wb
+      gmDensV = VS.fromList $ fmap gmDens ab
+      solL = positiveConstrainedSolve m rhsV gmDensV
+{-
+--             in trace ("rhs=" ++ toString (DED.prettyVector x)) x
+      solM = LA.linearSolveSVD m $ LA.fromColumns [rhsV]
+      solV = let x = List.head $ LA.toColumns $ solM in x -- trace ("sol" ++ toString (DED.prettyVector x)) x
+      solL = VS.toList solV
+-}
+      mkAssoc n (k, p) d = (k, CellWithDensity (n * p) d)
+      allZero = M.fromList $ fmap (\(k, _) -> (k, CellWithDensity 0 0)) probsAB
+  in if na == 0 || nb == 0 then allZero else M.fromList $ zipWith (mkAssoc na) probsAB $ VS.toList solL
+{-# INLINEABLE innerProductCWD'' #-}
+
+
+positiveConstrainedSolve :: LA.Matrix Double -> LA.Vector Double -> LA.Vector Double -> LA.Vector Double
+positiveConstrainedSolve m rhs v0 =
+  let mTm = LA.tr m LA.<> m
+      vLen = VS.length v0
+      objective v = (LA.norm_2 $ (m LA.#> v) - rhs, 2 * mTm LA.#> v)
+--      constraintD n v = (negate $ v VS.! n, (LA.assoc vLen 0 [(n, negate 1)] :: LA.Vector Double))
+--      nlConstraintsD cTol = fmap (\n -> NLOPT.InequalityConstraint (NLOPT.Scalar (constraintD n)) cTol) [0..(vLen - 1)]
+      maxIters = 1000
+      absTol = 1e-6
+      absTolV = VS.replicate vLen absTol
+      nlStop = NLOPT.ParameterAbsoluteTolerance absTolV :| [NLOPT.MaximumEvaluations maxIters, NLOPT.MinimumValue 0]
+      nlAlgo = NLOPT.SLSQP objective [NLOPT.LowerBounds $ VS.replicate vLen 0] [] []
+      nlProblem = NLOPT.LocalProblem (fromIntegral vLen) nlStop nlAlgo
+      nlSol = NLOPT.minimizeLocal nlProblem v0
+  in case nlSol of
+    Left result -> let x = v0 in trace ("positiveConstrainedSolve failed. Returning v0") x
+    Right solution -> case NLOPT.solutionResult solution of
+      NLOPT.MAXEVAL_REACHED -> let x = NLOPT.solutionParams solution in trace ("positiveConstrainedSolve: NLOPT Solver hit max evaluations (" <> show maxIters
+                                                                               <> "). rhs=" <> toString (DED.prettyVector rhs) <> "; v="
+                                                                                <> toString (DED.prettyVector x)
+                                                                                <> "; m=" <> toString (LA.dispf 2 m)
+                                                                                <> "; mv - rhs=" <> toString (DED.prettyVector $ (m LA.#> x) - rhs)
+                                                                                <> "; ||mv - rhs||=" <> show (LA.norm_2 $ (m LA.#> x) - rhs)
+                                                                              )
+                                                                        x
+      NLOPT.MAXTIME_REACHED -> let x = NLOPT.solutionParams solution in trace ("positiveConstrainedSolve: NLOPT Solver hit max time.") x
+      _ -> NLOPT.solutionParams solution
+
 
 {-
 -- given a k2 product fold and a map (k1 -> k2) we can generate a k1 product zero-info product fold by assuming every k1 which maps to a k2
