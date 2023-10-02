@@ -226,8 +226,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
       (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
-    let byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
-        draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
+    let draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
         dlcc = fromMaybe [] $ M.lookup state dlccMap
         toDistrict (x, y, _) = (x, y)
         isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
@@ -257,30 +256,76 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
+    allDistrictDetails cmdLine modelPostPaths postInfo Nothing modeledAndDRA
     pure ()
   pure ()
 
+type DistSummaryR = [DT.PWPopPerSqMile, DP.Frac45To64, DP.Frac65plus, DP.FracBlack, DP.FracWhite, DP.FracHispanic, DP.FracAAPI, DP.FracCollegeGrad]
+
+--type DistDetailsPSKeyR = SLDKeyR V.++
+
+allDistrictDetails :: (K.KnitOne r, BRK.CacheEffects r
+                      , FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]
+                      , FC.ElemsOf rs DistSummaryR
+                      , FSI.RecVec rs
+                      )
+                   => BR.CommandLine -> BR.PostPaths Path.Abs -> BR.PostInfo -> Maybe (Set (GT.DistrictType, Text))
+                   -> F.FrameRec rs
+                   -> K.Sem r ()
+allDistrictDetails cmdLine pp pi districtsM summaryRows = do
+  -- 2. post-stratify by district and race
+{-  let turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
+      prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
+-}
+  let includeDistrict dt dn = fromMaybe True $ fmap (Set.member (dt, dn)) districtsM
+      includedSummary = F.filterFrame (\r -> includeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName)) summaryRows
+      oneDistrict r = do
+         BR.brAddRawHtmlTable (r ^. GT.stateAbbreviation <> ": " <> fullDNameText r) (BHA.class_ "brTable") (distSummaryColonnade mempty) [r]
+  BR.brAddRawHtmlTable ("Demographic Summary by District") (BHA.class_ "brTable") (distSummaryColonnade mempty)
+    $ sortBy byDistrictName $ FL.fold FL.list includedSummary
+
+
+distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName])
+                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+distSummaryColonnade cas =
+  let state = F.rgetField @GT.StateAbbreviation
+      frac45AndOver r = r ^. DP.frac45To64 + r ^. DP.frac65plus
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.0f" . view DT.pWPopPerSqMile))
+     <> C.headed "% Over 45"  (BR.toCell cas "% Over 45" "% Over 45" (BR.numberToStyledHtml "%2.2f" . (100*) . frac45AndOver))
+     <> C.headed "% College Grad"  (BR.toCell cas "% Grad" "% Grad" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracCollegeGrad))
+     <> C.headed "% NH White"  (BR.toCell cas "% NH White" "% NH White" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracWhite))
+     <> C.headed "% Black"  (BR.toCell cas "% Black" "% Black" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracBlack))
+     <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracHispanic))
+     <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracAAPI))
 
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
              => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 sldColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-      dType r = case (r ^. GT.districtTypeC) of
-        GT.StateUpper -> "Upper"
-        GT.StateLower -> "Lower"
-        _ -> "Not State Leg!"
-      dName = F.rgetField @GT.DistrictName
-      fullName = \r -> (dType r <> "-" <> dName r)
       share5 = MT.ciLower . F.rgetField @MR.ModelCI
       share50 = MT.ciMid . F.rgetField @MR.ModelCI
       share95 = MT.ciUpper . F.rgetField @MR.ModelCI
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullName))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
      <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @ET.DemShare))
      <> C.headed "5%" (BR.toCell cas "5%" "5%" (BR.numberToStyledHtml "%2.2f" . (100*) . share5))
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (BR.numberToStyledHtml "%2.2f" . (100*) . share95))
+
+dTypeText :: F.ElemOf rs GT.DistrictTypeC => F.Record rs -> Text
+dTypeText r = case (r ^. GT.districtTypeC) of
+        GT.StateUpper -> "Upper"
+        GT.StateLower -> "Lower"
+        _ -> "Not State Leg!"
+
+fullDNameText :: FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName] => F.Record rs -> Text
+fullDNameText r = dTypeText r <> "-" <> r ^. GT.districtName
+
+byDistrictName :: FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName] => F.Record rs -> F.Record rs -> Ordering
+byDistrictName r1 r2 = GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
 
 modelDRAComparisonChart :: (K.KnitEffects r
                            , FC.ElemsOf rs [GT.StateAbbreviation, MR.ModelCI, ET.DemShare, GT.DistrictName, GT.DistrictTypeC]

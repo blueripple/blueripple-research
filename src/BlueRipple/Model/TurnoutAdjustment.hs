@@ -193,23 +193,21 @@ findDelta totalVotes dat = findDelta' (realToFrac totalVotes) (mapPairFirst from
 
 -- now perform the adjustment to a set of records where the fields are identified
 adjTurnoutLong'
-  :: forall p t rs f
-   . ( V.KnownField p
-     , V.KnownField t
-     , V.Snd p ~ Double
+  :: forall t rs f
+   . ( V.KnownField t
      , V.Snd t ~ Double
-     , F.ElemOf rs p -- F.ElemOf (cs V.++ '[p, t]) p
      , F.ElemOf rs t --F.ElemOf (cs V.++ '[p, t]) t
      , Foldable f
      , Functor f
 --     , Show (F.Record rs)
      )
-  => Double
+  => (F.Record rs -> Double)
+  -> Double
   -> f (F.Record rs) --(cs V.++ '[p, t])
   -> IO (f (F.Record rs)) --(cs V.++ '[p, t])
-adjTurnoutLong' total unAdj = do
+adjTurnoutLong' getPop total unAdj = do
   let adj d x = adjP x d -- invLogit (logit x + d)
-      toPair r = Pair (F.rgetField @p r) (F.rgetField @t r)
+      toPair r = Pair (getPop r) (F.rgetField @t r)
       initial = FL.fold (FL.premap toPair $ votesErrorF' total 0) unAdj
   when (isNaN initial) $ error "adjTurnoutLong: NaN result in initial votesError function!"
   delta <- findDelta' total $ fmap toPair unAdj
@@ -217,23 +215,21 @@ adjTurnoutLong' total unAdj = do
   pure res
 
 adjTurnoutLong
-  :: forall p t rs f
-   . ( V.KnownField p
-     , V.KnownField t
-     , V.Snd p ~ Int
+  :: forall t rs f
+   . ( V.KnownField t
      , V.Snd t ~ Double
-     , F.ElemOf rs p -- F.ElemOf (cs V.++ '[p, t]) p
      , F.ElemOf rs t --F.ElemOf (cs V.++ '[p, t]) t
      , Foldable f
      , Functor f
 --     , Show (F.Record rs)
      )
-  => Int
+  => (F.Record rs -> Int)
+  -> Int
   -> f (F.Record rs) --(cs V.++ '[p, t])
   -> IO (f (F.Record rs)) --(cs V.++ '[p, t])
-adjTurnoutLong total unAdj = do
+adjTurnoutLong getPop total unAdj = do
   let adj d x = adjP x d -- invLogit (logit x + d)
-      toPair r = Pair (F.rgetField @p r) (F.rgetField @t r)
+      toPair r = Pair (getPop r) (F.rgetField @t r)
       initial = FL.fold (FL.premap toPair $ votesErrorF total 0) unAdj
   when (isNaN initial) $ error "adjTurnoutLong: NaN result in initial votesError function!"
   delta <- findDelta total $ fmap toPair unAdj
@@ -256,31 +252,29 @@ adjTurnoutLong total unAdj = do
 -- 3. Produces data frame with [State, Year] + [partitions of State] + TurnoutPct + AdjTurnoutPct
 -- So, for each state/year we need to sum over the partitions, get the adjustment, apply it to the partitions.
 adjTurnoutFoldG
-  :: forall p t ks qs rs f effs
+  :: forall t ks qs rs f effs
    . ( Foldable f
      , K.KnitEffects effs
-     , F.ElemOf rs p
      , F.ElemOf rs t
      , rs F.⊆ (ks V.++ rs)
      , ks F.⊆ (ks V.++ rs)
      , ks F.⊆ qs
      , F.RDeleteAll ks (ks V.++ rs) ~ rs
-     , V.KnownField p
      , V.KnownField t
-     , V.Snd p ~ Int
      , V.Snd t ~ Double
      , FI.RecVec (ks V.++ rs)
 --     , Show (F.Record rs)
      , Show (F.Record ks)
      , Ord (F.Record ks)
      )
-  => (F.Record qs -> Double)
+  => (F.Record rs -> Double)
+  -> (F.Record qs -> Double)
   -> f (F.Record qs)
   -> FL.FoldM
        (K.Sem effs)
        (F.Record (ks V.++ rs))
        (F.FrameRec (ks V.++ rs))
-adjTurnoutFoldG getTotal totalsFrame =
+adjTurnoutFoldG getPop getTotal totalsFrame =
   let getKey  = F.rcast @ks
       vtbsMap = FL.fold
         (FL.premap
@@ -303,8 +297,8 @@ adjTurnoutFoldG getTotal totalsFrame =
                 ("Failed to find " <> show ks <> " in given totals."
                 )
             Just t -> K.liftKnit $ do
-              let totalP = FL.fold (FL.premap (F.rgetField @p) FL.sum) x
-              adjTurnoutLong @p @t @rs (round $ t * realToFrac totalP) x
+              let totalP = FL.fold (FL.premap getPop FL.sum) x
+              adjTurnoutLong' @t @rs getPop (t * totalP) x
         in
           FMR.postMapM f $ FL.generalize FL.list
       reduceM = FMR.makeRecsWithKeyM id (FMR.ReduceFoldM adjustF)
@@ -334,7 +328,7 @@ adjTurnoutFold
        (K.Sem effs)
        (F.Record (WithYS rs))
        (F.FrameRec (WithYS rs))
-adjTurnoutFold = adjTurnoutFoldG @p @t @[BR.Year, GT.StateAbbreviation] (F.rgetField  @BR.BallotsCountedVEP)
+adjTurnoutFold = adjTurnoutFoldG @t @[BR.Year, GT.StateAbbreviation] (realToFrac . F.rgetField @p) (F.rgetField  @BR.BallotsCountedVEP)
 
 
 surveyRatioFld :: (a -> (Double, Double, Double)) -> FL.Fold a Double

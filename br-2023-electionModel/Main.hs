@@ -135,7 +135,7 @@ main = do
           runTurnoutModelAH gqName agg am pt = MR.runTurnoutModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells" acsByState_C
           runPrefModel gqName agg am pt = fst <<$>> MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am acsByState_C
           runPrefModelAH gqName agg am pt =
-            MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells" acsByState_C
+            MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells" acsByState_C
           runDVSModel gqName agg am pt = fst <<$>> MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am acsByState_C
           runDVSModelAH gqName agg am pt =
             MR.runFullModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C acsByState_C
