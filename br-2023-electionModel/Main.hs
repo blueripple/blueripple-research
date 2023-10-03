@@ -104,9 +104,8 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         dmr = MC.tDesignMatrixRow_d
         survey = MC.CESSurvey
-        aggregations = [MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur]
+        aggregations = [MC.WeightedAggregation MC.ContinuousBinomial]
         alphaModels = [MC.St_A_S_E_R, MC.St_A_S_E_R_ER_StR, MC.St_A_S_E_R_ER_StR_StER]
-        psTs = [MC.NoPSTargets] --, MC.PSTargets]
     rawCES_C <- DP.cesCountedDemPresVotesByCD False
     cpCES_C <-  DP.cachedPreppedCES (Right "model/election2/test/CESTurnoutModelDataRaw.bin") rawCES_C
     rawCPS_C <- DP.cpsCountedTurnoutByState
@@ -130,23 +129,31 @@ main = do
                    (MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur) (contramap F.rcast dmr) MC.NoPSTargets MC.St_A_S_E_R acsByState_C
       K.ignoreCacheTime ahTResMap_C >>= K.logLE K.Info . show . MC.unPSMap
 -}
-      presidentialElections_C <- BRL.presidentialByStateFrame
-      let runTurnoutModel gqName agg am pt = fst <<$>> MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am acsByState_C
-          runTurnoutModelAH gqName agg am pt = MR.runTurnoutModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells" acsByState_C
-          runPrefModel gqName agg am pt = fst <<$>> MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am acsByState_C
-          runPrefModelAH gqName agg am pt =
-            MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells" acsByState_C
-          runDVSModel gqName agg am pt = fst <<$>> MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am acsByState_C
-          runDVSModelAH gqName agg am pt =
-            MR.runFullModelAH 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C acsByState_C
+      presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
+      let dVSPres2020 = DP.ElexTargetConfig "Pres" (pure mempty) 2020 presidentialElections_C
+      houseElections_C <- BRL.houseElectionsWithIncumbency
+      let dVSHouse2022 = DP.ElexTargetConfig "House" (pure mempty) 2022 houseElections_C
+      let turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
+          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
+          runTurnoutModel gqName agg am = fst <<$>> MR.runTurnoutModel 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) acsByState_C
+          runTurnoutModelAH gqName agg am = MR.runTurnoutModelAH 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) "AllCells" acsByState_C
+          runPrefModel gqName agg am = fst <<$>> MR.runPrefModel 2020 modelDirE cacheDirE gqName cmdLine (prefConfig agg am) acsByState_C
+          runPrefModelAH dst gqName agg am =
+            MR.runPrefModelAH 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) (prefConfig agg am) dst "AllCells" acsByState_C
+          runDVSModel gqName agg am = fst
+            <<$>> MR.runFullModel 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) (prefConfig agg am) acsByState_C
+          runDVSModelAH dst gqName agg am =
+            MR.runFullModelAH 2020 modelDirE cacheDirE gqName cmdLine  (turnoutConfig agg am) (prefConfig agg am) dst acsByState_C
           g f (a, b) = f b >>= pure . (a, )
           h f = traverse (g f)
-      stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
-      stateComparisonsAHT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModelAH "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
-      stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
-      stateComparisonsAHP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModelAH "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
-      stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
-      stateComparisonsAHDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModelAH "State" aggregations alphaModels psTs >>= h MR.addBallotsCountedVEP
+      stateComparisonsT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModel "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsAHT <- MR.allModelsCompBy @'[GT.StateAbbreviation] runTurnoutModelAH "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsP <- MR.allModelsCompBy @'[GT.StateAbbreviation] runPrefModel "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsAHP_P2020 <- MR.allModelsCompBy @'[GT.StateAbbreviation] (runPrefModelAH dVSPres2020) "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsAHP_H2022 <- MR.allModelsCompBy @'[GT.StateAbbreviation] (runPrefModelAH dVSHouse2022) "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsDVS <- MR.allModelsCompBy @'[GT.StateAbbreviation] runDVSModel "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsAHDVS_P2020 <- MR.allModelsCompBy @'[GT.StateAbbreviation] (runDVSModelAH dVSPres2020) "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
+      stateComparisonsAHDVS_H2022 <- MR.allModelsCompBy @'[GT.StateAbbreviation] (runDVSModelAH dVSHouse2022) "State" aggregations alphaModels >>= h MR.addBallotsCountedVEP
 
       turnoutStateChart <- MR.stateChart -- @[GT.StateAbbreviation, MR.ModelPr, BRDF.VAP, BRDF.BallotsCounted]
                            modelPostPaths postInfo "TComp" "Turnout Model Comparison by State" "Turnout" (FV.ViewConfig 500 500 10)
@@ -154,51 +161,56 @@ main = do
                            (fmap (second $ (fmap (MR.modelCIToModelPr))) stateComparisonsT
                            <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_" <>)) $ stateComparisonsAHT))
       _ <- K.addHvega Nothing Nothing turnoutStateChart
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModel "Age" "Turnout" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runTurnoutModel "Sex" "Turnout" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runTurnoutModel "Education" "Turnout" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runTurnoutModel "Race" "Turnout" (show . view DT.race5C) aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModel "Age" "Turnout" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runTurnoutModel "Sex" "Turnout" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runTurnoutModel "Education" "Turnout" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runTurnoutModel "Race" "Turnout" (show . view DT.race5C) aggregations alphaModels
       let srText r = show (r ^. DT.education4C) <> "-" <> show (r ^. DT.race5C)
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runTurnoutModel "Education_Race" "Turnout" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runTurnoutModel "Education_Race" "Turnout" srText aggregations alphaModels
 
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModelAH "Age" "TurnoutAH" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runTurnoutModelAH "Sex" "TurnoutAH" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runTurnoutModelAH "Education" "TurnoutAH" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runTurnoutModelAH "Race" "TurnoutAH" (show . view DT.race5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runTurnoutModelAH "Education_Race" "TurnoutAH" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runTurnoutModelAH "Age" "TurnoutAH" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runTurnoutModelAH "Sex" "TurnoutAH" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runTurnoutModelAH "Education" "TurnoutAH" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runTurnoutModelAH "Race" "TurnoutAH" (show . view DT.race5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runTurnoutModelAH "Education_Race" "TurnoutAH" srText aggregations alphaModels
 
       prefStateChart <- MR.stateChart modelPostPaths postInfo "PComp" "Pref Comparison by State" "Pref" (FV.ViewConfig 500 500 10) (view BRDF.vAP) Nothing
                         (fmap (second $ (fmap (MR.modelCIToModelPr))) stateComparisonsP
-                         <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_" <>)) $ stateComparisonsAHP))
+                         <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_P2020" <>)) $ stateComparisonsAHP_P2020)
+                         <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_H2022" <>)) $ stateComparisonsAHP_H2022)
+                        )
       _ <- K.addHvega Nothing Nothing prefStateChart
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runPrefModel "Age" "Pref" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runPrefModel "Sex" "Pref" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runPrefModel "Education" "Pref" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runPrefModel "Race" "Pref" (show . view DT.race5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runPrefModel "Education_Race" "Pref" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runPrefModel "Age" "Pref" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runPrefModel "Sex" "Pref" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runPrefModel "Education" "Pref" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runPrefModel "Race" "Pref" (show . view DT.race5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runPrefModel "Education_Race" "Pref" srText aggregations alphaModels
 
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runPrefModelAH "Age" "PrefAH" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runPrefModelAH "Sex" "PrefAH" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runPrefModelAH "Education" "PrefAH" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runPrefModelAH "Race" "PrefAH" (show . view DT.race5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runPrefModelAH "Education_Race" "PrefAH" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo (runPrefModelAH dVSPres2020) "Age" "PrefAH" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo (runPrefModelAH dVSPres2020) "Sex" "PrefAH" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo (runPrefModelAH dVSPres2020) "Education" "PrefAH" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo (runPrefModelAH dVSPres2020) "Race" "PrefAH" (show . view DT.race5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo (runPrefModelAH dVSPres2020) "Education_Race" "PrefAH" srText aggregations alphaModels
 
       dvsStateChart <- MR.stateChart modelPostPaths postInfo "DVSComp" "DVS Comparison by State" "Pref" (FV.ViewConfig 500 500 10) (view BRDF.vAP) Nothing
                         (fmap (second $ (fmap (MR.modelCIToModelPr))) stateComparisonsDVS
-                        <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_" <>)) $ stateComparisonsAHDVS))
+                        <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_P2020" <>)) $ stateComparisonsAHDVS_P2020)
+                        <> (fmap (second $ (fmap (MR.modelCIToModelPr))) $ fmap (first ("AH_H2022" <>)) $ stateComparisonsAHDVS_H2022)
+                        )
+
       _ <- K.addHvega Nothing Nothing dvsStateChart
 
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runDVSModel "Age" "DVS" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runDVSModel "Sex" "DVS" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runDVSModel "Education" "DVS" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runDVSModel "Race" "DVS" (show . view DT.race5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runDVSModel "Education_Race" "DVS" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runDVSModel "Age" "DVS" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runDVSModel "Sex" "DVS" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runDVSModel "Education" "DVS" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runDVSModel "Race" "DVS" (show . view DT.race5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runDVSModel "Education_Race" "DVS" srText aggregations alphaModels
 
-      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo runDVSModelAH "Age" "DVSAH" (show . view DT.age5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo runDVSModelAH "Sex" "DVSAH" (show . view DT.sexC) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo runDVSModelAH "Education" "DVSAH" (show . view DT.education4C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo runDVSModelAH "Race" "DVSAH" (show . view DT.race5C) aggregations alphaModels psTs
-      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo runDVSModelAH "Education_Race" "DVSAH" srText aggregations alphaModels psTs
+      MR.allModelsCompChart @'[DT.Age5C] modelPostPaths postInfo (runDVSModelAH dVSPres2020) "Age" "DVSAH" (show . view DT.age5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.SexC] modelPostPaths postInfo (runDVSModelAH dVSPres2020) "Sex" "DVSAH" (show . view DT.sexC) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C] modelPostPaths postInfo (runDVSModelAH dVSPres2020) "Education" "DVSAH" (show . view DT.education4C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Race5C] modelPostPaths postInfo (runDVSModelAH dVSPres2020) "Race" "DVSAH" (show . view DT.race5C) aggregations alphaModels
+      MR.allModelsCompChart @'[DT.Education4C, DT.Race5C] modelPostPaths postInfo (runDVSModelAH dVSPres2020) "Education_Race" "DVSAH" srText aggregations alphaModels
       pure ()
     pure ()
   pure ()

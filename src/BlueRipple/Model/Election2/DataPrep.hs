@@ -173,15 +173,12 @@ data ModelData lk =
   {
     cpsData :: F.FrameRec CPSByStateR
   , cesData :: F.FrameRec (CESByR lk)
-  , ahCESData :: F.FrameRec (CESByR lk)
-  , stateTurnoutData :: F.FrameRec BR.StateTurnoutCols
-  , acsData :: F.FrameRec DDP.ACSa5ByStateR
   }
 
 instance (FS.RecFlat (CESByR lk), V.RMap (CESByR lk), FI.RecVec (CESByR lk)) => Flat.Flat (ModelData lk) where
-  size (ModelData cps ces ahCES st acs) n = Flat.size (FS.SFrame cps, FS.SFrame ces, FS.SFrame ahCES, FS.SFrame st, FS.SFrame acs) n
-  encode (ModelData cps ces ahCES st acs)  = Flat.encode (FS.SFrame cps, FS.SFrame ces,  FS.SFrame ahCES, FS.SFrame st, FS.SFrame acs)
-  decode = (\(cps', ces', ahCES', st', acs') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces') (FS.unSFrame ahCES') (FS.unSFrame st') (FS.unSFrame acs')) <$> Flat.decode
+  size (ModelData cps ces) n = Flat.size (FS.SFrame cps, FS.SFrame ces) n
+  encode (ModelData cps ces)  = Flat.encode (FS.SFrame cps, FS.SFrame ces)
+  decode = (\(cps', ces') -> ModelData (FS.unSFrame cps') (FS.unSFrame ces')) <$> Flat.decode
 
 type DiagR lk = lk V.++ DCatsR V.++ [SurveyedW, VotedW, VotesInRaceW, DVotesW]
 
@@ -199,27 +196,7 @@ cachedPreppedModelDataCD cpsCacheE cpsRaw_C cesByStateCacheE cesRawByState_C ces
   cesByState_C <- cachedPreppedCES2 cesByStateCacheE cesRawByState_C
   cesByCD_C <- cachedPreppedCES cesByCDCacheE cesRawByCD_C
 --  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
-  let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
-      demFilter r = r ^. ET.party == ET.Democratic
-      bothFilter r = stFilter r && demFilter r
-  stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
-  acsByState_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC))
-                  <$> DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
-  let acsByStateWZ_C = fmap (fmap $ F.rcast @(StateKeyR V.++ DCatsR V.++ '[DT.PopCount]))
-                       $ fmap (withZeros @[BR.Year, GT.StateAbbreviation] @DCatsR)
-                       $ fmap (fmap F.rcast)
-                       $ acsByState_C
-
---  K.ignoreCacheTime acsByCDWZ_C >>= BR.logFrame . F.filterFrame ((== "DC") . view GT.stateAbbreviation)
-  ahTurnoutCES_C <- achenHurAdjTurnoutViaState "ahTurnoutVS" stateTurnout_C acsByStateWZ_C cesByState_C cesByCD_C
-  presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
-  ahBothCES_C <- achenHurAdjDVotesViaState "ahDVoteTurnoutVS" presElex_C acsByStateWZ_C cesByState_C ahTurnoutCES_C
-
---  K.ignoreCacheTime ces_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
---  K.ignoreCacheTime ahBothCES_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
-
---  K.knitError "STOP"
-  pure $ ModelData <$> cps_C <*> cesByCD_C <*> ahBothCES_C <*> stateTurnout_C <*> acsByState_C
+  pure $ ModelData <$> cps_C <*> cesByCD_C
 
 cachedPreppedModelDataState :: (K.KnitEffects r, BR.CacheEffects r)
                             => Either Text Text
@@ -231,37 +208,7 @@ cachedPreppedModelDataState cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix
   cps_C <- cachedPreppedCPS cpsCacheE cpsRaw_C
 --  K.ignoreCacheTime cps_C >>= pure . F.takeRows 100 >>= BR.logFrame
   ces_C <- cachedPreppedCES2 cesCacheE cesRaw_C
---  K.ignoreCacheTime ces_C >>= pure . F.takeRows 1000  >>= BR.logFrame
-  let stFilter r = r ^. BR.year == 2020 && r ^. GT.stateAbbreviation /= "US"
-      demFilter r = r ^. ET.party == ET.Democratic
-      bothFilter r = stFilter r && demFilter r
-  stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BR.stateTurnoutLoader
-  acsByState_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
-  let acsByStateWZ_C = fmap (fmap $ F.rcast @(StateKeyR V.++ DCatsR V.++ '[DT.PopCount]))
-                       $ fmap (withZeros @[BR.Year, GT.StateAbbreviation] @DCatsR)
-                       $ fmap (fmap F.rcast)
-                       $ fmap (F.filterFrame $ (== DT.Citizen) . view DT.citizenC)
-                       $ acsByState_C
-      sumFld = FMR.concatFold
-               $ FMR.mapReduceFold
-               FMR.noUnpack
-               (FMR.assignKeysAndData @'[GT.StateAbbreviation] @'[DT.PopCount])
-               (FMR.foldAndAddKey $ FF.foldAllConstrained @Num FL.sum)
-  acsWZByState <- FL.fold sumFld <$> K.ignoreCacheTime acsByStateWZ_C
-  BR.logFrame acsWZByState
---  K.ignoreCacheTime acsByCDWZ_C >>= BR.logFrame . F.filterFrame ((== "DC") . view GT.stateAbbreviation)
-  ahTurnoutCES_C <- achenHurStateTurnoutAdj @StateKeyR "ahTurnout" stateTurnout_C acsByStateWZ_C ces_C
-  presElex_C <- fmap ((fmap $ F.filterFrame bothFilter)) BR.presidentialByStateFrame
-  ahBothCES_C <- achenHurStatePresDVoteAdj @StateKeyR "ahDVoteTurnout" presElex_C acsByStateWZ_C ahTurnoutCES_C
-
---  K.ignoreCacheTime ces_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
---  K.ignoreCacheTime ahBothCES_C >>= BR.logFrame . F.takeRows 100 . fmap (F.rcast @DiagR)
-
---  acs_C <-  fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByState ACS.acs1Yr2010_20 2020 -- this needs to match the state-turnout data, pres Elex data year
---  K.knitError "STOP"
-  pure $ ModelData <$> cps_C <*> ces_C <*> ahBothCES_C <*> stateTurnout_C <*> acsByState_C
-
-
+  pure $ ModelData <$> cps_C <*> ces_C
 
 -- general
 type SummaryR = [Frac18To24, Frac25To34, Frac35To44, Frac45To64, Frac65plus
@@ -513,6 +460,218 @@ cachedPreppedCES2 cacheE ces_C = do
     cesWD <- cesAddDensity2 acs ces
     cesAddHouseIncumbency2 cesWD
 
+
+-- an example for presidential 2020 vote.
+cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
+                       ⇒ Bool
+                       → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)))
+cesCountedDemPresVotesByCD clearCaches = do
+  ces2020_C ← CCES.ces20Loader
+  let cacheKey = "model/election2/ces20ByCD.bin"
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR @CDKeyR 2020 (F.rgetField @CCES.MPresVoteParty) ces
+
+
+cesCountedDemPresVotesByState ∷ (K.KnitEffects r, BR.CacheEffects r)
+                              ⇒ Bool
+                              → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)))
+cesCountedDemPresVotesByState clearCaches = do
+  ces2020_C ← CCES.ces20Loader
+  let cacheKey = "model/election2/ces20ByState.bin"
+  when clearCaches $ BR.clearIfPresentD cacheKey
+  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR @StateKeyR 2020 (F.rgetField @CCES.MPresVoteParty) ces
+
+
+countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC, F.ElemOf rs CCES.CESWeight)
+               => (F.Record rs -> MT.MaybeData ET.PartyT)
+               -> FL.Fold
+                  (F.Record rs)
+                  (F.Record (CountDataR V.++ PrefDataR))
+countCESVotesF votePartyMD =
+  let vote (MT.MaybeData x) = maybe False (const True) x
+      dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
+      rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
+      wgt = view CCES.cESWeight
+      surveyedF = FL.length
+      registeredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) FL.length
+      votedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) FL.length
+      votesF = FL.prefilter (vote . votePartyMD) votedF
+      dVotesF = FL.prefilter (dVote . votePartyMD) votedF
+      rVotesF = FL.prefilter (rVote . votePartyMD) votedF
+      surveyWgtF = FL.premap wgt FL.sum
+      lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
+      essSurveyedF = effSampleSizeFld lmvskSurveyedF
+      waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
+      waVotedF = wgtdAverageBoolFld wgt (CCES.catalistVoted . view CCES.catalistTurnoutC)
+--      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
+      lmvskVotesF = FL.prefilter (vote . votePartyMD) lmvskSurveyedF
+      essVotesF = effSampleSizeFld lmvskVotesF
+      waDVotesF = wgtdAverageBoolFld wgt (dVote . votePartyMD)
+      waRVotesF = wgtdAverageBoolFld wgt (rVote . votePartyMD)
+   in (\sw s r v eS waR waV vs dvs rvs eV waDV waRV →
+          sw F.&: s F.&: r F.&: v
+          F.&: eS F.&: min eS (eS * waR) F.&: min eS (eS * waV)
+          F.&: vs F.&: dvs F.&: rvs
+          F.&: eV F.&: min eV (eV * waDV) F.&: min eV (eV * waRV) F.&: V.RNil)
+      <$> surveyWgtF
+      <*> surveyedF
+      <*> registeredF
+      <*> votedF
+      <*> essSurveyedF
+      <*> waRegisteredF
+      <*> waVotedF
+      <*> votesF
+      <*> dVotesF
+      <*> rVotesF
+      <*> essVotesF
+      <*> waDVotesF
+      <*> waRVotesF
+
+cesRecodeHispanic ∷ (F.ElemOf rs DT.HispC, F.ElemOf rs DT.Race5C) => F.Record rs -> F.Record rs
+cesRecodeHispanic r =
+  let h = F.rgetField @DT.HispC r
+      f r5 = if h == DT.Hispanic then DT.R5_Hispanic else r5
+   in FT.fieldEndo @DT.Race5C f r
+
+cesAddEducation4 ∷ (F.ElemOf rs DT.EducationC) => F.Record rs -> F.Record (DT.Education4C ': rs)
+cesAddEducation4 r =
+  let e4 = DT.educationToEducation4 $ F.rgetField @DT.EducationC r
+  in e4 F.&: r
+
+-- using each year's common content
+cesMR ∷ forall lk rs f m .
+        (Foldable f, Functor f, Monad m
+        , F.ElemOf rs BR.Year
+        , F.ElemOf rs DT.EducationC
+        , F.ElemOf rs DT.HispC
+        , F.ElemOf rs DT.Race5C
+        , rs F.⊆ (DT.Education4C ': rs)
+        , F.ElemOf rs CCES.CatalistRegistrationC
+        , F.ElemOf rs CCES.CatalistTurnoutC
+        , F.ElemOf rs CCES.CESWeight
+        , (lk V.++ DCatsR) V.++ (CountDataR V.++ PrefDataR) ~ (((lk V.++ DCatsR) V.++ CountDataR) V.++ PrefDataR)
+        , Ord (F.Record (lk V.++ DCatsR))
+        , (lk V.++ DCatsR) F.⊆ (DT.Education4C ': rs)
+        , FI.RecVec (((lk V.++ DCatsR) V.++ CountDataR) V.++ PrefDataR)
+        )
+      ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (lk V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
+cesMR earliestYear votePartyMD =
+  BRF.frameCompactMR
+  (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
+  (FMR.assignKeysAndData @(lk V.++ DCatsR) @rs)
+  (countCESVotesF votePartyMD)
+  . fmap (cesAddEducation4 . cesRecodeHispanic)
+
+-- vote targets
+data DShareTargetConfig r where
+  ElexTargetConfig :: (FC.ElemsOf es [BR.Year, GT.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, ET.TotalVotes], FI.RecVec es)
+                   => Text
+                   -> K.ActionWithCacheTime r (F.FrameRec [GT.StateAbbreviation, ET.DemShare])
+                   -> Int
+                   -> K.ActionWithCacheTime r (F.FrameRec es)
+                   -> DShareTargetConfig r
+
+dShareTargetText :: DShareTargetConfig r -> Text
+dShareTargetText (ElexTargetConfig n _ year _) = n <> show year
+
+dShareTarget :: (K.KnitEffects r, BR.CacheEffects r)
+            => Either Text Text
+            -> DShareTargetConfig r
+            -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [GT.StateAbbreviation, ET.DemShare]))
+dShareTarget cacheDirE dvt@(ElexTargetConfig n overrides_C year elex_C) = do
+  cacheKey <- BR.cacheFromDirE cacheDirE $ dShareTargetText dvt
+  let overrideKey = view GT.stateAbbreviation
+      overridePremap r = (overrideKey r, r ^. ET.demShare)
+      safeDiv x y = if y > 0 then x / y else 0
+      safeDivInt n m = safeDiv (realToFrac n) (realToFrac m)
+      deps = (,) <$> overrides_C <*> elex_C
+      f (overrides, elex) = do
+        flattenedElex <- K.knitEither $ FL.foldM (electionF @'[GT.StateAbbreviation]) $ fmap F.rcast $ F.filterFrame ((== year) . view BR.year) elex
+        let overrideMap = FL.fold (FL.premap overridePremap FL.map) overrides
+            process r = let sa = r ^. GT.stateAbbreviation
+                        in case M.lookup sa overrideMap of
+                             Nothing -> sa F.&: safeDivInt (r ^. dVotes) (r ^. dVotes + r ^. rVotes) F.&: V.RNil
+                             Just x -> sa F.&: x F.&: V.RNil
+        pure $ fmap process flattenedElex
+  BR.retrieveOrMakeFrame cacheKey deps f
+
+
+-- This is the thing to apply to loaded result data (with incumbents)
+electionF
+  ∷ ∀ ks
+   . ( Ord (F.Record ks)
+     , ks F.⊆ (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Incumbent
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Party
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Votes
+     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) BR.Candidate
+     , FI.RecVec (ks V.++ ElectionR)
+     )
+  ⇒ FL.FoldM (Either T.Text) (F.Record (ks V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])) (F.FrameRec (ks V.++ ElectionR))
+electionF =
+  FMR.concatFoldM $
+    FMR.mapReduceFoldM
+      (FMR.generalizeUnpack FMR.noUnpack)
+      (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
+      (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
+
+data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
+
+updateIncParty ∷ IncParty → (ET.PartyT, Text) → IncParty
+updateIncParty (Multi cs) (_, c) = Multi (c : cs)
+updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
+updateIncParty None (p, c) = Inc (p, c)
+
+incPartyToInt ∷ IncParty → Either T.Text Int
+incPartyToInt None = Right 0
+incPartyToInt (Inc (ET.Democratic, _)) = Right 1
+incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
+incPartyToInt (Inc _) = Right 0
+incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
+
+flattenVotesF ∷ FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
+flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
+ where
+  party = F.rgetField @ET.Party
+  votes = F.rgetField @ET.Votes
+  incumbentPartyF =
+    FMR.postMapM incPartyToInt $
+      FL.generalize $
+        FL.prefilter (F.rgetField @ET.Incumbent) $
+          FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
+  totalVotes = FL.premap votes FL.sum
+  demVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
+  repVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Republican) $ totalVotes
+  unopposedF = (\x y → x == 0 || y == 0) <$> demVotesF <*> repVotesF
+  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
+
+aggregatePartiesF
+  ∷ FL.FoldM
+      (Either T.Text)
+      (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
+      (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
+aggregatePartiesF =
+  let apF ∷ Text → FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
+      apF c = FMR.postMapM ap (FL.generalize $ FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
+       where
+        ap pvs =
+          let demvM = M.lookup ET.Democratic pvs
+              repvM = M.lookup ET.Republican pvs
+              votes = FL.fold FL.sum $ M.elems pvs
+              partyE = case (demvM, repvM) of
+                (Nothing, Nothing) → Right ET.Other
+                (Just _, Nothing) → Right ET.Democratic
+                (Nothing, Just _) → Right ET.Republican
+                (Just _, Just _) → Left $ c <> " has votes on both D and R lines!"
+           in fmap (\p → p F.&: votes F.&: V.RNil) partyE
+   in FMR.concatFoldM $
+        FMR.mapReduceFoldM
+          (FMR.generalizeUnpack FMR.noUnpack)
+          (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
+          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r → fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
+
+
+{-
 achenHurAdjDVotesViaState :: (K.KnitEffects r, BR.CacheEffects r)
                            => Text
                            -> K.ActionWithCacheTime r (F.FrameRec BR.PresidentialElectionCols)
@@ -628,183 +787,7 @@ achenHurStatePresDVoteAdj cacheKey presVote_C acsByCD_C cesByCD_C = do
     let (joined, missing) = FJ.leftJoinWithMissing @(lk V.++ DCatsR) ces acs
     when (not $ null missing) $ K.knitError $ "achenHurStateTurnoutAdjustment: missing keys in ces/acs join" <> show missing
     fmap F.rcast <$> (FL.foldM (BRT.adjWgtdSurveyFoldG @[BR.Year, GT.StateAbbreviation] dVoteFraction wnd updateN pv) $ fmap F.rcast joined)
-
-
-
--- an example for presidential 2020 vote.
-cesCountedDemPresVotesByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
-                       ⇒ Bool
-                       → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)))
-cesCountedDemPresVotesByCD clearCaches = do
-  ces2020_C ← CCES.ces20Loader
-  let cacheKey = "model/election2/ces20ByCD.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR @CDKeyR 2020 (F.rgetField @CCES.MPresVoteParty) ces
-
-
-cesCountedDemPresVotesByState ∷ (K.KnitEffects r, BR.CacheEffects r)
-                              ⇒ Bool
-                              → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (StateKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)))
-cesCountedDemPresVotesByState clearCaches = do
-  ces2020_C ← CCES.ces20Loader
-  let cacheKey = "model/election2/ces20ByState.bin"
-  when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR @StateKeyR 2020 (F.rgetField @CCES.MPresVoteParty) ces
-
-
-countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC, F.ElemOf rs CCES.CESWeight)
-               => (F.Record rs -> MT.MaybeData ET.PartyT)
-               -> FL.Fold
-                  (F.Record rs)
-                  (F.Record (CountDataR V.++ PrefDataR))
-countCESVotesF votePartyMD =
-  let vote (MT.MaybeData x) = maybe False (const True) x
-      dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
-      rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
-      wgt = view CCES.cESWeight
-      surveyedF = FL.length
-      registeredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) FL.length
-      votedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) FL.length
-      votesF = FL.prefilter (vote . votePartyMD) votedF
-      dVotesF = FL.prefilter (dVote . votePartyMD) votedF
-      rVotesF = FL.prefilter (rVote . votePartyMD) votedF
-      surveyWgtF = FL.premap wgt FL.sum
-      lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
-      essSurveyedF = effSampleSizeFld lmvskSurveyedF
-      waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
-      waVotedF = wgtdAverageBoolFld wgt (CCES.catalistVoted . view CCES.catalistTurnoutC)
---      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
-      lmvskVotesF = FL.prefilter (vote . votePartyMD) lmvskSurveyedF
-      essVotesF = effSampleSizeFld lmvskVotesF
-      waDVotesF = wgtdAverageBoolFld wgt (dVote . votePartyMD)
-      waRVotesF = wgtdAverageBoolFld wgt (rVote . votePartyMD)
-   in (\sw s r v eS waR waV vs dvs rvs eV waDV waRV →
-          sw F.&: s F.&: r F.&: v
-          F.&: eS F.&: min eS (eS * waR) F.&: min eS (eS * waV)
-          F.&: vs F.&: dvs F.&: rvs
-          F.&: eV F.&: min eV (eV * waDV) F.&: min eV (eV * waRV) F.&: V.RNil)
-      <$> surveyWgtF
-      <*> surveyedF
-      <*> registeredF
-      <*> votedF
-      <*> essSurveyedF
-      <*> waRegisteredF
-      <*> waVotedF
-      <*> votesF
-      <*> dVotesF
-      <*> rVotesF
-      <*> essVotesF
-      <*> waDVotesF
-      <*> waRVotesF
-
-cesRecodeHispanic ∷ (F.ElemOf rs DT.HispC, F.ElemOf rs DT.Race5C) => F.Record rs -> F.Record rs
-cesRecodeHispanic r =
-  let h = F.rgetField @DT.HispC r
-      f r5 = if h == DT.Hispanic then DT.R5_Hispanic else r5
-   in FT.fieldEndo @DT.Race5C f r
-
-cesAddEducation4 ∷ (F.ElemOf rs DT.EducationC) => F.Record rs -> F.Record (DT.Education4C ': rs)
-cesAddEducation4 r =
-  let e4 = DT.educationToEducation4 $ F.rgetField @DT.EducationC r
-  in e4 F.&: r
-
--- using each year's common content
-cesMR ∷ forall lk rs f m .
-        (Foldable f, Functor f, Monad m
-        , F.ElemOf rs BR.Year
-        , F.ElemOf rs DT.EducationC
-        , F.ElemOf rs DT.HispC
-        , F.ElemOf rs DT.Race5C
-        , rs F.⊆ (DT.Education4C ': rs)
-        , F.ElemOf rs CCES.CatalistRegistrationC
-        , F.ElemOf rs CCES.CatalistTurnoutC
-        , F.ElemOf rs CCES.CESWeight
-        , (lk V.++ DCatsR) V.++ (CountDataR V.++ PrefDataR) ~ (((lk V.++ DCatsR) V.++ CountDataR) V.++ PrefDataR)
-        , Ord (F.Record (lk V.++ DCatsR))
-        , (lk V.++ DCatsR) F.⊆ (DT.Education4C ': rs)
-        , FI.RecVec (((lk V.++ DCatsR) V.++ CountDataR) V.++ PrefDataR)
-        )
-      ⇒ Int → (F.Record rs -> MT.MaybeData ET.PartyT) -> f (F.Record rs) → m (F.FrameRec (lk V.++ DCatsR V.++ CountDataR V.++ PrefDataR))
-cesMR earliestYear votePartyMD =
-  BRF.frameCompactMR
-  (FMR.unpackFilterOnField @BR.Year (>= earliestYear))
-  (FMR.assignKeysAndData @(lk V.++ DCatsR) @rs)
-  (countCESVotesF votePartyMD)
-  . fmap (cesAddEducation4 . cesRecodeHispanic)
-
--- This is the thing to apply to loaded result data (with incumbents)
-electionF
-  ∷ ∀ ks
-   . ( Ord (F.Record ks)
-     , ks F.⊆ (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Incumbent
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Party
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) ET.Votes
-     , F.ElemOf (ks V.++ '[BR.Candidate, ET.Party, ET.Votes, ET.Incumbent]) BR.Candidate
-     , FI.RecVec (ks V.++ ElectionR)
-     )
-  ⇒ FL.FoldM (Either T.Text) (F.Record (ks V.++ [BR.Candidate, ET.Party, ET.Votes, ET.Incumbent])) (F.FrameRec (ks V.++ ElectionR))
-electionF =
-  FMR.concatFoldM $
-    FMR.mapReduceFoldM
-      (FMR.generalizeUnpack FMR.noUnpack)
-      (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
-      (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
-
-data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
-
-updateIncParty ∷ IncParty → (ET.PartyT, Text) → IncParty
-updateIncParty (Multi cs) (_, c) = Multi (c : cs)
-updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
-updateIncParty None (p, c) = Inc (p, c)
-
-incPartyToInt ∷ IncParty → Either T.Text Int
-incPartyToInt None = Right 0
-incPartyToInt (Inc (ET.Democratic, _)) = Right 1
-incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
-incPartyToInt (Inc _) = Right 0
-incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
-
-flattenVotesF ∷ FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
-flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
- where
-  party = F.rgetField @ET.Party
-  votes = F.rgetField @ET.Votes
-  incumbentPartyF =
-    FMR.postMapM incPartyToInt $
-      FL.generalize $
-        FL.prefilter (F.rgetField @ET.Incumbent) $
-          FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
-  totalVotes = FL.premap votes FL.sum
-  demVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
-  repVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Republican) $ totalVotes
-  unopposedF = (\x y → x == 0 || y == 0) <$> demVotesF <*> repVotesF
-  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
-
-aggregatePartiesF
-  ∷ FL.FoldM
-      (Either T.Text)
-      (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
-      (F.FrameRec [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes])
-aggregatePartiesF =
-  let apF ∷ Text → FL.FoldM (Either T.Text) (F.Record [ET.Party, ET.Votes]) (F.Record [ET.Party, ET.Votes])
-      apF c = FMR.postMapM ap (FL.generalize $ FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @ET.Votes r)) FL.map)
-       where
-        ap pvs =
-          let demvM = M.lookup ET.Democratic pvs
-              repvM = M.lookup ET.Republican pvs
-              votes = FL.fold FL.sum $ M.elems pvs
-              partyE = case (demvM, repvM) of
-                (Nothing, Nothing) → Right ET.Other
-                (Just _, Nothing) → Right ET.Democratic
-                (Nothing, Just _) → Right ET.Republican
-                (Just _, Just _) → Left $ c <> " has votes on both D and R lines!"
-           in fmap (\p → p F.&: votes F.&: V.RNil) partyE
-   in FMR.concatFoldM $
-        FMR.mapReduceFoldM
-          (FMR.generalizeUnpack FMR.noUnpack)
-          (FMR.generalizeAssign $ FMR.assignKeysAndData @[BR.Candidate, ET.Incumbent] @[ET.Party, ET.Votes])
-          (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ \r → fmap (pure @[]) (apF $ F.rgetField @BR.Candidate r))
+-}
 
 
 {-

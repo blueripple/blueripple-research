@@ -113,18 +113,14 @@ runTurnoutModel :: forall l r ks a b .
                 -> Either Text Text
                 -> Text
                 -> BR.CommandLine
-                -> MC.TurnoutSurvey a
-                -> MC.SurveyAggregation b
-                -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                -> MC.PSTargets
-                -> MC.Alphas
+                -> MC.TurnoutConfig a b
                 -> K.ActionWithCacheTime r (DP.PSData ks)
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, Maybe MC2.ModelParameters))
-runTurnoutModel year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am psData_C = do
-  let config = MC2.TurnoutOnly (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr))
+runTurnoutModel year modelDirE cacheDirE gqName cmdLine tc psData_C = do
+  let config = MC2.TurnoutOnly tc
       runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @l)
   modelData_C <- cachedPreppedModelData cacheDirE
-  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "T_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
+  MC2.runModel modelDirE (MC.turnoutSurveyText tc.tcSurvey <> "T_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
 type PSResultR = [ModelPr, DT.PopCount, PSNumer, PSDenom]
 
@@ -225,21 +221,18 @@ turnoutModelCPs :: forall r a b .
                   -> Either Text Text
                   -> Text
                   -> BR.CommandLine
-                  -> MC.TurnoutSurvey a
-                  -> MC.SurveyAggregation b
-                  -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                  -> MC.PSTargets
-                  -> MC.Alphas
+                  -> MC.TurnoutConfig a b
                   -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap StateAndCats MT.ConfidenceInterval, Maybe MC2.ModelParameters))
-turnoutModelCPs year modelDirE cacheDirE acName cmdLine ts sa dmr pst am = K.wrapPrefix "turnoutModelAHCPs" $ do
+turnoutModelCPs year modelDirE cacheDirE acName cmdLine tc = K.wrapPrefix "turnoutModelAHCPs" $ do
   modelData <- K.ignoreCacheTimeM $ cachedPreppedModelData cacheDirE
-  let (allStates, avgPWPopPerSqMile) = case ts of
+  let ts = tc.tcSurvey
+      (allStates, avgPWPopPerSqMile) = case ts of
         MC.CESSurvey -> FL.fold ((,) <$> FL.premap (view GT.stateAbbreviation) FL.set <*> FL.premap (view DT.pWPopPerSqMile) FL.mean) modelData.cesData
         MC.CPSSurvey -> FL.fold ((,) <$> FL.premap (view GT.stateAbbreviation) FL.set <*> FL.premap (view DT.pWPopPerSqMile) FL.mean) modelData.cpsData
   allCellProbsPS_C <-  BRKU.retrieveOrMakeD ("model/election2/allCellProbs" <> MC.turnoutSurveyText ts <> "_PS.bin") (pure ())
                        $ \_ -> pure $ allCellProbsPS allStates avgPWPopPerSqMile
   K.logLE K.Info "Running all cell model/post-stratification, if necessary"
-  runTurnoutModel @StateAndCats year modelDirE cacheDirE acName cmdLine ts sa dmr pst am allCellProbsPS_C
+  runTurnoutModel @StateAndCats year modelDirE cacheDirE acName cmdLine tc allCellProbsPS_C
 
 runTurnoutModelCPAH :: forall ks r a b .
                        (K.KnitEffects r
@@ -251,19 +244,15 @@ runTurnoutModelCPAH :: forall ks r a b .
                     -> Either Text Text
                     -> Text
                     -> BR.CommandLine
-                    -> MC.TurnoutSurvey a
-                    -> MC.SurveyAggregation b
-                    -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                    -> MC.PSTargets
-                    -> MC.Alphas
+                    -> MC.TurnoutConfig a b
                     -> Text
                     -> K.ActionWithCacheTime r (DP.PSData ks)
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AH ks '[ModelPr])))
-runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am acName psData_C = K.wrapPrefix "runTurnoutModelCPAH" $ do
-  turnoutCPs_C <- turnoutModelCPs year modelDirE cacheDirE acName cmdLine ts sa dmr pst am
+runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine tc acName psData_C = K.wrapPrefix "runTurnoutModelCPAH" $ do
+  turnoutCPs_C <- turnoutModelCPs year modelDirE cacheDirE acName cmdLine tc
   let stFilter r = r ^. BRDF.year == year && r ^. GT.stateAbbreviation /= "US"
   stateTurnout_C <- fmap (fmap (F.filterFrame stFilter)) BRDF.stateTurnoutLoader
-  let cachePrefix = "model/election2/Turnout/" <> MC.turnoutSurveyText ts <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
+  let cachePrefix = "model/election2/Turnout/" <> MC.turnoutSurveyText tc.tcSurvey <> show year <> "_" <> MC.modelConfigText tc.tcModelConfig
       ahDeps = (,,) <$> turnoutCPs_C <*> psData_C <*> stateTurnout_C
   BRKU.retrieveOrMakeFrame (cachePrefix <> gqName <> "_ACProbsAH.bin") ahDeps $ \((tCP, tMPm), psD, stateTurnout) -> do
     K.logLE K.Info "(Re)building AH adjusted all-cell probs."
@@ -274,6 +263,7 @@ runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am acN
                             @(DP.PSDataR ks)
                             @(StateCatsPlus '[ModelPr])
                             (DP.unPSData psD) (F.toFrame probFrame)
+        dmr = tc.tcModelConfig.mcDesignMatrixRow
     when (not $ null missing) $ K.knitError $ "runTurnoutModelAH: missing keys in psData/prob-frame join: " <> show missing
     let densAdjProbFrame = fmap (MC2.adjustPredictionsForDensity (view modelPr) (over modelPr . const) tMP dmr) joined
     FL.foldM (TA.adjTurnoutFoldG @ModelPr @'[GT.StateAbbreviation] @_  @(AHrs ks '[ModelPr])
@@ -291,22 +281,18 @@ runTurnoutModelAH :: forall l ks r a b .
                   -> Either Text Text
                   -> Text
                   -> BR.CommandLine
-                  -> MC.TurnoutSurvey a
-                  -> MC.SurveyAggregation b
-                  -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                  -> MC.PSTargets
-                  -> MC.Alphas
+                  -> MC.TurnoutConfig a b
                   -> Text
                   -> K.ActionWithCacheTime r (DP.PSData ks)
                   -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runTurnoutModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am acName psData_C = K.wrapPrefix "runTurnoutModelAH" $ do
-  let cachePrefix = "model/election2/Turnout/" <> MC.turnoutSurveyText ts <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
-  turnoutCPAH_C <- runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am acName psData_C
+runTurnoutModelAH year modelDirE cacheDirE gqName cmdLine tc acName psData_C = K.wrapPrefix "runTurnoutModelAH" $ do
+  let cachePrefix = "model/election2/Turnout/" <> MC.turnoutSurveyText tc.tcSurvey <> show year <> "_" <> MC.modelConfigText tc.tcModelConfig
+  turnoutCPAH_C <- runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine tc acName psData_C
   let psNum r = (realToFrac $ r ^. DT.popCount) * r ^. modelPr
       psDen r = realToFrac $ r ^. DT.popCount
       turnoutAHPS_C = fmap (FL.fold (psFold @l psNum psDen (view DT.popCount))) turnoutCPAH_C
   K.logLE K.Info "Running model/specific post-stratification, if necessary"
-  turnoutPSForCI_C <- runTurnoutModel @l year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am psData_C
+  turnoutPSForCI_C <- runTurnoutModel @l year modelDirE cacheDirE gqName cmdLine tc psData_C
   let resMapDeps = (,) <$> turnoutAHPS_C <*> turnoutPSForCI_C
   BRKU.retrieveOrMakeD (cachePrefix <> gqName <> "_resMap.bin") resMapDeps $ \(ahps, (cisM, _)) -> do
     K.logLE K.Info "merging AH probs and CIs"
@@ -339,14 +325,11 @@ runPrefModel :: forall l r ks b .
              -> Either Text Text
              -> Text
              -> BR.CommandLine
-             -> MC.SurveyAggregation b
-             -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-             -> MC.PSTargets
-             -> MC.Alphas
+             -> MC.PrefConfig b
              -> K.ActionWithCacheTime r (DP.PSData ks)
              -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, Maybe MC2.ModelParameters))
-runPrefModel year modelDirE cacheDirE gqName cmdLine sa dmr pst am psData_C = do
-  let config = MC2.PrefOnly (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
+runPrefModel year modelDirE cacheDirE gqName cmdLine pc psData_C = do
+  let config = MC2.PrefOnly pc --(MC.PrefConfig pst (MC.ModelConfig sa am dmr))
       runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @l)
   modelData_C <- cachedPreppedModelData cacheDirE
   MC2.runModel modelDirE ("P_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
@@ -360,18 +343,15 @@ prefModelCPs :: forall r b .
              -> Either Text Text
              -> Text
              -> BR.CommandLine
-             -> MC.SurveyAggregation b
-             -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-             -> MC.PSTargets
-             -> MC.Alphas
+             -> MC.PrefConfig b
              -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap StateAndCats MT.ConfidenceInterval, Maybe MC2.ModelParameters))
-prefModelCPs year modelDirE cacheDirE acName cmdLine sa dmr pst am = K.wrapPrefix "prefModelAHCPs" $ do
+prefModelCPs year modelDirE cacheDirE acName cmdLine pc = K.wrapPrefix "prefModelAHCPs" $ do
   modelData <- K.ignoreCacheTimeM $ cachedPreppedModelData cacheDirE
   let (allStates, avgPWPopPerSqMile) = FL.fold ((,) <$> FL.premap (view GT.stateAbbreviation) FL.set <*> FL.premap (view DT.pWPopPerSqMile) FL.mean) modelData.cesData
   allCellProbsPS_C <-  BRKU.retrieveOrMakeD ("model/election2/allCellProbsCES_PS.bin") (pure ())
                        $ \_ -> pure $ allCellProbsPS allStates avgPWPopPerSqMile
   K.logLE K.Info "Running all cell model/post-stratification, if necessary"
-  runPrefModel @StateAndCats year modelDirE cacheDirE acName cmdLine sa dmr pst am allCellProbsPS_C
+  runPrefModel @StateAndCats year modelDirE cacheDirE acName cmdLine pc allCellProbsPS_C
 
 type JoinPR ks = FJ.JoinResult3 StateAndCats (DP.PSDataR ks) (StateCatsPlus '[ModelPr]) (StateCatsPlus '[ModelT])
 
@@ -384,38 +364,34 @@ type PSDataTypePC ks = ( FJ.CanLeftJoinWithMissing3 StateAndCats (DP.PSDataR ks)
                        , (GT.StateAbbreviation ': AHrs ks [ModelPr, ModelT]) F.⊆ JoinPR ks
                        )
 
-runPrefModelCPAH :: forall ks es r a b .
+runPrefModelCPAH :: forall ks r a b .
                   (K.KnitEffects r
                   , BRKU.CacheEffects r
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
-                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
-                  , FSI.RecVec es
+--                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
+--                  , FSI.RecVec es
                   )
                => Int
                -> Either Text Text
                -> Either Text Text
                -> Text
                -> BR.CommandLine
-               -> MC.TurnoutSurvey a  -- we need a turnout model for the AH adjustment
-               -> MC.SurveyAggregation b
-               -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-               -> MC.PSTargets
-               -> MC.Alphas
-               -> Int
-               -> K.ActionWithCacheTime r (F.FrameRec es)
+               -> MC.TurnoutConfig a b  -- we need a turnout model for the AH adjustment
+               -> MC.PrefConfig b
+               -> DP.DShareTargetConfig r
                -> Text
                -> K.ActionWithCacheTime r (DP.PSData ks)
                -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AH ks '[ModelPr, ModelT])))
-runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtYear electionData_C acName psData_C = K.wrapPrefix "ruPrefModelCPAH" $ do
-  let cachePrefix = "model/election2/Pref/CES" <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
-  turnoutCPAH_C <- runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am acName psData_C
-  prefCPs_C <- prefModelCPs year modelDirE cacheDirE acName cmdLine sa dmr pst am
+runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig acName psData_C = K.wrapPrefix "runPrefModelCPAH" $ do
+  turnoutCPAH_C <- runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine tc acName psData_C
+  prefCPs_C <- prefModelCPs year modelDirE cacheDirE acName cmdLine pc
 --  turnoutCPAH_C <- runTurnoutModelAH
-  let elexFilter r = r ^. BRDF.year == elexTgtYear && r ^. ET.party == ET.Democratic
-      elections_C = fmap (F.filterFrame elexFilter) electionData_C
-      ahDeps = (,,,) <$> turnoutCPAH_C <*> prefCPs_C <*> psData_C <*> elections_C
-  BRKU.retrieveOrMakeFrame (cachePrefix <> gqName <> "_ACProbsAH.bin") ahDeps $ \(tCPF, (pCP, pMPm), psD, elex) -> do
+  dVoteTargets_C <- DP.dShareTarget cacheDirE dShareTargetConfig
+  let ahDeps = (,,,) <$> turnoutCPAH_C <*> prefCPs_C <*> psData_C <*> dVoteTargets_C
+      cachePrefix = "model/election2/Pref/CES" <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig
+      ahCacheKey = cachePrefix <> gqName <> "_" <> DP.dShareTargetText dShareTargetConfig <> "_ACProbsAH.bin"
+  BRKU.retrieveOrMakeFrame ahCacheKey ahDeps $ \(tCPF, (pCP, pMPm), psD, elex) -> do
     K.logLE K.Info "(Re)building AH adjusted all-cell probs."
     let probFrame =  fmap (\(ks, p) -> ks F.<+> FT.recordSingleton @ModelPr p) $ M.toList $ fmap MT.ciMid $ MC.unPSMap pCP
         turnoutFrame = fmap (F.rcast @(StateCatsPlus '[ModelT]) . FT.rename @"ModelPr" @"ModelT") tCPF
@@ -425,48 +401,46 @@ runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTg
                             (DP.unPSData psD) (F.toFrame probFrame) turnoutFrame
     when (not $ null missingPSPref) $ K.knitError $ "runPrefModelAH: missing keys in psData/prob-frame join: " <> show missingPSPref
     when (not $ null missingT) $ K.knitError $ "runPrefModelAH: missing keys in psData+prob-frame/turnout frame join: " <> show missingT
-    let adjForDensity = MC2.adjustPredictionsForDensity (view modelPr) (over modelPr . const) tMP dmr
+    let dmr = pc.pcModelConfig.mcDesignMatrixRow
+        adjForDensity = MC2.adjustPredictionsForDensity (view modelPr) (over modelPr . const) tMP dmr
         densAdjProbFrame = fmap adjForDensity joined
         dVotesFrac r = realToFrac (r ^. ET.votes) / realToFrac (r ^. ET.totalVotes)
         modeledVoters r = r ^. modelT * realToFrac (r ^. DT.popCount)
     FL.foldM
-      (TA.adjTurnoutFoldG @ModelPr @'[GT.StateAbbreviation] @_ @(AHrs ks [ModelPr, ModelT]) modeledVoters dVotesFrac elex)
+      (TA.adjTurnoutFoldG @ModelPr @'[GT.StateAbbreviation] @_ @(AHrs ks [ModelPr, ModelT]) modeledVoters (view ET.demShare) elex)
       (fmap F.rcast densAdjProbFrame)
 
-runPrefModelAH :: forall l ks es r a b .
+runPrefModelAH :: forall l ks r a b .
                   (K.KnitEffects r
                   , BRKU.CacheEffects r
                   , PSTypeC l ks '[ModelPr, ModelT]
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
-                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
-                  , FSI.RecVec es
+--                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
+--                  , FSI.RecVec es
                   )
                => Int
                -> Either Text Text
                -> Either Text Text
                -> Text
                -> BR.CommandLine
-               -> MC.TurnoutSurvey a  -- we need a turnout model for the AH adjustment
-               -> MC.SurveyAggregation b
-               -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-               -> MC.PSTargets
-               -> MC.Alphas
-               -> Int
-               -> K.ActionWithCacheTime r (F.FrameRec es)
+               -> MC.TurnoutConfig a b  -- we need a turnout model for the AH adjustment
+               -> MC.PrefConfig b
+               -> DP.DShareTargetConfig r
                -> Text
                -> K.ActionWithCacheTime r (DP.PSData ks)
                -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runPrefModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtYear electionData_C acName psData_C = K.wrapPrefix "ruPrefModelAH" $ do
-  let cachePrefix = "model/election2/Pref/CES" <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
-  prefCPAH_C <- runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtYear electionData_C acName psData_C
+runPrefModelAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig acName psData_C = K.wrapPrefix "ruPrefModelAH" $ do
+  prefCPAH_C <- runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig acName psData_C
   let psNum r = (realToFrac $ r ^. DT.popCount) * r ^. modelPr
       psDen r = realToFrac $ r ^. DT.popCount
       prefAHPS_C = fmap (FL.fold (psFold @l psNum psDen (view DT.popCount))) prefCPAH_C
   K.logLE K.Info "Running model/specific post-stratification, if necessary"
-  prefPSForCI_C <- runPrefModel @l year modelDirE cacheDirE gqName cmdLine sa dmr pst am psData_C
+  prefPSForCI_C <- runPrefModel @l year modelDirE cacheDirE gqName cmdLine pc psData_C
   let resMapDeps = (,) <$> prefAHPS_C <*> prefPSForCI_C
-  BRKU.retrieveOrMakeD (cachePrefix <> gqName <> "_resMap.bin") resMapDeps $ \(ahps, (cisM, _)) -> do
+      cachePrefix = "model/election2/Pref/CES" <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig
+      cacheKey = cachePrefix <> gqName <> "_" <> DP.dShareTargetText dShareTargetConfig <> "_resMap.bin"
+  BRKU.retrieveOrMakeD cacheKey resMapDeps $ \(ahps, (cisM, _)) -> do
     K.logLE K.Info "merging AH probs and CIs"
     let psProbMap = M.fromList $ fmap (\r -> (F.rcast @l r, r ^. modelPr)) $ FL.fold FL.list ahps
         whenMatched _ p ci = Right $ adjustCI p ci
@@ -475,33 +449,6 @@ runPrefModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtY
     MC.PSMap
       <$> (K.knitEither
             $ MM.mergeA (MM.traverseMissing whenMissingPS) (MM.traverseMissing whenMissingCI) (MM.zipWithAMatched whenMatched) psProbMap (MC.unPSMap cisM))
-
-voteShareFrame :: FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
-               => F.FrameRec es
-               -> Map (F.Record [BRDF.Year, GT.StateAbbreviation]) Double
-               -> F.FrameRec [BRDF.Year, GT.StateAbbreviation, ET.DemShare]
-voteShareFrame elexFrame overrides =
-  FMR.concatFold
-  $ FMR.mapReduceFold
-  FMR.noUnpack
-  (FMR.assignKeysAndData @[BRDF.Year, GT.StateAbbreviation] @[ET.Party, ET.Votes, ET.TotalVotes])
-  (FMR.ReduceFold innerFld)
-  where
-    keyedShare k x = k F.<+> FT.recordSingleton @ET.DemShare x
-    safeDiv x y = if y > 0 then x /y else 0
-    innerFld :: F.Record [BRDF.Year, GT.StateAbbreviation]
-             -> FL.Fold (F.Record [ET.Party, ET.Votes, ET.TotalVotes]) (F.Record [BRDF.Year, GT.StateAbbreviation, ET.DemShare])
-    innerFld k = case M.lookup k overrides of
-      Just x -> pure $ keyedShare k x
-      Nothing ->
-        let ifP p r = r ^. ET.Party == p
-            ifD = ifP ET.Democratic
-            ifBoth r = ifP ET.Democratic r && ifP ET.Republican r
-            votes = view ET.votes
-            totalBoth = FL.prefilter ifBoth (FL.premap votes FL.sum)
-            totalD = FL.prefilter ifD (FL.premap votes FL.sum)
-        in (\td tb -> keyedShare k (safeDiv td tb)) <$> totalD <*> totalBoth
-
 
 
 runFullModel :: forall l r ks a b .
@@ -524,33 +471,30 @@ runFullModel :: forall l r ks a b .
              -> Either Text Text
              -> Text
              -> BR.CommandLine
-             -> MC.TurnoutSurvey a
-             -> MC.SurveyAggregation b
-             -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-             -> MC.PSTargets
-             -> MC.Alphas
+             -> MC.TurnoutConfig a b
+             -> MC.PrefConfig b
              -> K.ActionWithCacheTime r (DP.PSData ks)
              -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, Maybe MC2.ModelParameters))
-runFullModel year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am psData_C = do
-  let config = MC2.TurnoutAndPref (MC.TurnoutConfig ts pst (MC.ModelConfig sa am dmr)) (MC.PrefConfig pst (MC.ModelConfig sa am dmr))
+runFullModel year modelDirE cacheDirE gqName cmdLine tc pc psData_C = do
+  let config = MC2.TurnoutAndPref tc pc
       runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @l)
   modelData_C <- cachedPreppedModelData cacheDirE
 --  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
-  MC2.runModel modelDirE (MC.turnoutSurveyText ts <> "_VS_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
+  MC2.runModel modelDirE (MC.turnoutSurveyText tc.tcSurvey <> "F_" <> show year) gqName cmdLine runConfig config modelData_C psData_C
 
 --type ToJoinTR ks = FT.Rename "ModelPr" "ModelT" (AH ks '[ModelPr]) --(ks V.++ (DP.DCatsR V.++ [ModelPr, DT.PopCount]))
 type ToJoinPR ks = FT.Rename "ModelPr" "ModelP" (AH ks '[ModelPr, ModelT]) --(ks V.++ (DP.DCatsR V.++ [ModelPr, DT.PopCount]))
 --type Join3R ks = FJ.JoinResult3 (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinTR ks) (ToJoinPR ks)
 type JoinFR ks = FJ.JoinResult (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinPR ks)
 
-runFullModelAH :: forall l ks es r a b .
+runFullModelAH :: forall l ks r a b .
                   (K.KnitEffects r
                   , BRKU.CacheEffects r
                   , PSTypeC l ks '[ModelPr, ModelT]
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
-                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
-                  , FSI.RecVec es
+--                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
+--                  , FSI.RecVec es
                   , FJ.CanLeftJoinWithMissing  (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinPR ks)
                   , l F.⊆ JoinFR ks
                   , JoinFR ks F.⊆ JoinFR ks
@@ -564,22 +508,19 @@ runFullModelAH :: forall l ks es r a b .
                -> Either Text Text
                -> Text
                -> BR.CommandLine
-               -> MC.TurnoutSurvey a
-               -> MC.SurveyAggregation b
-               -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-               -> MC.PSTargets
-               -> MC.Alphas
-               -> Int
-               -> K.ActionWithCacheTime r (F.FrameRec es)
+               -> MC.TurnoutConfig a b
+               -> MC.PrefConfig b
+               -> DP.DShareTargetConfig r
                -> K.ActionWithCacheTime r (DP.PSData ks)
                -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runFullModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtYear electionData_C psData_C = K.wrapPrefix "runFullModelAH" $ do
+runFullModelAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig psData_C = K.wrapPrefix "runFullModelAH" $ do
 --  let cachePrefixT = "model/election2/Turnout/" <> MC.turnoutSurveyText ts <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
 --  turnoutCPAH_C <- runTurnoutModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am "AllCells" psData_C
-  prefCPAH_C <- runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtYear electionData_C "AllCells" psData_C
-  let cachePrefix = "model/election2/Full/" <> MC.turnoutSurveyText ts <> show year <> "_" <> MC.aggregationText sa <> "_" <> MC.alphasText am <> "/"
+  prefCPAH_C <- runPrefModelCPAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig "AllCells" psData_C
+  let cachePrefix = "model/election2/Full/" <> MC.turnoutSurveyText tc.tcSurvey <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig
+      ahpsCacheKey = cachePrefix <> gqName <>  "_" <> DP.dShareTargetText dShareTargetConfig <> "_PS.bin"
       joinDeps = (,) <$> prefCPAH_C <*> psData_C
-  fullAHPS_C <- BRKU.retrieveOrMakeFrame (cachePrefix <> gqName <> "_PS.bin") joinDeps $ \(pref, psData) -> do
+  fullAHPS_C <- BRKU.retrieveOrMakeFrame ahpsCacheKey  joinDeps $ \(pref, psData) -> do
     K.logLE K.Info "Doing 3-way join..."
     let-- turnoutFrame = fmap (FT.rename @"ModelPr" @"ModelT") turnout
         prefFrame = fmap (FT.rename @"ModelPr" @"ModelP") pref
@@ -595,10 +536,12 @@ runFullModelAH year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am elexTgtY
         psDen r = ppl r * t r
     pure $ FL.fold (psFold @l psNum psDen (view DT.popCount)) joined
   K.logLE K.Info "Running model/specific post-stratification, if necessary"
-  fullPSForCI_C <- runFullModel @l year modelDirE cacheDirE gqName cmdLine ts sa dmr pst am psData_C
+  fullPSForCI_C <- runFullModel @l year modelDirE cacheDirE gqName cmdLine tc pc psData_C
 
-  let resMapDeps = (,) <$> fullAHPS_C <*> fullPSForCI_C
-  BRKU.retrieveOrMakeD (cachePrefix <> gqName <> "_resMap.bin") resMapDeps $ \(ahps, (cisM, _)) -> do
+  let cacheKey = cachePrefix <> gqName <>  "_" <> DP.dShareTargetText dShareTargetConfig <> "_resMap.bin"
+      resMapDeps = (,) <$> fullAHPS_C <*> fullPSForCI_C
+
+  BRKU.retrieveOrMakeD cacheKey resMapDeps $ \(ahps, (cisM, _)) -> do
     K.logLE K.Info "merging AH probs and CIs"
     let psProbMap = M.fromList $ fmap (\r -> (F.rcast @l r, r ^. modelPr)) $ FL.fold FL.list ahps
         whenMatched _ p ci = Right $ adjustCI p ci
@@ -628,17 +571,17 @@ allCellProbsPS states avgPWDensity =
   in DP.PSData $ F.toFrame allCellRecList
 
 modelCompBy :: forall ks r b . (K.KnitEffects r, BRKU.CacheEffects r, PSByC ks)
-            => (Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
-            -> Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))
-modelCompBy runModel catLabel agg am pt = do
-          comp <- psBy @ks (runModel catLabel agg am pt)
-          pure (MC.aggregationText agg <> "_" <> MC.alphasText am <> (if (pt == MC.PSTargets) then "_PSTgt" else ""), comp)
+            => (Text -> MC.SurveyAggregation b -> MC.Alphas -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+            -> Text -> MC.SurveyAggregation b -> MC.Alphas -> K.Sem r (Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))
+modelCompBy runModel catLabel agg am = do
+          comp <- psBy @ks (runModel catLabel agg am)
+          pure (MC.aggregationText agg <> "_" <> MC.alphasText am, comp)
 
 allModelsCompBy :: forall ks r b . (K.KnitEffects r, BRKU.CacheEffects r, PSByC ks)
-                => (Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
-                -> Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> [MC.PSTargets] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))]
-allModelsCompBy runModel catLabel aggs' alphaModels' psTs' =
-  traverse (\(agg, am, pt) -> modelCompBy @ks runModel catLabel agg am pt) [(agg, am, pt) | agg <- aggs',  am <- alphaModels', pt <- psTs']
+                => (Text -> MC.SurveyAggregation b -> MC.Alphas -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+                -> Text -> [MC.SurveyAggregation b] -> [MC.Alphas] -> K.Sem r [(Text, F.FrameRec (ks V.++ '[DT.PopCount, ModelCI]))]
+allModelsCompBy runModel catLabel aggs' alphaModels' =
+  traverse (\(agg, am) -> modelCompBy @ks runModel catLabel agg am) [(agg, am) | agg <- aggs',  am <- alphaModels']
 
 allModelsCompChart :: forall ks r b . (K.KnitOne r, BRKU.CacheEffects r, PSByC ks, Keyed.FiniteSet (F.Record ks)
                                         , F.ElemOf (ks V.++ [DT.PopCount, ModelCI]) DT.PopCount
@@ -647,16 +590,15 @@ allModelsCompChart :: forall ks r b . (K.KnitOne r, BRKU.CacheEffects r, PSByC k
                                         )
                    => BR.PostPaths Path.Abs
                    -> BR.PostInfo
-                   -> (Text -> MC.SurveyAggregation b -> MC.Alphas -> MC.PSTargets -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
+                   -> (Text -> MC.SurveyAggregation b -> MC.Alphas -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap ks MT.ConfidenceInterval)))
                    -> Text
                    -> Text
                    -> (F.Record ks -> Text)
                    -> [MC.SurveyAggregation b]
                    -> [MC.Alphas]
-                   -> [MC.PSTargets]
                    -> K.Sem r ()
-allModelsCompChart pp postInfo runModel catLabel modelType catText aggs' alphaModels' psTs' = do
-  allModels <- allModelsCompBy @ks runModel catLabel aggs' alphaModels' psTs'
+allModelsCompChart pp postInfo runModel catLabel modelType catText aggs' alphaModels' = do
+  allModels <- allModelsCompBy @ks runModel catLabel aggs' alphaModels'
   let cats = Set.toList $ Keyed.elements @(F.Record ks)
       _numCats = length cats
       numSources = length allModels
@@ -770,7 +712,7 @@ surveyDataBy saM = FL.fold fld
       Nothing -> mwInnerFld
       Just sa -> case sa of
         MC.UnweightedAggregation -> uwInnerFld
-        MC.WeightedAggregation _ _ -> wInnerFld
+        MC.WeightedAggregation _ -> wInnerFld
     fld :: FL.Fold (F.Record rs) (F.FrameRec (ks V.++ '[ModelPr]))
     fld = FMR.concatFold
           $ FMR.mapReduceFold

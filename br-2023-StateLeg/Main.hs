@@ -170,9 +170,8 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       cacheDirE = Right "model/election2/"
       dmr = MC.tDesignMatrixRow_d
       survey = MC.CESSurvey
-      aggregation = MC.WeightedAggregation MC.ContinuousBinomial MC.NoAchenHur
+      aggregation = MC.WeightedAggregation MC.ContinuousBinomial
       alphaModel = MC.St_A_S_E_R_ER_StR_StER
-      psT = MC.NoPSTargets
       psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
@@ -181,13 +180,15 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
     let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
     sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
-    let --turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
-        --prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
-        dVSModel gqName agg am pt
-          = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C
+    presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
+    let dVSPres2020 = DP.ElexTargetConfig "Pres" (pure mempty) 2020 presidentialElections_C
+        turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
+        prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
+        dVSModel gqName agg am
+          = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) (prefConfig agg am) dVSPres2020
         g f (a, b) = f b >>= pure . (a, )
         h f = traverse (g f)
-    modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel psT stateSLDs_C
+    modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel stateSLDs_C
     allPlansMap <- DRA.allPassedSLDPlans
     upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
     let modeledDVs = modeledMapToFrame modeledDVSMap

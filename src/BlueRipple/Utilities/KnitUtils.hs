@@ -65,6 +65,26 @@ insureFinalSlashE e = case e of
   Left t -> Left <$> insureFinalSlash t
   Right t -> Right <$> insureFinalSlash t
 
+cacheFromDirE :: (K.KnitEffects r, CacheEffects r)
+              => Either Text Text -> Text -> K.Sem r Text
+cacheFromDirE dirE n = do
+  dirE' <- K.knitMaybe "cacheDirFromDirE: empty directory given in dirE argument!" $ insureFinalSlashE dirE
+  case dirE' of
+    Left cd -> clearIfPresentD' (cd <> n)
+    Right cd -> pure (cd <> n)
+
+clearIfPresentD' :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r Text
+clearIfPresentD' k = do
+  K.logLE K.Diagnostic $ "Clearing cached item with key=" <> show k
+  K.clearIfPresent @T.Text @CacheData k
+  pure k
+
+clearIf' :: (K.KnitEffects r, CacheEffects r) => Bool -> Text -> K.Sem r Text
+clearIf' flag k = if flag then clearIfPresentD' k else pure k
+
+clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
+clearIfPresentD k = void $ clearIfPresentD' k
+
 knitX ::
   forall r a.
   K.Member (Error K.PandocError) r =>
@@ -429,18 +449,6 @@ retrieveOrMakeRecList ::
 retrieveOrMakeRecList key cachedDeps action =
   K.wrapPrefix ("BlueRipple.retrieveOrMakeRecList (key=" <> key <> ")") $
     K.retrieveOrMakeTransformed  @SerializerC @CacheData (fmap FS.toS) (fmap FS.fromS) key cachedDeps action
-
-clearIfPresentD' :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r Text
-clearIfPresentD' k = do
-  K.logLE K.Diagnostic $ "Clearing cached item with key=" <> show k
-  K.clearIfPresent @T.Text @CacheData k
-  pure k
-
-clearIf' :: (K.KnitEffects r, CacheEffects r) => Bool -> Text -> K.Sem r Text
-clearIf' flag k = if flag then clearIfPresentD' k else pure k
-
-clearIfPresentD :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r ()
-clearIfPresentD k = void $ clearIfPresentD' k
 
 
 

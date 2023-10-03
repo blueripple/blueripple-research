@@ -112,15 +112,13 @@ data TurnoutConfig a b =
   TurnoutConfig
   {
     tcSurvey :: TurnoutSurvey a
-  , tcPSTargets :: PSTargets
   , tcModelConfig :: ModelConfig b
   }
 
 data PrefConfig b =
   PrefConfig
   {
-    pcPSTargets :: PSTargets
-  , pcModelConfig :: ModelConfig b
+    pcModelConfig :: ModelConfig b
   }
 
 type GroupsR = GT.StateAbbreviation ': DP.DCatsR
@@ -148,6 +146,7 @@ surveyDataGroupBuilder :: (Foldable g, Typeable rs, GroupsR F.⊆ rs)
                        => g Text -> Text -> SMB.ToFoldable md (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
 surveyDataGroupBuilder states sName sTF = SMB.addModelDataToGroupBuilder sName sTF >>= addGroupIndexesAndIntMaps (groups states)
 
+{-
 stateTargetsGroupBuilder :: (Foldable g, F.ElemOf rs GT.StateAbbreviation
                             )
                          => g Text -> SMB.RowTypeTag (F.Record rs) -> SMB.StanGroupBuilderM md gq ()
@@ -160,7 +159,7 @@ acsDataGroupBuilder :: [DSum.DSum SMB.GroupTypeTag (SG.GroupFromData (F.Record G
 acsDataGroupBuilder groups' = do
    acsDataTag <- SMB.addModelDataToGroupBuilder "ACSData" (SMB.ToFoldable DP.acsData)
    SG.addModelIndexes acsDataTag F.rcast groups'
-
+-}
 -- NB: often l ~ k, e.g., for predicting district turnout/preference
 -- But say you want to predict turnout by race, nationally.
 -- Now l ~ '[Race5C]
@@ -204,15 +203,9 @@ realCountModelText :: RealCountModel -> Text
 realCountModelText ContinuousBinomial = "CB"
 realCountModelText BetaProportion = "BP"
 
-data UseAchenHur = UseAchenHur | NoAchenHur deriving stock (Eq)
-
-useAchenHurText :: UseAchenHur -> Text
-useAchenHurText UseAchenHur = "AH"
-useAchenHurText NoAchenHur = ""
-
 data SurveyAggregation b where
   UnweightedAggregation :: SurveyAggregation TE.EIntArray
-  WeightedAggregation :: RealCountModel -> UseAchenHur -> SurveyAggregation TE.ECVec
+  WeightedAggregation :: RealCountModel -> SurveyAggregation TE.ECVec
 
 turnoutSurveyText :: TurnoutSurvey a -> Text
 turnoutSurveyText CESSurvey = "CES"
@@ -225,11 +218,11 @@ psTargetsText PSTargets = "PSTgt"
 
 aggregationText :: SurveyAggregation b -> Text
 aggregationText UnweightedAggregation = "UW"
-aggregationText (WeightedAggregation cm ah) = "WA" <> realCountModelText cm <> useAchenHurText ah
+aggregationText (WeightedAggregation cm) = "WA" <> realCountModelText cm
 
 addAggregationText :: SurveyAggregation b -> Text
 addAggregationText UnweightedAggregation = "_UW"
-addAggregationText (WeightedAggregation cm ah) = "_WA" <> realCountModelText cm <> useAchenHurText ah
+addAggregationText (WeightedAggregation cm) = "_WA" <> realCountModelText cm
 
 data BinomialData (b :: TE.EType) =
   BinomialData
@@ -271,6 +264,7 @@ covariatesAndCountsFromData rtt modelConfig trialsF succF = do
     else pure $ TE.namedE "ERROR" TE.SMat -- this shouldn't show up in stan code at all
   pure $ CovariatesAndCounts rtt nCovariatesE dmE $ BinomialData trialsE successesE
 
+{-
 data StateTargetsData tds =
   StateTargetsData
   {
@@ -280,19 +274,21 @@ data StateTargetsData tds =
   , stdACSWgts :: TE.IntArrayE
   , stdACSCovariates :: TE.MatrixE
   }
+-}
 
 data ModelData tds a (b :: TE.EType) where
-  NoPT_ModelData :: CovariatesAndCounts a b -> ModelData tds a b
-  PT_ModelData :: CovariatesAndCounts a b -> StateTargetsData tds -> ModelData tds a b
+  ModelData :: CovariatesAndCounts a b -> ModelData tds a b
+--  PT_ModelData :: CovariatesAndCounts a b -> StateTargetsData tds -> ModelData tds a b
 
 covariatesAndCounts :: ModelData tds a b -> CovariatesAndCounts a b
-covariatesAndCounts (NoPT_ModelData cc) = cc
-covariatesAndCounts (PT_ModelData cc _) = cc
+covariatesAndCounts (ModelData cc) = cc
+--covariatesAndCounts (PT_ModelData cc _) = cc
 
 withCC :: (forall x y . CovariatesAndCounts x y -> c) -> ModelData tds a b -> c
-withCC f (NoPT_ModelData cc) = f cc
-withCC f (PT_ModelData cc _) = f cc
+withCC f (ModelData cc) = f cc
+--withCC f (PT_ModelData cc _) = f cc
 
+{-
 stateTargetsTD :: Maybe Text
                -> CovariatesAndCounts a b
                -> StateTargetsData td
@@ -323,7 +319,7 @@ stateTargetsTD prefixM cc st cM rM = do
       [(TE.indexE TEI.s0 acsStateIndex acsNByState `TE.at` kE) `plusEq` (st.stdACSWgts `TE.at` kE)]
     pure acsNByState
   pure (dmACS, acsNByState)
-
+-}
 data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
 newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
