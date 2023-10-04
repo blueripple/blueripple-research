@@ -231,7 +231,7 @@ turnoutModelCPs year modelDirE cacheDirE acName cmdLine tc = K.wrapPrefix "turno
         MC.CPSSurvey -> FL.fold ((,) <$> FL.premap (view GT.stateAbbreviation) FL.set <*> FL.premap (view DT.pWPopPerSqMile) FL.mean) modelData.cpsData
   allCellProbsPS_C <-  BRKU.retrieveOrMakeD ("model/election2/allCellProbs" <> MC.turnoutSurveyText ts <> "_PS.bin") (pure ())
                        $ \_ -> pure $ allCellProbsPS allStates avgPWPopPerSqMile
-  K.logLE K.Info "Running all cell model/post-stratification, if necessary"
+  K.logLE K.Diagnostic "Running all cell turnout model, if necessary"
   runTurnoutModel @StateAndCats year modelDirE cacheDirE acName cmdLine tc allCellProbsPS_C
 
 runTurnoutModelCPAH :: forall ks r a b .
@@ -291,7 +291,7 @@ runTurnoutModelAH year modelDirE cacheDirE gqName cmdLine tc acName psData_C = K
   let psNum r = (realToFrac $ r ^. DT.popCount) * r ^. modelPr
       psDen r = realToFrac $ r ^. DT.popCount
       turnoutAHPS_C = fmap (FL.fold (psFold @l psNum psDen (view DT.popCount))) turnoutCPAH_C
-  K.logLE K.Info "Running model/specific post-stratification, if necessary"
+  K.logLE K.Diagnostic "Running turnout model for CIs, if necessary"
   turnoutPSForCI_C <- runTurnoutModel @l year modelDirE cacheDirE gqName cmdLine tc psData_C
   let resMapDeps = (,) <$> turnoutAHPS_C <*> turnoutPSForCI_C
   BRKU.retrieveOrMakeD (cachePrefix <> gqName <> "_resMap.bin") resMapDeps $ \(ahps, (cisM, _)) -> do
@@ -350,7 +350,7 @@ prefModelCPs year modelDirE cacheDirE acName cmdLine pc = K.wrapPrefix "prefMode
   let (allStates, avgPWPopPerSqMile) = FL.fold ((,) <$> FL.premap (view GT.stateAbbreviation) FL.set <*> FL.premap (view DT.pWPopPerSqMile) FL.mean) modelData.cesData
   allCellProbsPS_C <-  BRKU.retrieveOrMakeD ("model/election2/allCellProbsCES_PS.bin") (pure ())
                        $ \_ -> pure $ allCellProbsPS allStates avgPWPopPerSqMile
-  K.logLE K.Info "Running all cell model/post-stratification, if necessary"
+  K.logLE K.Diagnostic "Running all cell pref model, if necessary"
   runPrefModel @StateAndCats year modelDirE cacheDirE acName cmdLine pc allCellProbsPS_C
 
 type JoinPR ks = FJ.JoinResult3 StateAndCats (DP.PSDataR ks) (StateCatsPlus '[ModelPr]) (StateCatsPlus '[ModelT])
@@ -435,7 +435,7 @@ runPrefModelAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig 
   let psNum r = (realToFrac $ r ^. DT.popCount) * r ^. modelPr
       psDen r = realToFrac $ r ^. DT.popCount
       prefAHPS_C = fmap (FL.fold (psFold @l psNum psDen (view DT.popCount))) prefCPAH_C
-  K.logLE K.Info "Running model/specific post-stratification, if necessary"
+  K.logLE K.Diagnostic "Running pref model for CIs, if necessary"
   prefPSForCI_C <- runPrefModel @l year modelDirE cacheDirE gqName cmdLine pc psData_C
   let resMapDeps = (,) <$> prefAHPS_C <*> prefPSForCI_C
       cachePrefix = "model/election2/Pref/CES" <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig
@@ -535,7 +535,7 @@ runFullModelAH year modelDirE cacheDirE gqName cmdLine tc pc dShareTargetConfig 
         psNum r = ppl r * t r * p r
         psDen r = ppl r * t r
     pure $ FL.fold (psFold @l psNum psDen (view DT.popCount)) joined
-  K.logLE K.Info "Running model/specific post-stratification, if necessary"
+  K.logLE K.Diagnostic "Running full model for CIs, if necessary"
   fullPSForCI_C <- runFullModel @l year modelDirE cacheDirE gqName cmdLine tc pc psData_C
 
   let cacheKey = cachePrefix <> gqName <>  "_" <> DP.dShareTargetText dShareTargetConfig <> "_resMap.bin"

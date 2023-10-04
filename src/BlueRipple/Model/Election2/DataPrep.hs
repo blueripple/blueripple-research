@@ -48,9 +48,12 @@ import Control.Lens (view, (^.))
 import qualified Control.Foldl as FL
 import qualified Control.Foldl.Statistics as FL
 import qualified Control.MapReduce as FMR
+import qualified Data.Csv as CSV
 import qualified Data.Map.Strict as M
+import qualified Data.List.NonEmpty as NE
 --import qualified Data.Serialize as S
 import qualified Data.Text as T
+import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import Data.Type.Equality (type (~))
@@ -563,6 +566,29 @@ cesMR earliestYear votePartyMD =
   . fmap (cesAddEducation4 . cesRecodeHispanic)
 
 -- vote targets
+data DRAOverride =
+  DRAOverride
+  {
+    doStateAbbreviation :: Text
+  , doType :: Text
+  , doDemShare :: Double
+  , doRepShare :: Double
+  , doOtherShare :: Double
+  } deriving stock (Show, Generic)
+
+instance CSV.FromRecord DRAOverride
+
+loadOverrides :: K.KnitEffects r => Text -> Text -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [GT.StateAbbreviation, ET.DemShare]))
+loadOverrides orFile orType = do
+  let toRec :: DRAOverride -> F.Record [GT.StateAbbreviation, ET.DemShare]
+      toRec x = doStateAbbreviation x F.&: doDemShare x / 100 F.&: V.RNil
+      overrides fp = do
+        lbs <- K.liftKnit @IO $ readFileLBS fp
+        decoded <- K.knitEither $ first toText $ CSV.decodeWith CSV.defaultDecodeOptions CSV.HasHeader lbs
+        pure $ F.toFrame $ fmap toRec $ filter ((== orType) . doType) $ Vec.toList decoded
+  K.fileWithCacheTime orFile >>= pure . K.wctBind (overrides . toString)
+--  K.fileWithCacheTime orFile >>= overrides . toString
+
 data DShareTargetConfig r where
   ElexTargetConfig :: (FC.ElemsOf es [BR.Year, GT.StateAbbreviation, BR.Candidate, ET.Party, ET.Votes, ET.Incumbent, ET.TotalVotes], FI.RecVec es)
                    => Text
@@ -579,7 +605,7 @@ dShareTarget :: (K.KnitEffects r, BR.CacheEffects r)
             -> DShareTargetConfig r
             -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec [GT.StateAbbreviation, ET.DemShare]))
 dShareTarget cacheDirE dvt@(ElexTargetConfig n overrides_C year elex_C) = do
-  cacheKey <- BR.cacheFromDirE cacheDirE $ dShareTargetText dvt
+  cacheKey <- BR.cacheFromDirE cacheDirE $ dShareTargetText dvt <> ".bin"
   let overrideKey = view GT.stateAbbreviation
       overridePremap r = (overrideKey r, r ^. ET.demShare)
       safeDiv x y = if y > 0 then x / y else 0
@@ -590,7 +616,7 @@ dShareTarget cacheDirE dvt@(ElexTargetConfig n overrides_C year elex_C) = do
         let overrideMap = FL.fold (FL.premap overridePremap FL.map) overrides
             process r = let sa = r ^. GT.stateAbbreviation
                         in case M.lookup sa overrideMap of
-                             Nothing -> sa F.&: safeDivInt (r ^. dVotes) (r ^. dVotes + r ^. rVotes) F.&: V.RNil
+                             Nothing -> sa F.&: safeDivInt (r ^. dVotes) (r ^. tVotes) F.&: V.RNil
                              Just x -> sa F.&: x F.&: V.RNil
         pure $ fmap process flattenedElex
   BR.retrieveOrMakeFrame cacheKey deps f
@@ -615,35 +641,42 @@ electionF =
       (FMR.generalizeAssign $ FMR.assignKeysAndData @ks)
       (FMR.makeRecsWithKeyM id $ FMR.ReduceFoldM $ const $ fmap (pure @[]) flattenVotesF)
 
-data IncParty = None | Inc (ET.PartyT, Text) | Multi [Text]
+data IncParty = None | Inc (ET.PartyT, Text) | Multi (NonEmpty (ET.PartyT, Text))
 
 updateIncParty ∷ IncParty → (ET.PartyT, Text) → IncParty
-updateIncParty (Multi cs) (_, c) = Multi (c : cs)
-updateIncParty (Inc (_, c)) (_, c') = Multi [c, c']
-updateIncParty None (p, c) = Inc (p, c)
+updateIncParty (Multi is) i = Multi (i NE.<| is)
+updateIncParty (Inc i) i' = Multi (i' :| [i'])
+updateIncParty None i = Inc i
 
-incPartyToInt ∷ IncParty → Either T.Text Int
-incPartyToInt None = Right 0
-incPartyToInt (Inc (ET.Democratic, _)) = Right 1
-incPartyToInt (Inc (ET.Republican, _)) = Right (negate 1)
-incPartyToInt (Inc _) = Right 0
-incPartyToInt (Multi cs) = Left $ "Error: Multiple incumbents: " <> T.intercalate "," cs
+incPartyToInt ∷ IncParty → Int
+incPartyToInt None = 0
+incPartyToInt (Inc (ET.Democratic, _)) = 1
+incPartyToInt (Inc (ET.Republican, _)) = negate 1
+incPartyToInt (Inc _) = 0
+incPartyToInt (Multi is) =
+  let parties = fst <$> is
+      sameParties = and (fmap (== head parties) (tail parties))
+      party = head parties
+      res party = case party of
+        ET.Democratic -> 1
+        ET.Republican -> negate 1
+        _ -> 0
+  in if sameParties then res party else 0
 
 flattenVotesF ∷ FL.FoldM (Either T.Text) (F.Record [BR.Candidate, ET.Incumbent, ET.Party, ET.Votes]) (F.Record ElectionR)
-flattenVotesF = FMR.postMapM (FL.foldM flattenF) aggregatePartiesF
+flattenVotesF = fmap (FL.fold flattenF) aggregatePartiesF
  where
   party = F.rgetField @ET.Party
   votes = F.rgetField @ET.Votes
   incumbentPartyF =
-    FMR.postMapM incPartyToInt $
-      FL.generalize $
-        FL.prefilter (F.rgetField @ET.Incumbent) $
-          FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
+    fmap incPartyToInt
+    $ FL.prefilter (F.rgetField @ET.Incumbent)
+    $ FL.premap (\r → (F.rgetField @ET.Party r, F.rgetField @BR.Candidate r)) (FL.Fold updateIncParty None id)
   totalVotes = FL.premap votes FL.sum
-  demVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
-  repVotesF = FL.generalize $ FL.prefilter (\r → party r == ET.Republican) $ totalVotes
+  demVotesF = FL.prefilter (\r → party r == ET.Democratic) $ totalVotes
+  repVotesF = FL.prefilter (\r → party r == ET.Republican) $ totalVotes
   unopposedF = (\x y → x == 0 || y == 0) <$> demVotesF <*> repVotesF
-  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> FL.generalize totalVotes
+  flattenF = (\ii uo dv rv tv → ii F.&: uo F.&: dv F.&: rv F.&: tv F.&: V.RNil) <$> incumbentPartyF <*> unopposedF <*> demVotesF <*> repVotesF <*> totalVotes
 
 aggregatePartiesF
   ∷ FL.FoldM

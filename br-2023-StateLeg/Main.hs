@@ -176,12 +176,17 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
   BRK.brNewPost modelPostPaths postInfo state $ do
-    presidentialElections_C <- BRL.presidentialByStateFrame
+--    presidentialElections_C <- BRL.presidentialByStateFrame
+
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
     let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
     sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
     presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
-    let dVSPres2020 = DP.ElexTargetConfig "Pres" (pure mempty) 2020 presidentialElections_C
+    houseElections_C <- BRL.houseElectionsWithIncumbency
+    draShareOverrides_C <- DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
+    K.ignoreCacheTime draShareOverrides_C >>= BRK.logFrame
+    let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
+        dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
         turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
         prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
         dVSModel gqName agg am
