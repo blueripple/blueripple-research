@@ -55,6 +55,8 @@ import qualified Frames as F
 import qualified Data.Text as T
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
+import qualified Data.Vinyl.Class.Method as V
+import qualified Data.Vinyl.Functor as V
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as Set
 import qualified Frames.Melt as F
@@ -157,6 +159,14 @@ main = do
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
+recDivide :: V.AllConstrained Fractional rs => V.Rec V.Identity rs -> V.Rec V.Identity rs -> V.Rec V.Identity rs
+recDivide V.RNil V.RNil = V.RNil
+recDivide (a V.:& as) (b V.:& bs) = V.Identity (V.getIdentity a / V.getIdentity b) V.:& recDivide as bs
+
+recSubtract :: V.AllConstrained Fractional rs => V.Rec V.Identity rs -> V.Rec V.Identity rs -> V.Rec V.Identity rs
+recSubtract V.RNil V.RNil = V.RNil
+recSubtract (a V.:& as) (b V.:& bs) = V.Identity (V.getIdentity a - V.getIdentity b) V.:& recSubtract as bs
+
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
                  -> BR.PostInfo
@@ -208,8 +218,21 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
           = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
     when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
     when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
---      BRK.logFrame modeledAndDRA
+    let toLogDensity = FT.fieldEndo @DT.PWPopPerSqMile (\x -> if x > 1 then Numeric.log x else 0)
+        summaryLD = fmap toLogDensity modeledAndDRA
+        (summaryMeans, summarySDs) = FL.fold DP.summaryMeanStd $ fmap F.rcast summaryLD
+        f :: F.Record DP.SummaryR -> F.Record DP.SummaryR
+        f r = F.withNames $ (r'  `recSubtract` m') `recDivide` s' where
+          r' = F.stripNames r
+          m' = F.stripNames summaryMeans
+          s' = F.stripNames summarySDs
 
+        normalizeSummary r = F.rcast @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI] r
+                             F.<+> f (F.rcast @DP.SummaryR r)
+        csSummary = fmap normalizeSummary summaryLD
+--      BRK.logFrame modeledAndDRA
+    K.logLE K.Info $ show summaryMeans
+    K.logLE K.Info $ show summarySDs
     compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
                  (FV.ViewConfig 500 500 10) modeledAndDRA
     _ <- K.addHvega Nothing Nothing compChart
@@ -262,7 +285,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
-    allDistrictDetails cmdLine modelPostPaths postInfo Nothing modeledAndDRA
+    allDistrictDetails cmdLine modelPostPaths postInfo Nothing csSummary
     pure ()
   pure ()
 
@@ -291,20 +314,23 @@ allDistrictDetails cmdLine pp pi districtsM summaryRows = do
     $ sortBy byDistrictName $ FL.fold FL.list includedSummary
 
 
-distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName])
+distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI])
                      => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 distSummaryColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
       frac45AndOver r = r ^. DP.frac45To64 + r ^. DP.frac65plus
+      share50 = MT.ciMid . F.rgetField @MR.ModelCI
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.0f" . view DT.pWPopPerSqMile))
-     <> C.headed "% Over 45"  (BR.toCell cas "% Over 45" "% Over 45" (BR.numberToStyledHtml "%2.2f" . (100*) . frac45AndOver))
-     <> C.headed "% College Grad"  (BR.toCell cas "% Grad" "% Grad" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracCollegeGrad))
-     <> C.headed "% NH White"  (BR.toCell cas "% NH White" "% NH White" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracWhite))
-     <> C.headed "% Black"  (BR.toCell cas "% Black" "% Black" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracBlack))
-     <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracHispanic))
-     <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.2f" . (100*) . view DP.fracAAPI))
+     <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @ET.DemShare))
+     <> C.headed "Model" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
+     <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile))
+     <> C.headed "% Over 45"  (BR.toCell cas "% Over 45" "% Over 45" (BR.numberToStyledHtml "%2.1f" . frac45AndOver))
+     <> C.headed "% College Grad"  (BR.toCell cas "% Grad" "% Grad" (BR.numberToStyledHtml "%2.1f" . view DP.fracCollegeGrad))
+     <> C.headed "% NH White"  (BR.toCell cas "% NH White" "% NH White" (BR.numberToStyledHtml "%2.1f" . view DP.fracWhite))
+     <> C.headed "% Black"  (BR.toCell cas "% Black" "% Black" (BR.numberToStyledHtml "%2.1f" . view DP.fracBlack))
+     <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.1f" . view DP.fracHispanic))
+     <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.1f" . view DP.fracAAPI))
 
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])

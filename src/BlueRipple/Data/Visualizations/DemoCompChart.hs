@@ -14,7 +14,7 @@
 {-# LANGUAGE DeriveTraversable #-}
 {-# OPTIONS_GHC -Wno-incomplete-uni-patterns #-}
 
-module DemoCompChart where
+module BlueRipple.Data.Visualizations.DemoCompChart where
 
 --import qualified BlueRipple.Data.DemographicTypes as DT
 --import qualified BlueRipple.Data.ElectionTypes as ET

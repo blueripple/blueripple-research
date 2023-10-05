@@ -46,7 +46,7 @@ import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import Control.Lens (view, (^.))
 import qualified Control.Foldl as FL
-import qualified Control.Foldl.Statistics as FL
+import qualified Control.Foldl.Statistics as FLS
 import qualified Control.MapReduce as FMR
 import qualified Data.Csv as CSV
 import qualified Data.Map.Strict as M
@@ -55,6 +55,8 @@ import qualified Data.List.NonEmpty as NE
 import qualified Data.Text as T
 import qualified Data.Vector as Vec
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.Core as V
+import qualified Data.Vinyl.Functor as V
 import qualified Data.Vinyl.TypeLevel as V
 import Data.Type.Equality (type (~))
 import qualified Flat
@@ -119,6 +121,7 @@ FS.declareColumn "FracBlack" ''Double
 FS.declareColumn "FracHispanic" ''Double
 FS.declareColumn "FracAAPI" ''Double
 FS.declareColumn "FracWhite" ''Double
+FS.declareColumn "RealPop" ''Double
 
 type StateKeyR = [BR.Year, GT.StateAbbreviation]
 type CDKeyR = StateKeyR V.++ '[GT.CongressionalDistrict]
@@ -214,14 +217,16 @@ cachedPreppedModelDataState cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix
   pure $ ModelData <$> cps_C <*> ces_C
 
 -- general
+
 type SummaryR = [Frac18To24, Frac25To34, Frac35To44, Frac45To64, Frac65plus
                 ,FracFemale, FracMale
                 ,FracNonHSGrad, FracHSGrad, FracSomeCollege, FracCollegeGrad
                 ,FracOther, FracBlack, FracHispanic, FracAAPI, FracWhite
-                , DT.PopCount, DT.PWPopPerSqMile
+                , RealPop, DT.PWPopPerSqMile
                 ]
 
 type SummaryDataR = DT.PopCount ': DT.PWPopPerSqMile ': DEC.ASER
+
 
 summarizeASER_Fld :: forall ks rs .
                      (ks F.⊆ rs, FC.ElemsOf rs SummaryDataR, Ord (F.Record ks), FI.RecVec (ks V.++ SummaryR))
@@ -242,6 +247,7 @@ summarizeASER_Fld = FMR.concatFold
           eduFF e = fracOfF $ (== e) . view DT.education4C
           raceFF r = fracOfF $ (== r) . view DT.race5C
           safeDFilter r = let d = r ^. DT.pWPopPerSqMile in d > 0 && d < 1e6
+          densAndPopFld = FL.prefilter safeDFilter (DT.densityAndPopFld' (const 1) (realToFrac . view DT.popCount) (view DT.pWPopPerSqMile))
       in
         (\a1 a2 a3 a4 a5 s1 s2 e1 e2 e3 e4 r1 r2 r3 r4 r5 pd
           -> a1 F.&: a2 F.&: a3 F.&: a4 F.&: a5
@@ -254,7 +260,40 @@ summarizeASER_Fld = FMR.concatFold
         <*> sexFF DT.Female <*> sexFF DT.Male
         <*> eduFF DT.E4_NonHSGrad <*> eduFF DT.E4_HSGrad <*> eduFF DT.E4_SomeCollege <*> eduFF DT.E4_CollegeGrad
         <*> raceFF DT.R5_Other <*> raceFF DT.R5_Black <*> raceFF DT.R5_Hispanic <*> raceFF DT.R5_Asian <*> raceFF DT.R5_WhiteNonHispanic
-        <*> FL.prefilter safeDFilter DT.pwDensityAndPopFldRec
+        <*> fmap (\(p, d) -> p F.&: d F.&: V.RNil) densAndPopFld
+
+
+class (Real a, Fractional a, Floating a) => StdFoldable a
+instance (Real a, Fractional a, Floating a) => StdFoldable a
+
+summaryMeanStd :: FL.Fold (F.Record SummaryR) (F.Record SummaryR, F.Record SummaryR)
+summaryMeanStd = (,) <$> meanFld <*> stdFld
+  where
+    meanFld = FF.foldAllConstrained @Fractional FL.mean
+    stdFld = FF.foldAllConstrained @StdFoldable FL.std
+--    lRecFld :: FL.Fold (F.Record SummaryR) (F.Record SummaryR) = fmap (\n )V.rpureConstrained @Num (const )
+{-
+summaryMeanStd :: FL.Fold (F.Record SummaryR) (F.Record SummaryR, F.Record SummaryR)
+summaryMeanStd = (,) <$> meanFld <*> stdFld
+  where
+    toConst :: V.Snd x ~ Double => V.ElField x -> V.Const Double x
+    toConst (V.Field x) = V.Const x
+    toList :: F.Record SummaryR -> [Double]
+    toList r = V.recordToList $ V.rmapf toConst r
+    foldEachInList :: Int -> FL.Fold a b -> FL.Fold [a] [b]
+    foldEachInList n (FL.Fold step1 begin1 extract1) = FL.Fold step begin extract
+      where
+        step bs as = zipWith step1 bs as
+        begin = replicate n begin1
+        extract = fmap extract1
+    summaryFromList :: [Double] -> F.Record SummaryR
+    summaryFromList [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r] =
+      a F.&: b F.&: c F.&: d F.&: e F.&: f F.&: g F.&: h F.&: i F.&: j
+      F.&: k F.&: l F.&: m F.&: n F.&: o F.&: p F.&: q F.&: r F.&: V.RNil
+    meanFld :: FL.Fold (F.Record SummaryR) (F.Record SummaryR)
+    meanFld = fmap summaryFromList $ FL.premap toList $ foldEachInList 18 FL.mean
+    stdFld = fmap summaryFromList $ FL.premap toList $ foldEachInList 18 FL.std
+-}
 
 withZeros :: forall outerK ks .
              (
@@ -316,23 +355,23 @@ cpsKeysToASER addInCollegeToGrads r =
        ra5 =  DT.race5FromRaceAlone4AndHisp True ra4 h
   in (r ^. DT.age5C) F.&: (r ^. DT.sexC) F.&: e4 r F.&: ra5 F.&: V.RNil
 
-designEffect :: FL.LMVSK -> Double
+designEffect :: FLS.LMVSK -> Double
 designEffect lmvsk = 1 + x
   where
-    x = if FL.lmvskCount lmvsk < 2 || m2 == 0 || isNaN v then 0 else v / m2
-    v = FL.lmvskVariance lmvsk
-    m2 = FL.lmvskMean lmvsk * FL.lmvskMean lmvsk
+    x = if FLS.lmvskCount lmvsk < 2 || m2 == 0 || isNaN v then 0 else v / m2
+    v = FLS.lmvskVariance lmvsk
+    m2 = FLS.lmvskMean lmvsk * FLS.lmvskMean lmvsk
 
-designEffectFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
+designEffectFld :: FL.Fold a FLS.LMVSK -> FL.Fold a Double
 designEffectFld = fmap designEffect
 
 -- NB: sample size is unweighted number of samples, "count" here
-effSampleSize :: FL.LMVSK -> Double
+effSampleSize :: FLS.LMVSK -> Double
 effSampleSize lmvsk = sumWeights / deff where
-  sumWeights = realToFrac (FL.lmvskCount lmvsk)
+  sumWeights = realToFrac (FLS.lmvskCount lmvsk)
   deff = designEffect lmvsk
 
-effSampleSizeFld :: FL.Fold a FL.LMVSK -> FL.Fold a Double
+effSampleSizeFld :: FL.Fold a FLS.LMVSK -> FL.Fold a Double
 effSampleSizeFld = fmap effSampleSize
 
 wgtdAverageFld :: (a -> Double) -> (a -> Double) -> FL.Fold a Double
@@ -368,7 +407,7 @@ cpsCountedTurnoutByState = do
             surveyWgtF = FL.premap wgt FL.sum
             waRegisteredFld = wgtdAverageBoolFld wgt rgstd
             waVotedFld = wgtdAverageBoolFld wgt vtd
-            lmvskFld = FL.premap wgt FL.fastLMVSK
+            lmvskFld = FL.premap wgt FLS.fastLMVSK
             essFld = effSampleSizeFld lmvskFld
         in (\aw s r v ess waR waV -> aw F.&: s F.&: r F.&: v F.&: ess F.&: min ess (ess * waR) F.&: min ess (ess * waV) F.&: V.RNil)
            <$> surveyWgtF <*> surveyedFld <*> registeredFld <*> votedFld <*> essFld <*> waRegisteredFld <*> waVotedFld
@@ -502,7 +541,7 @@ countCESVotesF votePartyMD =
       dVotesF = FL.prefilter (dVote . votePartyMD) votedF
       rVotesF = FL.prefilter (rVote . votePartyMD) votedF
       surveyWgtF = FL.premap wgt FL.sum
-      lmvskSurveyedF = FL.premap wgt FL.fastLMVSK
+      lmvskSurveyedF = FL.premap wgt FLS.fastLMVSK
       essSurveyedF = effSampleSizeFld lmvskSurveyedF
       waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
       waVotedF = wgtdAverageBoolFld wgt (CCES.catalistVoted . view CCES.catalistTurnoutC)

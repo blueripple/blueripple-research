@@ -26,7 +26,7 @@
 module Main where
 
 import CDistrictPost (cdPostBottom, cdPostCompChart, cdPostStateChart, cdPostTop)
-import qualified DemoCompChart as DCC
+import qualified BlueRipple.Data.Visualizations.DemoCompChart as DCC
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.ACS_PUMS as PUMS
