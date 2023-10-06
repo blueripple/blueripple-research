@@ -32,12 +32,15 @@ import qualified Data.Map.Strict as M
 
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
+import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Data.Dependent.Sum as DSum
 
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Serialize as FS
+import qualified Frames.Transform as FT
+import qualified Frames.Streamly.InCore as FSI
 
 import qualified Numeric
 
@@ -322,12 +325,18 @@ stateTargetsTD prefixM cc st cM rM = do
 -}
 data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
 
-newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a}
+newtype PSMap l a = PSMap { unPSMap :: Map (F.Record l) a} deriving newtype (Functor)
 
 instance (V.RMap l, Ord (F.Record l), FS.RecFlat l, Flat.Flat a) => Flat.Flat (PSMap l a) where
   size (PSMap m) n = Flat.size (fmap (first  FS.toS) $ M.toList m) n
   encode (PSMap m) = Flat.encode (fmap (first  FS.toS) $ M.toList m)
   decode = (\sl -> PSMap $ M.fromList $ fmap (first FS.fromS) sl) <$> Flat.decode
+
+psMapToFrame :: forall t l a . (V.KnownField t, V.Snd t ~ a, FSI.RecVec (l V.++ '[t]))
+             => PSMap l a -> F.FrameRec (l V.++ '[t])
+psMapToFrame (PSMap m) = F.toFrame $ fmap toRec $ M.toList m
+  where
+    toRec (l, a) = l F.<+> FT.recordSingleton @t a
 
 {-
 -- NB: often l ~ k, e.g., for predicting district turnout/preference

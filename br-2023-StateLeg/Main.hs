@@ -4,9 +4,11 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UnicodeSyntax #-}
@@ -66,7 +68,7 @@ import qualified Frames.Transform as FT
 import qualified Frames.Constraints as FC
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Streamly.InCore as FSI
-import qualified Frames.Streamly.TH as FSTH
+import qualified Frames.Streamly.TH as FTH
 import qualified Frames.Serialize as FS
 
 import Path (Dir, Rel)
@@ -82,7 +84,11 @@ import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
 
+import qualified Data.Discrimination.Grouping  as G
+
 --import Data.Monoid (Sum(getSum))
+FTH.declareColumn "StateModelT" ''Double
+FTH.declareColumn "StateModelP" ''Double
 
 templateVars ∷ Map String String
 templateVars =
@@ -194,15 +200,13 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
     houseElections_C <- BRL.houseElectionsWithIncumbency
     draShareOverrides_C <- DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
-    K.ignoreCacheTime draShareOverrides_C >>= BRK.logFrame
+--    K.ignoreCacheTime draShareOverrides_C >>= BRK.logFrame
     let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
         dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
         turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
         prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
         dVSModel gqName agg am
           = MR.runFullModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine (turnoutConfig agg am) (prefConfig agg am) dVSPres2020
-        g f (a, b) = f b >>= pure . (a, )
-        h f = traverse (g f)
     modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel stateSLDs_C
     allPlansMap <- DRA.allPassedSLDPlans
     upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
@@ -230,9 +234,6 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
         normalizeSummary r = F.rcast @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI] r
                              F.<+> f (F.rcast @DP.SummaryR r)
         csSummary = fmap normalizeSummary summaryLD
---      BRK.logFrame modeledAndDRA
-    K.logLE K.Info $ show summaryMeans
-    K.logLE K.Info $ show summarySDs
     compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
                  (FV.ViewConfig 500 500 10) modeledAndDRA
     _ <- K.addHvega Nothing Nothing compChart
@@ -256,36 +257,19 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
-        dlcc = fromMaybe [] $ M.lookup state dlccMap
-        toDistrict (x, y, _) = (x, y)
-        isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
-        bordered c = "border: 3px solid " <> c
-        dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
-        longShot ci = MT.ciUpper ci < 0.48
-        leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
-        leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
-        safeD ci = MT.ciLower ci > 0.52
-        mi = F.rgetField @MR.ModelCI
-        eRes = F.rgetField @ET.DemShare
-        longShotCS  = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
-        leanRCS =  bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
-        leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%","50%"]
-        safeDCS = bordered "blue"  `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
-        resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
-        resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
-        resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
-        resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
-        cellStyle = mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
-    BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade cellStyle)
+    BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade $ sldTableCellStyle state)
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
     when (not upperOnly)
-      $ BR.brAddRawHtmlTable (state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade cellStyle)
+      $ BR.brAddRawHtmlTable (state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade $ sldTableCellStyle state)
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
-    allDistrictDetails cmdLine modelPostPaths postInfo Nothing csSummary
+    let tc = turnoutConfig aggregation alphaModel
+        pc = prefConfig aggregation alphaModel
+        draCompDists = FL.fold (FL.prefilter draCompetitive $ FL.premap (\r -> (r ^. GT.districtTypeC, r ^. GT.districtName)) FL.set) modeledAndDRA
+    allDistrictDetails cmdLine modelPostPaths postInfo modelDirE cacheDirE tc pc (Just draCompDists) state stateSLDs_C csSummary
     pure ()
   pure ()
 
@@ -293,26 +277,145 @@ type DistSummaryR = [DT.PWPopPerSqMile, DP.Frac45To64, DP.Frac65plus, DP.FracBla
 
 --type DistDetailsPSKeyR = SLDKeyR V.++
 
-allDistrictDetails :: (K.KnitOne r, BRK.CacheEffects r
-                      , FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]
-                      , FC.ElemsOf rs DistSummaryR
-                      , FSI.RecVec rs
-                      )
-                   => BR.CommandLine -> BR.PostPaths Path.Abs -> BR.PostInfo -> Maybe (Set (GT.DistrictType, Text))
-                   -> F.FrameRec rs
-                   -> K.Sem r ()
-allDistrictDetails cmdLine pp pi districtsM summaryRows = do
-  -- 2. post-stratify by district and race
-{-  let turnoutModel gqName agg am pt = MR.runTurnoutModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine survey agg (contramap F.rcast dmr) pt am "AllCells"
-      prefModel gqName agg am pt = MR.runPrefModelAH @SLDKeyR 2020 modelDirE cacheDirE gqName cmdLine agg (contramap F.rcast dmr) pt am 2020 presidentialElections_C "AllCells"
--}
-  let includeDistrict dt dn = fromMaybe True $ fmap (Set.member (dt, dn)) districtsM
-      includedSummary = F.filterFrame (\r -> includeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName)) summaryRows
-      oneDistrict r = do
-         BR.brAddRawHtmlTable (r ^. GT.stateAbbreviation <> ": " <> fullDNameText r) (BHA.class_ "brTable") (distSummaryColonnade mempty) [r]
-  BR.brAddRawHtmlTable ("Demographic Summary by District") (BHA.class_ "brTable") (distSummaryColonnade mempty)
-    $ sortBy byDistrictName $ FL.fold FL.list includedSummary
 
+--type SLDKeyAnd as = SLDKeyR V.++ as
+type SLDKeyAnd2 as bs = SLDKeyR V.++ as V.++ bs
+type AndSLDKey as = as V.++ SLDKeyR
+type AndSLDKey2 as bs = as V.++ SLDKeyR V.++ bs
+
+allDistrictDetails
+    ∷ ∀ r rs a b
+     . ( K.KnitOne r
+       , BRK.CacheEffects r
+       , FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]
+       , FC.ElemsOf rs DistSummaryR
+       , FSI.RecVec rs
+       )
+    ⇒ BR.CommandLine
+    → BR.PostPaths Path.Abs
+    → BR.PostInfo
+    → Either Text Text
+    → Either Text Text
+    → MC.TurnoutConfig a b
+    → MC.PrefConfig b
+    → Maybe (Set (GT.DistrictType, Text))
+    → Text
+    → K.ActionWithCacheTime r (DP.PSData SLDKeyR)
+    → F.FrameRec rs
+    → K.Sem r ()
+allDistrictDetails cmdLine pp pi modelDirE cacheDirE tc pc districtsM state psData_C summaryRows = do
+    draShareOverrides_C ← DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
+    presidentialElections_C ← BRL.presidentialElectionsWithIncumbency
+    houseElections_C ← BRL.houseElectionsWithIncumbency
+    let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
+        dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
+    stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 modelDirE cacheDirE (state <> "_ByRace") cmdLine tc "AllCells" psData_C
+    statePrefByRace_C :: K.ActionWithCacheTime r (MC.PSMap '[DT.Race5C] MT.ConfidenceInterval) ←
+      MR.runPrefModelAH @('[DT.Race5C]) 2020 modelDirE cacheDirE (state <> "_ByRace") cmdLine tc pc dVSPres2020 "AllCells" psData_C
+    districtTurnoutByRace_C :: K.ActionWithCacheTime r (MC.PSMap (AndSLDKey '[DT.Race5C]) MT.ConfidenceInterval) ←
+      MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 modelDirE cacheDirE (state <> "_SLD_ByRace") cmdLine tc "AllCells" psData_C
+    districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 modelDirE cacheDirE (state <> "_SLD_ByRace") cmdLine tc pc dVSPres2020 "AllCells" psData_C
+    K.ignoreCacheTime stateTurnoutByRace_C >>= K.logLE K.Info . show . MC.unPSMap
+    K.ignoreCacheTime statePrefByRace_C >>= K.logLE K.Info . show . MC.unPSMap
+    let comboByRaceDeps = (,,,,) <$> stateTurnoutByRace_C <*> districtTurnoutByRace_C <*> statePrefByRace_C <*> districtPrefByRace_C <*> psData_C
+    comboByRaceCacheKey <- BRK.cacheFromDirE cacheDirE "State-Leg/dd_ByRace.bin"
+    comboByRace <- K.ignoreCacheTimeM
+                   $ BRK.retrieveOrMakeFrame comboByRaceCacheKey comboByRaceDeps $ \(st, dt, sp, dp, ps) -> combineDistrictPSMaps @'[DT.Race5C] st dt sp dp ps
+    psData <- K.ignoreCacheTime psData_C
+    let isUpper = (== GT.StateUpper) . view GT.districtTypeC
+        isLower = (== GT.StateLower) . view GT.districtTypeC
+        upper_districts = let aud = FL.fold (FL.prefilter isUpper $ FL.premap ((GT.StateUpper,) . view GT.districtName) FL.set) (DP.unPSData psData)
+                          in maybe aud (aud `Set.intersection`) districtsM
+        lower_districts = let lud = FL.fold (FL.prefilter isLower $ FL.premap ((GT.StateLower,) . view GT.districtName) FL.set) (DP.unPSData psData)
+                          in maybe lud (lud `Set.intersection`) districtsM
+
+    let includeDistrict dt dn = fromMaybe True $ fmap (Set.member (dt, dn)) districtsM
+        includedSummary = F.filterFrame (\r → includeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName)) summaryRows
+        oneDistrictDetails (dt, dn) = do
+          let f r = r ^. GT.districtTypeC == dt && r ^. GT.districtName == dn
+              onlyDistrict = F.filterFrame f
+          BR.brAddRawHtmlTable "Demographic Summary" (BHA.class_ "brTable") (distSummaryColonnade mempty) (onlyDistrict includedSummary)
+          BR.brAddRawHtmlTable "Group Details" (BHA.class_ "brTable") (distDetailsColonnade @'[DT.Race5C] (show . view DT.race5C) mempty) (onlyDistrict comboByRace)
+--        oneDistrict r = do
+--            BR.brAddRawHtmlTable (r ^. GT.stateAbbreviation <> ": " <> fullDNameText r) (BHA.class_ "brTable") (distSummaryColonnade mempty) [r]
+    traverse_ oneDistrictDetails $ FL.fold FL.list upper_districts
+    traverse_ oneDistrictDetails $ FL.fold FL.list lower_districts
+{-    BR.brAddRawHtmlTable ("Demographic Summary by District") (BHA.class_ "brTable") (distSummaryColonnade mempty)
+        $ sortBy byDistrictName
+        $ FL.fold FL.list includedSummary
+-}
+distDetailsColonnade :: forall ks rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelT, MR.ModelP
+                                                      , StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
+                                       , ks F.⊆ rs
+                                       )
+                     => (F.Record ks -> Text) -> BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+distDetailsColonnade kText cas =
+  let state = F.rgetField @GT.StateAbbreviation
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "Group" (BR.toCell cas "Group" "Group" (BR.textToStyledHtml . kText . F.rcast))
+     <> C.headed "N" (BR.toCell cas "N" "N" (BR.numberToStyledHtml "%2d" . view DT.popCount))
+     <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile))
+     <> C.headed "T" (BR.toCell cas "T" "T" (BR.numberToStyledHtml "%2.2f" . (100*) . view MR.modelT))
+     <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numberToStyledHtml "%2.2f" . (100*) . view stateModelT))
+     <> C.headed "P" (BR.toCell cas "P" "P" (BR.numberToStyledHtml "%2.2f" . (100*) . view MR.modelP))
+     <> C.headed "State P" (BR.toCell cas "State P" "State P" (BR.numberToStyledHtml "%2.2f" . (100*) . view stateModelP))
+
+
+combineDistrictPSMaps :: forall ks r rSM rDM rAllM rAll .
+                         (K.KnitEffects r
+                         , FJ.CanLeftJoinWithMissing ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])
+                         , rSM ~ FJ.JoinResult ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])
+                         , FJ.CanLeftJoinWithMissing (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])
+                         , rDM ~ FJ.JoinResult  (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])
+                         , FJ.CanLeftJoinWithMissing ks rDM rSM
+                         , rAllM ~ FJ.JoinResult ks rDM rSM
+                         , FJ.CanLeftJoinWithMissing (AndSLDKey ks) rAllM (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile])
+                         , rAll ~ FJ.JoinResult (AndSLDKey ks) rAllM (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile])
+                         , FSI.RecVec (ks V.++ '[StateModelT])
+                         , FSI.RecVec (ks V.++ '[StateModelP])
+                         , FSI.RecVec (AndSLDKey2 ks '[MR.ModelT])
+                         , FSI.RecVec (AndSLDKey2 ks '[MR.ModelP])
+                         , Show (F.Record ks)
+                         , Show (F.Record (AndSLDKey ks))
+                         , SLDKeyAnd2 ks [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile] F.⊆ rAll
+                         , Ord (F.Record (AndSLDKey ks))
+                         , AndSLDKey ks F.⊆ DP.PSDataR SLDKeyR
+                         , FSI.RecVec (AndSLDKey2 ks [DT.PopCount, DT.PWPopPerSqMile])
+                         )
+                      => MC.PSMap ks MT.ConfidenceInterval
+                      -> MC.PSMap (AndSLDKey ks) MT.ConfidenceInterval
+                      -> MC.PSMap ks MT.ConfidenceInterval
+                      -> MC.PSMap (AndSLDKey ks) MT.ConfidenceInterval
+                      -> DP.PSData SLDKeyR
+--                      -> K.Sem r (F.FrameRec (FJ.JoinResult (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])))
+                      -> K.Sem r (F.FrameRec (SLDKeyAnd2 ks '[MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]))
+combineDistrictPSMaps stateT dT stateP dP psData = do
+  let stateTF = MC.psMapToFrame @StateModelT $ fmap MT.ciMid stateT
+      statePF = MC.psMapToFrame @StateModelP $ fmap MT.ciMid stateP
+      distTF :: F.FrameRec (AndSLDKey2 ks '[MR.ModelT]) =  MC.psMapToFrame @MR.ModelT $ fmap MT.ciMid dT
+      distPF :: F.FrameRec (AndSLDKey2 ks '[MR.ModelP]) =  MC.psMapToFrame @MR.ModelP $ fmap MT.ciMid dP
+      (stateBoth, sbMissing) = FJ.leftJoinWithMissing @ks stateTF statePF
+      (distBoth, dbMissing) = FJ.leftJoinWithMissing @(AndSLDKey ks) @(AndSLDKey2 ks '[MR.ModelT]) @(AndSLDKey2 ks '[MR.ModelP]) distTF distPF
+      (allModel, allModelMissing) = FJ.leftJoinWithMissing @ks distBoth stateBoth
+      (all, allMissing) = FJ.leftJoinWithMissing @(AndSLDKey ks) allModel (aggregatePS @ks psData)
+  when (not $ null sbMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in stateT/stateP join=" <> show sbMissing
+  when (not $ null dbMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in distT/distP join=" <> show dbMissing
+  when (not $ null allModelMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in dist/state join=" <> show allModelMissing
+  when (not $ null allMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in model/psData join=" <> show allMissing
+  pure $ fmap F.rcast all
+
+
+aggregatePS :: forall ks . (Ord (F.Record (AndSLDKey ks))
+                           , AndSLDKey ks F.⊆ DP.PSDataR SLDKeyR
+                           , FSI.RecVec (AndSLDKey2 ks [DT.PopCount, DT.PWPopPerSqMile]))
+            => DP.PSData SLDKeyR -> F.FrameRec (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile])
+aggregatePS = FL.fold f . DP.unPSData
+  where
+    f :: FL.Fold (F.Record (DP.PSDataR SLDKeyR)) (F.FrameRec (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile]))
+    f = FMR.concatFold
+        $ FMR.mapReduceFold FMR.noUnpack (FMR.assignKeysAndData @(AndSLDKey ks) @[DT.PopCount, DT.PWPopPerSqMile])
+        (FMR.foldAndAddKey DT.pwDensityAndPopFldRec)
 
 distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI])
                      => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
@@ -332,6 +435,30 @@ distSummaryColonnade cas =
      <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.1f" . view DP.fracHispanic))
      <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.1f" . view DP.fracAAPI))
 
+
+sldTableCellStyle :: FC.ElemsOf rs '[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]
+                  => Text -> BR.CellStyle (F.Record rs) String
+sldTableCellStyle state =
+  let dlcc = fromMaybe [] $ M.lookup state dlccMap
+      toDistrict (x, y, _) = (x, y)
+      isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
+      bordered c = "border: 3px solid " <> c
+      dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
+      longShot ci = MT.ciUpper ci < 0.48
+      leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
+      leanD ci = MT.ciMid ci >= 0.5 && MT.ciLower ci <= 0.52
+      safeD ci = MT.ciLower ci > 0.52
+      mi = F.rgetField @MR.ModelCI
+      eRes = F.rgetField @ET.DemShare
+      longShotCS = bordered "red" `BR.cellStyleIf` \r h -> longShot (mi r) && h == "95%"
+      leanRCS = bordered "pink" `BR.cellStyleIf` \r h -> leanR (mi r) && h `elem` ["95%", "50%"]
+      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (mi r) && h `elem` ["5%", "50%"]
+      safeDCS = bordered "blue" `BR.cellStyleIf` \r h -> safeD (mi r) && h == "5%"
+      resLongShotCS = bordered "red" `BR.cellStyleIf` \r h -> eRes r < 0.48 && T.isPrefixOf "2019" h
+      resLeanRCS = bordered "pink" `BR.cellStyleIf` \r h -> eRes r >= 0.48 && eRes r < 0.5 && T.isPrefixOf "2019" h
+      resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
+      resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
+  in mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
              => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell

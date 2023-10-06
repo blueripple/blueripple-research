@@ -78,6 +78,20 @@ FTH.declareColumn "ModelCI" ''MT.ConfidenceInterval
 FTH.declareColumn "ModelT" ''Double
 FTH.declareColumn "ModelP" ''Double
 
+data CacheStructure a b =
+  CacheStructure
+  {
+    csProject :: Text
+  , csPSUniverse :: a
+  , csPSResult :: b
+  }
+
+projectCacheStructure :: CacheStructure a b -> CacheStructure () ()
+projectCacheStructure (CacheStructure p _ _) = (CacheStructure p () ())
+
+universeCacheStructure :: CacheStructure a b -> CacheStructure a ()
+universeCacheStructure (CacheStructure p a _) = (CacheStructure p a ())
+
 cachedPreppedModelData :: (K.KnitEffects r, BRKU.CacheEffects r)
                        => Either Text Text -> K.Sem r (K.ActionWithCacheTime r (DP.ModelData DP.CDKeyR))
 cachedPreppedModelData cacheDirE = do
@@ -416,8 +430,6 @@ runPrefModelAH :: forall l ks r a b .
                   , PSTypeC l ks '[ModelPr, ModelT]
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
---                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
---                  , FSI.RecVec es
                   )
                => Int
                -> Either Text Text
