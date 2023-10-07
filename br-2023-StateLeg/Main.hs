@@ -308,20 +308,22 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM state psData_C
     draShareOverrides_C ← DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
     presidentialElections_C ← BRL.presidentialElectionsWithIncumbency
     houseElections_C ← BRL.houseElectionsWithIncumbency
-    let cacheStructure psSuffix = MR.CacheStructure (MR.csModelDirE cacheStructure') (MR.csProjectCacheDirE cacheStructure')
-                                        (state <> "_" <> psSuffix) "AllCells" state
+    let cacheStructureState psSuffix = MR.CacheStructure (MR.csModelDirE cacheStructure') (MR.csProjectCacheDirE cacheStructure')
+                                       (state <> "_" <> psSuffix) "AllCells" state
+    let cacheStructureSLD psSuffix = MR.CacheStructure (MR.csModelDirE cacheStructure') (MR.csProjectCacheDirE cacheStructure')
+                                       (state <> "_SLD_" <> psSuffix) "AllCells" state
         dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
         dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
-    stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 (cacheStructure "ByRace") cmdLine tc psData_C
+    stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc psData_C
     statePrefByRace_C :: K.ActionWithCacheTime r (MC.PSMap '[DT.Race5C] MT.ConfidenceInterval) ←
-      MR.runPrefModelAH @('[DT.Race5C]) 2020 (cacheStructure "ByRace") cmdLine tc pc dVSPres2020  psData_C
+      MR.runPrefModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc pc dVSPres2020  psData_C
     districtTurnoutByRace_C :: K.ActionWithCacheTime r (MC.PSMap (AndSLDKey '[DT.Race5C]) MT.ConfidenceInterval) ←
-      MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructure "ByRace") cmdLine tc psData_C
-    districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructure "ByRace") cmdLine tc pc dVSPres2020  psData_C
+      MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc psData_C
+    districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc pc dVSPres2020  psData_C
     K.ignoreCacheTime stateTurnoutByRace_C >>= K.logLE K.Info . show . MC.unPSMap
     K.ignoreCacheTime statePrefByRace_C >>= K.logLE K.Info . show . MC.unPSMap
     let comboByRaceDeps = (,,,,) <$> stateTurnoutByRace_C <*> districtTurnoutByRace_C <*> statePrefByRace_C <*> districtPrefByRace_C <*> psData_C
-    comboByRaceCacheKey <- BRK.cacheFromDirE (MR.csProjectCacheDirE $ cacheStructure "") "State-Leg/dd_ByRace.bin"
+    comboByRaceCacheKey <- BRK.cacheFromDirE (MR.csProjectCacheDirE $ cacheStructureState "") "State-Leg/dd_ByRace.bin"
     comboByRace <- K.ignoreCacheTimeM
                    $ BRK.retrieveOrMakeFrame comboByRaceCacheKey comboByRaceDeps $ \(st, dt, sp, dp, ps) -> combineDistrictPSMaps @'[DT.Race5C] st dt sp dp ps
     psData <- K.ignoreCacheTime psData_C
