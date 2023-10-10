@@ -189,7 +189,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       dmr = MC.tDesignMatrixRow_d
       survey = MC.CESSurvey
       aggregation = MC.WeightedAggregation MC.ContinuousBinomial
-      alphaModel = MC.St_A_S_E_R_ER_StR_StER
+      alphaModel =  MC.St_A_S_E_R_AE_AR_ER_StR --MC.St_A_S_E_R_ER_StR_StER
       psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
