@@ -47,6 +47,7 @@ import qualified Data.IntMap as IM
 import qualified Data.List as L
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
+import Data.Maybe (fromJust)
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
 
@@ -409,6 +410,20 @@ subgroupStencilUnion sumMap = fmap M.elems . MM.mergeA whenMissingStencil whenMi
 
 subgroupStencilSums :: (Show a, Ord a, Ord r, Monoid b, Eq b) => Map a b -> (r -> a) -> FL.FoldM (Either Text) r [StencilSum b Int]
 subgroupStencilSums sumMap key = FMR.postMapM (subgroupStencilUnion sumMap) $ FL.generalize (subgroupStencils key)
+
+-- r indexes full set
+-- a is a subset
+-- create square matrix which averages a vector of values indexed by r over each subgroup,
+-- that is, over each r. r' such that key r == key r'
+averagingMatrix :: forall r a . (Ord a, Ord r, BRK.FiniteSet r) => (r -> a) -> LA.Matrix Double
+averagingMatrix subsetKey = aMatrix where
+  (rList, n) = FL.fold ((,) <$> FL.list <*> FL.length) BRK.elements
+  stencilMap = FL.fold (subgroupStencils subsetKey) rList
+--  grpSize = M.size stencilMap
+  stencilsByR = fromJust $ traverse (\r -> M.lookup (subsetKey r) stencilMap) rList  -- we know this is okay. But ugh.
+  aMatrix = LA.assoc (n, n) 0 $ mconcat $ fmap f $ zip [0..(n - 1)] stencilsByR
+  f (m, Stencil ks) = (\k -> ((m, k), 1 / realToFrac (length ks))) <$> ks
+
 
 removeFromListAtIndexes :: [Int] -> [a] -> [a]
 removeFromListAtIndexes is ls =

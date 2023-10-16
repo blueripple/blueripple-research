@@ -112,15 +112,19 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 
 -- k is a phantom here, unmentioned in the data. But it forces us to line things up with the marginal structure, etc.
 -- Given N entries in table and a marginal structure with a Q dimensional null space
--- First matrix, P, is projections, Q x N, each row is a basis vector of the null space.
+-- First matrix, C, is the matrix of constraints coming from the structure of known marginals
+-- Second matrix, P, is projections, Q x N, each row is a basis vector of the null space.
 -- So Pv = projection of v onto the null space
--- Second matrix, R, is rotation from SVD computed null space basis to eigenvector basis. Columns are eigenvectors.
+-- Third matrix, R, is rotation from SVD computed null space basis to eigenvector basis. Columns are eigenvectors.
 -- So R'P projects onto the null space and rotates into the basis of eigenvectors of covariance matrix
 -- And P'R rotates a vector in the nullspace expressed in the basis of eigenvectors of the covariance matrix and
 -- rotates back to the SVD computed null space and then injects into the space of the full table.
 
 data NullVectorProjections k where
   NullVectorProjections :: (Ord k, BRK.FiniteSet k) =>  LA.Matrix Double -> LA.Matrix Double -> LA.Matrix Double -> NullVectorProjections k
+--  AvgdNullVectorProjections :: (Ord k, BRK.FiniteSet k) =>  LA.Matrix Double -> LA.Matrix Double -> LA.Matrix Double -> LA.Matrix Double -> NullVectorProjections k
+
+
 
 nvpConstraints :: NullVectorProjections k -> LA.Matrix Double
 nvpConstraints (NullVectorProjections c _ _) = c
@@ -131,11 +135,30 @@ nvpProj (NullVectorProjections _ p _) = p
 nvpRot :: NullVectorProjections k -> LA.Matrix Double
 nvpRot (NullVectorProjections _ _ r) = r
 
-
 instance (Ord k, BRK.FiniteSet k) => Flat.Flat (NullVectorProjections k) where
   size (NullVectorProjections c p r) = Flat.size (LA.toRows c, LA.toRows p, LA.toRows r)
   encode (NullVectorProjections c p r) = Flat.encode (LA.toRows c, LA.toRows p, LA.toRows r)
   decode = (\(cVs, pVs, rVs) -> NullVectorProjections (LA.fromRows cVs) (LA.fromRows pVs) (LA.fromRows rVs)) <$> Flat.decode
+
+data ProjectionsToDiff k where
+  RawDiff :: NullVectorProjections k -> ProjectionsToDiff k
+  AvgdDiff :: LA.Matrix Double -> NullVectorProjections k -> ProjectionsToDiff k
+
+type PTDEither k = Either (NullVectorProjections k) ([LA.Vector Double], NullVectorProjections k)
+
+instance Flat.Flat (NullVectorProjections k) => Flat.Flat (ProjectionsToDiff k) where
+  size (RawDiff nvp) = Flat.size @(PTDEither k) (Left nvp)
+  size (AvgdDiff m nvp) = Flat.size @(PTDEither k) (Right (LA.toRows m, nvp))
+  encode (RawDiff nvp) = Flat.encode @(PTDEither k) (Left nvp)
+  encode (AvgdDiff m nvp) = Flat.encode @(PTDEither k) (Right (LA.toRows m, nvp))
+  decode = f <$> Flat.decode where
+    f = \case
+      Left nvp -> RawDiff nvp
+      Right (mRows, nvp) -> AvgdDiff (LA.fromRows mRows) nvp
+
+nullVectorProjections :: ProjectionsToDiff k -> NullVectorProjections k
+nullVectorProjections (RawDiff x) = x
+nullVectorProjections (AvgdDiff _ x) = x
 
 numProjections :: NullVectorProjections k -> Int
 numProjections (NullVectorProjections _ p _) = fst $ LA.size p
@@ -146,6 +169,8 @@ fullToProjM (NullVectorProjections _ pM rM) = LA.tr rM LA.<> pM
 projToFullM :: NullVectorProjections k -> LA.Matrix LA.R
 projToFullM (NullVectorProjections _ pM rM) = LA.tr pM <> rM
 
+-- NB: fullToProjM and projToFullM are trnasposes of each other
+-- So left-multiplcation by fullToProjM is the same as right multiplication by projToFullM
 projToFull :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 projToFull nvps v = v LA.<# fullToProjM nvps
 
@@ -180,18 +205,19 @@ mapNullVectorProjections ikab nva = case ikab of
     (NullVectorProjections cM pM rM) -> let permM = permutationMatrix ikab
                                      in NullVectorProjections (cM LA.<> LA.tr permM) (pM LA.<> LA.tr permM) rM
 
-applyNSPWeights :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
-applyNSPWeights nvps projWs pV = pV + projToFull nvps projWs
+applyNSPWeights :: ProjectionsToDiff k -> LA.Vector LA.R -> LA.Vector LA.R -> LA.Vector LA.R
+applyNSPWeights (RawDiff nvps) projWs pV = pV + projToFull nvps projWs
+applyNSPWeights (AvgdDiff aM nvps) projWs pV = pV + aM LA.#> projToFull nvps projWs
 
 type ObjectiveF = forall k . NullVectorProjections k -> LA.Vector Double -> LA.Vector Double -> LA.Vector Double -> (Double, LA.Vector Double)
-type OptimalOnSimplexF r =  forall k . NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+type OptimalOnSimplexF r =  forall k . ProjectionsToDiff k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
 
-viaOptimalWeights :: K.KnitEffects r =>  ObjectiveF -> OptimalOnSimplexF r
-viaOptimalWeights objF nvps projWs prodV = do
+viaOptimalWeights :: K.KnitEffects r => ObjectiveF -> OptimalOnSimplexF r
+viaOptimalWeights objF ptd projWs prodV = do
   let n = VS.sum prodV
       pV = VS.map (/ n) prodV
-  ows <- DED.mapPE $ optimalWeights objF nvps projWs pV
-  pure $ VS.map (* n) $ applyNSPWeights nvps ows pV
+  ows <- DED.mapPE $ optimalWeights objF (nullVectorProjections ptd) projWs pV
+  pure $ VS.map (* n) $ applyNSPWeights ptd ows pV
 
 euclideanNS :: ObjectiveF
 euclideanNS _nvps projWs _ v =
@@ -267,9 +293,9 @@ projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x-tHat)) yL
     go 0 = t 0
     go k = let tk = t k in if tk > sY L.!! k then tk else go (k - 1)
 
-applyNSPWeightsO :: DED.EnrichDataEffects r => ObjectiveF -> NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
-applyNSPWeightsO objF nvps nsWs pV = f <$> optimalWeights objF nvps nsWs pV
-  where f oWs = applyNSPWeights nvps oWs pV
+applyNSPWeightsO :: DED.EnrichDataEffects r => ObjectiveF -> ProjectionsToDiff k -> LA.Vector LA.R -> LA.Vector LA.R -> K.Sem r (LA.Vector LA.R)
+applyNSPWeightsO objF ptd nsWs pV = f <$> optimalWeights objF (nullVectorProjections ptd) nsWs pV
+  where f oWs = applyNSPWeights ptd oWs pV
 
 -- this aggregates over cells with the same given key
 labeledRowsToVecFld :: (Ord k, BRK.FiniteSet k, VS.Storable x, Num x, Monoid a) => Lens' a x -> (row -> k) -> (row -> a) -> FL.Fold row (VS.Vector x)
@@ -354,10 +380,10 @@ applyNSPWeightsFld :: forall outerKs ks count rs r .
                       , FSI.RecVec (outerKs V.++ (ks V.++ '[count]))
                       )
                    => (F.Record outerKs -> Maybe Text)
-                   -> NullVectorProjections (F.Record ks) -- ?
+                   -> ProjectionsToDiff (F.Record ks) -- ?
                    -> (F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector Double))
                    -> FL.FoldM (K.Sem r) (F.Record rs) (F.FrameRec (outerKs V.++ ks V.++ '[count]))
-applyNSPWeightsFld logM nvps nsWsFldF =
+applyNSPWeightsFld logM ptd nsWsFldF =
   let keysL = S.toList $ BRK.elements @(F.Record ks) -- these are the same for each outerK
       precomputeFld :: F.Record outerKs -> FL.FoldM (K.Sem r) (F.Record (ks V.++ '[count])) (LA.Vector LA.R, Double, LA.Vector LA.R)
       precomputeFld ok =
@@ -367,7 +393,7 @@ applyNSPWeightsFld logM nvps nsWsFldF =
       compute :: F.Record outerKs -> (LA.Vector LA.R, Double, LA.Vector LA.R) -> K.Sem r [F.Record (outerKs V.++ ks V.++ '[count])]
       compute ok (nsWs, vSum, v) = do
         maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
-        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights nvps nsWs $ VS.map (/ vSum) v
+        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights ptd nsWs $ VS.map (/ vSum) v
 --        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
         pure $ zipWith (\k c -> ok F.<+> k F.<+> FT.recordSingleton @count (round c)) keysL (VS.toList optimalV)
       innerFld ok = FMR.postMapM (compute ok) (precomputeFld ok)
@@ -388,10 +414,10 @@ applyNSPWeightsFldG :: forall outerK k w r .
                     => Lens' w Double
                     -> (Double -> w -> w) -- not sure if I can make this update follow lens laws
                     -> (outerK -> Maybe Text)
-                    -> NullVectorProjections k
+                    -> ProjectionsToDiff k
                     -> (outerK -> FL.FoldM (K.Sem r) (k, w) (LA.Vector Double))
                     -> FL.FoldM (K.Sem r) (outerK, k, w) [(outerK, k, w)]
-applyNSPWeightsFldG wl updateW logM nvps nsWsFldF =
+applyNSPWeightsFldG wl updateW logM ptd nsWsFldF =
   let keysL = S.toList $ BRK.elements @k -- these are the same for each outerK
       okF (ok, _, _) = ok
       kwF (_, k, w) = (k, w)
@@ -403,7 +429,7 @@ applyNSPWeightsFldG wl updateW logM nvps nsWsFldF =
       compute :: outerK -> (LA.Vector LA.R, Double, [w]) -> K.Sem r [(outerK, k, w)]
       compute ok (nsWs, vSum, ws) = do
         maybe (pure ()) (\msg -> K.logLE K.Info $ msg <> " nsWs=" <> DED.prettyVector nsWs) $ logM ok
-        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights nvps nsWs $ VS.fromList $ fmap ((/ vSum) . view wl) ws
+        let optimalV = VS.map (* vSum) $ projectToSimplex $ applyNSPWeights ptd nsWs $ VS.fromList $ fmap ((/ vSum) . view wl) ws
 --        optimalV <- fmap (VS.map (* vSum)) $ applyNSPWeightsO nvps nsWs $ VS.map (/ vSum) v
         pure $ List.zipWith3 (\k c w -> (ok, k, updateW c w)) keysL (VS.toList optimalV) ws
       innerFldM ok = FMR.postMapM (compute ok) (precomputeFld ok)

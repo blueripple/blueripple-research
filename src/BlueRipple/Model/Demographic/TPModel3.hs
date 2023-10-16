@@ -230,7 +230,7 @@ data ComponentPredictor g =
 
 deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
 
-data Predictor k g = Predictor {predNVP :: DTP.NullVectorProjections k, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
+data Predictor k g = Predictor {predPTD :: DTP.ProjectionsToDiff k, predCPs :: [ComponentPredictor g] } deriving stock (Generic)
 
 deriving anyclass instance (Ord g, Ord k, BRK.FiniteSet k, Flat.Flat g) => Flat.Flat (Predictor k g)
 
@@ -255,14 +255,14 @@ modelResultNVP mr g md = do
 modelResultNVPs :: (Show g, Ord g) => Predictor k g -> g -> VS.Vector Double -> Either Text [Double]
 modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
 
-viaNearestOnSimplex :: DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
-viaNearestOnSimplex nvps projWs prodV = do
+viaNearestOnSimplex :: DTP.ProjectionsToDiff k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double)
+viaNearestOnSimplex ptd projWs prodV = do
   let n = VS.sum prodV
-  pure $ VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights nvps projWs (VS.map (/ n) prodV)
+  pure $ VS.map (* n) $ DTP.projectToSimplex $ DTP.applyNSPWeights ptd projWs (VS.map (/ n) prodV)
 
 -- NB: This function assumes you give it an ordered and complete list of (k, w) pairs
 predictedJoint :: forall g k w r . (Show g, Ord g, K.KnitEffects r)
-               => (DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
+               => DTP.OptimalOnSimplexF r --(DTP.ProjectionsToDiff k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
                -> Lens' w Double
                -> Predictor k g
                -> g
@@ -275,12 +275,12 @@ predictedJoint onSimplexM wgtLens p gk covariates keyedProduct = do
 
   nvpsPrediction <- K.knitEither $ VS.fromList <$> modelResultNVPs p gk covariates
 
-  onSimplexWgts <- onSimplexM (predNVP p) nvpsPrediction prodV --wgts DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
+  onSimplexWgts <- onSimplexM (predPTD p) nvpsPrediction prodV --wgts DTP.projectToSimplex $ DTP.applyNSPWeights (predNVP p) nvpsPrediction (VS.map (/ n) prodV)
 --      newWeights = VS.map (* n) onSimplex
   let f (newWgt, (k, w)) = (k, over wgtLens (const newWgt) w)
       predictedTable = fmap f $ zip (VS.toList onSimplexWgts) keyedProduct
       predV = VS.fromList $ fmap (view wgtLens . snd) predictedTable
-      checkV = DTP.nvpConstraints (predNVP p) LA.#> (predV - prodV)
+      checkV = DTP.nvpConstraints (DTP.nullVectorProjections $ predPTD p) LA.#> (predV - prodV)
   K.logLE (K.Debug 1)
     $ "Region=" <> show gk
     <> "\ncovariates = " <> DED.prettyVector covariates

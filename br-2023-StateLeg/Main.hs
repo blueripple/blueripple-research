@@ -31,6 +31,7 @@ import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Utilities.TableUtils as BR
+import qualified BlueRipple.Data.Visualizations.DemoCompChart as DCC
 import qualified Text.Blaze.Html5.Attributes   as BHA
 
 import qualified BlueRipple.Utilities.KnitUtils as BRK
@@ -120,6 +121,7 @@ dlccVA = [(GT.StateLower,"41","Lily Franklin")
          , (GT.StateLower, "57", "Susanna Gibson")
          , (GT.StateLower, "22", "Joshua Thomas")
          , (GT.StateLower, "89", "Karen Jenkins")
+         , (GT.StateLower, "97", "Michael Feggans")
          ]
 
 dlccNJ = [(GT.StateUpper, "38", "Joseph Lagana/Lisa Swain/Chris Tully")
@@ -190,6 +192,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       survey = MC.CESSurvey
       aggregation = MC.WeightedAggregation MC.ContinuousBinomial
       alphaModel =  MC.St_A_S_E_R_AE_AR_ER_StR --MC.St_A_S_E_R_ER_StR_StER
+--      alphaModel =  MC.St_A_S_E_R_ER_StR_StER
       psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
@@ -275,7 +278,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     pure ()
   pure ()
 
-type DistSummaryR = [DT.PWPopPerSqMile, DP.Frac45To64, DP.Frac65plus, DP.FracBlack, DP.FracWhite, DP.FracHispanic, DP.FracAAPI, DP.FracCollegeGrad]
+type DistSummaryR = [DT.PWPopPerSqMile, DP.Frac45AndOver, DP.FracBlack, DP.FracWhite, DP.FracHispanic, DP.FracAAPI, DP.FracCollegeGrad, DP.FracGradOfWhite]
 
 --type DistDetailsPSKeyR = SLDKeyR V.++
 
@@ -333,22 +336,54 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM state psData_C
                           in maybe aud (aud `Set.intersection`) districtsM
         lower_districts = let lud = FL.fold (FL.prefilter isLower $ FL.premap ((GT.StateLower,) . view GT.districtName) FL.set) (DP.unPSData psData)
                           in maybe lud (lud `Set.intersection`) districtsM
-
+    ccSetup <- categoryChartSetup summaryRows
     let includeDistrict dt dn = fromMaybe True $ fmap (Set.member (dt, dn)) districtsM
         includedSummary = F.filterFrame (\r → includeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName)) summaryRows
         oneDistrictDetails (dt, dn) = do
+
           let f r = r ^. GT.districtTypeC == dt && r ^. GT.districtName == dn
               onlyDistrict = F.filterFrame f
+              rfPair (n, m) = (realToFrac n, realToFrac m)
+          distRec <- K.knitMaybe ("allDistrictDetails: empty onlyDistrict for type=" <> show dt <> " and name=" <> dn)
+                     (viaNonEmpty head $ FL.fold FL.list $ onlyDistrict summaryRows)
+          sbcs <- K.knitEither $  DCC.sbcComparison (DCC.ccQuantileFunctions ccSetup) (DCC.ccPartyMedians ccSetup) distRec
+          _ <- K.addHvega Nothing Nothing
+            $ DCC.sbcChart DCC.SBCState (DCC.ccNumQuantiles ccSetup) 10 (FV.ViewConfig 300 80 5) (Just $ DCC.ccNames ccSetup)
+            (fmap rfPair <<$>> DCC.ccPartyLoHis ccSetup) (one (fullDNameText distRec, True, sbcs))
           BR.brAddRawHtmlTable "Demographic Summary" (BHA.class_ "brTable") (distSummaryColonnade mempty) (onlyDistrict includedSummary)
           BR.brAddRawHtmlTable "Group Details" (BHA.class_ "brTable") (distDetailsColonnade @'[DT.Race5C] (show . view DT.race5C) mempty) (onlyDistrict comboByRace)
---        oneDistrict r = do
---            BR.brAddRawHtmlTable (r ^. GT.stateAbbreviation <> ": " <> fullDNameText r) (BHA.class_ "brTable") (distSummaryColonnade mempty) [r]
     traverse_ oneDistrictDetails $ FL.fold FL.list upper_districts
     traverse_ oneDistrictDetails $ FL.fold FL.list lower_districts
-{-    BR.brAddRawHtmlTable ("Demographic Summary by District") (BHA.class_ "brTable") (distSummaryColonnade mempty)
-        $ sortBy byDistrictName
-        $ FL.fold FL.list includedSummary
--}
+
+categoryChartSetup :: forall a rs r .
+                   (FC.ElemsOf rs [DT.PWPopPerSqMile, DP.FracGradOfWhite, DP.FracWhite, MR.ModelCI]
+                   , FSI.RecVec rs
+                   , K.KnitEffects r
+                   )
+                   => F.FrameRec rs -> K.Sem r (DCC.CategoryChartSetup Double rs)
+categoryChartSetup summaryRows = do
+  let categoryNames = ["Density", "%Grad-Among_White", "%Voters-Of-Color"]
+      categoryFunctions :: [DCC.SBCFunctionSpec rs Double] =
+        zipWith
+          DCC.SBCCategoryData
+          categoryNames
+          [ view DT.pWPopPerSqMile
+          , view DP.fracGradOfWhite
+          , \r → 1 - r ^. DP.fracWhite
+          ]
+      quantileBreaks = DCC.sbcQuantileBreaks 20 categoryFunctions summaryRows
+      quantileFunctionsE = DCC.sbcQuantileFunctions quantileBreaks
+      quantileFunctionsDblE = (fmap (realToFrac @Int @Double) .) <<$>> quantileFunctionsE
+      partyFilters = let f = MT.ciMid . view MR.modelCI in DCC.SBCPartyData ((>= 0.5) . f) ((< 0.5) . f)
+      partyMediansE = DCC.partyMedians partyFilters quantileFunctionsDblE summaryRows
+      partyRanksE = DCC.partyRanks partyFilters quantileFunctionsDblE summaryRows
+      partyLoHisE = DCC.partyLoHis <$> partyRanksE
+  partyLoHis ← K.knitEither partyLoHisE
+  partyMedians ← K.knitEither partyMediansE
+  pure $ DCC.CategoryChartSetup categoryNames partyLoHis partyMedians 20 quantileFunctionsDblE
+
+
+
 distDetailsColonnade :: forall ks rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelT, MR.ModelP
                                                       , StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
                                        , ks F.⊆ rs
@@ -426,19 +461,21 @@ distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbr
                      => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 distSummaryColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-      frac45AndOver r = r ^. DP.frac45To64 + r ^. DP.frac65plus
+--      frac45AndOver r = r ^. DP.frac45To64 + r ^. DP.frac65plus
       share50 = MT.ciMid . F.rgetField @MR.ModelCI
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
      <> C.headed "Historical" (BR.toCell cas "Historical" "Historical" (BR.numberToStyledHtml "%2.2f" . (100*) . F.rgetField @ET.DemShare))
      <> C.headed "Model" (BR.toCell cas "50%" "50%" (BR.numberToStyledHtml "%2.2f" . (100*) . share50))
      <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile))
-     <> C.headed "% Over 45"  (BR.toCell cas "% Over 45" "% Over 45" (BR.numberToStyledHtml "%2.1f" . frac45AndOver))
+     <> C.headed "% Over 45"  (BR.toCell cas "% Over 45" "% Over 45" (BR.numberToStyledHtml "%2.1f" . view DP.frac45AndOver))
      <> C.headed "% College Grad"  (BR.toCell cas "% Grad" "% Grad" (BR.numberToStyledHtml "%2.1f" . view DP.fracCollegeGrad))
      <> C.headed "% NH White"  (BR.toCell cas "% NH White" "% NH White" (BR.numberToStyledHtml "%2.1f" . view DP.fracWhite))
      <> C.headed "% Black"  (BR.toCell cas "% Black" "% Black" (BR.numberToStyledHtml "%2.1f" . view DP.fracBlack))
      <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.1f" . view DP.fracHispanic))
      <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.1f" . view DP.fracAAPI))
+     <> C.headed "% Grad Of NWH"  (BR.toCell cas "% Grad of NWH" "% Grad of NWH" (BR.numberToStyledHtml "%2.1f" . view DP.fracGradOfWhite))
+
 
 
 sldTableCellStyle :: FC.ElemsOf rs '[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]

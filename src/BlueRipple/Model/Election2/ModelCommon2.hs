@@ -218,7 +218,7 @@ setupAlphaSum prefixM states alphas = do
               $ SG.firstOrderAlphaDC MC.eduG enumI DT.E4_HSGrad (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.eduG `TE.minusE` TE.intE 1) "Edu")
       raceAG  :: SG.GroupAlpha (F.Record GroupR) TE.ECVec = SG.contramapGroupAlpha (view DT.race5C)
                $ SG.firstOrderAlphaDC MC.raceG enumI DT.R5_WhiteNonHispanic (stdNormalBP $ alphaNDS (SMB.groupSizeE MC.raceG `TE.minusE` TE.intE 1) "Race")
-  let stateAG = do
+  let stateAG_C = do
         muAlphaP <- DAG.simpleParameterWA
                     (TE.NamedDeclSpec (prefixed "muSt") $ TE.realSpec [])
                     stdNormalDWA
@@ -230,7 +230,20 @@ setupAlphaSum prefixM states alphas = do
                            $ \(muAlphaE :> sigmaAlphaE :> TNil) m
                              -> TE.addStmt $ TE.sample m SF.normalS (muAlphaE :> sigmaAlphaE :> TNil)
         pure $ SG.contramapGroupAlpha (view GT.stateAbbreviation) $ SG.firstOrderAlpha MC.stateG stateI (aStBP_C (muAlphaP :> sigmaAlphaP :> TNil))
-  stAG <- stateAG
+  let stateAG_NC = do
+        muAlphaP <- DAG.simpleParameterWA
+                    (TE.NamedDeclSpec (prefixed "muSt") $ TE.realSpec [])
+                    stdNormalDWA
+        sigmaAlphaP <-  DAG.simpleParameterWA
+                      (TE.NamedDeclSpec (prefixed "sigmaSt") $ TE.realSpec [TE.lowerM $ TE.realE 0])
+                      stdNormalDWA
+        rawP <- DAG.simpleParameterWA
+                (TE.NamedDeclSpec (prefixed "alphaST_raw") $ TE.vectorSpec (SMB.groupSizeE MC.stateG) [])
+                stdNormalDWA
+        let aStBP_NC = DAG.simpleTransformedP (alphaNDS (SMB.groupSizeE MC.stateG) "St") []
+                       (muAlphaP :> sigmaAlphaP :> rawP :> TNil) DAG.TransformedParametersBlock
+                       (\(mu :> s :> r :> TNil) -> DAG.DeclRHS $ mu `TE.plusE` (s `TE.timesE` r))
+        pure $ SG.contramapGroupAlpha (view GT.stateAbbreviation) $ SG.firstOrderAlpha MC.stateG stateI aStBP_NC
   let ageEduAG = do
         sigmaAgeEdu <-  DAG.simpleParameterWA
                          (TE.NamedDeclSpec (prefixed "sigmaAgeEdu") $ TE.realSpec [TE.lowerM $ TE.realE 0])
@@ -340,35 +353,43 @@ setupAlphaSum prefixM states alphas = do
           $ SG.thirdOrderAlpha prefixM MC.stateG stateI MC.eduG enumI MC.raceG enumI aStER_BP
   case alphas of
     MC.St_A_S_E_R -> do
+      stAG <- stateAG_C
       SG.setupAlphaSum @_ @_ @_ @(F.Record GroupR) (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> TNil)
     MC.St_A_S_E_R_ER -> do
+      stAG <- stateAG_C
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> TNil)
     MC.St_A_S_E_R_StR -> do
+      stAG <- stateAG_C
       srAG <- stateRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StR -> do
+      stAG <- stateAG_C
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> srAG :> TNil)
     MC.St_A_S_E_R_AE_AR_ER_StR -> do
+      stAG <- stateAG_NC
       aeAG <- ageEduAG
       arAG <- ageRaceAG
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> aeAG :> arAG :> erAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StE_StR -> do
+      stAG <- stateAG_C
       srAG <- stateRaceAG
       seAG <- stateEduAG
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> seAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StA_StE_StR -> do
+      stAG <- stateAG_C
       saAG <- stateAgeAG
       seAG <- stateEduAG
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       SG.setupAlphaSum (stAG :> ageAG :> sexAG :> eduAG :> raceAG :> erAG :> saAG :> seAG :> srAG :> TNil)
     MC.St_A_S_E_R_ER_StR_StER -> do
+      stAG <- stateAG_C
       srAG <- stateRaceAG
       erAG <- eduRaceAG
       serAG <- stateEduRace

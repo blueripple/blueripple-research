@@ -110,6 +110,7 @@ FS.declareColumn "Frac25To34" ''Double
 FS.declareColumn "Frac35To44" ''Double
 FS.declareColumn "Frac45To64" ''Double
 FS.declareColumn "Frac65plus" ''Double
+FS.declareColumn "Frac45AndOver" ''Double
 FS.declareColumn "FracFemale" ''Double
 FS.declareColumn "FracMale" ''Double
 FS.declareColumn "FracNonHSGrad" ''Double
@@ -121,6 +122,7 @@ FS.declareColumn "FracBlack" ''Double
 FS.declareColumn "FracHispanic" ''Double
 FS.declareColumn "FracAAPI" ''Double
 FS.declareColumn "FracWhite" ''Double
+FS.declareColumn "FracGradOfWhite" ''Double
 FS.declareColumn "RealPop" ''Double
 
 type StateKeyR = [BR.Year, GT.StateAbbreviation]
@@ -218,10 +220,11 @@ cachedPreppedModelDataState cpsCacheE cpsRaw_C cesCacheE cesRaw_C = K.wrapPrefix
 
 -- general
 
-type SummaryR = [Frac18To24, Frac25To34, Frac35To44, Frac45To64, Frac65plus
+type SummaryR = [Frac18To24, Frac25To34, Frac35To44, Frac45AndOver, Frac45To64, Frac65plus
                 ,FracFemale, FracMale
                 ,FracNonHSGrad, FracHSGrad, FracSomeCollege, FracCollegeGrad
                 ,FracOther, FracBlack, FracHispanic, FracAAPI, FracWhite
+                , FracGradOfWhite
                 , RealPop, DT.PWPopPerSqMile
                 ]
 
@@ -243,23 +246,28 @@ summarizeASER_Fld = FMR.concatFold
           fracWgt f = FL.prefilter f wgtF
           fracOfF f = (/) <$> fracWgt f <*> wgtF
           ageFF a = fracOfF $ (== a) . view DT.age5C
+          overAnd45FF = fracOfF $ (>= DT.A5_45To64) . view DT.age5C
           sexFF s = fracOfF $ (== s) . view DT.sexC
           eduFF e = fracOfF $ (== e) . view DT.education4C
           raceFF r = fracOfF $ (== r) . view DT.race5C
+          gradWhiteFF = fracOfF (\r -> r ^. DT.race5C == DT.R5_WhiteNonHispanic && r ^. DT.education4C == DT.E4_CollegeGrad)
           safeDFilter r = let d = r ^. DT.pWPopPerSqMile in d > 0 && d < 1e6
           densAndPopFld = FL.prefilter safeDFilter (DT.densityAndPopFld' (const 1) (realToFrac . view DT.popCount) (view DT.pWPopPerSqMile))
       in
-        (\a1 a2 a3 a4 a5 s1 s2 e1 e2 e3 e4 r1 r2 r3 r4 r5 pd
-          -> a1 F.&: a2 F.&: a3 F.&: a4 F.&: a5
+        (\a1 a2 a3 o a4 a5 s1 s2 e1 e2 e3 e4 r1 r2 r3 r4 r5 gw pd
+          -> a1 F.&: a2 F.&: a3 F.&: o F.&: a4 F.&: a5
              F.&: s1 F.&: s2
              F.&: e1 F.&: e2 F.&: e3 F.&: e4
              F.&: r1 F.&: r2 F.&: r3 F.&: r4 F.&: r5
+             F.&: gw
              F.&: pd
         )
-        <$> ageFF DT.A5_18To24 <*> ageFF DT.A5_25To34 <*> ageFF DT.A5_35To44 <*> ageFF DT.A5_45To64 <*> ageFF DT.A5_65AndOver
+        <$> ageFF DT.A5_18To24 <*> ageFF DT.A5_25To34 <*> ageFF DT.A5_35To44 <*> overAnd45FF
+        <*> ageFF DT.A5_45To64 <*> ageFF DT.A5_65AndOver
         <*> sexFF DT.Female <*> sexFF DT.Male
         <*> eduFF DT.E4_NonHSGrad <*> eduFF DT.E4_HSGrad <*> eduFF DT.E4_SomeCollege <*> eduFF DT.E4_CollegeGrad
         <*> raceFF DT.R5_Other <*> raceFF DT.R5_Black <*> raceFF DT.R5_Hispanic <*> raceFF DT.R5_Asian <*> raceFF DT.R5_WhiteNonHispanic
+        <*> gradWhiteFF
         <*> fmap (\(p, d) -> p F.&: d F.&: V.RNil) densAndPopFld
 
 

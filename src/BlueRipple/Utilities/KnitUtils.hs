@@ -65,6 +65,11 @@ insureFinalSlashE e = case e of
   Left t -> Left <$> insureFinalSlash t
   Right t -> Right <$> insureFinalSlash t
 
+
+mapDirE :: (Text -> Text) -> Either Text Text -> Either Text Text
+mapDirE f (Left t) = Left $ f t
+mapDirE f (Right t) = Right $ f t
+
 cacheFromDirE :: (K.KnitEffects r, CacheEffects r)
               => Either Text Text -> Text -> K.Sem r Text
 cacheFromDirE dirE n = do

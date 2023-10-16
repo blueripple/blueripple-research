@@ -491,8 +491,7 @@ predictedTables :: forall outerK cs as bs r .
                    , PredictedTablesC outerK cs as bs
                    )
                 => DTP.OptimalOnSimplexF r
-                -> Bool
-                -> Text
+                -> Either Text Text
                 -> (F.Record outerK -> K.Sem r Text) -- get predictor geography key from outerK
                 -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text)
                 -> K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as)))
@@ -500,16 +499,16 @@ predictedTables :: forall outerK cs as bs r .
                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
                            , K.ActionWithCacheTime r (F.FrameRec (outerK V.++ KeysWD (cs V.++ as V.++ bs)))
                            )
-predictedTables onSimplexM rebuild cacheRoot geoTextMF predictor_C caTables_C cbTables_C = do
-  let productCacheKey = cacheRoot <> "_products.bin"
-      predictedCacheKey = cacheRoot <> "_predicted.bin"
-      marginalsCMatrix = logitMarginalsCMatrix @cs @as @bs
+predictedTables onSimplexM predictionCacheDirE geoTextMF predictor_C caTables_C cbTables_C = do
+  productCacheKey <- BRK.cacheFromDirE predictionCacheDirE "products.bin"
+  predictedCacheKey <- BRK.cacheFromDirE predictionCacheDirE "predicted.bin"
+  let marginalsCMatrix = logitMarginalsCMatrix @cs @as @bs
   K.logLE K.Info $ "predictedTables called with (cs ++ as)=" <> catsText @(cs V.++ as)
     <> "; (cs ++ bs)=" <> catsText @(cs V.++ bs)
     <> "; (cs ++ as ++ bs)=" <> catsText @(cs V.++ as V.++ bs)
   K.logLE (K.Debug 1) $ "predictedTables marginals cMatrix = " <> toText (LA.dispf 3 marginalsCMatrix)
   let logitMarginals' = logitMarginals marginalsCMatrix
-  when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
+--  when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- tableProducts @outerK @cs @as @bs productCacheKey caTables_C cbTables_C
   let predictFldM :: DTM3.Predictor (F.Record (cs V.++ as V.++ bs)) Text
                   -> F.Record outerK
@@ -576,20 +575,18 @@ predictCA6SRFrom_CSR_A6SR :: forall outerKey r .
                              , outerKey V.++ KeysWD (SR V.++ '[DT.Age6C]) F.⊆ (outerKey V.++ KeysWD A6SR)
                              )
                         => DTP.OptimalOnSimplexF r
-                        -> Bool
-                        -> Text
+                        -> Either Text Text
                         -> (F.Record outerKey -> K.Sem r Text)
                         -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA6) Text)
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CSR))
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD A6SR))
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CA6SR))
                                    , K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CA6SR)))
-predictCA6SRFrom_CSR_A6SR onSimplexM rebuild cacheRoot geoTextMF predictor_C csr_C asr_C =
+predictCA6SRFrom_CSR_A6SR onSimplexM predictionCacheDirE geoTextMF predictor_C csr_C asr_C =
   (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
   <$> predictedTables @outerKey @SR @'[DT.CitizenC] @'[DT.Age6C]
   onSimplexM
-  rebuild
-  cacheRoot
+  predictionCacheDirE
   geoTextMF
   predictor_C
   (fmap F.rcast <$> csr_C)
@@ -617,20 +614,18 @@ predictCASRFrom_CSR_ASR :: forall outerKey r .
                            , outerKey V.++ KeysWD (SR V.++ '[DT.Age5C]) F.⊆ (outerKey V.++ KeysWD ASR)
                            )
                         => DTP.OptimalOnSimplexF r
-                        -> Bool
-                        -> Text
+                        -> Either Text Text
                         -> (F.Record outerKey -> K.Sem r Text)
                         -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA) Text)
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CSR))
                         -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASR))
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
                                    , K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR)))
-predictCASRFrom_CSR_ASR onSimplexM rebuild cacheRoot geoTextMF predictor_C csr_C asr_C =
+predictCASRFrom_CSR_ASR onSimplexM predictionCacheDirE geoTextMF predictor_C csr_C asr_C =
   (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
   <$> predictedTables @outerKey @SR @'[DT.CitizenC] @'[DT.Age5C]
   onSimplexM
-  rebuild
-  cacheRoot
+  predictionCacheDirE
   geoTextMF
   predictor_C
   (fmap F.rcast <$> csr_C)
@@ -663,20 +658,18 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
 
                            )
                           => DTP.OptimalOnSimplexF r
-                          -> Bool
-                          -> Text
+                          -> Either Text Text
                           -> (F.Record outerKey -> K.Sem r Text)
                           -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record ASCRE) Text)
                           -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASR))
                           -> K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD ASE))
                         -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASER))
                                    , K.ActionWithCacheTime r (F.FrameRec (outerKey V.++ KeysWD CASER)))
-predictCASERFrom_CASR_ASE onSimplexM rebuild cacheRoot geoTextMF predictor_C casr_C ase_C =
+predictCASERFrom_CASR_ASE onSimplexM predictionCacheDirE geoTextMF predictor_C casr_C ase_C =
   (bimap (fmap (fmap F.rcast)) (fmap (fmap F.rcast)))
   <$> predictedTables @outerKey @AS @'[DT.CitizenC, DT.Race5C] @'[DT.Education4C]
   onSimplexM
-  rebuild
-  cacheRoot
+  predictionCacheDirE
   geoTextMF
   predictor_C
   (fmap F.rcast <$> casr_C)
@@ -684,12 +677,11 @@ predictCASERFrom_CASR_ASE onSimplexM rebuild cacheRoot geoTextMF predictor_C cas
 
 predictedCensusCA6SR :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => DTP.OptimalOnSimplexF r
-                    -> Bool
-                    -> Text
+                    -> Either Text Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA6) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCA6SR), K.ActionWithCacheTime r (F.FrameRec CensusCA6SR))
-predictedCensusCA6SR onSimplexM rebuild cacheRoot predictor_C censusTables_C = do
+predictedCensusCA6SR onSimplexM predictionCacheDirE predictor_C censusTables_C = do
   stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
   let geoTextMF ldK = do
         let fips = ldK ^. GT.stateFIPS
@@ -697,7 +689,7 @@ predictedCensusCA6SR onSimplexM rebuild cacheRoot predictor_C censusTables_C = d
         K.knitMaybe (err fips) $ M.lookup fips stateAbbrMap
       recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
       recodedA6SR_C = fmap (fmap F.rcast . recodeA6SR . BRC.ageSexRace) censusTables_C
-  predictCA6SRFrom_CSR_A6SR @LDOuterKeyR onSimplexM rebuild cacheRoot geoTextMF predictor_C recodedCSR_C recodedA6SR_C
+  predictCA6SRFrom_CSR_A6SR @LDOuterKeyR onSimplexM predictionCacheDirE geoTextMF predictor_C recodedCSR_C recodedA6SR_C
 
 filterA6FrameToA5 :: forall rs . (FSI.RecVec rs
                                     , FSI.RecVec (DT.Age5C ': rs)
@@ -712,13 +704,12 @@ filterA6FrameToA5 = FST.mapMaybe f where
 
 predictedCensusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => DTP.OptimalOnSimplexF r
-                    -> Bool
-                    -> Text
+                    -> Either Text Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA6) Text)
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record ASCRE) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASER), K.ActionWithCacheTime r (F.FrameRec CensusCASER))
-predictedCensusCASER onSimplexM rebuild cacheRoot predictSRCA6_C predictACSRE_C censusTables_C = do
+predictedCensusCASER onSimplexM predictionCacheDirE predictSRCA6_C predictACSRE_C censusTables_C = do
   stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
   let geoTextMF ldK = do
         let fips = ldK ^. GT.stateFIPS
@@ -727,21 +718,20 @@ predictedCensusCASER onSimplexM rebuild cacheRoot predictSRCA6_C predictACSRE_C 
       recodedCSR_C = fmap (fmap F.rcast . recodeCSR . BRC.citizenshipSexRace) censusTables_C
       recodedA6SR_C = fmap (fmap F.rcast . recodeA6SR . BRC.ageSexRace) censusTables_C
       ase_C = fmap (fmap F.rcast . BRC.ageSexEducation) censusTables_C
-  (ca6srPrediction_C, _) <- predictCA6SRFrom_CSR_A6SR @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CSR_A6SR")
+  (ca6srPrediction_C, _) <- predictCA6SRFrom_CSR_A6SR @LDOuterKeyR onSimplexM (BRK.mapDirE (<> "_CSR_A6SR") predictionCacheDirE)
                             geoTextMF predictSRCA6_C recodedCSR_C recodedA6SR_C
   let casrPrediction_C = fmap (fmap F.rcast . filterA6FrameToA5) ca6srPrediction_C
-  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CASR_ASE") geoTextMF predictACSRE_C casrPrediction_C ase_C
+  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM (BRK.mapDirE (<> "_CASR_ASE") predictionCacheDirE) geoTextMF predictACSRE_C casrPrediction_C ase_C
 
 
 predictedCensusCASER' :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
                     => DTP.OptimalOnSimplexF r
-                    -> Bool
-                    -> Text
+                    -> Either Text Text
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record SRCA) Text)
                     -> K.ActionWithCacheTime r (DTM3.Predictor (F.Record ASCRE) Text)
                     -> K.ActionWithCacheTime r BRC.LoadedCensusTablesByLD
                     -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec CensusCASER), K.ActionWithCacheTime r (F.FrameRec CensusCASER))
-predictedCensusCASER' onSimplexM rebuild cacheRoot predictSRCA_C predictACSRE_C censusTables_C = do
+predictedCensusCASER' onSimplexM predictionCacheDirE predictSRCA_C predictACSRE_C censusTables_C = do
   stateAbbrMap <- BRDF.stateAbbrFromFIPSMapLoader
   let geoTextMF ldK = do
         let fips = ldK ^. GT.stateFIPS
@@ -751,10 +741,9 @@ predictedCensusCASER' onSimplexM rebuild cacheRoot predictSRCA_C predictACSRE_C 
       recodedASR_C = fmap (fmap F.rcast . filterA6FrameToA5 . recodeA6SR . BRC.ageSexRace) censusTables_C
       ase_C = fmap (fmap F.rcast . BRC.ageSexEducation) censusTables_C
   let densityFilter r = let x = r ^. DT.pWPopPerSqMile in x < 0 || x > 1e6
-  (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CSR_ASR")
+  (casrPrediction_C, _) <- predictCASRFrom_CSR_ASR @LDOuterKeyR onSimplexM (BRK.mapDirE (<> "_CSR_ASR") predictionCacheDirE)
                             geoTextMF predictSRCA_C recodedCSR_C recodedASR_C
-  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM rebuild (cacheRoot <> "_CASR_ASE") geoTextMF predictACSRE_C casrPrediction_C ase_C
-
+  predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM  (BRK.mapDirE (<> "_CASR_ASE") predictionCacheDirE) geoTextMF predictACSRE_C casrPrediction_C ase_C
 
 {-
 censusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
@@ -815,20 +804,20 @@ runAllModels :: (K.KnitEffects r, BRK.CacheEffects r, Ord k, Keyed.FiniteSet k)
              => Text
              -> (Int -> K.Sem r (K.ActionWithCacheTime r (DTM3.ComponentPredictor Text)))
              -> K.ActionWithCacheTime r (F.FrameRec rs)
-             -> K.ActionWithCacheTime r (DTP.NullVectorProjections k)
+             -> K.ActionWithCacheTime r (DTP.ProjectionsToDiff k)
              -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor k Text)
-                        , K.ActionWithCacheTime r (DTP.NullVectorProjections k)
+--                        , K.ActionWithCacheTime r (DTP.NullVectorProjections k)
                         )
-runAllModels cacheKey modelOne cachedDataRows cachedNVPs = do
+runAllModels cacheKey modelOne cachedDataRows cachedPTDs = do
   K.logLE K.Info "Running marginals as covariates model, if necessary."
-  let modelResultDeps = (,) <$> cachedDataRows <*> cachedNVPs
+  let modelResultDeps = (,) <$> cachedDataRows <*> cachedPTDs
   model3Res_C <- BRK.retrieveOrMakeD cacheKey modelResultDeps
-                 $ \(_, nvps) -> (do
-                                     cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections nvps - 1)]
+                 $ \(_, ptd) -> (do
+                                     cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections (DTP.nullVectorProjections ptd) - 1)]
                                      modelResults <- K.ignoreCacheTime cachedModelResults
-                                     pure $ DTM3.Predictor nvps modelResults
+                                     pure $ DTM3.Predictor ptd modelResults
                                  )
-  pure (model3Res_C, cachedNVPs)
+  pure model3Res_C
 
 
 predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks qs r
@@ -869,32 +858,39 @@ predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks q
                      , qs V.++ bs F.⊆ PUMARowR ks
                      )
                 => Either Text Text
-                -> Text
+                -> Either Text Text
                 -> BR.CommandLine
+                -> Maybe (LA.Matrix Double)
                 -> K.ActionWithCacheTime r (F.FrameRec (PUMARowR ks))
                 -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor (F.Record ks) Text)
-                           , K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks))
                            , DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                            )
-predictorModel3 cachePrefixE modelId cmdLine acs_C = do
-  (ckp, clearCaches) <- case cachePrefixE of
+predictorModel3 modelIdE predictorCachePrefixE cmdLine amM acs_C = do
+  let (modelId, clearModelCaches) = case modelIdE of
+        Left mId -> (mId, True)
+        Right mId -> (mId, False)
+  (pckp, clearPredictorCaches) <- case predictorCachePrefixE of
     Left ck -> pure (ck, True)
     Right ck -> pure (ck, False)
   let
-    nvpsCacheKey = ckp <> "_NVPs.bin"
-    predictorCacheKey = ckp <> "_Predictor.bin"
-  when clearCaches $ traverse_ BRK.clearIfPresentD [nvpsCacheKey, predictorCacheKey]
+    nvpsCacheKey = pckp <> "_NVPs.bin"
+    predictorCacheKey = pckp <> "_Predictor.bin"
+  when clearPredictorCaches $ BRK.clearIfPresentD predictorCacheKey
+  when clearModelCaches $ BRK.clearIfPresentD nvpsCacheKey -- this being new will cause the model to rerun.
   let ms = marginalStructure @ks @as @bs @DMS.CellWithDensity @qs DMS.cwdWgtLens DMS.innerProductCWD'
   nullVectorProjections_C <- cachedNVProjections nvpsCacheKey ms acs_C
+  let projectionsToDiff_C = case amM of
+        Nothing -> DTP.RawDiff <$> nullVectorProjections_C
+        Just am -> DTP.AvgdDiff am <$> nullVectorProjections_C
 
   let tp3NumKeys = S.size (Keyed.elements @(F.Record (qs V.++ as))) + S.size (Keyed.elements @(F.Record (qs V.++ bs)))
       tp3InnerFld = innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(PUMARowR ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs))
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) clearCaches cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
-  (predictor_C, nvps_C) <- runAllModels predictorCacheKey modelOne acs_C nullVectorProjections_C
-  pure (predictor_C, nvps_C, ms)
+      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) clearModelCaches cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
+  predictor_C <- runAllModels predictorCacheKey modelOne acs_C projectionsToDiff_C
+  pure (predictor_C, ms)
 
 
 subsetsMapFld :: (Monoid w, Ord k) => (row -> (k, w)) -> FL.Fold row (Map k w)

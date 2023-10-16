@@ -41,8 +41,18 @@ import qualified Frames.Folds as FF
 import GHC.TypeLits (Symbol)
 import qualified Data.List as List
 
+data CategoryChartSetup a rs =
+  CategoryChartSetup
+  {
+    ccNames :: [Text]
+  , ccPartyLoHis :: [SBCPartyData (SBCCategoryData (a, a))]
+  , ccPartyMedians :: [SBCPartyData (SBCCategoryData a)]
+  , ccNumQuantiles :: Int
+  , ccQuantileFunctions :: [SBCCategoryData (F.Record rs -> Either Text Double)]
+  }
+
 data SBCCategoryData :: Type -> Type where
-  SBCCategoryData :: Text -> a -> SBCCategoryData a deriving (Show, Functor, Foldable, Traversable)
+  SBCCategoryData :: Text -> a -> SBCCategoryData a deriving stock (Show, Functor, Foldable, Traversable)
 
 type SBCCategoryMap a = M.Map Text a
 
@@ -69,7 +79,7 @@ sbcQuantileFunctions' = fmap (uncurry BRQ.quantileLookup' . first sbcCategoryDat
 sbcQuantileFunctions :: (Functor f, Ord a, Show a) => f (SBCCategoryData (F.Record rs -> a, [(a, Int)])) -> f (SBCCategoryData (F.Record rs -> Either Text Int))
 sbcQuantileFunctions = fmap (fmap $ uncurry BRQ.quantileLookup')
 
-data SBCPartyData a = SBCPartyData { sbcDData :: a, sbcRData :: a } deriving (Show, Functor, Foldable, Traversable)
+data SBCPartyData a = SBCPartyData { sbcDData :: a, sbcRData :: a } deriving stock (Show, Functor, Foldable, Traversable)
 
 notNullE :: F.FrameRec rs -> Either Text (F.FrameRec rs)
 notNullE x = if F.frameLength x == 0 then Left "No Districts!" else Right x
@@ -79,7 +89,7 @@ medians funcs rows = notNullE rows >>= \x -> traverse (f x) funcs where
   f :: RealFrac a => F.FrameRec rs -> SBCCategoryData (F.Record rs -> Either Text a) -> Either Text (SBCCategoryData a)
   f x y = traverse (`BRQ.medianE` x) y
 
-partyMedians :: (Traversable f, Applicative f, FS.RecVec rs, RealFrac a)
+partyMedians :: (Traversable f, FS.RecVec rs, RealFrac a)
              => SBCPartyData (F.Record rs -> Bool)
              -> f (SBCCategoryData (F.Record rs -> Either Text a))
              -> F.FrameRec rs
@@ -89,11 +99,11 @@ partyMedians pFilters funcs rows = h <$> traverse g pFilters where
   h :: Traversable f => SBCPartyData (f (SBCCategoryData a)) -> [SBCPartyData (SBCCategoryData a)]
   h = getZipList . traverse (ZipList . FL.fold FL.list) -- otherwise the default [] applicative produces all combos
 
-ranks :: (Traversable f, RealFrac a) => f (SBCCategoryData (F.Record rs -> Either Text a)) -> F.FrameRec rs -> Either Text (f (SBCCategoryData [a]))
+ranks :: (Traversable f) => f (SBCCategoryData (F.Record rs -> Either Text a)) -> F.FrameRec rs -> Either Text (f (SBCCategoryData [a]))
 ranks funcs rows = notNullE rows >>= q where
   q rows' = traverse (traverse (\x -> traverse x (FL.fold FL.list rows'))) funcs
 
-partyRanks ::  (Traversable f, Applicative f, RealFrac a, FS.RecVec rs)
+partyRanks ::  (Traversable f, Applicative f, FS.RecVec rs)
            => SBCPartyData (F.Record rs -> Bool)
            -> f (SBCCategoryData (F.Record rs -> Either Text a))
            -> F.FrameRec rs
@@ -160,18 +170,18 @@ data SBComparison = SBComparison { sbcDistVal :: Double, sbcDMid :: Double, sbcR
 
 sbcToVGData :: Bool -> Double -> Double -> Text -> SBCCategoryData SBComparison -> [GV.DataRow]
 sbcToVGData p gr cr dn sbc = GV.dataRow [("Stat", GV.Str $ sbcCategoryName sbc)
-                                      ,("Type",GV.Str dn)
-                                      ,("Rank", GV.Number $ cr * (sbcDistVal $ sbcCategoryData sbc)/gr)
+                                      ,("Type", GV.Str dn)
+                                      ,("Rank", GV.Number $ cr * (sbcDistVal $ sbcCategoryData sbc) / gr)
                                       ,("Size", GV.Number $ if p then 50 else 25)
                                       ]
                            $ GV.dataRow [("Stat", GV.Str $ sbcCategoryName sbc)
                                         ,("Type",GV.Str "D Median")
-                                        ,("Rank", GV.Number $ cr * (sbcDMid $ sbcCategoryData sbc)/gr)
+                                        ,("Rank", GV.Number $ cr * (sbcDMid $ sbcCategoryData sbc) / gr)
                                         ,("Size", GV.Number 10)
                                         ]
                            $ GV.dataRow  [("Stat", GV.Str $ sbcCategoryName sbc)
                                          ,("Type",GV.Str "R Median")
-                                         ,("Rank", GV.Number $ cr * (sbcRMid $ sbcCategoryData sbc)/gr)
+                                         ,("Rank", GV.Number $ cr * (sbcRMid $ sbcCategoryData sbc) / gr)
                                          ,("Size", GV.Number 10)
                                          ]
                   []
@@ -193,12 +203,12 @@ sbdHi (SBCCategoryData _ (_, x)) = x
 
 sbdToVGData :: Double -> Double -> SBCCategoryData (Double, Double) -> [GV.DataRow]
 sbdToVGData gr cr sbd = GV.dataRow [("Stat", GV.Str $ sbcCategoryName sbd)
-                                   , ("Lo", GV.Number $ cr * (sbdLo sbd)/gr)
-                                   , ("Hi", GV.Number $ cr * (sbdHi sbd)/gr)
+                                   , ("Lo", GV.Number $ cr * (sbdLo sbd) / gr)
+                                   , ("Hi", GV.Number $ cr * (sbdHi sbd) / gr)
                                    ]
                         []
 
-data SBCComp = SBCNational | SBCState deriving (Eq, Ord, Bounded, Enum, Array.Ix)
+data SBCComp = SBCNational | SBCState deriving stock (Eq, Ord, Bounded, Enum, Array.Ix)
 {-
 data  SBCS = SBCS { sbcNational :: Map (Text, Text) (Either Text [SBComparison])
                      , sbcState :: Map (Text, Text) (Either Text [SBComparison])
