@@ -531,6 +531,9 @@ projModel rc mc = do
 cwdF :: (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile) => F.Record rs -> DMS.CellWithDensity
 cwdF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
 
+model3A5CacheDir :: Text
+model3A5CacheDir = "model/demographic/nullVecProjModel3_A5/"
+
 runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
                 (K.KnitEffects r
                 , BRKU.CacheEffects r
@@ -540,7 +543,7 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
                 , F.ElemOf rs DT.PopCount
                 , F.ElemOf rs DT.PWPopPerSqMile
                 )
-             => Bool
+             => Either Text Text
              -> BR.CommandLine
              -> RunConfig
              -> ModelConfig
@@ -549,26 +552,24 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record rs) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
-runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
-  let cacheRoot = "model/demographic/nullVecProjModel3_A5/"
-      cacheDirE = (if clearCaches then Left else Right) cacheRoot
-      dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
+runProjModel cacheDirE _cmdLine rc mc acs_C nvps_C ms datFld = K.wrapPrefix "TPModel3.runProjModel" $ do
+  let dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
       runnerInputNames = SC.RunnerInputNames
                          ("br-2022-Demographics/stan/nullVecProj_M3_A5")
                          (modelText mc)
                          (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
                          dataName
 --  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
-  let nvpDataCacheKey = cacheRoot <> "nvpRowData" <> dataText mc <> ".bin"
-      outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
+  nvpDataCacheKey <- BRKU.cacheFromDirE cacheDirE ("nvpRowData" <> dataText mc <> ".bin")
+  let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
---      datF r = DMS.CellWithDensity (realToFrac $ r ^. DT.popCount) (r ^. DT.pWPopPerSqMile)
       nvpDeps = (,) <$> acs_C <*>  nvps_C
   nvpData_C <- fmap (fmap (fmap unNVProjectionRowData))
                $ BRKU.retrieveOrMakeD nvpDataCacheKey nvpDeps
                $ \(acsByPUMA, nvps) -> (do
-                                   let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms nvps outerKey catKey cwdF datFld) acsByPUMA
-                                   pure $ fmap NVProjectionRowData rawRows
+--                                           K.logLE K.Diagnostic $ toText $ LA.dispf 3 (DTP.fullToProjM nvps)
+                                           let rawRows = FL.fold (nullVecProjectionsModelDataFld DMS.cwdWgtLens ms nvps outerKey catKey cwdF datFld) acsByPUMA
+                                           pure $ fmap NVProjectionRowData rawRows
                                )
   let statesFilter = maybe id (\(_, sts) -> filter ((`elem` sts) . view GT.stateAbbreviation . pdKey)) rc.statesM
       rowData_C = fmap (statesFilter . fmap (toProjDataRow rc.nvIndex)) $ nvpData_C
@@ -578,7 +579,7 @@ runProjModel clearCaches _cmdLine rc mc acs_C nvps_C ms datFld = do
   let meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
   modelData <- K.ignoreCacheTime modelData_C
   let meanSD = FL.fold (FL.premap pdCoeff meanSDFld) $ pdRows modelData
-  K.logLE K.Info $ "meanSD=" <> show meanSD
+  K.logLE K.Diagnostic $ "meanSD=" <> show meanSD
   states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
   (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
                 (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))

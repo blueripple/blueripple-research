@@ -674,7 +674,6 @@ compareCSR_ASR cmdLine postInfo = do
                               (Right "model/demographic/csr_asr_PUMA")
                               DDP.districtKeyT cmdLine Nothing byPUMA_C testCDs_C
 
-
     cdModelPaths <- postPaths "Model_CSR_ASR_ByCD" cmdLine
     BRK.brNewPost cdModelPaths postInfo "Model_CSR_ASR_ByCD" $ do
       compareResults @(DMC.CDOuterKeyR V.++ DMC.CASR)
@@ -715,14 +714,42 @@ compareASR_ASE cmdLine postInfo = do
                       (Right  "model/demographic/asr_ase")
                       (show . view GT.pUMA) cmdLine Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeledRaw) <- K.ignoreCacheTime pumaTestRaw_C
-    let avgSE = DED.averagingMatrix @(F.Record DMC.ASER) @(F.Record [DT.Age5C, DT.Race5C]) F.rcast
-        noAvg :: LA.Matrix Double = LA.ident 200
-    pumaTestAvgSE_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+    let aRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Race5C, DT.Education4C]) F.rcast
+        mId :: LA.Matrix Double = LA.ident 200
+    pumaTestAvgER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                         (DTP.viaOptimalWeights DTP.euclideanFull)
                         (Right  "ASR_ASE_ByPUMA")
-                        (Left  "model/demographic/asr_ase_AvgSE")
-                        (show . view GT.pUMA) cmdLine (Just avgSE) byPUMA_C testPUMAs_C
-    (_, pumaModeledAvgSE) <- K.ignoreCacheTime pumaTestAvgSE_C
+                        (Right  "model/demographic/asr_ase_AvgRE")
+                        (show . view GT.pUMA) cmdLine (Just aRE) byPUMA_C testPUMAs_C
+    (_, pumaModeledAvgER) <- K.ignoreCacheTime pumaTestAvgER_C
+    let aSRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.SexC, DT.Race5C, DT.Education4C]) F.rcast
+        mPlus mSoFar mNew = mSoFar + mNew LA.<> (mId - mSoFar)
+        mRE_SRE = mPlus aRE aSRE --aRE + aSRE LA.<> (mId - aRE)
+    pumaTestAvgER_SER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                            (DTP.viaOptimalWeights DTP.euclideanFull)
+                            (Right  "ASR_ASE_ByPUMA")
+                            (Right  "model/demographic/asr_ase_AvgER_SER")
+                            (show . view GT.pUMA) cmdLine (Just mRE_SRE) byPUMA_C testPUMAs_C
+    (_, pumaModeledAvgER_SER) <- K.ignoreCacheTime pumaTestAvgER_SER_C
+    let aARE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Age5C, DT.Race5C, DT.Education4C]) F.rcast
+        mRE_ARE = mPlus aRE aARE --aRE + aARE LA.<> (mId - aRE)
+    pumaTestAvgER_AER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                            (DTP.viaOptimalWeights DTP.euclideanFull)
+                            (Right  "ASR_ASE_ByPUMA")
+                            (Right  "model/demographic/asr_ase_AvgER_AER")
+                            (show . view GT.pUMA) cmdLine (Just mRE_ARE) byPUMA_C testPUMAs_C
+    (_, pumaModeledAvgER_AER) <- K.ignoreCacheTime pumaTestAvgER_AER_C
+
+    let aASRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Age5C, DT.SexC, DT.Race5C, DT.Education4C]) F.rcast
+
+        mRE_SRE_ARE = mPlus mRE_SRE aRE --aRE + aARE LA.<> (mId - aRE)
+        mRE_SRE_ARE_ASRE = mPlus mRE_SRE_ARE aASRE
+    pumaTestAvgER_SER_AER_ASER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                                     (DTP.viaOptimalWeights DTP.euclideanFull)
+                                     (Right  "ASR_ASE_ByPUMA")
+                                     (Right  "model/demographic/asr_ase_AvgER_SER_AER_ASER")
+                                     (show . view GT.pUMA) cmdLine (Just mRE_SRE_ARE_ASRE) byPUMA_C testPUMAs_C
+    (_, pumaModeledAvgER_SER_AER_ASER) <- K.ignoreCacheTime pumaTestAvgER_SER_AER_ASER_C
 
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
@@ -734,7 +761,7 @@ compareASR_ASE cmdLine postInfo = do
     pumaModelPaths <- postPaths "Model_ASR_ASE_ByPUMA" cmdLine
     BRK.brNewPost pumaModelPaths postInfo "Model_ASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
-        pumaModelPaths postInfo True "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo False "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
@@ -746,7 +773,10 @@ compareASR_ASE cmdLine postInfo = do
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast pumaModeledAvgSE) (Just "NS: 2nd order only") (Just "NS: 2nd order only (L2)") (Just "NS: 2nd order only")
+        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
+        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER) (Just "NS: +E+R & +SER") (Just "NS: +E+R & +SER (L2)") (Just "NS: +E+R & +SER")
+        ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")
+        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER_AER_ASER) (Just "NS: Full via avg") (Just "NS: Full via avg (L2)") (Just "NS: Full via avg")
         ,MethodResult (fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full (L2)") (Just "NS: Full")
         ]
 {-
@@ -1532,34 +1562,37 @@ errorCompareXYScatter :: K.KnitEffects r
                       -> [ErrTableRow Text]
                       -> K.Sem r GV.VegaLite
 errorCompareXYScatter postPaths' postInfo title chartID vc regionName labels (errLabel, errScale) tableRows = do
-  let n = 2 --length labels
-      (xLabel : yLabel : _) = labels
-      colData k (ErrTableRow l es)
-        = [("Source", GV.Str $ labels List.!! k)
+  let n = length labels
+  refLabel <- K.knitMaybe "errorCompareXYScatter: empty list of labels!" $ viaNonEmpty head labels
+--      (xLabel : yLabel : _) = labels
+  let colData k (ErrTableRow l es)
+        = [(refLabel, GV.Number $ errScale (es List.!! 0))
+          , ("Source", GV.Str $ labels List.!! k)
           , (regionName, GV.Str  l)
           , (errLabel, GV.Number $ errScale (es List.!! k))
           ]
-      kltrToData kltr = fmap ($ kltr) $ fmap colData [0..(n-1)]
+      kltrToData kltr = fmap ($ kltr) $ fmap colData [1..(n-1)]
       jsonRows = FL.fold (VJ.rowsToJSON' kltrToData [] Nothing) tableRows
   jsonFilePrefix <- K.getNextUnusedId $ ("errorCompareXYScatter_" <> chartID)
   jsonUrl <-  BRK.brAddJSON postPaths' postInfo jsonFilePrefix jsonRows
 
   let vlData = GV.dataFromUrl jsonUrl [GV.JSON "values"]
-      transf = GV.transform . GV.pivot "Source" errLabel [GV.PiGroupBy [regionName]]
+--      transf = GV.transform . GV.pivot "Source" errLabel [GV.PiGroupBy [regionName]]
       encScatter = GV.encoding
-        . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
-        . GV.position GV.Y [GV.PName yLabel, GV.PmType GV.Quantitative]
+        . GV.position GV.X [GV.PName refLabel, GV.PmType GV.Quantitative]
+        . GV.position GV.Y [GV.PName errLabel, GV.PmType GV.Quantitative]
+        . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
       markScatter = GV.mark GV.Point [GV.MSize 1]
       scatterSpec = GV.asSpec [encScatter [], markScatter]
       encXYLine = GV.encoding
-                  . GV.position GV.Y [GV.PName xLabel, GV.PmType GV.Quantitative]
-                  . GV.position GV.X [GV.PName xLabel, GV.PmType GV.Quantitative]
+                  . GV.position GV.Y [GV.PName refLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
+                  . GV.position GV.X [GV.PName refLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
       markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MFillOpacity 0.5]
       xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
       layers = GV.layer [scatterSpec, xyLineSpec]
   pure $ FV.configuredVegaLite vc [FV.title title
                                   , layers
-                                  , transf []
+--                                  , transf []
                                   , vlData
                                   ]
 

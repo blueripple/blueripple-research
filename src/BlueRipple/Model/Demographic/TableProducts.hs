@@ -169,7 +169,7 @@ fullToProjM (NullVectorProjections _ pM rM) = LA.tr rM LA.<> pM
 projToFullM :: NullVectorProjections k -> LA.Matrix LA.R
 projToFullM (NullVectorProjections _ pM rM) = LA.tr pM <> rM
 
--- NB: fullToProjM and projToFullM are trnasposes of each other
+-- NB: fullToProjM and projToFullM are transposes of each other
 -- So left-multiplcation by fullToProjM is the same as right multiplication by projToFullM
 projToFull :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 projToFull nvps v = v LA.<# fullToProjM nvps

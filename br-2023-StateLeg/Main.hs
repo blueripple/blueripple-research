@@ -261,7 +261,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
       (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
-    let draCompetitive r = let x = r ^. ET.demShare in (x > 0.42 && x < 0.58)
+    let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
     BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade $ sldTableCellStyle state)
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
@@ -604,16 +604,18 @@ modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR
 
 modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD cmdLine = do
-  (jointFromMarginalPredictorCSR_ASR_C, _, _) <- CDDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
+  (jointFromMarginalPredictorCSR_ASR_C, _) <- CDDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
                                                  >>= DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.SRCA @DMC.SR
-                                                 (Right "model/demographic/csr_asr_PUMA") "CSR_ASR_ByPUMA"
-                                                 cmdLine . fmap (fmap F.rcast)
-  (jointFromMarginalPredictorCASR_ASE_C, _, _) <- CDDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
+                                                 (Right "CSR_ASR_ByPUMA")
+                                                 (Right "model/demographic/csr_asr_PUMA")
+                                                 cmdLine Nothing . fmap (fmap F.rcast)
+  (jointFromMarginalPredictorCASR_ASE_C, _) <- CDDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
                                                   >>= DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
-                                                  (Right "model/demographic/casr_ase_PUMA") "CASR_SER_ByPUMA"
-                                                  cmdLine . fmap (fmap F.rcast)
+                                                  (Right "CASR_SER_ByPUMA")
+                                                  (Right "model/demographic/casr_ase_PUMA")
+                                                  cmdLine Nothing . fmap (fmap F.rcast)
   (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
-                                >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) False "model/election2/sldDemographics"
+                                >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C
   BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD

@@ -865,18 +865,12 @@ predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks q
                 -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor (F.Record ks) Text)
                            , DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                            )
-predictorModel3 modelIdE predictorCachePrefixE cmdLine amM acs_C = do
-  let (modelId, clearModelCaches) = case modelIdE of
-        Left mId -> (mId, True)
-        Right mId -> (mId, False)
-  (pckp, clearPredictorCaches) <- case predictorCachePrefixE of
-    Left ck -> pure (ck, True)
-    Right ck -> pure (ck, False)
-  let
-    nvpsCacheKey = pckp <> "_NVPs.bin"
-    predictorCacheKey = pckp <> "_Predictor.bin"
-  when clearPredictorCaches $ BRK.clearIfPresentD predictorCacheKey
-  when clearModelCaches $ BRK.clearIfPresentD nvpsCacheKey -- this being new will cause the model to rerun.
+predictorModel3 modelIdE predictorCacheDirE cmdLine amM acs_C = do
+  let (modelId, modelCacheDirE) = case modelIdE of
+        Left mId -> (mId, Left DTM3.model3A5CacheDir)
+        Right mId -> (mId, Right DTM3.model3A5CacheDir)
+  nvpsCacheKey <- BRK.cacheFromDirE modelCacheDirE (modelId <> "_NVPs.bin")
+  predictorCacheKey <- BRK.cacheFromDirE predictorCacheDirE "Predictor.bin"
   let ms = marginalStructure @ks @as @bs @DMS.CellWithDensity @qs DMS.cwdWgtLens DMS.innerProductCWD'
   nullVectorProjections_C <- cachedNVProjections nvpsCacheKey ms acs_C
   let projectionsToDiff_C = case amM of
@@ -888,7 +882,7 @@ predictorModel3 modelIdE predictorCachePrefixE cmdLine amM acs_C = do
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) clearModelCaches cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
+      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) modelCacheDirE cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
   predictor_C <- runAllModels predictorCacheKey modelOne acs_C projectionsToDiff_C
   pure (predictor_C, ms)
 
