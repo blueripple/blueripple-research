@@ -42,7 +42,8 @@ import BlueRipple.Data.GeographicTypes (DistrictName)
 
 FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 
-type DRAnalysis = F.Record ([GT.StateAbbreviation, PlanName, GT.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
+type DRAnalysisR = ([GT.StateAbbreviation, PlanName, GT.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
+type DRAnalysis = F.Record DRAnalysisR
 
 fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
 fixRow pi' r = Just $ pi' F.<+> r

@@ -28,7 +28,7 @@ import qualified BlueRipple.Data.Loaders.Redistricting as DRA
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DataFrames as BRDF
-import qualified BlueRipple.Data.Keyed as Keyed
+--import qualified BlueRipple.Data.Keyed as Keyed
 import qualified BlueRipple.Data.Loaders as BRL
 import qualified BlueRipple.Utilities.TableUtils as BR
 import qualified BlueRipple.Data.Visualizations.DemoCompChart as DCC
@@ -76,6 +76,7 @@ import Path (Dir, Rel)
 import qualified Path
 import qualified Numeric
 import qualified Stan.ModelBuilder.DesignMatrix as DM
+import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 
 import qualified Data.Map.Strict as M
 
@@ -85,7 +86,9 @@ import qualified Graphics.Vega.VegaLite.Compat as FV
 import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
 
-import qualified Data.Discrimination.Grouping  as G
+import qualified ModelNotes as MN
+
+--import qualified Data.Discrimination.Grouping  as G
 
 --import Data.Monoid (Sum(getSum))
 FTH.declareColumn "StateModelT" ''Double
@@ -138,6 +141,10 @@ dlccMS = [(GT.StateLower,"86","Annita Bonner")
 
 dlccMap = M.fromList [("LA",[]), ("MS",dlccMS), ("NJ", dlccNJ), ("VA", dlccVA)]
 
+stateUpperOnlyMap :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (Map Text Bool)
+stateUpperOnlyMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BRDF.sLDUpperOnly)) FL.map)
+                    <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
+
 main :: IO ()
 main = do
   cmdLine ← CmdArgs.cmdArgsRun BR.commandLine
@@ -157,11 +164,13 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
+    modelNotesPost cmdLine
+{-
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    stateUpperOnlyMap <- FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BRDF.sLDUpperOnly)) FL.map)
-                         <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
+
 
     traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap) ["LA", "MS", "NJ", "VA"]
+-}
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -175,6 +184,96 @@ recSubtract :: V.AllConstrained Fractional rs => V.Rec V.Identity rs -> V.Rec V.
 recSubtract V.RNil V.RNil = V.RNil
 recSubtract (a V.:& as) (b V.:& bs) = V.Identity (V.getIdentity a - V.getIdentity b) V.:& recSubtract as bs
 
+--type AnalyzeStateR = SLDKeyR V.++ '[MR.ModelCI, DRA.PlanName] V.++ F.RecordColumns DRA.DRAnalysisRaw V.++ DP.SummaryR
+type AnalyzeStateR = FJ.JoinResult3 [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
+                     (SLDKeyR V.++ '[MR.ModelCI])
+                     DRA.DRAnalysisR
+                     ([GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] V.++ DP.SummaryR)
+
+analyzeState :: (K.KnitEffects r, BRK.CacheEffects r)
+             => BR.CommandLine
+             → MC.TurnoutConfig a b
+             → MC.PrefConfig b
+             -> Map Text Bool
+             -> Map Text [(GT.DistrictType, Text, Text)]
+             -> Text
+             -> K.Sem r (F.FrameRec AnalyzeStateR)
+analyzeState cmdLine tc pc stateUpperOnlyMap dlccMap state = do
+  let cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
+                                    psName "AllCells" state
+  let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
+      psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
+
+  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+  let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
+  sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
+  presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
+  houseElections_C <- BRL.houseElectionsWithIncumbency
+  draShareOverrides_C <- DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
+  let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
+      dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
+      dVSModel psName
+        = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine tc pc dVSPres2020
+  modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") stateSLDs_C
+  allPlansMap <- DRA.allPassedSLDPlans
+  upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
+  let modeledDVs = modeledMapToFrame modeledDVSMap
+  dra <- do
+    upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
+    if upperOnly then pure upper
+      else (do
+               lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
+               pure $ upper <> lower
+           )
+  let (modeledAndDRA, missingModelDRA, missingSummary)
+        = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
+  when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
+  when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
+  pure modeledAndDRA
+
+dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+dmr = MC.tDesignMatrixRow_d
+
+survey :: MC.TurnoutSurvey (F.Record DP.CESByCDR)
+survey = MC.CESSurvey
+
+aggregation :: MC.SurveyAggregation TE.ECVec
+aggregation = MC.WeightedAggregation MC.ContinuousBinomial
+
+alphaModel :: MC.Alphas
+alphaModel =  MC.St_A_S_E_R_AE_AR_ER_StR --MC.St_A_S_E_R_ER_StR_StER
+              --      alphaModel =  MC.St_A_S_E_R_ER_StR_StER
+psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
+psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
+
+modelNotesPost :: (K.KnitMany r, BRK.CacheEffects r)
+               => BR.CommandLine
+               -> K.Sem r ()
+modelNotesPost cmdLine = do
+  modelNotesPostPaths <- postPaths "ModelNotes" cmdLine
+  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  BRK.brNewPost modelNotesPostPaths postInfo "ModelNotes" $ do
+    let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
+         prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
+    upperOnlyMap <- stateUpperOnlyMap
+    modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (prefConfig aggregation alphaModel) upperOnlyMap dlccMap "VA"
+    BRK.brAddMarkDown MN.part1
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoHPL") "VA Historical Partisan Lean"
+      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part2
+    let dpl r = MT.ciMid $ r ^. MR.modelCI
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
+      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("HPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part3
+    let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-HPL"
+      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA
+      >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part4
+
+
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
                  -> BR.PostInfo
@@ -184,49 +283,17 @@ analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  -> K.Sem r ()
 analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
   modelPostPaths <- postPaths state cmdLine
-  let modelDirE = Right "model/election2/stan/"
-      cacheDirE = Right "model/election2/"
-      cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
+  let cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
                                     psName "AllCells" state
-      dmr = MC.tDesignMatrixRow_d
-      survey = MC.CESSurvey
-      aggregation = MC.WeightedAggregation MC.ContinuousBinomial
-      alphaModel =  MC.St_A_S_E_R_AE_AR_ER_StR --MC.St_A_S_E_R_ER_StR_StER
---      alphaModel =  MC.St_A_S_E_R_ER_StR_StER
-      psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
-      psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
   BRK.brNewPost modelPostPaths postInfo state $ do
---    presidentialElections_C <- BRL.presidentialByStateFrame
+    let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
+         prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
+    modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (prefConfig aggregation alphaModel) stateUpperOnlyMap dlccMap state
+    upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
 
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
     let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
-    sldDemographicSummary <- FL.fold (DP.summarizeASER_Fld @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]) . DP.unPSData <$> K.ignoreCacheTime stateSLDs_C
-    presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
-    houseElections_C <- BRL.houseElectionsWithIncumbency
-    draShareOverrides_C <- DP.loadOverrides "data/DRA_Shares/DRA_Share.csv" "DRA 2016-2021"
---    K.ignoreCacheTime draShareOverrides_C >>= BRK.logFrame
-    let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
-        dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
-        turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
-        prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
-        dVSModel psName agg am
-          = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine (turnoutConfig agg am) (prefConfig agg am) dVSPres2020
-    modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") aggregation alphaModel stateSLDs_C
-    allPlansMap <- DRA.allPassedSLDPlans
-    upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
-    let modeledDVs = modeledMapToFrame modeledDVSMap
-    dra <- do
-      upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateUpper)
-      if upperOnly then pure upper
-        else (do
-                 lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allPlansMap (DRA.redistrictingPlanId state "Passed" GT.StateLower)
-                 pure $ upper <> lower
-             )
-    let (modeledAndDRA, missingModelDRA, missingSummary)
-          = FJ.leftJoin3WithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeledDVs dra sldDemographicSummary
-    when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
-    when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
     let toLogDensity = FT.fieldEndo @DT.PWPopPerSqMile (\x -> if x > 1 then Numeric.log x else 0)
         summaryLD = fmap toLogDensity modeledAndDRA
         (summaryMeans, summarySDs) = FL.fold DP.summaryMeanStd $ fmap F.rcast summaryLD
@@ -239,6 +306,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
         normalizeSummary r = F.rcast @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI] r
                              F.<+> f (F.rcast @DP.SummaryR r)
         csSummary = fmap normalizeSummary summaryLD
+
     compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
                  (FV.ViewConfig 500 500 10) modeledAndDRA
     _ <- K.addHvega Nothing Nothing compChart
@@ -247,19 +315,19 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
 --        chamberName uo dt =
     when (not upperOnly) $ do
       void $ geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
-        (FV.ViewConfig 500 300 10) state GT.StateLower ("delta", delta) modeledAndDRA
+        (FV.ViewConfig 500 300 10) state GT.StateLower ("delta", delta, Nothing, Nothing) modeledAndDRA
         >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
-      (FV.ViewConfig 500 300 10) state GT.StateUpper ("delta", delta) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state GT.StateUpper ("delta", delta, Nothing, Nothing) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
-      (FV.ViewConfig 500 300 10) state detailChamber ("log density", Numeric.log . view DT.pWPopPerSqMile) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber ("log density", Numeric.log . view DT.pWPopPerSqMile, Nothing, Nothing) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
-      (FV.ViewConfig 500 300 10) state detailChamber ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus)) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus), Nothing, Nothing) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
-      (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad)) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad), Nothing, Nothing) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
     BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade $ sldTableCellStyle state)
@@ -571,16 +639,23 @@ geoCompChart :: (K.KnitEffects r
               -> FV.ViewConfig
               -> Text
               -> GT.DistrictType
-              -> (Text, F.Record rs -> Double)
+              -> (Text, F.Record rs -> Double, Maybe Text, Maybe (Double, Double))
               -> F.FrameRec rs
               -> K.Sem r GV.VegaLite
-geoCompChart pp pi chartID title vc sa dType (label, f) rows = do
+geoCompChart pp pi chartID title vc sa dType (label, f, cSchemeM, extentM) rows = do
   let colData r = [ ("District", GV.Str $ r ^. GT.districtName)
-                  , ("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
-                  , ("Historical", GV.Number $ r ^. ET.demShare)
+--                  , ("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
+--                  , ("Historical", GV.Number $ r ^. ET.demShare)
                   , (label, GV.Number $ f r) --100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare))
                   ]
-      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ F.filterFrame ((== dType) . view GT.districtTypeC)rows
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ F.filterFrame ((== dType) . view GT.districtTypeC) rows
+      schemeExtentM = do
+        (lo, hi) <- extentM
+        let (minM, maxM) = FL.fold ((,) <$> FL.premap f FL.minimum <*> FL.premap f FL.maximum) rows
+        datMin <- minM
+        datMax <- maxM
+        pure ((datMin - lo) / (hi - lo), 1 - (hi - datMax) / (hi - lo))
+      schemeExtent = maybe [] (\(l, h) -> [l, h]) schemeExtentM
   jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
   jsonDataUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
   (geoJsonPrefix, titleSuffix) <- case dType of
@@ -592,10 +667,13 @@ geoCompChart pp pi chartID title vc sa dType (label, f) rows = do
   jsonGeoUrl <- BRK.brCopyDataForPost pp pi BRK.LeaveExisting geoJsonSrc Nothing
   let rowData = GV.dataFromUrl jsonDataUrl [GV.JSON "values"]
       geoData = GV.dataFromUrl jsonGeoUrl [GV.TopojsonFeature geoJsonPrefix]
-      encQty = GV.color [GV.MName label, GV.MmType GV.Quantitative]
-      encoding = (GV.encoding . encQty) []
-      tLookup = (GV.transform . GV.lookup "properties.NAME" rowData "District" (GV.LuFields [label])) []
-      mark = GV.mark GV.Geoshape [GV.MTooltip GV.TTData]
+      encQty = GV.color $ [GV.MName label, GV.MmType GV.Quantitative] <> maybe [] (\s -> [GV.MScale [GV.SScheme s schemeExtent]]) cSchemeM
+      encTooltips = GV.tooltips [[GV.TName "District", GV.TmType GV.Nominal]
+                                , [GV.TName label, GV.TmType GV.Quantitative]
+                                ]
+      encoding = (GV.encoding . encQty . encTooltips) []
+      tLookup = (GV.transform . GV.lookup "properties.NAME" rowData "District" (GV.LuFields ["District",label])) []
+      mark = GV.mark GV.Geoshape []
       projection = GV.projection [GV.PrType GV.Identity, GV.PrReflectY True]
   pure $ FV.configuredVegaLite vc [FV.title (title <> titleSuffix), geoData, tLookup, projection, encoding, mark]
 

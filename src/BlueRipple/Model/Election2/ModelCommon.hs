@@ -49,10 +49,10 @@ import qualified Stan.ModelBuilder.BuildingBlocks.GroupAlpha as SG
 import qualified Stan.ModelBuilder.DesignMatrix as DM
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
-import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
-import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
-import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
-import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
+--import qualified Stan.ModelBuilder.TypedExpressions.Indexing as TEI
+--import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
+--import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
+--import Stan.ModelBuilder.TypedExpressions.TypedList (TypedList(..))
 import qualified Flat
 import Flat.Instances.Vector ()
 

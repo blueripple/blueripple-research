@@ -1,9 +1,10 @@
 ### Modeling State Legislative Elections (updated October 19, 2023)
 There are a number of reasons to analyze elections in state-legislative districts (SLDs).
 Our primary goal is to help donors decide where to give money. The amount of money
-people have to give is limited and we hope they will focus that giving to long-term
-development of organizational infrastructure or on specific close-but-winnable (CBW) races.
-Our work focuses on the latter sort of giving, finding winnable races.
+people have to give is limited and should be focused on long-term organizational
+infrastructure or on specific close-but-winnable (CBW) races.
+Our work focuses on the latter sort of giving, which requires identifying
+the CBWs.
 
 We take as given that local expertise in the particular district or set of districts is likely
 to be the best way to figure out which districts are CBW. But there are more than 5000 SLDs!
@@ -12,12 +13,17 @@ understanding SLDs that we can apply to the country as a whole, perhaps narrowin
 set of districts where on-the-ground expertise is important.
 
 The most straightforward way to select CBW races is to look at what happened in
-a district in previous elections, eitehr for the same office or others.
-That’s straightforward but not at all easy. [Dave’s Redistricting](??)
+a district in previous elections, either for the same office or others.
+That’s straightforward but not at all easy.
+[Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
-elections to create an estimate of the historical partisan lean (HPL) of every SLD
+elections to create an estimate of the historical partisan lean^[pl] (HPL) of every SLD
 in the country. Their rich interface allows the user to choose various
 previous elections and combinations of them to estimate the partisan lean.
+
+[pl]: By “partisan lean” we mean the 2-party vote share of Democratic votes, that
+is, given $D$ democratic votes and $R$ Republican votes and $O$ third-party votes,
+we will report a partisan lean of $\frac{D}{D+R}$.
 
 We think this is absolutely the right starting place when figuring out where to donate. Any SLD
 which has an HPL that is very Democratic or very Republican is likely not a race the other
