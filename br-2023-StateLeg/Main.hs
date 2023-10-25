@@ -654,7 +654,7 @@ geoCompChart pp pi chartID title vc sa dType (label, f, cSchemeM, extentM) rows 
         let (minM, maxM) = FL.fold ((,) <$> FL.premap f FL.minimum <*> FL.premap f FL.maximum) rows
         datMin <- minM
         datMax <- maxM
-        pure ((datMin - lo) / (hi - lo), 1 - (hi - datMax) / (hi - lo))
+        pure ((datMin - lo) / (hi - lo), 1 - ((hi - datMax) / (hi - lo)))
       schemeExtent = maybe [] (\(l, h) -> [l, h]) schemeExtentM
   jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
   jsonDataUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
@@ -686,11 +686,13 @@ modeledACSBySLD cmdLine = do
                                                  >>= DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.SRCA @DMC.SR
                                                  (Right "CSR_ASR_ByPUMA")
                                                  (Right "model/demographic/csr_asr_PUMA")
+                                                 False -- use model not just mean
                                                  cmdLine Nothing . fmap (fmap F.rcast)
   (jointFromMarginalPredictorCASR_ASE_C, _) <- CDDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
                                                   >>= DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
                                                   (Right "CASR_SER_ByPUMA")
                                                   (Right "model/demographic/casr_ase_PUMA")
+                                                  False -- use model, not just mean
                                                   cmdLine Nothing . fmap (fmap F.rcast)
   (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")

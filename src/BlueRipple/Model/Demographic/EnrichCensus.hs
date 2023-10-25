@@ -859,13 +859,14 @@ predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks q
                      )
                 => Either Text Text
                 -> Either Text Text
+                -> Bool
                 -> BR.CommandLine
                 -> Maybe (LA.Matrix Double)
                 -> K.ActionWithCacheTime r (F.FrameRec (PUMARowR ks))
                 -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor (F.Record ks) Text)
                            , DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                            )
-predictorModel3 modelIdE predictorCacheDirE cmdLine amM acs_C = do
+predictorModel3 modelIdE predictorCacheDirE meanAsModel cmdLine amM acs_C = do
   let (modelId, modelCacheDirE) = case modelIdE of
         Left mId -> (mId, Left DTM3.model3A5CacheDir)
         Right mId -> (mId, Right DTM3.model3A5CacheDir)
@@ -882,7 +883,8 @@ predictorModel3 modelIdE predictorCacheDirE cmdLine amM acs_C = do
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
                          DTM3.AlphaHierNonCentered DTM3.NormalDist
-      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) modelCacheDirE cmdLine (tp3RunConfig n) tp3ModelConfig acs_C nullVectorProjections_C ms tp3InnerFld
+      tp3MOM = if meanAsModel then DTM3.Mean else DTM3.Model tp3ModelConfig
+      modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) modelCacheDirE cmdLine (tp3RunConfig n) tp3MOM acs_C nullVectorProjections_C ms tp3InnerFld
   predictor_C <- runAllModels predictorCacheKey modelOne acs_C projectionsToDiff_C
   pure (predictor_C, ms)
 

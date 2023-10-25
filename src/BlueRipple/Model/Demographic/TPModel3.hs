@@ -76,7 +76,7 @@ import qualified Flat
 import Flat.Instances.Vector ()
 
 data ProjDataRow outerK =
-  ProjDataRow { pdKey :: outerK, pdCovariates :: VS.Vector Double, pdCoeff ::Double }
+  ProjDataRow { pdKey :: outerK, pdCovariates :: VS.Vector Double, pdCoeff :: Double }
 
 -- NB: nullVecs we use are not the ones from SVD but a subset of a rotation of those via
 -- the eigenvectors of the covariance
@@ -223,9 +223,8 @@ instance BRK.FiniteSet (F.Record k) => BRK.FiniteSet (RecordKey k) where
   elements = RecordKey <$> BRK.elements @(F.Record k)
 -}
 data ComponentPredictor g =
-  ComponentPredictor { mrGeoAlpha :: Map g Double
-                     , mrSI :: V.Vector (Double, Double)
-                     }
+  ComponentPredictor { mrGeoAlpha :: Map g Double, mrSI :: V.Vector (Double, Double) }
+  | ComponentMean { cpMean :: Double }
   deriving stock (Generic)
 
 deriving anyclass instance (Ord g, Flat.Flat g) => Flat.Flat (ComponentPredictor g)
@@ -245,12 +244,15 @@ modelResultNVP :: (Show g, Ord g)
                -> g
                -> VS.Vector Double
                -> Either Text Double
-modelResultNVP mr g md = do
-    geoAlpha <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g <> ". mrGeoAlpha=" <> show mr.mrGeoAlpha) $ M.lookup g mr.mrGeoAlpha
+modelResultNVP cp g md = case cp of
+  ComponentPredictor gam siv -> do
+    geoAlpha <- maybeToRight ("geoAlpha lookup failed for gKey=" <> show g <> ". mrGeoAlpha=" <> show gam) $ M.lookup g gam
     let
         applyOne x (b, m) = b * (x - m)
-        beta = V.sum $ V.zipWith applyOne (VS.convert md) (mrSI mr)
+        beta = V.sum $ V.zipWith applyOne (VS.convert md) siv
     pure $ geoAlpha + beta
+  ComponentMean x -> pure x
+
 
 modelResultNVPs :: (Show g, Ord g) => Predictor k g -> g -> VS.Vector Double -> Either Text [Double]
 modelResultNVPs p g cvs = traverse (\mr -> modelResultNVP mr g cvs) $ predCPs p
@@ -332,11 +334,17 @@ data ModelConfig =
   , distribution :: Distribution
   }
 
+data MeanOrModel = Mean | Model ModelConfig
+
+momText :: MeanOrModel -> Text
+momText Mean = "mean"
+momText (Model mc) = modelText mc
+
 modelText :: ModelConfig -> Text
-modelText mc = distributionText mc.distribution <> "_" <> mc.designMatrixRow.dmName <> "_" <> alphaModelText mc.alphaModel
+modelText (ModelConfig _ dmr am d) = distributionText d <> "_" <> dmr.dmName <> "_" <> alphaModelText am
 
 dataText :: ModelConfig -> Text
-dataText mc = mc.designMatrixRow.dmName
+dataText (ModelConfig _ dmr _ _) = dmr.dmName
 
 projModelData :: forall outerK . Typeable outerK
               => ModelConfig
@@ -546,21 +554,14 @@ runProjModel :: forall (ks :: [(Symbol, Type)]) rs r .
              => Either Text Text
              -> BR.CommandLine
              -> RunConfig
-             -> ModelConfig
+             -> MeanOrModel
              -> K.ActionWithCacheTime r (F.FrameRec rs)
              -> K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks))
              -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
              -> FL.Fold (F.Record rs) (VS.Vector Double)
              -> K.Sem r (K.ActionWithCacheTime r (ComponentPredictor Text))
-runProjModel cacheDirE _cmdLine rc mc acs_C nvps_C ms datFld = K.wrapPrefix "TPModel3.runProjModel" $ do
-  let dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
-      runnerInputNames = SC.RunnerInputNames
-                         ("br-2022-Demographics/stan/nullVecProj_M3_A5")
-                         (modelText mc)
-                         (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
-                         dataName
---  acsByPUMA_C <- DDP.cachedACSa5ByPUMA
-  nvpDataCacheKey <- BRKU.cacheFromDirE cacheDirE ("nvpRowData" <> dataText mc <> ".bin")
+runProjModel cacheDirE _cmdLine rc mom acs_C nvps_C ms datFld = K.wrapPrefix "TPModel3.runProjModel" $ do
+  nvpDataCacheKey <- BRKU.cacheFromDirE cacheDirE ("nvpRowData" <> momText mom <> ".bin")
   let outerKey = F.rcast @[GT.StateAbbreviation, GT.PUMA]
       catKey = F.rcast @ks
       nvpDeps = (,) <$> acs_C <*>  nvps_C
@@ -573,32 +574,41 @@ runProjModel cacheDirE _cmdLine rc mc acs_C nvps_C ms datFld = K.wrapPrefix "TPM
                                )
   let statesFilter = maybe id (\(_, sts) -> filter ((`elem` sts) . view GT.stateAbbreviation . pdKey)) rc.statesM
       rowData_C = fmap (statesFilter . fmap (toProjDataRow rc.nvIndex)) $ nvpData_C
-      modelData_C = ProjData (DM.rowLength mc.designMatrixRow) <$> rowData_C
 --  acsByPUMA <- K.ignoreCacheTime acsByPUMA_C
+  case mom of
+    Mean -> do
+      let meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
+      rowData <- K.ignoreCacheTime rowData_C
+      let (mean, sd) = FL.fold (FL.premap pdCoeff meanSDFld) $ rowData
+      K.logLE K.Diagnostic $ "mean=" <> show mean <> "; sd=" <> show sd
+      pure $ pure $ ComponentMean mean
+    Model mc -> do
+      let modelData_C = ProjData (DM.rowLength mc.designMatrixRow) <$> rowData_C
+          dataName = "projectionData_" <> dataText mc <> "_N" <> show rc.nvIndex <> maybe "" fst rc.statesM
+          runnerInputNames = SC.RunnerInputNames
+                             ("br-2022-Demographics/stan/nullVecProj_M3_A5")
+                             (modelText mc)
+                             (Just $ SC.GQNames "pp" dataName) -- posterior prediction vars to wrap
+                             dataName
+      states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
+      (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
+                     (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
+                     (projModel rc mc)
 
-  let meanSDFld :: FL.Fold Double (Double, Double) = (,) <$> FL.mean <*> FL.std
-  modelData <- K.ignoreCacheTime modelData_C
-  let meanSD = FL.fold (FL.premap pdCoeff meanSDFld) $ pdRows modelData
-  K.logLE K.Diagnostic $ "meanSD=" <> show meanSD
-  states <- FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) <$> K.ignoreCacheTime acs_C
-  (dw, code) <-  SMR.dataWranglerAndCode modelData_C (pure ())
-                (stateGroupBuilder (view GT.stateAbbreviation)  (S.toList states))
-                (projModel rc mc)
+      let unwraps = [SR.UnwrapNamed "projection" "yProjection"]
 
-  let unwraps = [SR.UnwrapNamed "projection" "yProjection"]
-
-  res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
-           cacheDirE
-           (Right runnerInputNames)
-           Nothing
-           dw
-           code
-           (projModelResultAction mc) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
-           (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
-           modelData_C
-           (pure ())
-  K.logLE K.Info "projModel run complete."
-  pure res_C
+      res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
+               cacheDirE
+               (Right runnerInputNames)
+               Nothing
+               dw
+               code
+               (projModelResultAction mc) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
+               (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
+               modelData_C
+               (pure ())
+      K.logLE K.Info "projModel run complete."
+      pure res_C
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
 projModelResultAction :: forall outerK r ks .

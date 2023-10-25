@@ -406,16 +406,17 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
        => DTP.OptimalOnSimplexF r --(forall k . DTP.NullVectorProjections k -> VS.Vector Double -> VS.Vector Double -> K.Sem r (VS.Vector Double))
        -> Either Text Text
        -> Either Text Text
+       -> Bool
        -> (F.Record outerK -> Text)
        -> BR.CommandLine
        -> Maybe (LA.Matrix Double)
        -> K.ActionWithCacheTime r (F.FrameRec (DMC.PUMARowR ks))
        -> K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks))
        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks), F.FrameRec (TestRow outerK ks)))
-testNS onSimplexM modelIdE predictionCacheDirE testRowKeyText cmdLine amM byPUMA_C test_C = do
+testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLine amM byPUMA_C test_C = do
 --  productFrameCacheKey <- BRK.cacheFromDirE predictionCacheDirE  "productFrame.bin"
   (predictor_C, ms) <- DMC.predictorModel3 @as @bs @(qs V.++ as V.++ bs) @qs
-    modelIdE predictionCacheDirE cmdLine amM $ fmap (fmap F.rcast) byPUMA_C
+    modelIdE predictionCacheDirE meanAsModel cmdLine amM $ fmap (fmap F.rcast) byPUMA_C
   test <- K.ignoreCacheTime test_C
   let testAs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll bs ks) . fmap F.rcast) <$> test_C
       testBs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll as ks) . fmap F.rcast) <$> test_C
@@ -557,11 +558,12 @@ compareCSR_ASR_ASE cmdLine postInfo = do
                        (DTP.viaOptimalWeights DTP.euclideanFull)
                        (Right "CSR_ASR_ByPUMA")
                        (Right "model/demographic/csr_asr_PUMA")
+                       False
                        (view GT.stateAbbreviation) cmdLine Nothing (fmap (fmap F.rcast) byPUMA_C) (fmap (fmap F.rcast) testPUMAs_C)
 --    (pumaProduct_CASR, pumaModeled_CASR) <- K.ignoreCacheTime pumaTest_CASR_C
 
     (ascrePredictor_C, ascre_ms) <- DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
-                                    (Right "CASR_ASE_ByPUMA") (Right "model/demographic/casr_ase") cmdLine Nothing $ fmap (fmap F.rcast) byPUMA_C
+                                    (Right "CASR_ASE_ByPUMA") (Right "model/demographic/casr_ase") False cmdLine Nothing $ fmap (fmap F.rcast) byPUMA_C
     let casr_C =  {- (aggregateAndZeroFillTables @DMC.PUMAOuterKeyR @DMC.ASCR . fmap F.rcast) <$> -} fmap snd pumaTest_CASR_C
         ase_C = (aggregateAndZeroFillTables @DMC.PUMAOuterKeyR @DMC.ASE . fmap F.rcast) <$> byPUMA_C
 
@@ -629,6 +631,7 @@ compareCSR_ASR cmdLine postInfo = do
                   (DTP.viaOptimalWeights DTP.euclideanFull)
                   (Right "CSR_ASR_ByPUMA")
                   (Right "model/demographic/csr_asr_PUMA")
+                  False
                   (show . view GT.pUMA) cmdLine Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeled) <- K.ignoreCacheTime pumaTest_C
 
@@ -672,6 +675,7 @@ compareCSR_ASR cmdLine postInfo = do
                               (DTP.viaOptimalWeights DTP.euclideanFull)
                               (Right "CSR_ASR_ByPUMA")
                               (Right "model/demographic/csr_asr_PUMA")
+                              False
                               DDP.districtKeyT cmdLine Nothing byPUMA_C testCDs_C
 
     cdModelPaths <- postPaths "Model_CSR_ASR_ByCD" cmdLine
@@ -712,14 +716,23 @@ compareASR_ASE cmdLine postInfo = do
                       (DTP.viaOptimalWeights DTP.euclideanFull)
                       (Right "ASR_ASE_ByPUMA")
                       (Right  "model/demographic/asr_ase")
+                      False
                       (show . view GT.pUMA) cmdLine Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeledRaw) <- K.ignoreCacheTime pumaTestRaw_C
+    pumaTestMean_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                       (DTP.viaOptimalWeights DTP.euclideanFull)
+                       (Right "ASR_ASE_ByPUMA")
+                       (Right  "model/demographic/mean_asr_ase")
+                       True
+                       (show . view GT.pUMA) cmdLine Nothing byPUMA_C testPUMAs_C
+    (pumaProduct, pumaMeanFull) <- K.ignoreCacheTime pumaTestMean_C
     let aRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Race5C, DT.Education4C]) F.rcast
         mId :: LA.Matrix Double = LA.ident 200
     pumaTestAvgER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                         (DTP.viaOptimalWeights DTP.euclideanFull)
                         (Right  "ASR_ASE_ByPUMA")
                         (Right  "model/demographic/asr_ase_AvgRE")
+                        False
                         (show . view GT.pUMA) cmdLine (Just aRE) byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER) <- K.ignoreCacheTime pumaTestAvgER_C
     let aSRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.SexC, DT.Race5C, DT.Education4C]) F.rcast
@@ -729,6 +742,7 @@ compareASR_ASE cmdLine postInfo = do
                             (DTP.viaOptimalWeights DTP.euclideanFull)
                             (Right  "ASR_ASE_ByPUMA")
                             (Right  "model/demographic/asr_ase_AvgER_SER")
+                            False
                             (show . view GT.pUMA) cmdLine (Just mRE_SRE) byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER_SER) <- K.ignoreCacheTime pumaTestAvgER_SER_C
     let aARE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Age5C, DT.Race5C, DT.Education4C]) F.rcast
@@ -737,6 +751,7 @@ compareASR_ASE cmdLine postInfo = do
                             (DTP.viaOptimalWeights DTP.euclideanFull)
                             (Right  "ASR_ASE_ByPUMA")
                             (Right  "model/demographic/asr_ase_AvgER_AER")
+                            False
                             (show . view GT.pUMA) cmdLine (Just mRE_ARE) byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER_AER) <- K.ignoreCacheTime pumaTestAvgER_AER_C
 
@@ -748,6 +763,7 @@ compareASR_ASE cmdLine postInfo = do
                                      (DTP.viaOptimalWeights DTP.euclideanFull)
                                      (Right  "ASR_ASE_ByPUMA")
                                      (Right  "model/demographic/asr_ase_AvgER_SER_AER_ASER")
+                                     False
                                      (show . view GT.pUMA) cmdLine (Just mRE_SRE_ARE_ASRE) byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER_SER_AER_ASER) <- K.ignoreCacheTime pumaTestAvgER_SER_AER_ASER_C
 
@@ -778,6 +794,7 @@ compareASR_ASE cmdLine postInfo = do
         ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")
         ,MethodResult (fmap F.rcast pumaModeledAvgER_SER_AER_ASER) (Just "NS: Full via avg") (Just "NS: Full via avg (L2)") (Just "NS: Full via avg")
         ,MethodResult (fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full (L2)") (Just "NS: Full")
+        ,MethodResult (fmap F.rcast pumaMeanFull) (Just "NS: Mean Only") (Just "NS: Mean Only (L2)") (Just "NS: Mean Only")
         ]
 {-
     cdFromPUMAModeledRaw_C <- DDP.cachedPUMAsToCDs @DMC.ASER "model/demographic/asr_ase_CDFromPUMA.bin" $ fmap snd pumaTestRaw_C
@@ -838,6 +855,7 @@ compareCASR_ASE cmdLine postInfo = do
                                           (DTP.viaOptimalWeights DTP.euclideanFull)
                                           (Right "CASR_ASE_ByPUMA")
                                           (Right "model/demographic/casr_ase")
+                                          False
                                           (show . view GT.pUMA) cmdLine Nothing byPUMA_C testPUMAs_C
 
 {-
@@ -886,6 +904,7 @@ compareSER_ASR cmdLine postInfo = do
                                             (DTP.viaOptimalWeights DTP.euclideanFull)
                                             (Right "SER_ASR")
                                             (Right "model/demographic/ser_asr")
+                                            False
                                             DDP.districtKeyT cmdLine Nothing byPUMA_C byCD_C
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)

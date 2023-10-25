@@ -100,7 +100,8 @@ the HPL. As an example, here’s our DPL model for VA.
 
 part3 :: Text
 part3 = [here|
-And, for a sense of the differences, here is a plot of DPL - HPL.
+These maps are, unsurprisingly, very similar but there are some large differences.
+To see that more clearly, we plot the difference:
 |]
 
 part4 :: Text
@@ -108,15 +109,20 @@ part4 = [here|
 ## DPL: our model
 We’re going to explain what we do in steps, expanding on each one further down in the document
 and putting some of the mathematical details in other, linked documents. Our purpose here
-is to give you a solid idea of what we do but without too much detail.
+is to present a thorough idea of what we do without spending too much time on any of the
+technical details.
 
 We begin with the Cooperative Election Study ([CES](https://cces.gov.harvard.edu)),
 a highly-regarded survey which
-runs every 2 years, speaks to people before and after the general election and attempts to
-validate people’s responses about turnout via a third-party using voter-file data. The
+runs every 2 years, speaks to people before and after the general election and validate’s
+people’s responses about turnout via a third-party which uses voter-file data[^vf]. The
 CES survey includes approximately 60,000 people per election cycle. It gathers demographic and
 geographic information about each person as well as information about voting, party preference
 as well as various other opinion and issue questions.
+
+[^vf]: CES has used different validation partners in different years. Whoever parteners with the
+CES in a particular year attempts to match a CES interviewee with a voter-file record in that state
+to validate the survey responses about registration and turnout.
 
 The CES data includes state and congressional district of each person interviewed. We use that
 to join the data to population-density data from the 5-year American Community
