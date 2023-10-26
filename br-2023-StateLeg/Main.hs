@@ -193,12 +193,14 @@ type AnalyzeStateR = FJ.JoinResult3 [GT.StateAbbreviation, GT.DistrictTypeC, GT.
 analyzeState :: (K.KnitEffects r, BRK.CacheEffects r)
              => BR.CommandLine
              → MC.TurnoutConfig a b
+             -> Maybe (MR.Scenario DP.PredictorsR)
              → MC.PrefConfig b
+             -> Maybe (MR.Scenario DP.PredictorsR)
              -> Map Text Bool
              -> Map Text [(GT.DistrictType, Text, Text)]
              -> Text
              -> K.Sem r (F.FrameRec AnalyzeStateR)
-analyzeState cmdLine tc pc stateUpperOnlyMap dlccMap state = do
+analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state = do
   let cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
                                     psName "AllCells" state
   let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
@@ -213,7 +215,7 @@ analyzeState cmdLine tc pc stateUpperOnlyMap dlccMap state = do
   let dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
       dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
       dVSModel psName
-        = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine tc pc dVSPres2020
+        = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine tc tScenarioM pc pScenarioM dVSPres2020
   modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") stateSLDs_C
   allPlansMap <- DRA.allPassedSLDPlans
   upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
@@ -256,23 +258,39 @@ modelNotesPost cmdLine = do
     let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
     upperOnlyMap <- stateUpperOnlyMap
-    modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (prefConfig aggregation alphaModel) upperOnlyMap dlccMap "VA"
+    modeledAndDRA_Base <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+
     BRK.brAddMarkDown MN.part1
     geoCompChart modelNotesPostPaths postInfo ("VA_geoHPL") "VA Historical Partisan Lean"
-      (FV.ViewConfig 400 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA
+      (FV.ViewConfig 400 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA_Base
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("HPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_Base
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
     let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-HPL"
-      (FV.ViewConfig 400 150 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA
+      (FV.ViewConfig 400 150 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA_Base
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part4
-
+    let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then (+ 0.05) else id
+        dobbsTurnoutS = MR.SimpleScenario "DobbsT" dobbsTurnoutF
+        dobbsPrefS = MR.SimpleScenario "DobbsP" dobbsTurnoutF
+        youthApathyF r = if (r ^. DT.age5C <= DT.A5_25To34) then (\x -> x - 0.05) else id
+        youthApathyTurnoutS = MR.SimpleScenario "YouthApathy" youthApathyF
+    modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
+                           (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
+    modeledAndDRA_YouthApathy <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthApathyTurnoutS)
+                                 (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_Dobbs
+      >>= K.addHvega Nothing Nothing
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_YouthApathy") "VA Demographic Partisan Lean (Youth Apathy Scenario)"
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_YouthApathy
+      >>= K.addHvega Nothing Nothing
+    pure ()
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
@@ -289,7 +307,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
   BRK.brNewPost modelPostPaths postInfo state $ do
     let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
-    modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (prefConfig aggregation alphaModel) stateUpperOnlyMap dlccMap state
+    modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing stateUpperOnlyMap dlccMap state
     upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
 
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
@@ -387,10 +405,10 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM state psData_C
         dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
     stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc psData_C
     statePrefByRace_C :: K.ActionWithCacheTime r (MC.PSMap '[DT.Race5C] MT.ConfidenceInterval) ←
-      MR.runPrefModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc pc dVSPres2020  psData_C
+      MR.runPrefModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc Nothing pc Nothing dVSPres2020  psData_C
     districtTurnoutByRace_C :: K.ActionWithCacheTime r (MC.PSMap (AndSLDKey '[DT.Race5C]) MT.ConfidenceInterval) ←
       MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc psData_C
-    districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc pc dVSPres2020  psData_C
+    districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc Nothing pc Nothing dVSPres2020  psData_C
     K.ignoreCacheTime stateTurnoutByRace_C >>= K.logLE K.Info . show . MC.unPSMap
     K.ignoreCacheTime statePrefByRace_C >>= K.logLE K.Info . show . MC.unPSMap
     let comboByRaceDeps = (,,,,) <$> stateTurnoutByRace_C <*> districtTurnoutByRace_C <*> statePrefByRace_C <*> districtPrefByRace_C <*> psData_C

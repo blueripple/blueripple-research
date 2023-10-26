@@ -390,7 +390,7 @@ type PSDataTypePC ks = ( FJ.CanLeftJoinWithMissing3 StateAndCats (DP.PSDataR ks)
                        , AHC ks '[ModelPr, ModelT]
                        , FC.ElemsOf (FT.Rename "ModelPr" "ModelT" (AH ks '[ModelPr])) (StateCatsPlus '[ModelT])
                        , (GT.StateAbbreviation ': AHrs ks [ModelPr, ModelT]) F.⊆ JoinPR ks
-                       , DP.PrefPredictorsR F.⊆ AH ks [ModelPr, ModelT]
+                       , DP.PredictorsR F.⊆ AH ks [ModelPr, ModelT]
                        )
 
 runPrefModelCPAH :: forall ks r a b .
@@ -407,7 +407,7 @@ runPrefModelCPAH :: forall ks r a b .
                  -> MC.TurnoutConfig a b  -- we need a turnout model for the AH adjustment
                  -> Maybe (Scenario DP.PredictorsR)
                  -> MC.PrefConfig b
-                 -> Maybe (Scenario DP.PrefPredictorsR)
+                 -> Maybe (Scenario DP.PredictorsR)
                  -> DP.DShareTargetConfig r
                  -> K.ActionWithCacheTime r (DP.PSData ks)
                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (AH ks '[ModelPr, ModelT])))
@@ -458,7 +458,7 @@ runPrefModelAH :: forall l ks r a b .
                -> MC.TurnoutConfig a b  -- we need a turnout model for the AH adjustment
                -> Maybe (Scenario DP.PredictorsR)
                -> MC.PrefConfig b
-               -> Maybe (Scenario DP.PrefPredictorsR)
+               -> Maybe (Scenario DP.PredictorsR)
                -> DP.DShareTargetConfig r
                -> K.ActionWithCacheTime r (DP.PSData ks)
                -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
@@ -541,7 +541,7 @@ runFullModelAH :: forall l ks r a b .
                -> MC.TurnoutConfig a b
                -> Maybe (Scenario DP.PredictorsR)
                -> MC.PrefConfig b
-               -> Maybe (Scenario DP.PrefPredictorsR)
+               -> Maybe (Scenario DP.PredictorsR)
                -> DP.DShareTargetConfig r
                -> K.ActionWithCacheTime r (DP.PSData ks)
                -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
