@@ -259,17 +259,17 @@ modelNotesPost cmdLine = do
     modeledAndDRA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (prefConfig aggregation alphaModel) upperOnlyMap dlccMap "VA"
     BRK.brAddMarkDown MN.part1
     geoCompChart modelNotesPostPaths postInfo ("VA_geoHPL") "VA Historical Partisan Lean"
-      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA
+      (FV.ViewConfig 400 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
-      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("HPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("HPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
     let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-HPL"
-      (FV.ViewConfig 500 250 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA
+      (FV.ViewConfig 400 150 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part4
 
