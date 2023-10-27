@@ -20,6 +20,8 @@ import qualified System.Console.CmdArgs as CmdArgs
 import System.Console.CmdArgs ((&=)) -- , (+=), Annotate((:=)))
 import qualified Say
 import qualified Knit.Effect.Logger as K
+import qualified Graphics.Vega.VegaLite        as GV
+import Graphics.Vega.VegaLite.Configuration (configuredVegaLiteSchema, ViewConfig)
 
 brReadMore :: T.Text
 brReadMore = [i|
@@ -292,3 +294,9 @@ dataURL pp (PostInfo ps _) jsonName = do
         OnlineDraft -> "https:/" <> Path.toFilePath (draftUrlRoot pp </> jsonRelFile)
         OnlinePublished -> "https:/" <> Path.toFilePath (pubUrlRoot pp </> jsonRelFile)
   pure $ toText jsonUrl'
+
+brVLSchema :: Text
+brVLSchema = GV.vlSchema 5 Nothing Nothing Nothing
+
+brConfiguredVegaLite :: ViewConfig -> [(GV.VLProperty, GV.VLSpec)] -> GV.VegaLite
+brConfiguredVegaLite = configuredVegaLiteSchema brVLSchema

@@ -6,39 +6,33 @@ import Data.String.Here (here)
 
 part1 :: Text
 part1 = [here|
-### Modeling State Legislative Elections (updated October 19, 2023)
-There are a number of reasons to analyze elections in state-legislative districts.
-Our primary goal is to help donors decide where to give money. The amount of money
-people have to give is limited and should be focused on long-term organizational
-infrastructure or specific close-but-winnable races.
-Our work focuses on the latter sort of giving, which requires identifying
-these close races.
+### Modeling State Legislative Elections
+As donors have become more willing to give money to state-legislative candidates
+it’s become more important to know as much as possible about the competitiveness
+of each seat, especially in states where the control or supermajority is potentially
+up for grabs.
 
-Local expertise in the particular district or set of districts is likely
-to be the best way to figure out which districts are close-but-winnable.
-But there are more than 5000 state-legislative districts in the United States and
-local expertise is hard to find and requires vetting. So it’s useful to have ways of
-understanding state-legislative districts that we can apply to the country as a whole,
-perhaps narrowing the set of districts where on-the-ground expertise is required.
+Local expertise in the particular district or set of districts is often
+the best way to figure out which districts are close-but-winnable.
+But that’s often hard to find and requires vetting. So it’s useful to have ways of
+understanding state-legislative districts that we can apply to the country as a whole.
 
-Polling could also be useful, but there are almost never polls for
+Polling would, of course, also be useful, but there are almost never polls for
 state-legislative races. Polls are expensive and state-legislative-races
 don’t usually generate enough news interest to field one. Also, one puzzle of
 working in geographies as small as state-legislative-districts is that there is
-less information available about the precise characteristics of the people who live there.
-That would make the various techniques pollsters use to weight poll samples to
-match the electorate very challenging to apply.
+less information available about the demographic characteristics of the people who live there,
+making it hard to weight the polls correctly.
 
 ## Historical Partisan Lean
 The most straightforward way to find close-but-winnable races is to look at what happened
 in previous elections, either for the same office or others.
-That’s straightforward but not at all easy.
+That’s straightforward but not easy.
 [Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
 elections to create an estimate of the historical partisan lean[^pl] (HPL) of every
 state-legislative-district in the country. Their rich interface allows the user to choose various
 previous elections and combinations of them to estimate the partisan lean.
-
 
 [^pl]: By “partisan lean” we mean the 2-party vote share of Democratic votes, that
 is, given $D$ democratic votes and $R$ Republican votes and $O$ third-party votes,
@@ -46,7 +40,6 @@ we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party vote
 For guessing who might win a district in the future, this is the most useful partisan
 lean number.
 
-We think this is absolutely the right starting place when figuring out where to donate.
 Any state-legislative-district
 which has an HPL that is very Democratic or very Republican is likely not a race the other
 party can win in this cycle. As an example, here is chart of the VA house HPL[^hplVA].
@@ -60,7 +53,7 @@ elections from 2016-2021: 2018 and 2020 senator as well as Governor and AG from 
 
 part2 :: Text
 part2 = [here|
-Nevertheless, there are some useful questions this approach leaves unanswered. Why does
+There are some questions this approach leaves unanswered. Why does
 each district have the HPL it does? Are there districts with HPLs that are surprising given
 their location and demographic makeup? This sort of analysis provides opportunities to
 add a possibly flippable or safe-looking-but-vulnerable district to a list for donors or
@@ -75,6 +68,13 @@ narrative going forward? Or might it be useful to be alerted to a district which
 easily winnable by HPL standards but with DPL much closer to 50%? That district might be vulnerable
 to the right opposition candidate, especailly in a tough political environment.
 
+HPL also doesn’t help much with scenario analysis. E.g., what would happen in a
+given seat if women turned out at higher rates and were more likely to vote
+for the democratic candidate? This is a simple way to consider the effect
+of the Dobbs ruling on current elections. With a demographic
+breakdown and model of turnout and partisan lean we can estimate these
+sorts of effects.
+
 ## Demographic Partisan Lean
 Rather than consider how people in a specific place have voted in previous elections,
 Demographic Partisan Lean (DPL) instead categorizes people demographically, in our case
@@ -82,19 +82,28 @@ by state, population-density, age, sex, educational-attainment and race/ethnicit
 Using large surveys of turnout and party-preference
 we model expected turnout and party-preference for each of those categories.
 Then, given the numbers of people in each of those categories in a district, compute
-the (modeled) partisan lean among expected voters.
+the (modeled) partisan lean among expected voters. Here’s what this looks like in VA:
+|]
 
-Just like HPL, this involves choices about which data to use. Which election(s) should we use
+part3 :: Text
+part3 = [here|
+These maps are, unsurprisingly, very similar but there are some large differences which
+are clearer on the chart of differences below
+|]
+
+part4 :: Text
+part4 = [here|
+Just like HPL, DPL involves choices about which data to use. Which election(s) should we use
 as sources for voter turnout and party preference? Even for a given election, what sources of
 data should we use?
 
-DPL has data issues of its own, e.g., how do we know how many of each category of people
+DPL has data issues all its own as well, e.g., how do we know how many of each category of people
 live in the district? DPL requires a large number of modeling choices, including which
 categories to include in the first place, how to break them down into buckets for modeling,
 what sort of model to use, how to handle uncertainty in that model, etc.  We’ll discuss all this
-in much more detail below.
+in more detail below.
 
-One way to think of DPL is as a very detailed version of the usual analysis of
+One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
 of turnout and party-preference. But sometimes the combination of categories is essential
 for understanding. For example, the Republican lean of white-non-college educated voters
@@ -106,23 +115,30 @@ All of these things vary differently for turnout and party-preference. And turno
 preference both matter when it comes to figuring out which districts are close enough to
 be worth donor investment.
 
-You can think of DPL as the partisan lean of a district if,
+DPL is the partisan lean of a district if,
 within each demographic group, each person’s choice to vote and whom to vote for
 was more or less the same as everyone else in the state living at similar population density.
-This is clearly less
+This is likely less
 predictive than knowing who those same people voted for in the previous few elections. But
 it’s also different information, and particularly interesting when it’s inconsistent with
-the HPL. As an example, here’s our DPL model result for the lower-house in VA.
+the HPL.
+
+## Scenario Analysis
+Since the DPL is built from an estimate of who lives in a district and how likely each of them is
+to turn out and vote for the Democratic candidate, we can use it to answer some
+“what would happen if...” sorts of questions. If you imagine some voters are
+more energized and thus likely to vote and/or more likley to vote for the Democratic
+candidate, that might change which seats are in play and which are safe. This might
+also be useful when considering a targeted intervention. E.g., how much would you have to
+boost turnout among people 18-35 to meaninfully shift the likely vote-share in competitive
+districts? Let’s look at a couple of examples, again using VA.
+
+Imagine we think we can boost youth turnout by 5% across the state.
+How much would that change
 |]
 
-part3 :: Text
-part3 = [here|
-These maps are, unsurprisingly, very similar but there are some large differences.
-To see that more clearly, we plot the difference:
-|]
-
-part4 :: Text
-part4 = [here|
+part5 :: Text
+part5 = [here|
 ## DPL: our model
 We’re going to explain what we do in steps, expanding on each one further down in the document
 and putting some of the mathematical details in other, linked documents. Our purpose here

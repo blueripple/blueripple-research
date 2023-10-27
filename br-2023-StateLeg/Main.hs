@@ -70,6 +70,8 @@ import qualified Frames.Constraints as FC
 import qualified Frames.SimpleJoins as FJ
 import qualified Frames.Streamly.InCore as FSI
 import qualified Frames.Streamly.TH as FTH
+import qualified Frames.Streamly.Transform as FST
+
 import qualified Frames.Serialize as FS
 
 import Path (Dir, Rel)
@@ -257,40 +259,65 @@ modelNotesPost cmdLine = do
   BRK.brNewPost modelNotesPostPaths postInfo "ModelNotes" $ do
     let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
+         lowerOnly r = r ^. GT.districtTypeC == GT.StateLower
+         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
+         dName = view GT.districtName
     upperOnlyMap <- stateUpperOnlyMap
     modeledAndDRA_Base <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
 
     BRK.brAddMarkDown MN.part1
     geoCompChart modelNotesPostPaths postInfo ("VA_geoHPL") "VA Historical Partisan Lean"
-      (FV.ViewConfig 400 250 10) "VA" GT.StateLower ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100)) modeledAndDRA_Base
+      (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100))
+      (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_Base
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
+      (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
     let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-HPL"
-      (FV.ViewConfig 400 150 10) "VA" GT.StateLower ("DPL-HPL", delta, Just "redblue", Just (-50, 50)) modeledAndDRA_Base
+      (FV.ViewConfig 400 150 10) "VA" GT.StateLower dName ("DPL-HPL", delta, Just "redblue", Just (-50, 50))
+      (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part4
     let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then (+ 0.05) else id
         dobbsTurnoutS = MR.SimpleScenario "DobbsT" dobbsTurnoutF
         dobbsPrefS = MR.SimpleScenario "DobbsP" dobbsTurnoutF
-        youthApathyF r = if (r ^. DT.age5C <= DT.A5_25To34) then (\x -> x - 0.05) else id
-        youthApathyTurnoutS = MR.SimpleScenario "YouthApathy" youthApathyF
+        youthBoostF r = if (r ^. DT.age5C <= DT.A5_25To34) then (\x -> x + 0.05) else id
+        youthBoostTurnoutS = MR.SimpleScenario "YouthBoost" youthBoostF
     modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
                            (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
-    modeledAndDRA_YouthApathy <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthApathyTurnoutS)
+    modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                  (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_Dobbs
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
+      (F.filterFrame lowerOnly modeledAndDRA_Dobbs)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_YouthApathy") "VA Demographic Partisan Lean (Youth Apathy Scenario)"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100)) modeledAndDRA_YouthApathy
+      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
+      (F.filterFrame lowerOnly modeledAndDRA_YouthApathy)
       >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part5
     pure ()
+
+mergeAnalyses :: (Show k, Ord k)
+              => (F.Record AnalyzeStateR -> k)
+              -> (F.Record AnalyzeStateR -> F.Record AnalyzeStateR -> a)
+              -> F.FrameRec AnalyzeStateR
+              -> F.FrameRec AnalyzeStateR
+              -> Either Text (Map k a)
+mergeAnalyses key mergeData f1 f2 =
+  let keyVal r = (key r, r)
+      m1 = FL.fold (FL.premap keyVal FL.map) f1
+      m2 = FL.fold (FL.premap keyVal FL.map) f2
+      whenMatched = MM.zipWithAMatched (\_ r1 r2 -> Right $ mergeData r1 r2)
+      whenMissing t = MM.traverseMissing (\k _ -> Left $ "mergeAnalyses: " <> t <> " missing key=" <> show k)
+  in MM.mergeA (whenMissing "RHS") (whenMissing "LHS") whenMatched m1 m2
+
+
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
@@ -330,22 +357,32 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     _ <- K.addHvega Nothing Nothing compChart
     let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
         detailChamber = if upperOnly then GT.StateUpper else GT.StateLower
+        cOnly c r  = r ^. GT.districtTypeC == c
+        uOnly = cOnly GT.StateUpper
+        lOnly = cOnly GT.StateLower
+        dOnly = cOnly detailChamber
+        dName = view GT.districtName
 --        chamberName uo dt =
     when (not upperOnly) $ do
       void $ geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
-        (FV.ViewConfig 500 300 10) state GT.StateLower ("delta", delta, Nothing, Nothing) modeledAndDRA
+        (FV.ViewConfig 500 300 10) state GT.StateLower dName ("delta", delta, Nothing, Nothing)
+        (F.filterFrame lOnly modeledAndDRA)
         >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
-      (FV.ViewConfig 500 300 10) state GT.StateUpper ("delta", delta, Nothing, Nothing) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state GT.StateUpper dName ("delta", delta, Nothing, Nothing)
+      (F.filterFrame uOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
-      (FV.ViewConfig 500 300 10) state detailChamber ("log density", Numeric.log . view DT.pWPopPerSqMile, Nothing, Nothing) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber dName ("log density", Numeric.log . view DT.pWPopPerSqMile, Nothing, Nothing)
+      (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
-      (FV.ViewConfig 500 300 10) state detailChamber ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus), Nothing, Nothing) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber dName ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus), Nothing, Nothing)
+      (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
-      (FV.ViewConfig 500 300 10) state detailChamber ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad), Nothing, Nothing) modeledAndDRA
+      (FV.ViewConfig 500 300 10) state detailChamber dName ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad), Nothing, Nothing)
+      (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
     BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade $ sldTableCellStyle state)
@@ -646,10 +683,7 @@ modelDRAComparisonChart pp pi chartID title vc rows = do
                                   , vlData
                                   ]
 
-geoCompChart :: (K.KnitEffects r
-                , FC.ElemsOf rs [MR.ModelCI, ET.DemShare, GT.DistrictName, GT.DistrictTypeC]
-                , FSI.RecVec rs
-                 )
+geoCompChart :: (K.KnitEffects r, Foldable f)
               => BR.PostPaths Path.Abs
               -> BR.PostInfo
               -> Text
@@ -657,16 +691,17 @@ geoCompChart :: (K.KnitEffects r
               -> FV.ViewConfig
               -> Text
               -> GT.DistrictType
-              -> (Text, F.Record rs -> Double, Maybe Text, Maybe (Double, Double))
-              -> F.FrameRec rs
+              -> (row -> Text)
+              -> (Text, row -> Double, Maybe Text, Maybe (Double, Double))
+              -> f row
               -> K.Sem r GV.VegaLite
-geoCompChart pp pi chartID title vc sa dType (label, f, cSchemeM, extentM) rows = do
-  let colData r = [ ("District", GV.Str $ r ^. GT.districtName)
+geoCompChart pp pi chartID title vc sa dType districtName (label, f, cSchemeM, extentM) rows = do
+  let colData r = [ ("District", GV.Str $ districtName r)
 --                  , ("Model" , GV.Number $ MT.ciMid $ r ^. MR.modelCI)
 --                  , ("Historical", GV.Number $ r ^. ET.demShare)
                   , (label, GV.Number $ f r) --100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare))
                   ]
-      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) $ F.filterFrame ((== dType) . view GT.districtTypeC) rows
+      jsonRows = FL.fold (VJ.rowsToJSON colData [] Nothing) rows
       schemeExtentM = do
         (lo, hi) <- extentM
         let (minM, maxM) = FL.fold ((,) <$> FL.premap f FL.minimum <*> FL.premap f FL.maximum) rows
@@ -693,7 +728,7 @@ geoCompChart pp pi chartID title vc sa dType (label, f, cSchemeM, extentM) rows 
       tLookup = (GV.transform . GV.lookup "properties.NAME" rowData "District" (GV.LuFields ["District",label])) []
       mark = GV.mark GV.Geoshape []
       projection = GV.projection [GV.PrType GV.Identity, GV.PrReflectY True]
-  pure $ FV.configuredVegaLite vc [FV.title (title <> titleSuffix), geoData, tLookup, projection, encoding, mark]
+  pure $ BR.brConfiguredVegaLite vc [FV.title (title <> titleSuffix), geoData, tLookup, projection, encoding, mark]
 
 modeledMapToFrame :: MC.PSMap SLDKeyR MT.ConfidenceInterval -> F.FrameRec ModeledR
 modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR.ModelCI ci) . M.toList . MC.unPSMap
