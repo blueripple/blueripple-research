@@ -290,15 +290,17 @@ modelNotesPost cmdLine = do
         youthBoostTurnoutS = MR.SimpleScenario "YouthBoost" youthBoostF
     modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
                            (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
-    modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
-                                 (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_Dobbs)
       >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part4b
+    modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
+                                 (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_YouthApathy") "VA Demographic Partisan Lean (Youth Apathy Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
-      (F.filterFrame lowerOnly modeledAndDRA_YouthApathy)
+      (F.filterFrame lowerOnly modeledAndDRA_YouthBoost)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part5
     pure ()
@@ -317,7 +319,16 @@ mergeAnalyses key mergeData f1 f2 =
       whenMissing t = MM.traverseMissing (\k _ -> Left $ "mergeAnalyses: " <> t <> " missing key=" <> show k)
   in MM.mergeA (whenMissing "RHS") (whenMissing "LHS") whenMatched m1 m2
 
-
+scenarioCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI]
+                                     )
+                      => Text -> BR.CellStyle (F.Record rs, Double) [Char] -> C.Colonnade C.Headed (F.Record rs, Double) K.Cell
+scenarioCompColonnade t cas =
+  let state = F.rgetField @GT.StateAbbreviation
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state . fst))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText . fst))
+     <> C.headed "HPL" (BR.toCell cas "HPL" "HPL" (BR.numberToStyledHtml "%2.2f" . (100*) . view ET.demShare . fst))
+     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst))
+     <> C.headed "Scenario Change" (BR.toCell cas "Change" "Change" (BR.numberToStyledHtml "%2.2f" . (100*) . snd))
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
@@ -440,11 +451,11 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM state psData_C
                                        (state <> "_SLD_" <> psSuffix) "AllCells" state
         dVSPres2020 = DP.ElexTargetConfig "PresWO" draShareOverrides_C 2020 presidentialElections_C
         dVSHouse2022 = DP.ElexTargetConfig "HouseWO" draShareOverrides_C 2022 houseElections_C
-    stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc psData_C
+    stateTurnoutByRace_C ← MR.runTurnoutModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc Nothing psData_C
     statePrefByRace_C :: K.ActionWithCacheTime r (MC.PSMap '[DT.Race5C] MT.ConfidenceInterval) ←
       MR.runPrefModelAH @('[DT.Race5C]) 2020 (cacheStructureState "ByRace") cmdLine tc Nothing pc Nothing dVSPres2020  psData_C
     districtTurnoutByRace_C :: K.ActionWithCacheTime r (MC.PSMap (AndSLDKey '[DT.Race5C]) MT.ConfidenceInterval) ←
-      MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc psData_C
+      MR.runTurnoutModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc Nothing psData_C
     districtPrefByRace_C ← MR.runPrefModelAH @(AndSLDKey '[DT.Race5C]) 2020 (cacheStructureSLD "ByRace") cmdLine tc Nothing pc Nothing dVSPres2020  psData_C
     K.ignoreCacheTime stateTurnoutByRace_C >>= K.logLE K.Info . show . MC.unPSMap
     K.ignoreCacheTime statePrefByRace_C >>= K.logLE K.Info . show . MC.unPSMap

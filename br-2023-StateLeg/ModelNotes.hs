@@ -128,13 +128,23 @@ Since the DPL is built from an estimate of who lives in a district and how likel
 to turn out and vote for the Democratic candidate, we can use it to answer some
 “what would happen if...” sorts of questions. If you imagine some voters are
 more energized and thus likely to vote and/or more likley to vote for the Democratic
-candidate, that might change which seats are in play and which are safe. This might
+candidate, that might change which seats are in play and which are safe. For example,
+suppose we thiknk the Dobbs decision overturning Roe v. Wade raises turnout among women
+by 5% and also pushes their partisan lean 5 points towards Democratic candidates.
+What would this mean for the 20 closest (by HPL) house districts in VA?
+|]
+
+
+
+part4b :: Text
+part4b = [here|
+This might
 also be useful when considering a targeted intervention. E.g., how much would you have to
 boost turnout among people 18-35 to meaninfully shift the likely vote-share in competitive
 districts? Let’s look at a couple of examples, again using VA.
 
 Imagine we think we can boost youth turnout by 5% across the state.
-How much would that change
+How much would that change the final vote-share across the state?
 |]
 
 part5 :: Text

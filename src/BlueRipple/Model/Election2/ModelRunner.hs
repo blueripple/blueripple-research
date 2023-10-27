@@ -195,9 +195,8 @@ type PSTypeC l ks ms = (V.RMap l
                        , Ord (F.Record l)
                        , FS.RecFlat l
                        , Typeable l
-                       , l F.⊆ DP.PSDataR ks --'[GT.StateAbbreviation]
+                       , l F.⊆ DP.PSDataR ks
                        , Show (F.Record l)
-                       --                     , l F.⊆ (StateAndCats V.++ [ModelPr, DT.PopCount])
                        , l F.⊆ (l V.++ PSResultR)
                        , F.ElemOf (l V.++ PSResultR) ModelPr
                        , FSI.RecVec (l V.++ PSResultR)
@@ -282,7 +281,6 @@ runTurnoutModelCPAH year cacheStructure cmdLine tc scenarioM psData_C = K.wrapPr
         <> maybe "" (("_" <>) .  scenarioCacheText) scenarioM
         <> "_ACProbsAH.bin"
   cacheKey <- BRKU.cacheFromDirE (csProjectCacheDirE cacheStructure) cacheSuffix
---      cachePrefix = "model/election2/Turnout/" <> MC.turnoutSurveyText tc.tcSurvey <> show year <> "_" <> MC.modelConfigText tc.tcModelConfig
   let ahDeps = (,,) <$> turnoutCPs_C <*> psData_C <*> stateTurnout_C
   BRKU.retrieveOrMakeFrame cacheKey ahDeps $ \((tCP, tMPm), psD, stateTurnout) -> do
     K.logLE K.Info "(Re)building AH adjusted all-cell probs."
@@ -313,10 +311,11 @@ runTurnoutModelAH :: forall l ks r a b .
                   -> CacheStructure Text Text
                   -> BR.CommandLine
                   -> MC.TurnoutConfig a b
+                  -> Maybe (Scenario DP.PredictorsR)
                   -> K.ActionWithCacheTime r (DP.PSData ks)
                   -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval))
-runTurnoutModelAH year cacheStructure cmdLine tc psData_C = K.wrapPrefix "runTurnoutModelAH" $ do
-  turnoutCPAH_C <- runTurnoutModelCPAH year cacheStructure cmdLine tc Nothing psData_C
+runTurnoutModelAH year cacheStructure cmdLine tc scenarioM psData_C = K.wrapPrefix "runTurnoutModelAH" $ do
+  turnoutCPAH_C <- runTurnoutModelCPAH year cacheStructure cmdLine tc scenarioM psData_C
   let psNum r = (realToFrac $ r ^. DT.popCount) * r ^. modelPr
       psDen r = realToFrac $ r ^. DT.popCount
       turnoutAHPS_C = fmap (FL.fold (psFold @l psNum psDen (view DT.popCount))) turnoutCPAH_C
@@ -324,7 +323,9 @@ runTurnoutModelAH year cacheStructure cmdLine tc psData_C = K.wrapPrefix "runTur
   turnoutPSForCI_C <- runTurnoutModel @l year (modelCacheStructure cacheStructure) cmdLine tc psData_C
   let resMapDeps = (,) <$> turnoutAHPS_C <*> turnoutPSForCI_C
       cacheSuffix = "Turnout/" <> MC.turnoutSurveyText tc.tcSurvey <> show year <> "_" <> MC.modelConfigText tc.tcModelConfig
-                    <> csPSName cacheStructure <> "_resMap.bin"
+                    <> csPSName cacheStructure
+                    <> maybe "" (("_" <>) .  scenarioCacheText) scenarioM
+                    <> "_resMap.bin"
   ahResultCachePrefix <- BRKU.cacheFromDirE (csProjectCacheDirE cacheStructure) cacheSuffix
   BRKU.retrieveOrMakeD ahResultCachePrefix resMapDeps $ \(ahps, (cisM, _)) -> do
     K.logLE K.Info "merging AH probs and CIs"
@@ -398,8 +399,6 @@ runPrefModelCPAH :: forall ks r a b .
                   , BRKU.CacheEffects r
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
---                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
---                  , FSI.RecVec es
                   )
                  => Int
                  -> CacheStructure Text Text
@@ -414,11 +413,11 @@ runPrefModelCPAH :: forall ks r a b .
 runPrefModelCPAH year cacheStructure cmdLine tc tScenarioM pc pScenarioM dShareTargetConfig psData_C = K.wrapPrefix "runPrefModelCPAH" $ do
   turnoutCPAH_C <- runTurnoutModelCPAH year cacheStructure cmdLine tc tScenarioM psData_C
   prefCPs_C <- prefModelCPs year (allCellCacheStructure cacheStructure) cmdLine pc
---  turnoutCPAH_C <- runTurnoutModelAH
   dVoteTargets_C <- DP.dShareTarget (csProjectCacheDirE cacheStructure) dShareTargetConfig
   let ahDeps = (,,,) <$> turnoutCPAH_C <*> prefCPs_C <*> psData_C <*> dVoteTargets_C
       cacheSuffix = "Pref/CES" <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig <> "/"
                     <> csAllCellPSPrefix cacheStructure
+                    <> maybe "" (("_" <>) .  scenarioCacheText) tScenarioM
                     <> maybe "" (("_" <>) .  scenarioCacheText) pScenarioM
                     <>  "_" <> DP.dShareTargetText dShareTargetConfig
                     <> "_ACProbsAH.bin"
@@ -436,7 +435,6 @@ runPrefModelCPAH year cacheStructure cmdLine tc tScenarioM pc pScenarioM dShareT
     let dmr = pc.pcModelConfig.mcDesignMatrixRow
         adjForDensity = MC2.adjustPredictionsForDensity (view modelPr) (over modelPr . const) tMP dmr
         densAdjProbFrame = fmap adjForDensity joined
-        dVotesFrac r = realToFrac (r ^. ET.votes) / realToFrac (r ^. ET.totalVotes)
         modeledVoters r = r ^. modelT * realToFrac (r ^. DT.popCount)
     ahProbs <- FL.foldM
                (TA.adjTurnoutFoldG @ModelPr @'[GT.StateAbbreviation] @_ @(AHrs ks [ModelPr, ModelT]) modeledVoters (view ET.demShare) elex)
@@ -471,7 +469,10 @@ runPrefModelAH year cacheStructure cmdLine tc tScenarioM pc pScenarioM dShareTar
   prefPSForCI_C <- runPrefModel @l year (modelCacheStructure cacheStructure) cmdLine pc psData_C
   let resMapDeps = (,) <$> prefAHPS_C <*> prefPSForCI_C
       cacheSuffix = "Pref/CES" <> show year <> "_" <> MC.modelConfigText pc.pcModelConfig
-                    <>  csPSName cacheStructure <> "_" <> DP.dShareTargetText dShareTargetConfig <> "_resMap.bin"
+                    <> csPSName cacheStructure
+                    <> maybe "" (("_" <>) .  scenarioCacheText) tScenarioM
+                    <> maybe "" (("_" <>) .  scenarioCacheText) pScenarioM
+                    <> "_" <> DP.dShareTargetText dShareTargetConfig <> "_resMap.bin"
   ahCacheKey <- BRKU.cacheFromDirE (csProjectCacheDirE cacheStructure) cacheSuffix
   BRKU.retrieveOrMakeD ahCacheKey resMapDeps $ \(ahps, (cisM, _)) -> do
     K.logLE K.Info "merging AH probs and CIs"
@@ -510,13 +511,10 @@ runFullModel year cacheStructure cmdLine tc pc psData_C = K.wrapPrefix "runFullM
   let config = MC2.TurnoutAndPref tc pc
       runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @l)
   modelData_C <- cachedPreppedModelData cacheStructure
---  acsByState_C <- fmap (DP.PSData @'[GT.StateAbbreviation] . fmap F.rcast) <$> DDP.cachedACSa5ByState ACS.acs1Yr2012_21 2021
   MC2.runModel (csModelDirE cacheStructure) (MC.turnoutSurveyText tc.tcSurvey <> "F_" <> show year) (csPSName cacheStructure)
     cmdLine runConfig config modelData_C psData_C
 
---type ToJoinTR ks = FT.Rename "ModelPr" "ModelT" (AH ks '[ModelPr]) --(ks V.++ (DP.DCatsR V.++ [ModelPr, DT.PopCount]))
 type ToJoinPR ks = FT.Rename "ModelPr" "ModelP" (AH ks '[ModelPr, ModelT]) --(ks V.++ (DP.DCatsR V.++ [ModelPr, DT.PopCount]))
---type Join3R ks = FJ.JoinResult3 (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinTR ks) (ToJoinPR ks)
 type JoinFR ks = FJ.JoinResult (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinPR ks)
 
 runFullModelAH :: forall l ks r a b .
@@ -525,8 +523,6 @@ runFullModelAH :: forall l ks r a b .
                   , PSTypeC l ks '[ModelPr, ModelT]
                   , PSDataTypeTC ks
                   , PSDataTypePC ks
---                  , FC.ElemsOf es [BRDF.Year, GT.StateAbbreviation, ET.Party, ET.Votes, ET.TotalVotes]
---                  , FSI.RecVec es
                   , FJ.CanLeftJoinWithMissing  (ks V.++ DP.DCatsR) (DP.PSDataR ks) (ToJoinPR ks)
                   , l F.⊆ JoinFR ks
                   , JoinFR ks F.⊆ JoinFR ks
