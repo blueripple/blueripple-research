@@ -290,11 +290,32 @@ modelNotesPost cmdLine = do
         youthBoostTurnoutS = MR.SimpleScenario "YouthBoost" youthBoostF
     modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
                            (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
+    let sortScByClose = sortOn (abs . (+ negate 0.5) . view ET.demShare . fst . snd)
+        sortScByHPL = sortOn (view ET.demShare . fst . snd)
+        mergeKey :: F.Record AnalyzeStateR -> F.Record [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
+        mergeKey = F.rcast
+        mergeVal r1 r2 = (F.rcast @[ET.DemShare, MR.ModelCI] r1, MT.ciMid (r1 ^. MR.modelCI) - MT.ciMid (r2 ^. MR.modelCI))
+    mergedDobbs <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs modeledAndDRA_Base
+    let dobbsForTable n = sortScByHPL . take n . sortScByClose
+                          . filter ((== GT.StateLower) . view GT.districtTypeC . fst) .  M.toList
+        hpl = view ET.demShare . fst . snd
+        scenarioDelta = snd . snd
+        hplPlus x = hpl x + scenarioDelta x
+    let colonnade = scenarioCompColonnade $ leansCellStyle "HPL" hpl <> leansCellStyle "+Scenario" hplPlus
+    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") colonnade $ dobbsForTable 20 mergedDobbs
+    BRK.brAddMarkDown MN.part4b
+    let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then (+ 0.05) else id
+        dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
+        dobbsPref2S = MR.SimpleScenario "Dobbs2P" dobbs2F
+    modeledAndDRA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
+                           (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
+    mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs2 modeledAndDRA_Base
+    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") colonnade $ dobbsForTable 20 mergedDobbs2
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_Dobbs)
       >>= K.addHvega Nothing Nothing
-    BRK.brAddMarkDown MN.part4b
+    BRK.brAddMarkDown MN.part4c
     modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                  (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
 
@@ -319,16 +340,21 @@ mergeAnalyses key mergeData f1 f2 =
       whenMissing t = MM.traverseMissing (\k _ -> Left $ "mergeAnalyses: " <> t <> " missing key=" <> show k)
   in MM.mergeA (whenMissing "RHS") (whenMissing "LHS") whenMatched m1 m2
 
-scenarioCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI]
+scenarioCompColonnade :: forall rs qs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
+                                      , FC.ElemsOf qs [ET.DemShare, MR.ModelCI]
                                      )
-                      => Text -> BR.CellStyle (F.Record rs, Double) [Char] -> C.Colonnade C.Headed (F.Record rs, Double) K.Cell
-scenarioCompColonnade t cas =
+                      => BR.CellStyle (F.Record rs, (F.Record qs, Double)) [Char]
+                      -> C.Colonnade C.Headed (F.Record rs, (F.Record qs, Double)) K.Cell
+scenarioCompColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
+      hpl = view ET.demShare . fst . snd
+      scenarioDelta = snd . snd
+      hplPlus x = hpl x + scenarioDelta x
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state . fst))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText . fst))
-     <> C.headed "HPL" (BR.toCell cas "HPL" "HPL" (BR.numberToStyledHtml "%2.2f" . (100*) . view ET.demShare . fst))
-     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst))
-     <> C.headed "Scenario Change" (BR.toCell cas "Change" "Change" (BR.numberToStyledHtml "%2.2f" . (100*) . snd))
+     <> C.headed "HPL" (BR.toCell cas "HPL" "HPL" (BR.numberToStyledHtml "%2.2f" . (100*) . hpl ))
+--     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst . snd))
+     <> C.headed "HPL + Scenario" (BR.toCell cas "+Scenario" "+Scenario" (BR.numberToStyledHtml "%2.2f" . (100*) . hplPlus))
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
@@ -635,6 +661,19 @@ sldTableCellStyle state =
       resLeanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> eRes r >= 0.5 && eRes r <= 0.52 && T.isPrefixOf "2019" h
       resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
   in mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
+
+leansCellStyle :: String -> (row -> Double) -> BR.CellStyle row String
+leansCellStyle col pl =
+  let bordered c = "border: 3px solid " <> c
+      longShot x = x < 0.47
+      leanR x = x < 0.5 && x >= 0.47
+      leanD x = x >= 0.5 && x <= 0.53
+      safeD x = x > 0.53
+      longShotCS = bordered "red" `BR.cellStyleIf` \r h -> longShot (pl r) && h == col
+      leanRCS = bordered "pink" `BR.cellStyleIf` \r h -> leanR (pl r) && h == col
+      leanDCS = bordered "skyblue" `BR.cellStyleIf` \r h -> leanD (pl r) && h == col
+      safeDCS = bordered "blue" `BR.cellStyleIf` \r h -> safeD (pl r) && h == col
+  in mconcat [longShotCS, leanRCS, leanDCS, safeDCS]
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
              => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell

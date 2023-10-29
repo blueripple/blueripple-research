@@ -138,6 +138,21 @@ What would this mean for the 20 closest (by HPL) house districts in VA?
 
 part4b :: Text
 part4b = [here|
+We can see that it makes a bunch of safe R districts into Lean R and a couple of Lean D become safe.
+This would be helpful when advising donors or allocating donor funds.
+
+Of course, you don’t need any sort of model to figure out that shifting the
+turnout and preference of female voters by 5% would shift the resulting vote share
+by a bit more than 2.5%. Women make up slightly more than half the electorate in most
+districts so a 5 point shift among women will be a slightly more than 2.5 point
+shift in vote share, with another slight boost coming from the turnout shift.
+
+But what if you thought the preference shift was only among women with a college degree?
+This is a tricker thing to map out in VA. Here’s the same table but with that scenario:
+|]
+
+part4c :: Text
+part4c = [here|
 This might
 also be useful when considering a targeted intervention. E.g., how much would you have to
 boost turnout among people 18-35 to meaninfully shift the likely vote-share in competitive
