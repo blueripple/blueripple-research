@@ -260,14 +260,15 @@ modelNotesPost cmdLine = do
     let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
          lowerOnly r = r ^. GT.districtTypeC == GT.StateLower
-         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
+--         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
          dName = view GT.districtName
     upperOnlyMap <- stateUpperOnlyMap
     modeledAndDRA_Base <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
 
     BRK.brAddMarkDown MN.part1
-    geoCompChart modelNotesPostPaths postInfo ("VA_geoHPL") "VA Historical Partisan Lean"
-      (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("HPL", (* 100) . view ET.demShare, Just "redblue", Just (0, 100))
+    let ppl = view ET.demShare
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoPPL") "VA Past Partisan Lean"
+      (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part2
@@ -277,11 +278,23 @@ modelNotesPost cmdLine = do
       (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
-    let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-HPL"
-      (FV.ViewConfig 400 150 10) "VA" GT.StateLower dName ("DPL-HPL", delta, Just "redblue", Just (-50, 50))
+    let delta r = 100 * (dpl r -  ppl r)
+    geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-PPL"
+      (FV.ViewConfig 400 150 10) "VA" GT.StateLower dName ("DPL-PPL", delta, Just "redblue", Just (-50, 50))
       (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part3b
+    let flippable r = ppl r < 0.45 && dpl r >= 0.50
+        vulnerable r = ppl r > 0.55 && dpl r <= 0.5
+        compColonnade = distCompColonnade $ leansCellStyle "PPL" ppl <> leansCellStyle "DPL" dpl
+    BR.brAddRawHtmlTable ("Flippable/Vulnerable") (BHA.class_ "brTable") compColonnade
+      $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_Base
+{-    BRK.brAddMarkDown MN.part3c
+    let cbw f r = f r >= 0.47 && f r <= 0.53
+        safeOOR f r = f r >= 0.55 || f r <= 0.45
+    BR.brAddRawHtmlTable ("Worth Another Look?") (BHA.class_ "brTable") compColonnade
+   $ F.filterFrame (\r -> lowerOnly r && (cbw ppl r && safeOOR dpl r)) modeledAndDRA_Base
+-}
     BRK.brAddMarkDown MN.part4
     let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then MR.adjustP 0.05 else id
         dobbsTurnoutS = MR.SimpleScenario "DobbsT" dobbsTurnoutF
@@ -291,18 +304,18 @@ modelNotesPost cmdLine = do
     modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
                            (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
     let sortScByClose = sortOn (abs . (+ negate 0.5) . view ET.demShare . fst . snd)
-        sortScByHPL = sortOn (view ET.demShare . fst . snd)
+        sortScByPPL = sortOn (view ET.demShare . fst . snd)
         mergeKey :: F.Record AnalyzeStateR -> F.Record [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
         mergeKey = F.rcast
         mergeVal r1 r2 = (F.rcast @[ET.DemShare, MR.ModelCI] r1, MT.ciMid (r1 ^. MR.modelCI) - MT.ciMid (r2 ^. MR.modelCI))
     mergedDobbs <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs modeledAndDRA_Base
-    let dobbsForTable n = sortScByHPL . take n . sortScByClose
+    let closeForTable n = sortScByPPL . take n . sortScByClose
                           . filter ((== GT.StateLower) . view GT.districtTypeC . fst) .  M.toList
-        hpl = view ET.demShare . fst . snd
+        scPpl = view ET.demShare . fst . snd
         scenarioDelta = snd . snd
-        hplPlus x = hpl x + scenarioDelta x
-    let colonnade = scenarioCompColonnade $ leansCellStyle "HPL" hpl <> leansCellStyle "+Scenario" hplPlus
-    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") colonnade $ dobbsForTable 20 mergedDobbs
+        pplPlus x = scPpl x + scenarioDelta x
+    let scenarioColonnade = scenarioCompColonnade $ leansCellStyle "PPL" scPpl <> leansCellStyle "+Scenario" pplPlus
+    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs
     BRK.brAddMarkDown MN.part4b
     let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
@@ -310,21 +323,35 @@ modelNotesPost cmdLine = do
     modeledAndDRA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
                            (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
     mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs2 modeledAndDRA_Base
-    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") colonnade $ dobbsForTable 20 mergedDobbs2
-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
+    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
+{-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_Dobbs)
       >>= K.addHvega Nothing Nothing
+-}
     BRK.brAddMarkDown MN.part4c
     modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                  (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+    mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_YouthBoost modeledAndDRA_Base
+    BR.brAddRawHtmlTable ("Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
 
+{-
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_YouthApathy") "VA Demographic Partisan Lean (Youth Apathy Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_YouthBoost)
       >>= K.addHvega Nothing Nothing
+-}
     BRK.brAddMarkDown MN.part5
     pure ()
+
+distCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
+                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+distCompColonnade cas =
+  let state = F.rgetField @GT.StateAbbreviation
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (BR.numberToStyledHtml "%2.2f" . (100*) . view ET.demShare ))
+     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI))
 
 mergeAnalyses :: (Show k, Ord k)
               => (F.Record AnalyzeStateR -> k)
@@ -352,9 +379,9 @@ scenarioCompColonnade cas =
       hplPlus x = hpl x + scenarioDelta x
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state . fst))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText . fst))
-     <> C.headed "HPL" (BR.toCell cas "HPL" "HPL" (BR.numberToStyledHtml "%2.2f" . (100*) . hpl ))
+     <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (BR.numberToStyledHtml "%2.2f" . (100*) . hpl ))
 --     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst . snd))
-     <> C.headed "HPL + Scenario" (BR.toCell cas "+Scenario" "+Scenario" (BR.numberToStyledHtml "%2.2f" . (100*) . hplPlus))
+     <> C.headed "PPL + Scenario" (BR.toCell cas "+Scenario" "+Scenario" (BR.numberToStyledHtml "%2.2f" . (100*) . hplPlus))
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
