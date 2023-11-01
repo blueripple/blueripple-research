@@ -283,10 +283,10 @@ modelNotesPost cmdLine = do
       (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part4
-    let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then (+ 0.05) else id
+    let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then MR.adjustP 0.05 else id
         dobbsTurnoutS = MR.SimpleScenario "DobbsT" dobbsTurnoutF
         dobbsPrefS = MR.SimpleScenario "DobbsP" dobbsTurnoutF
-        youthBoostF r = if (r ^. DT.age5C <= DT.A5_25To34) then (\x -> x + 0.05) else id
+        youthBoostF r = if (r ^. DT.age5C <= DT.A5_25To34) then MR.adjustP 0.05 else id
         youthBoostTurnoutS = MR.SimpleScenario "YouthBoost" youthBoostF
     modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
                            (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
@@ -304,7 +304,7 @@ modelNotesPost cmdLine = do
     let colonnade = scenarioCompColonnade $ leansCellStyle "HPL" hpl <> leansCellStyle "+Scenario" hplPlus
     BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") colonnade $ dobbsForTable 20 mergedDobbs
     BRK.brAddMarkDown MN.part4b
-    let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then (+ 0.05) else id
+    let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
         dobbsPref2S = MR.SimpleScenario "Dobbs2P" dobbs2F
     modeledAndDRA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)

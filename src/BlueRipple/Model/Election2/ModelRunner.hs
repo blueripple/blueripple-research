@@ -167,6 +167,15 @@ psFold num den pop = FMR.concatFold
       in (\n d p -> safeDiv n d F.&: p F.&: n F.&: d F.&: V.RNil) <$> nSum <*> dSum <*> popSum
 
 
+adjustP :: Double -> Double -> Double
+adjustP dp p = f p logitDelta where
+  logitDelta | dp == 0 || dp == 1 = 0
+             | otherwise = 2 * Numeric.log ((0.5 + (dp / 2)) / (0.5 - (dp / 2)))
+  g x = 1 / (1 + Numeric.exp (negate x))
+  f x y |  x == 0 = 0
+        |  x == 1 = 1
+        |  otherwise = g $ Numeric.log (x / (1 - x)) + y
+
 adjustCI :: Double -> MT.ConfidenceInterval -> MT.ConfidenceInterval
 adjustCI p (MT.ConfidenceInterval lo mid hi) = MT.ConfidenceInterval (f lo logitDelta) p (f hi logitDelta) where
   logitDelta | p == 0 || mid == 0 || p == 1 || mid == 1 = 0

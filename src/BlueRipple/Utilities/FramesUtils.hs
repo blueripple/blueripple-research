@@ -30,11 +30,14 @@ import qualified Frames.Streamly.InCore as Frames.Streamly
 import Frames.Streamly.Streaming.Streamly (StreamlyStream(..))
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl as V
+
+-- #if MIN_VERSION_streamly(0,10,0)
+
 #if MIN_VERSION_streamly(0,9,0)
 import qualified Streamly.Data.Stream as Streamly
 import qualified Streamly.Data.StreamK as StreamK
 import qualified Streamly.Data.Fold as Streamly.Fold
-import qualified Streamly.Internal.Data.Fold.Type as Streamly.Fold
+import qualified Streamly.Internal.Data.Fold as Streamly.Fold
 import qualified Streamly.Data.Stream.Prelude as SP
 #elif MIN_VERSION_streamly(0,8,0)
 import qualified Streamly.Prelude as Streamly

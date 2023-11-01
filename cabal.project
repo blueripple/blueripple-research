@@ -1,9 +1,21 @@
-packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/polysemy-Extra/polysemy-RandomFu ../../DataScience/knit-haskell
 jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
-allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
-           , aeson, text, ghc:fusion-plugin, streamly-bytestring:bytestring
+--allow-newer: base, ghc-prim, template-haskell, hashable, foldl-statistics:profunctors, time, sparse-linear-algebra:bytestring, sparse-linear-algebra:text
+--           , aeson, text, ghc:fusion-plugin, streamly-bytestring:bytestring
+
+-- ghc 9.6
+allow-newer: base, ghc-prim, primitive, template-haskell
+           , streamly-bytestring:bytestring
+           , foldl-statistics:bytestring, foldl-statistics:hashable, foldl-statistics:profunctors
+           , cereal-time:time
+           , nonlinear-optimization:vector
+           , beam-migrate:aeson, beam-sqllite:aeson, beam-core:aeson
+           , data-science-utils:relude
+           , glm-haskell:statistics, glm-haskell:vector, glm-haskell:text
+           , polysemy-RandomFu:mtl, polysemy-RandomFu:polysemy
+           , streamly, streamly-core
 
 flags: +streamly9
 
@@ -16,11 +28,29 @@ flags: +streamly9
 --  location: https://github.com/adamConnerSax/sparse-linear-algebra
 --  tag: ba606d5c7515e1d9960749a412a67d93dc9fc360
 
+-- for 9.6
+source-repository-package
+  type: git
+  location: https://github.com/composewell/streamly
+  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
+
+source-repository-package
+  type: git
+  location: https://github.com/composewell/streamly
+  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
+  subdir: core
+
+source-repository-package
+  type: git
+  location: https://github.com/psibi/streamly-bytestring
+  tag: 94920f7c1ed4221fc4e829c8362243107a3c2d63
+
+
 source-repository-package
   type: git
   location: https://github.com/composewell/fusion-plugin
-  tag: d2f392a1170da7a33396895af14544abf302ae29
-
+  tag: ccfe7933f981fce895e3ac3f64077d8cb9e10f59
+-- end for 9.6
 
 source-repository-package
   type: git
@@ -28,11 +58,11 @@ source-repository-package
   tag: a21105b269c77266bd74ec4a31e0924f7000e69a
   subdir: random-source
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/polysemy-Extra
-  tag: 2c78425f825b227b514e5d6f4851da2716a38372
-  subdir: polysemy-RandomFu
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/polysemy-Extra
+--  tag: 2c78425f825b227b514e5d6f4851da2716a38372
+--  subdir: polysemy-RandomFu
 -- end ghc 9.X
 
 source-repository-package
@@ -51,10 +81,10 @@ source-repository-package
   subdir: OpenFEC-beam
   tag: 2468883e6c273b23c651748ca372fa4aa0bc49c2
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/knit-haskell
-  tag: ed717b66ed4758c7368351590ff19293278bf878
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/knit-haskell
+--  tag: ed717b66ed4758c7368351590ff19293278bf878
 
 source-repository-package
   type: git
@@ -84,7 +114,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://gitlab.com/adamCS/Frames-serialize
-  tag: d7f8411b2bbd7bfdad66ac8af9abea4b244869f1
+  tag: cc0bad16b2cf221597831e5495c00051572113f9
 
 source-repository-package
   type: git

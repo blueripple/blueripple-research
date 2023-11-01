@@ -38,7 +38,8 @@ import qualified Frames                        as F
 #if MIN_VERSION_streamly(0,9,0)
 import qualified Streamly.Data.Stream as Streamly
 import qualified Streamly.Data.Stream.Prelude as SP
-import qualified Streamly.Internal.Data.Stream.StreamD.Transform as Streamly
+--import qualified Streamly.Internal.Data.Stream.StreamD.Transform as Streamly
+import qualified Streamly.Internal.Data.Stream as Streamly
 #elif MIN_VERSION_streamly(0,8,0)
 import qualified Streamly.Prelude as Streamly
 import qualified Streamly.Internal.Data.Stream.IsStream.Transform as Streamly
