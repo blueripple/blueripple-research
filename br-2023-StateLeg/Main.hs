@@ -287,7 +287,7 @@ modelNotesPost cmdLine = do
     let flippable r = ppl r < 0.45 && dpl r >= 0.50
         vulnerable r = ppl r > 0.55 && dpl r <= 0.5
         compColonnade = distCompColonnade $ leansCellStyle "PPL" ppl <> leansCellStyle "DPL" dpl
-    BR.brAddRawHtmlTable ("Flippable/Vulnerable") (BHA.class_ "brTable") compColonnade
+    BR.brAddRawHtmlTable ("Flippable/Vulnerable ?") (BHA.class_ "brTable") compColonnade
       $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_Base
 {-    BRK.brAddMarkDown MN.part3c
     let cbw f r = f r >= 0.47 && f r <= 0.53

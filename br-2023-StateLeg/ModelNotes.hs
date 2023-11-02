@@ -7,7 +7,8 @@ import Data.String.Here (here)
 part1 :: Text
 part1 = [here|
 # Modeling State Legislative Elections
-As donors have become more interested in giving money to state-legislative candidates
+As Democratic donors have become more interested in giving money to
+state-legislative candidates,
 it’s become more important to know how to allocate that money;
 to uncover as much as possible about the competitiveness
 of each seat, especially in states where control of, or a supermajority in, a chamber
@@ -15,8 +16,8 @@ is potentially up for grabs.
 
 Local expertise in the particular district or set of districts is often
 the best way to figure out which districts are close-but-winnable.
-However, that’s often hard to find, and can make it hard to compare across states.
-So it’s useful to have ways of understanding state-legislative districts that we can
+However, such knowledge is often hard to find and it’s useful to have ways of
+understanding state-legislative districts that we can
 apply to the country as a whole.
 
 Polling would be extremely useful, but polls are expensive and
@@ -30,7 +31,7 @@ difficult.
 
 ### Past Partisan Lean
 The most straightforward way to find close-but-winnable races is to look at what happened
-in previous elections, either for the same office or others.
+in previous elections, either for the same office or statewide.
 That’s straightforward but not easy.
 [Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
@@ -39,10 +40,8 @@ state-legislative-district in the country. Their rich interface allows the user 
 previous elections and combinations of them to estimate the partisan lean.
 
 [^ppl]: By “partisan lean” we mean the 2-party vote share of Democratic votes, that
-is, given $D$ democratic votes and $R$ Republican votes and $O$ third-party votes,
+is, given $D$ democratic votes and $R$ Republican votes,
 we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party votes.
-For guessing who might win a district in the future, this is the most useful partisan
-lean number.
 
 As an example, here is chart of the PPL in the VA house[^pplVA], the lower
 chamber of the VA state-legislature.
@@ -56,15 +55,14 @@ elections from 2016-2021: 2018 and 2020 senate as well as Governor and AG from 2
 
 part2 :: Text
 part2 = [here|
-There are some questions this approach leaves unanswered. Why does
-each district have the PPL it does? Are there districts with PPLs that are unexpected given
+Are there districts with PPLs that are unexpected given
 their location and demographic makeup? This sort of analysis provides opportunities to
 add a possibly flippable or safe-looking-but-vulnerable district to a list for donors or
 remove districts that were already marginal but seem more so when looking at the underlying
 demographics.
 
-For example, imagine a state-legislative-district with PPL just below your cutoff for winnable.
-Supose a demographic analysis shows that its “expected” partisan-lean is over 50%.
+For example, imagine a state-legislative-district with PPL just below some cutoff for winnable.
+A demographic analysis shows that its “expected” partisan-lean is over 50%.
 Might that be a district where a good and well-resourced candidate can win a race or,
 in losing a close race, change the
 narrative going forward? Might it be useful to be alerted to a district which looks
@@ -81,7 +79,7 @@ sorts of effects.
 ### Demographic Partisan Lean
 Rather than consider how people in a specific place have voted in previous elections,
 Demographic Partisan Lean (DPL) instead categorizes people demographically, in our case
-by state, population-density, age, sex, educational-attainment and race/ethnicity.
+by state, age, sex, educational-attainment, race/ethnicity, and population-density.
 Using large surveys of turnout and party-preference
 we model expected turnout and party-preference for each of those categories.
 Then, given the numbers of people in each of those categories in a district, compute
@@ -91,24 +89,18 @@ the (modeled) partisan lean among expected voters. Here’s what this looks like
 part3 :: Text
 part3 = [here|
 The maps of PPL and DPL are, unsurprisingly, very similar but there are some large differences which
-are clearer on the chart of differences below.
+are clearer on the chart of DPL - PPL below.
 |]
 
 part3b :: Text
 part3b = [here|
-Though we won’t dwell on it here, we can see from these
-charts that there are a few districts which might be interesting to look at. This might be clearer
-in the form of a table of districts which are not close in PPL terms but close when looked at
+We can see
+that there are a few districts which might be interesting to look at. This is clearer
+in table form: below we list some districts which are not close in PPL but close when looked at
 demographically. These are districts that might be flippable or look like safe seats but need defending.
 We’re not saying that these seats *are* flippable or in need of extra defense but that they might
 be worth a second look to figure out why they have been voting in ways so different from what we’d
 expect demographically.
-|]
-
-part3c :: Text
-part3c = [here|
-The opposite case, demographically close but with PPL which looks safe or out of reach,
-is also interesting.
 |]
 
 part4 :: Text
@@ -127,23 +119,23 @@ within each demographic group, each person’s choice to vote and whom to vote f
 was more or less the same as everyone else in the state living at similar population density.
 This is likely less
 predictive than knowing who those same people voted for in the previous few elections. But
-it’s also different information, and particularly interesting when it’s inconsistent with
+it’s different information, and particularly interesting when it’s inconsistent with
 the HPL.
 
 ### Scenario Analysis
 Since the DPL is built from an estimate of who lives in a district and how likely each of them is
 to turn out and vote for the Democratic candidate, we can use it to answer some
 “what would happen if...” sorts of questions. If you imagine some voters are
-more energized and thus likely to vote and/or more likley to vote for the Democratic
+more energized and thus likely to vote and/or more likely to vote for the Democratic
 candidate, that might change which seats are in play and which are safe. For example,
 suppose we think the Dobbs decision overturning Roe v. Wade will raise turnout among women
-by 5% and also pushes their partisan lean 5 points towards Democratic candidates[^scenario].
-What would this mean for the 20 closest (by HPL) house districts in VA?
+by 5% and also pushes their party preference 5 points towards Democratic candidates[^scenario].
+What would this mean for the 20 closest (by PPL) house districts in VA?
 
 [^scenario]: A technical note: we don't actually move the probabilities by 5% (or whatever) for a couple of reasons.
 We don't want to end up with probabilities above 1 or below 0 which could happen with larger shifts and/or
 probabilities already closer to 0 or 1. And, intuitively, very low and very high probabilities are likely to
-shift less than probabilities closer to 50%. We shift using the logistic function in such a way that
+shift less than probabilities closer to 50%. So we shift using the logistic function in such a way that
 for a shift of $x$, we would shift a probability of $\frac{1}{2} - \frac{x}{2}$ to $\frac{1}{2} + \frac{x}{2}$
 but smoothly apply slightly smaller shifts as the probability moves away from $\frac{1}{2}$.
 |]
@@ -156,7 +148,7 @@ This would be helpful when advising donors or allocating donor funds.
 Of course, you don’t need any sort of model to figure out that shifting the
 turnout and preference of female voters by 5% would shift the resulting vote share
 by a bit more than 2.5%. Women make up slightly more than half the electorate in most
-districts so a 5 point shift among women will be a slightly more than 2.5 point
+districts so a 5 point preference shift among women will be a slightly more than 2.5 point
 shift in vote share, with another slight boost coming from the turnout shift.
 
 But what if you thought the preference shift was only among women with a college degree?
@@ -166,15 +158,19 @@ This is a tricker thing to map out in VA. Here’s the same table but with that 
 part4c :: Text
 part4c = [here|
 In this case the shift varies from under one point to over 1.5 points, which, using our example,
-puts HD-69 and HD-30 in play (but not HD-49) and pushes HD-97 into safe territory.
+makes HD-69 and HD-30 competitive (but not HD-49) and pushes HD-97 into safe territory.
 
 This might also be useful when considering a targeted intervention. E.g., how much would you have to
 boost turnout among people 18-35 to meaninfully shift the likely vote-share in competitive
 districts? Imagine we think we can boost youth turnout by 5% across the state.
 How much would that change the final vote-share across the state? It turns out that makes very
-little difference in close districts in VA, primarily because the under 35 voter in VA is not
+little difference in close districts in VA, primarily because the typical under 35 voter in VA is not
 overwhelmingly more likely to vote for Democrats. So it makes a small difference and one that
 can be positive or negative, depending on the district.
+
+When doing these analyses, we’ve chosen PPL as our baseline. But one could just as easily use
+some other framework or model to come up with a baseline and still use DPL based scenario
+analysis to understand where things might change under various circumstances.
 |]
 
 part5 :: Text
@@ -230,11 +226,11 @@ ACS is the best available public data for figuring out the demographic breakdown
 of who lives in a district. We get ACS population tables at the census-tract
 level and aggregate them to the district level. Unfortunately, none of these
 tables alone has all the categories we want for post-stratificaiton.
-So We use statistical methods^[nsm] to
+So We use statistical methods[^nsm] to
 combine those tables, producing an estimated population table with all of our
 demographic categories in each district.
 
-[nsm]: We will produce another explainer about just this part of the DPL. Basically,
+[^nsm]: We will produce another explainer about just this part of the DPL. Basically,
 the ACS data is provided in tables which cover a maximum of 3-categories at a time,
 for example citizenship, sex and race/ethnicity. To get the table we want,
 citizenship x age x sex x education x race/ethnicity–citizenship is there so we
@@ -293,14 +289,14 @@ the range, somewhat like using quantiles, but preserve the continuous variation.
 
 We use [Stan](https://mc-stan.org), which then runs a
 [Hamiltonian Monte Carlo](https://en.wikipedia.org/wiki/Hamiltonian_Monte_Carlo)
-to estimate the parameters. Because oh how monte-carlo methods work, we end up with
+to estimate the parameters. Because of how Monte-Carlo methods work, we end up with
 not only our expected parameter values but also their distributions, allowing us to
-capture uncertainties. This is also true of post-stratifications, which also come with
-distributions of outcomes and thus things like confidence intervals.
+capture uncertainties. This is also true of post-stratifications,
+which then provide with distributions of outcomes and thus things like confidence intervals.
 
 There’s an important last step. We post-stratify these modeled probabilities
 across an entire state, giving the expected number of votes in that state. But
-we know the actual number of votes recorded in the state and our number won’t usually match
+we *know* the actual number of votes recorded in the state and our number won’t usually match
 exactly. So we adjust each probability using a technique pioneered by
 [Hur & Achen](https://www.aramhur.com/uploads/6/0/1/8/60187785/2013._poq_coding_cps.pdf),
 and explained in more detail on pages 9-10 of
@@ -308,8 +304,8 @@ and explained in more detail on pages 9-10 of
 We can apply the same adjustment to our confidence intervals giving us an approximate
 confidence interval for the adjusted parameter or post-stratification result.
 
-We do this for turnout alone, party-preference of voters, where we match to known
-vote totals for the candidate of each party, and both together.
+We do this for turnout and party-preference of voters, where we match to known
+vote totals for the candidate of each party.
 
 The final result of all this work is an estimate of the DPL for any SDL in the country.
 |]
