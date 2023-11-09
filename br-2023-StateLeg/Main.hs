@@ -25,6 +25,7 @@ import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.ACS_PUMS as ACS
 import qualified BlueRipple.Data.Loaders.Redistricting as DRA
+import qualified BlueRipple.Data.DistrictOverlaps as DO
 import qualified BlueRipple.Data.CensusLoaders as BRC
 import qualified BlueRipple.Data.CensusTables as BRC
 import qualified BlueRipple.Data.DataFrames as BRDF
@@ -56,10 +57,12 @@ import Control.Lens (view, (^.))
 
 import qualified Frames as F
 import qualified Data.Text as T
+import qualified Text.Read as TR
 import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl.Class.Method as V
 import qualified Data.Vinyl.Functor as V
+import qualified Data.Vector as Vector
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as Set
 import qualified Frames.Melt as F
@@ -95,6 +98,8 @@ import qualified ModelNotes as MN
 --import Data.Monoid (Sum(getSum))
 FTH.declareColumn "StateModelT" ''Double
 FTH.declareColumn "StateModelP" ''Double
+FTH.declareColumn "Overlap" ''Double
+
 
 templateVars ∷ Map String String
 templateVars =
@@ -235,6 +240,72 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state
   when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
   pure modeledAndDRA
 
+sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text -> Double
+              -> K.Sem r (F.FrameRec [GT.CongressionalDistrict, GT.DistrictTypeC, GT.DistrictName, Overlap])
+sldCDOverlaps stateUpperOnlyMap sa threshold = do
+  upperOnly <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ M.lookup sa stateUpperOnlyMap
+  allSLDPlansMap <- DRA.allPassedSLDPlans
+  allCDPlansMap <- DRA.allPassedCongressionalPlans
+  draSLD <- do
+    upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateUpper)
+    if upperOnly then pure upper
+      else (do
+               lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateLower)
+               pure $ upper <> lower
+           )
+  draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
+  let competitive r = let ppl = r ^. ET.demShare in ppl >= 0.45 && ppl <= 0.55
+      competitiveSLDs = F.filterFrame competitive draSLD
+      competitiveCDs = F.filterFrame competitive draCD
+  overlapsL ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDL" <> "_CD.csv") GT.StateLower GT.Congressional
+  overlapsU ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDU" <> "_CD.csv") GT.StateUpper GT.Congressional
+  let overlappingSLDs' threshold' cdn overlaps' = do
+        let
+          pwo = Vector.zip (DO.populations overlaps') (DO.overlaps overlaps')
+          nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps'
+          intDiv x y = realToFrac x / realToFrac y
+          olFracM (pop, ols) = fmap (\x → intDiv x pop) $ M.lookup cdn ols
+          olFracsM = traverse olFracM pwo
+        olFracs ← K.knitMaybe ("sldCDOverlaps: Missing CD in overlap data for " <> cdn) olFracsM
+        let namedOlFracs = zip nameByRow (Vector.toList olFracs)
+        pure $ filter ((>= threshold') . snd) namedOlFracs
+
+      overlappingSLDs threshold' cdn = do
+        overlapsU ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for upper chamber of " <> sa) $ M.lookup sa overlapsU
+        namedOverU ← overlappingSLDs' threshold' cdn overlapsU
+        let upperRes =  fmap (\(n, x) → (GT.StateUpper, n, x)) namedOverU
+        case upperOnly of
+          True -> pure upperRes
+          False -> do
+            overlapsL ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for lower chamber of " <> sa) $ M.lookup sa overlapsL
+            namedOverL ← overlappingSLDs' threshold' cdn overlapsL
+            pure $ upperRes <> fmap (\(n, x) → (GT.StateLower, n, x)) namedOverL
+      stAbbr = view GT.stateAbbreviation
+      dName = view GT.districtName
+      sld r = (r ^. GT.districtTypeC, dName r)
+      compSLDSet = FL.fold (FL.premap sld FL.set) competitiveSLDs
+      isCompetitive (dt, dn, _) = (dt, dn) `Set.member` compSLDSet
+      f r = fmap (dName r, ) $ filter isCompetitive <$> overlappingSLDs threshold (dName r)
+  overlapsByCD ← traverse f $ FL.fold FL.list competitiveCDs
+  let toRecInner :: (GT.DistrictType, Text, Double) -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
+      toRecInner (dt, dn, ol) = dt F.&: dn F.&: ol F.&: V.RNil
+      toRecs (cdT, slds) = fmap (\cdr -> fmap ((cdr F.<+>) . toRecInner) slds) $ cdNameToCDRec cdT
+  F.toFrame . mconcat <$> (K.knitEither $ traverse toRecs overlapsByCD)
+
+cdNameToCDRec :: Text -> Either Text (F.Record '[GT.CongressionalDistrict])
+cdNameToCDRec t =
+  fmap (FT.recordSingleton @GT.CongressionalDistrict)
+  $ maybe (Left $ "cdNameTOCDRec: Failed to parse " <> t <> " as an Int") Right
+  $ TR.readMaybe $ toString t
+
+overlapColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, GT.CongressionalDistrict, Overlap])
+                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+overlapColonnade cas =
+  let state = F.rgetField @GT.StateAbbreviation
+  in C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "Congressional District" (BR.toCell cas "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
+     <> C.headed "Overlap" (BR.toCell cas "Overlap" "Overlap" (BR.numberToStyledHtml "%2.2f" . (100*) . view overlap))
+
 dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
 dmr = MC.tDesignMatrixRow_d
 
@@ -271,6 +342,9 @@ modelNotesPost cmdLine = do
       (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_Base)
       >>= K.addHvega Nothing Nothing
+    BRK.brAddMarkDown MN.part1b
+    overlaps <- sldCDOverlaps upperOnlyMap "WI" 0.75
+    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (overlapColonnade mempty) overlaps
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"

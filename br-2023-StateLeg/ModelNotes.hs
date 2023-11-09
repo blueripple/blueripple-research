@@ -53,6 +53,29 @@ places, like cities, with higher population density.)
 elections from 2016-2021: 2018 and 2020 senate as well as Governor and AG from 2021.
 |]
 
+part1b :: Text
+part1b = [here|
+There are a couple of useful questions to ask as soon as we have something like PPL to
+use in order to make allocation recommendations for donors. What information can we add or
+apply to improve that list? But also, among all the districts we consider close, are some
+better “investments” than others?
+
+Let’s focus briefly on the second of those questions. Candidate quality and campaign
+finance data can be very helpful in choosing which districts are worth a donor’s money or
+need that money. That requires some local expertise. Also interesting: does the district
+overlap with other important elections (what we call
+a “double word score”)? For instance, in a presidential election year, any close
+state-legislative district in a swing state might be a good place to direct donor dollars.
+Close senate races also generate these sorts of opportunities.
+
+But these elections don’t provide any opportunities to focus the list. They may help choose
+which states are more appealing to donors. Looking at competitive congressional districts,
+on the other hand, may give “double word score” opportunities for some state-legislative-districts
+and not others. As an example, let’s look forward to the 2024 election in Wisconsin. The chart below
+contains all the state-leg districts that have PPL between 45% and 55% and which also have more than
+75% overlap with a congressional district which also has PPL between 45% and 55%.
+|]
+
 part2 :: Text
 part2 = [here|
 Are there districts with PPLs that are unexpected given
@@ -120,7 +143,7 @@ was more or less the same as everyone else in the state living at similar popula
 This is likely less
 predictive than knowing who those same people voted for in the previous few elections. But
 it’s different information, and particularly interesting when it’s inconsistent with
-the HPL.
+the PPL.
 
 ### Scenario Analysis
 Since the DPL is built from an estimate of who lives in a district and how likely each of them is
