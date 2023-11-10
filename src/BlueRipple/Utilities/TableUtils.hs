@@ -13,7 +13,9 @@ module BlueRipple.Utilities.TableUtils
   , totalCell
   , highlightCellBlue
   , highlightCellPurple
+  , numberToStyledHtml'
   , numberToStyledHtml
+  , maybeNumberToStyledHtml'
   , maybeNumberToStyledHtml
   , textToCell
   , textToStyledHtml
@@ -73,21 +75,29 @@ highlightCellBlue = "border: 3px solid blue"
 highlightCellPurple :: Text
 highlightCellPurple = "border: 3px solid purple"
 
+numberToStyledHtml'
+  :: (PF.PrintfArg a, Ord a, Num a) => Bool -> T.Text -> a -> T.Text -> T.Text -> a -> (BH.Html, T.Text)
+numberToStyledHtml' parenNeg belowColor splitNumber aboveColor printFmt x =
+  let htmlNumber = if not parenNeg || x > 0
+                   then BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x
+                   else BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")") (negate x)
+  in if x >= splitNumber
+     then (htmlNumber, "color: " <> aboveColor)
+     else (htmlNumber, "color: " <> belowColor)
+
 numberToStyledHtml
   :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> a -> (BH.Html, T.Text)
-numberToStyledHtml printFmt x = if x >= 0
-  then (BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x, "color: green")
-  else
-    ( BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")")
-                                     (negate x)
-    , "color: red"
-    )
+numberToStyledHtml = numberToStyledHtml' True "red" 0 "green"
+
+maybeNumberToStyledHtml'
+  :: (PF.PrintfArg a, Ord a, Num a) => Bool -> T.Text -> a -> T.Text -> T.Text -> Maybe a -> (BH.Html, T.Text)
+maybeNumberToStyledHtml' parenNeg belowColor splitNumber aboveColor printFmt xM =
+  maybe (textToStyledHtml "N/A") (numberToStyledHtml' parenNeg belowColor splitNumber aboveColor printFmt) xM
 
 maybeNumberToStyledHtml
   :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> Maybe a -> (BH.Html, T.Text)
 maybeNumberToStyledHtml printFmt xM =
   maybe (textToStyledHtml "N/A") (numberToStyledHtml printFmt) xM
-
 
 textToStyledHtml :: T.Text -> (BH.Html, T.Text)
 textToStyledHtml x = (BH.toHtml x, mempty)

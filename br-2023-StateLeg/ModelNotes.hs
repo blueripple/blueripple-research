@@ -63,17 +63,20 @@ better “investments” than others?
 Let’s focus briefly on the second of those questions. Candidate quality and campaign
 finance data can be very helpful in choosing which districts are worth a donor’s money or
 need that money. That requires some local expertise. Also interesting: does the district
-overlap with other important elections (what we call
-a “double word score”)? For instance, in a presidential election year, any close
+overlap geographically with other important elections? We call that a
+a “double word score.” For instance, in a presidential election year, any close
 state-legislative district in a swing state might be a good place to direct donor dollars.
 Close senate races also generate these sorts of opportunities.
 
-But these elections don’t provide any opportunities to focus the list. They may help choose
-which states are more appealing to donors. Looking at competitive congressional districts,
-on the other hand, may give “double word score” opportunities for some state-legislative-districts
-and not others. As an example, let’s look forward to the 2024 election in Wisconsin. The chart below
-contains all the state-leg districts that have PPL between 45% and 55% and which also have more than
-75% overlap with a congressional district which also has PPL between 45% and 55%.
+Looking at competitive congressional districts,
+may give “double word score” opportunities for some state-legislative-districts
+and not others. This is trickier than statewide elections since we need to look at maps and where people live.
+As an example, let’s consider the 2024 election in Wisconsin. The chart below
+contains all the competitive state-legislative districts (PPL between 45% and 55%) and whichever congressional
+district contains most of the state-legislative-district. In green, we’ve highlighted the districts where the
+overlapping congressional districts are also competitive. The WI congressional races are already
+triple-word-scores in ‘24 because WI is a swing state and has a senate race as well.
+So the state-legislative-districts in green in the chart below are actually quadruple-word-scores!
 |]
 
 part2 :: Text

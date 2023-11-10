@@ -99,6 +99,7 @@ import qualified ModelNotes as MN
 FTH.declareColumn "StateModelT" ''Double
 FTH.declareColumn "StateModelP" ''Double
 FTH.declareColumn "Overlap" ''Double
+FTH.declareColumn "CongressionalPPL" ''Double
 
 
 templateVars ∷ Map String String
@@ -240,26 +241,29 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state
   when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
   pure modeledAndDRA
 
-sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text -> Double
-              -> K.Sem r (F.FrameRec [GT.CongressionalDistrict, GT.DistrictTypeC, GT.DistrictName, Overlap])
-sldCDOverlaps stateUpperOnlyMap sa threshold = do
+
+-- for each SLD, provide the CD, if any, with overlap over 50%, along with the PPL of that CD and the Overlap
+sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text
+              -> K.Sem r (F.FrameRec [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL])
+sldCDOverlaps stateUpperOnlyMap sa = do
   upperOnly <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ M.lookup sa stateUpperOnlyMap
   allSLDPlansMap <- DRA.allPassedSLDPlans
   allCDPlansMap <- DRA.allPassedCongressionalPlans
-  draSLD <- do
+{-  draSLD <- do
     upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateUpper)
     if upperOnly then pure upper
       else (do
                lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateLower)
                pure $ upper <> lower
            )
+-}
   draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
-  let competitive r = let ppl = r ^. ET.demShare in ppl >= 0.45 && ppl <= 0.55
-      competitiveSLDs = F.filterFrame competitive draSLD
-      competitiveCDs = F.filterFrame competitive draCD
+  let cdRow r = not $ (r ^. GT.districtName) `elem` ["Summary", "Un"]
+--      sLDs = F.filterFrame nonSummary draSLD
+      cDs = F.filterFrame cdRow draCD
   overlapsL ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDL" <> "_CD.csv") GT.StateLower GT.Congressional
   overlapsU ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDU" <> "_CD.csv") GT.StateUpper GT.Congressional
-  let overlappingSLDs' threshold' cdn overlaps' = do
+  let overlappingSLDs' cdn overlaps' = do
         let
           pwo = Vector.zip (DO.populations overlaps') (DO.overlaps overlaps')
           nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps'
@@ -268,28 +272,33 @@ sldCDOverlaps stateUpperOnlyMap sa threshold = do
           olFracsM = traverse olFracM pwo
         olFracs ← K.knitMaybe ("sldCDOverlaps: Missing CD in overlap data for " <> cdn) olFracsM
         let namedOlFracs = zip nameByRow (Vector.toList olFracs)
-        pure $ filter ((>= threshold') . snd) namedOlFracs
+        pure namedOlFracs
 
-      overlappingSLDs threshold' cdn = do
+      overlappingSLDs cdn = do
         overlapsU ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for upper chamber of " <> sa) $ M.lookup sa overlapsU
-        namedOverU ← overlappingSLDs' threshold' cdn overlapsU
+        namedOverU ← overlappingSLDs' cdn overlapsU
         let upperRes =  fmap (\(n, x) → (GT.StateUpper, n, x)) namedOverU
         case upperOnly of
           True -> pure upperRes
           False -> do
             overlapsL ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for lower chamber of " <> sa) $ M.lookup sa overlapsL
-            namedOverL ← overlappingSLDs' threshold' cdn overlapsL
+            namedOverL ← overlappingSLDs' cdn overlapsL
             pure $ upperRes <> fmap (\(n, x) → (GT.StateLower, n, x)) namedOverL
       stAbbr = view GT.stateAbbreviation
       dName = view GT.districtName
       sld r = (r ^. GT.districtTypeC, dName r)
-      compSLDSet = FL.fold (FL.premap sld FL.set) competitiveSLDs
-      isCompetitive (dt, dn, _) = (dt, dn) `Set.member` compSLDSet
-      f r = fmap (dName r, ) $ filter isCompetitive <$> overlappingSLDs threshold (dName r)
-  overlapsByCD ← traverse f $ FL.fold FL.list competitiveCDs
+--      compSLDSet = FL.fold (FL.premap sld FL.set) competitiveSLDs
+--      isCompetitive (dt, dn, _) = (dt, dn) `Set.member` compSLDSet
+      f r = fmap (\ols -> (dName r, r ^. ET.demShare, ols)) $ overlappingSLDs (dName r)
+  overlapsByCD ← traverse f $ FL.fold FL.list cDs
   let toRecInner :: (GT.DistrictType, Text, Double) -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
       toRecInner (dt, dn, ol) = dt F.&: dn F.&: ol F.&: V.RNil
-      toRecs (cdT, slds) = fmap (\cdr -> fmap ((cdr F.<+>) . toRecInner) slds) $ cdNameToCDRec cdT
+      toRec :: Double -> F.Record '[GT.CongressionalDistrict] -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
+            -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]
+      toRec cdPPL cdRec ri = ri F.<+> cdRec F.<+> FT.recordSingleton @CongressionalPPL cdPPL
+      toRecs :: (Text, Double, [(GT.DistrictType, Text, Double)])
+             -> Either Text [F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]]
+      toRecs (cdT, cdPPL, slds) = fmap (\cdRec ->  fmap (toRec cdPPL cdRec) $ fmap toRecInner slds) $ cdNameToCDRec cdT
   F.toFrame . mconcat <$> (K.knitEither $ traverse toRecs overlapsByCD)
 
 cdNameToCDRec :: Text -> Either Text (F.Record '[GT.CongressionalDistrict])
@@ -298,13 +307,20 @@ cdNameToCDRec t =
   $ maybe (Left $ "cdNameTOCDRec: Failed to parse " <> t <> " as an Int") Right
   $ TR.readMaybe $ toString t
 
-overlapColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, GT.CongressionalDistrict, Overlap])
+mwoColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, ET.DemShare, GT.CongressionalDistrict, Overlap, CongressionalPPL])
                      => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
-overlapColonnade cas =
+mwoColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-  in C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "Congressional District" (BR.toCell cas "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
-     <> C.headed "Overlap" (BR.toCell cas "Overlap" "Overlap" (BR.numberToStyledHtml "%2.2f" . (100*) . view overlap))
+      bordered c = "border: 3px solid " <> c
+      competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
+      cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District" || h == "CD PPL") && competitive r
+      rbStyle = BR.numberToStyledHtml' False "red" 50 "blue"
+      olStyle = BR.numberToStyledHtml' False "black" 75 "green"
+  in C.headed "District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.2f" . (100*) . view ET.demShare))
+     <> C.headed "Overlap" (BR.toCell cas' "Overlap" "Overlap" (olStyle "%2.2f" . (100*) . view overlap))
+     <> C.headed "Congressional District" (BR.toCell cas' "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
+     <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.2f" . (100*) . view congressionalPPL))
 
 dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
 dmr = MC.tDesignMatrixRow_d
@@ -334,35 +350,41 @@ modelNotesPost cmdLine = do
 --         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
          dName = view GT.districtName
     upperOnlyMap <- stateUpperOnlyMap
-    modeledAndDRA_Base <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+    modeledAndDRA_VA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
 
     BRK.brAddMarkDown MN.part1
     let ppl = view ET.demShare
     geoCompChart modelNotesPostPaths postInfo ("VA_geoPPL") "VA Past Partisan Lean"
       (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
-      (F.filterFrame lowerOnly modeledAndDRA_Base)
+      (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part1b
-    overlaps <- sldCDOverlaps upperOnlyMap "WI" 0.75
-    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (overlapColonnade mempty) overlaps
+    modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
+    overlaps_WI <- sldCDOverlaps upperOnlyMap "WI"
+    let (modeledWOverlaps, mwoMissing) = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] modeledAndDRA_WI overlaps_WI
+    when (not $ null mwoMissing) $ K.knitError $ "modelNotesPost: missing overlaps in model+DRA/overlap join: " <> show mwoMissing
+    let interestingOverlap r =
+          let c x = x >= 0.45 && x <= 0.55
+          in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
+    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
-      (F.filterFrame lowerOnly modeledAndDRA_Base)
+      (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
     let delta r = 100 * (dpl r -  ppl r)
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-PPL"
       (FV.ViewConfig 400 150 10) "VA" GT.StateLower dName ("DPL-PPL", delta, Just "redblue", Just (-50, 50))
-      (F.filterFrame lowerOnly modeledAndDRA_Base)
+      (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3b
     let flippable r = ppl r < 0.45 && dpl r >= 0.50
         vulnerable r = ppl r > 0.55 && dpl r <= 0.5
         compColonnade = distCompColonnade $ leansCellStyle "PPL" ppl <> leansCellStyle "DPL" dpl
     BR.brAddRawHtmlTable ("Flippable/Vulnerable ?") (BHA.class_ "brTable") compColonnade
-      $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_Base
+      $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_VA
 {-    BRK.brAddMarkDown MN.part3c
     let cbw f r = f r >= 0.47 && f r <= 0.53
         safeOOR f r = f r >= 0.55 || f r <= 0.45
@@ -375,14 +397,14 @@ modelNotesPost cmdLine = do
         dobbsPrefS = MR.SimpleScenario "DobbsP" dobbsTurnoutF
         youthBoostF r = if (r ^. DT.age5C <= DT.A5_25To34) then MR.adjustP 0.05 else id
         youthBoostTurnoutS = MR.SimpleScenario "YouthBoost" youthBoostF
-    modeledAndDRA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
-                           (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
+    modeledAndDRA_VA_Dobbs <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnoutS)
+                              (prefConfig aggregation alphaModel) (Just dobbsPrefS) upperOnlyMap dlccMap "VA"
     let sortScByClose = sortOn (abs . (+ negate 0.5) . view ET.demShare . fst . snd)
         sortScByPPL = sortOn (view ET.demShare . fst . snd)
         mergeKey :: F.Record AnalyzeStateR -> F.Record [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
         mergeKey = F.rcast
         mergeVal r1 r2 = (F.rcast @[ET.DemShare, MR.ModelCI] r1, MT.ciMid (r1 ^. MR.modelCI) - MT.ciMid (r2 ^. MR.modelCI))
-    mergedDobbs <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs modeledAndDRA_Base
+    mergedDobbs <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs modeledAndDRA_VA
     let closeForTable n = sortScByPPL . take n . sortScByClose
                           . filter ((== GT.StateLower) . view GT.districtTypeC . fst) .  M.toList
         scPpl = view ET.demShare . fst . snd
@@ -394,9 +416,9 @@ modelNotesPost cmdLine = do
     let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
         dobbsPref2S = MR.SimpleScenario "Dobbs2P" dobbs2F
-    modeledAndDRA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
-                           (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
-    mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_Dobbs2 modeledAndDRA_Base
+    modeledAndDRA_VA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
+                               (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
+    mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs2 modeledAndDRA_VA
     BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
 {-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
       (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
@@ -404,9 +426,9 @@ modelNotesPost cmdLine = do
       >>= K.addHvega Nothing Nothing
 -}
     BRK.brAddMarkDown MN.part4c
-    modeledAndDRA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
-                                 (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
-    mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_YouthBoost modeledAndDRA_Base
+    modeledAndDRA_VA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
+                                   (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
+    mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_YouthBoost modeledAndDRA_VA
     BR.brAddRawHtmlTable ("Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
 
 {-
