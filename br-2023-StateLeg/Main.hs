@@ -358,15 +358,6 @@ modelNotesPost cmdLine = do
       (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
-    BRK.brAddMarkDown MN.part1b
-    modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
-    overlaps_WI <- sldCDOverlaps upperOnlyMap "WI"
-    let (modeledWOverlaps, mwoMissing) = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] modeledAndDRA_WI overlaps_WI
-    when (not $ null mwoMissing) $ K.knitError $ "modelNotesPost: missing overlaps in model+DRA/overlap join: " <> show mwoMissing
-    let interestingOverlap r =
-          let c x = x >= 0.45 && x <= 0.55
-          in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
-    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
@@ -385,12 +376,6 @@ modelNotesPost cmdLine = do
         compColonnade = distCompColonnade $ leansCellStyle "PPL" ppl <> leansCellStyle "DPL" dpl
     BR.brAddRawHtmlTable ("Flippable/Vulnerable ?") (BHA.class_ "brTable") compColonnade
       $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_VA
-{-    BRK.brAddMarkDown MN.part3c
-    let cbw f r = f r >= 0.47 && f r <= 0.53
-        safeOOR f r = f r >= 0.55 || f r <= 0.45
-    BR.brAddRawHtmlTable ("Worth Another Look?") (BHA.class_ "brTable") compColonnade
-   $ F.filterFrame (\r -> lowerOnly r && (cbw ppl r && safeOOR dpl r)) modeledAndDRA_Base
--}
     BRK.brAddMarkDown MN.part4
     let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then MR.adjustP 0.05 else id
         dobbsTurnoutS = MR.SimpleScenario "DobbsT" dobbsTurnoutF
@@ -420,24 +405,22 @@ modelNotesPost cmdLine = do
                                (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
     mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs2 modeledAndDRA_VA
     BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
-{-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_Dobbs") "VA Demographic Partisan Lean (Dobbs Scenario)"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
-      (F.filterFrame lowerOnly modeledAndDRA_Dobbs)
-      >>= K.addHvega Nothing Nothing
--}
     BRK.brAddMarkDown MN.part4c
     modeledAndDRA_VA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                    (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_YouthBoost modeledAndDRA_VA
     BR.brAddRawHtmlTable ("Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
-
-{-
-    geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL_YouthApathy") "VA Demographic Partisan Lean (Youth Apathy Scenario)"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
-      (F.filterFrame lowerOnly modeledAndDRA_YouthBoost)
-      >>= K.addHvega Nothing Nothing
--}
+-- geographic overlaps
     BRK.brAddMarkDown MN.part5
+    modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
+    overlaps_WI <- sldCDOverlaps upperOnlyMap "WI"
+    let (modeledWOverlaps, mwoMissing) = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] modeledAndDRA_WI overlaps_WI
+    when (not $ null mwoMissing) $ K.knitError $ "modelNotesPost: missing overlaps in model+DRA/overlap join: " <> show mwoMissing
+    let interestingOverlap r =
+          let c x = x >= 0.45 && x <= 0.55
+          in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
+    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
+    BRK.brAddMarkDown MN.part6
     pure ()
 
 distCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
