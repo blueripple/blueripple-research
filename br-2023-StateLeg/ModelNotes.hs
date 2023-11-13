@@ -43,10 +43,9 @@ We think our modeling approach–which incorporates data on the recent turnout a
 partisan lean of various demographic groups–provides an extra set of helpful
 tools for looking at these races.
 
-### Past Partisan Lean: An excellent first take
+### Past Partisan Lean: Let history be your guide
 The most straightforward way to find close-but-winnable races is to look at what happened
 in previous elections, either for the same districts or statewide.
-
 [Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
 elections to create an estimate of the past-partisan-lean[^ppl] (PPL) of every
@@ -58,11 +57,11 @@ is, given $D$ democratic votes and $R$ Republican votes,
 we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party votes.
 
 As an example, here is chart of the PPL in the VA house[^pplVA], the lower
-chamber of the VA state-legislature.
-(As with many such maps, it looks mainly Republican (red) but that is because the
+chamber of the VA state-legislature. As with many such maps,
+it looks mainly Republican (Red) but that is because the
 districts with Democratic leaning PPL are often geographically smaller, in
-places, like cities, with higher population density. As the recent election shows, VA
-has slightly more D leaning districts than R leaning ones.)
+places, like cities, with higher population density. As the 2023 election shows, VA
+has slightly more D leaning districts than R leaning ones.
 
 [^pplVA]: Using 2020 ACS population estimates and a composite of presidential and statewide
 elections from 2016-2021: 2018 and 2020 senate as well as Governor and AG from 2021.
@@ -77,16 +76,16 @@ safe seat.
 part2 :: Text
 part2 = [here|
 The limitation of PPL is that it tells you nothing about *why* a district has the lean it does.
-For that you need local knowledge or some analysis of the demographics.
+For that you need local knowledge and/or some analysis of the demographics.
 You can look at the demographic composition of a district and make some educated guesses
 but it’s useful to do that more systematically, via a detailed demographic model applied to
 robust estimates of the demographic composition of each district.
 
 This sort of analysis can help identify opportunities and vulnerabilities for Democrats.
 District PPLs inconsistent with their location and demographic makeup may
-be opportunities to add a possibly flippable or safe-looking-but-vulnerable district
-to a list for donors or remove districts that were already marginal but seem more
-so when looking at the underlying demographics.
+be opportunities to spot a possibly flippable or safe-looking-but-vulnerable district
+or uncover districts that might be ruled out as donation targets because the underlying
+demographics make them likely less close than history suggests.
 
 For example, imagine a state-legislative-district with PPL just below some cutoff for winnable.
 A demographic analysis shows that its “expected” partisan-lean is over 50%.
@@ -97,21 +96,23 @@ easily winnable by PPL standards but with “expected” partisan lean much clos
 That district might be vulnerable to the right opposition candidate,
 especially in a tough political environment.
 
-### Demographic Partisan Lean: Breaking down state legislative districts
+### Demographic Partisan Lean: Using the demographics of state legislative districts
 Rather than consider how people in a specific place have voted in previous elections,
 Demographic Partisan Lean (DPL) instead categorizes people demographically, in our case
 by state, age, sex, educational-attainment, race/ethnicity, and population-density[^buckets].
 Using large surveys of turnout and party-preference
 we model expected turnout and party-preference for each of those categories.
 Then, given the numbers of people in each of those categories in a district,
-combine them to compute
+we combine them to compute
 the (modeled) partisan lean among expected voters. Here’s what this looks like in VA:
 
-[^buckets: For age we use five categories: 18-24, 25-34, 35-44, 45-64 and 65 and over. For sex we use two: male and female.
-Almost none of our source data tracks sex in a more fine-grained way. For education, we use four categories: non-graduate
-of high-school, high-schoo graduate, some college, college-graduate. And for race/ethnicity we use five categories:
-Black, Hispanic, AAPI, White-Non-Hispanic and Other. With all of these categories there would be value to further breakdown
-but would also create computational and data difficulties.]
+[^buckets]: For age we use five categories: 18-24, 25-34, 35-44, 45-64, and 65 and over. For sex we use two: male and female.
+Almost none of our source data tracks sex in a more fine-grained way. For educational attainment,
+we use four categories: non high-school graduate, high-school graduate, some college, and college-graduate.
+And for race/ethnicity we use five categories:
+Black, Hispanic, Asian American/Pacific Islander (AAPI), White-Non-Hispanic and Other.
+With all of these categories there would be value to finer but
+that would also create computational and data difficulties.]
 |]
 
 
@@ -136,7 +137,7 @@ part3b = [here|
 We can see
 that there are a few districts which might be interesting to look at. This is clearer
 in table form: below we list some districts which are not close in PPL but, when looked at
-demographically, *ought* to be close.
+demographically, *ought* to be close[^VAdetails].
 These are districts that might be flippable or look like safe seats but need defending.
 It’s not that these seats *are* flippable (or in need of extra defense) but that they might
 be worth a second look to figure out why they have been voting in ways so different from what we
@@ -145,6 +146,15 @@ might expect based on the demographics.
 
 part4 :: Text
 part4 = [here|
+A quick note: We did this analysis pre-election and all of the contested districts in the list above played
+out pretty much as history would suggest. For example, House district 52 (Lower-52) was won by the R candidate
+55-45. Looking at our model, we see a district right between the median R and D districts in terms of population
+density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
+who have graduated from college. So why did our model think this might be a D district? The voters in it are significantly
+*younger* than a typical district. Almost 60% of the voters are under 45. The model, even in VA, suggests that youger
+voters are significantly more D leaning. It might be interesting to try to campaign in this district with that
+in mind.
+
 One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
 of turnout and party-preference. But sometimes the combination of categories is essential
