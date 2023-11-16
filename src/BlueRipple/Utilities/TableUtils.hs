@@ -13,6 +13,9 @@ module BlueRipple.Utilities.TableUtils
   , totalCell
   , highlightCellBlue
   , highlightCellPurple
+  , numberToStyledHtmlFull
+  , numColorHiGrayLo
+  , numColorBlackUntil
   , numberToStyledHtml'
   , numberToStyledHtml
   , maybeNumberToStyledHtml'
@@ -75,16 +78,42 @@ highlightCellBlue = "border: 3px solid blue"
 highlightCellPurple :: Text
 highlightCellPurple = "border: 3px solid purple"
 
+numberToStyledHtmlFull :: (PF.PrintfArg a, Ord a, Num a) => Bool -> (a -> T.Text) -> Text -> a -> (BH.Html, T.Text)
+numberToStyledHtmlFull parenNeg numColor printFmt x =
+  let htmlNumber = if not parenNeg || x > 0
+                   then BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x
+                   else BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")") (negate x)
+  in (htmlNumber, "color: " <> numColor x)
+
+numColorHiGrayLo :: (Ord a, Fractional a, PF.PrintfArg a) => a -> a -> Double -> Double -> a -> T.Text
+numColorHiGrayLo lo hi hLo hHi x =
+  let mid = (hi + lo) / 2
+      range = hi - lo
+      printS = T.pack . PF.printf "%2.0f" . min 100 . max 0 . (*100)
+  in if x < mid
+     then "hsl(" <> show hLo <> ", " <> printS (2 * (mid - x) / range) <> "%, 50%)"
+     else "hsl(" <> show hHi  <> ", " <> printS (2 * (x - mid) / range) <> "%, 50%)"
+
+numColorBlackUntil :: (Ord a, Fractional a, PF.PrintfArg a) => a -> a -> Double -> a -> T.Text
+numColorBlackUntil until hi hue x =
+  let range = hi - until
+      printS = T.pack . PF.printf "%2.0f" . min 100 . max 0 . (*100)
+  in if x < until then "hsl(" <> show hue <> ",50%, 0%)"
+  else "hsl(" <> show hue <> ", 50%, " <> printS ((x - until) / (2 * range)) <> "%)"
+
+
 numberToStyledHtml'
   :: (PF.PrintfArg a, Ord a, Num a) => Bool -> T.Text -> a -> T.Text -> T.Text -> a -> (BH.Html, T.Text)
 numberToStyledHtml' parenNeg belowColor splitNumber aboveColor printFmt x =
   let htmlNumber = if not parenNeg || x > 0
                    then BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x
                    else BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")") (negate x)
-  in if x >= splitNumber
+      numColor y = if y >= splitNumber then aboveColor else belowColor
+  in numberToStyledHtmlFull parenNeg numColor printFmt x
+{-  in if x >= splitNumber
      then (htmlNumber, "color: " <> aboveColor)
      else (htmlNumber, "color: " <> belowColor)
-
+-}
 numberToStyledHtml
   :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> a -> (BH.Html, T.Text)
 numberToStyledHtml = numberToStyledHtml' True "red" 0 "green"
