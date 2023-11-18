@@ -137,7 +137,7 @@ part3b = [here|
 We can see
 that there are a few districts which might be interesting to look at. This is clearer
 in table form: below we list some districts which are not close in PPL but, when looked at
-demographically, *ought* to be close[^VAdetails].
+demographically, *ought* to be close.
 These are districts that might be flippable or look like safe seats but need defending.
 It’s not that these seats *are* flippable (or in need of extra defense) but that they might
 be worth a second look to figure out why they have been voting in ways so different from what we
@@ -217,32 +217,32 @@ How much would that change the final vote-share across the state? It turns out t
 little difference in close districts in VA, primarily because the typical under 35 voter in VA is not
 overwhelmingly more likely to vote for Democrats. So it makes a small difference and one that
 can be positive or negative, depending on the district.
-
-When doing these analyses, we’ve chosen PPL as our baseline. But one could just as easily use
-some other framework or model to come up with a baseline and still use DPL based scenario
-analysis to understand where things might change under various circumstances.
 |]
 
 part5 :: Text
 part5 = [here|
+When doing these analyses, we’ve chosen PPL as our baseline. But one could just as easily use
+some other framework or model to come up with a baseline and still use DPL based scenario
+analysis to understand how much and where things might change under various circumstances.
+
 ### Geographical District Overlaps: Double-word scores
 Once we have PPL to make allocation recommendations for donors, e.g., give to any race within 5 points of 50/50,
 how can we narrow (or broaden) that list? Are we missing any districts worth an investment of resources?
 Are we including any that are too hard or too easy to win?
 Among all the districts we consider close, are some better “investments” than others?
 
-Let’s focus briefly on the last of those questions. Candidate quality and campaign
-finance data can be very helpful in choosing which districts are worth a donor’s money or
-need that money. This requires local expertise and so is not our interest here.
+Sometimes it’s helpful to think about how the district relates to other races on the same
+ticket, the so-called “reverse-coattails” effect (“reverse” because we are referring to races
+for smaller offices helping a larger race on the same ballot).
 
-Does the district overlap geographically with other important elections? We call that a
-a “double word score.” For instance, in a presidential election year, any close
+When a district overlaps geographically with another important election we call that a
+a “double-word score.” For instance, in a presidential election year, any close
 state-legislative district in a swing state might be a good or appealing place to direct donor dollars.
 Close senate races also generate these sorts of opportunities.
 
 Looking at competitive *congressional* districts,
-gives “double word score” opportunities for some state-legislative-districts
-and not others. This is trickier than statewide elections since we need to analyze the population overlaps
+gives “double-word score” opportunities for some state-legislative-districts
+and not others. These are trickier to find than statewide elections since we need to analyze the population overlaps
 of the congressional and state-legislative districts.
 As an example, let’s consider the 2024 election in Wisconsin. The chart below
 contains all the competitive state-legislative districts (PPL between 45% and 55%) and whichever congressional
@@ -313,7 +313,7 @@ combine those tables, producing an estimated population table with all of our
 demographic categories in each district.
 
 [^nsm]: We will produce another explainer about just this part of the DPL. Basically,
-the ACS data is provided in tables which cover a maximum of 3-categories at a time,
+the ACS data is provided in tables which typically cover 3-categories at a time,
 for example citizenship, sex and race/ethnicity. To get the table we want,
 citizenship x age x sex x education x race/ethnicity–citizenship is there so we
 can get the final table for citizens only since only citizens can vote–we need
@@ -349,7 +349,7 @@ to the data. As mentioned above, we have non-whole counts. So we use a generaliz
 binomial model^[bg] which allows for this.
 
 [bg]: Specifically, we use the binomial density but just allow non-integer “successes” and “failures”.
-This is not an actual probability density and gives slightly lower (check this!) likelihood
+This is not an actual probability density and gives slightly lower likelihood
 to very low and very high counts than it should. Fixing this is one project for our
 next version!
 
@@ -357,8 +357,8 @@ Our specific probability is a linear function of the log-density^[lpd] plus a nu
 and some of their combinations. In particular we estimate using “alphas” for
 state, age, sex, education, race/ethnicity, the combination of age and education, age and race/ethnicity,
 education and race, and state and race. For the state factor and all the combination factors,
-we use “partial-pooling” which means we allow the model itself to estimate how big a factor these variations
-should be.
+we use “partial-pooling” which means we allow the model itself to estimate how big an overall
+factor these variations should be.
 
 [lpd]: For modeling, we use logarithmic population density.
 Population density in the US varies by several orders of magnitude, from 10s

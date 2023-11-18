@@ -313,7 +313,7 @@ mwoColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
       bordered c = "border: 3px solid " <> c
       competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
-      cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District" || h == "CD PPL") && competitive r
+      cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
       rbStyle = BR.numberToStyledHtmlFull False (BR.numColorHiGrayLo 40 60 0 240)--BR.numberToStyledHtml' False "red" 50 "blue"
       olStyle = BR.numberToStyledHtmlFull False (BR.numColorBlackUntil 50 100 120)--BR.numberToStyledHtml' False "black" 75 "green"
   in C.headed "District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
