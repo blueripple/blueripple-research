@@ -129,7 +129,7 @@ sorts of effects.
 part3 :: Text
 part3 = [here|
 The maps of PPL and DPL are, unsurprisingly, very similar but there are some large differences which
-are clearer on the chart of DPL - PPL below.
+are clearer on the chart of the difference (DPL - PPL) below.
 |]
 
 part3b :: Text
@@ -147,11 +147,11 @@ might expect based on the demographics.
 part4 :: Text
 part4 = [here|
 A quick note: We did this analysis pre-election and all of the contested districts in the list above played
-out pretty much as history would suggest. For example, House district 52 (Lower-52) was won by the R candidate
+out pretty much as history (PPL) would suggest. For example, House district 52 (Lower-52) was won by the R candidate
 55-45. Looking at our model, we see a district right between the median R and D districts in terms of population
 density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
 who have graduated from college. So why did our model think this might be a D district? The voters in it are significantly
-*younger* than a typical district. Almost 60% of the voters are under 45. The model, even in VA, suggests that youger
+*younger* than a typical district. Almost 60% of the voters are under 45. The model, even in VA, suggests that younger
 voters are significantly more D leaning. It might be interesting to try to campaign in this district with that
 in mind.
 
