@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedRecordDot #-}
@@ -179,13 +180,12 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    modelNotesPost cmdLine
-{-
+--    modelNotesPost cmdLine
+
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+    stateUpperOnlyM <- stateUpperOnlyMap
+    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) ["LA", "MS", "NJ", "VA"]
 
-
-    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap) ["LA", "MS", "NJ", "VA"]
--}
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -384,7 +384,7 @@ modelNotesPost cmdLine = do
     let flippable r = ppl r < 0.45 && dpl r >= 0.50
         vulnerable r = ppl r > 0.55 && dpl r <= 0.5
         compColonnade = distCompColonnade mempty {- $ leansCellStyle "PPL" ppl <> leansCellStyle "DPL" dpl -}
-    BR.brAddRawHtmlTable ("Flippable/Vulnerable ?") (BHA.class_ "brTable") compColonnade
+    BR.brAddRawHtmlTable (Just "Flippable/Vulnerable ?") (BHA.class_ "brTable") compColonnade
       $ F.filterFrame (\r -> lowerOnly r && (flippable r || vulnerable r)) modeledAndDRA_VA
     BRK.brAddMarkDown MN.part4
     let dobbsTurnoutF r = if (r ^. DT.sexC == DT.Female) then MR.adjustP 0.05 else id
@@ -406,7 +406,7 @@ modelNotesPost cmdLine = do
         scenarioDelta = snd . snd
         pplPlus x = scPpl x + scenarioDelta x
     let scenarioColonnade = scenarioCompColonnade mempty -- $ leansCellStyle "PPL" scPpl <> leansCellStyle "+Scenario" pplPlus
-    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs
     BRK.brAddMarkDown MN.part4b
     let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
@@ -414,12 +414,12 @@ modelNotesPost cmdLine = do
     modeledAndDRA_VA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
                                (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
     mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs2 modeledAndDRA_VA
-    BR.brAddRawHtmlTable ("Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
     BRK.brAddMarkDown MN.part4c
     modeledAndDRA_VA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                    (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_YouthBoost modeledAndDRA_VA
-    BR.brAddRawHtmlTable ("Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
+    BR.brAddRawHtmlTable (Just "Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
 -- geographic overlaps
     BRK.brAddMarkDown MN.part5
     modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
@@ -429,7 +429,7 @@ modelNotesPost cmdLine = do
     let interestingOverlap r =
           let c x = x >= 0.45 && x <= 0.55
           in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
-    BR.brAddRawHtmlTable ("WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
+    BR.brAddRawHtmlTable (Just "WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
     BRK.brAddMarkDown MN.part6
     pure ()
 
@@ -539,12 +539,12 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
       (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
-    BR.brAddRawHtmlTable (state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade mempty {- $ sldTableCellStyle state -})
+    BR.brAddRawHtmlTable (Just $ state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade mempty {- $ sldTableCellStyle state -})
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
     when (not upperOnly)
-      $ BR.brAddRawHtmlTable (state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade mempty {-$ sldTableCellStyle state -})
+      $ BR.brAddRawHtmlTable (Just $ state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade mempty {-$ sldTableCellStyle state -})
       $ sortBy byDistrictName $ FL.fold FL.list
       $ F.filterFrame draCompetitive
       $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
@@ -568,6 +568,17 @@ type AndSLDKey2 as bs = as V.++ SLDKeyR V.++ bs
 
 type ModelCompR = [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
 
+data TotalOrGroup g = Total | Group g
+
+textTorG :: (g -> Text) -> TotalOrGroup g -> Text
+textTorG _ Total = "Total"
+textTorG f (Group g) = f g
+
+showTorG :: Show g => TotalOrGroup g -> Text
+showTorG = textTorG show
+
+type TotalOrGroupC g = "TotalOrGroup" F.:-> TotalOrGroup g
+
 allDistrictDetails
     ∷ ∀ (ks :: [(Symbol, Type)]) r rs a b
      . ( K.KnitOne r
@@ -589,7 +600,7 @@ allDistrictDetails
        , MR.PSTypeC ks SLDKeyR '[MR.ModelPr, MR.ModelT]
        , MR.PSTypeC (AndSLDKey ks) SLDKeyR '[MR.ModelPr]
        , MR.PSTypeC (AndSLDKey ks) SLDKeyR '[MR.ModelPr, MR.ModelT]
-       , FC.ElemsOf (ks V.++ ModelCompR) [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
+       , FC.ElemsOf (ks V.++ ModelCompR) ModelCompR
        , ks F.⊆ (SLDKeyR V.++ ks V.++ ModelCompR)
        )
     ⇒ BR.CommandLine
@@ -639,17 +650,25 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM catText cacheS
         includedSummary = F.filterFrame (\r → includeDistrict (r ^. GT.districtTypeC) (r ^. GT.districtName)) summaryRows
         oneDistrictDetails (dt, dn) = do
 
-          let f r = r ^. GT.districtTypeC == dt && r ^. GT.districtName == dn
-              onlyDistrict = F.filterFrame f
+          let onlyDistrictB :: FC.ElemsOf qs [GT.DistrictTypeC, GT.DistrictName] => F.Record qs -> Bool
+              onlyDistrictB r = r ^. GT.districtTypeC == dt && r ^. GT.districtName == dn
+--              onlyDistrict = F.filterFrame onlyDistrictB
+--              onlyDistrictComboByCat = onlyDistrict comboByCat
               rfPair (n, m) = (realToFrac n, realToFrac m)
           distRec <- K.knitMaybe ("allDistrictDetails: empty onlyDistrict for type=" <> show dt <> " and name=" <> dn)
-                     (viaNonEmpty head $ FL.fold FL.list $ onlyDistrict summaryRows)
+                     (viaNonEmpty head $ FL.fold FL.list $ F.filterFrame onlyDistrictB summaryRows)
           sbcs <- K.knitEither $  DCC.sbcComparison (DCC.ccQuantileFunctions ccSetup) (DCC.ccPartyMedians ccSetup) distRec
           _ <- K.addHvega Nothing Nothing
             $ DCC.sbcChart DCC.SBCState (DCC.ccNumQuantiles ccSetup) 10 (FV.ViewConfig 300 80 5) (Just $ DCC.ccNames ccSetup)
             (fmap rfPair <<$>> DCC.ccPartyLoHis ccSetup) (one (fullDNameText distRec, True, sbcs))
-          BR.brAddRawHtmlTable "Demographic Summary" (BHA.class_ "brTable") (distSummaryColonnade mempty) (onlyDistrict includedSummary)
-          BR.brAddRawHtmlTable "Group Details" (BHA.class_ "brTable") (distDetailsColonnade @ks catText mempty) (onlyDistrict comboByCat)
+          BR.brAddRawHtmlTable (Just "Demographic Summary") (BHA.class_ "brTable") (distSummaryColonnade mempty) (F.filterFrame onlyDistrictB includedSummary)
+          let totalRow = FL.fold  (FL.premap F.rcast modelVStatetotalsFld) $ F.filterFrame onlyDistrictB comboByCat
+          BR.brAddRawHtmlTable (Just "Group Details") (BHA.class_ "brTable") (distDetailsColonnade catText mempty)
+            (FL.fold FL.list (fmap (GroupRow @ks) $ F.filterFrame onlyDistrictB comboByCat)
+             <> [TotalRow state dt dn totalRow]
+            )
+
+
     traverse_ oneDistrictDetails $ FL.fold FL.list upper_districts
     traverse_ oneDistrictDetails $ FL.fold FL.list lower_districts
 
@@ -680,24 +699,49 @@ categoryChartSetup summaryRows = do
   partyMedians ← K.knitEither partyMediansE
   pure $ DCC.CategoryChartSetup categoryNames partyLoHis partyMedians 20 quantileFunctionsDblE
 
+data DistDetailsRow ks where
+  GroupRow :: (ks F.⊆ SLDKeyAnd2 ks ModelCompR, ModelCompR F.⊆ SLDKeyAnd2 ks ModelCompR)  => F.Record (SLDKeyAnd2 ks ModelCompR) -> DistDetailsRow ks
+  TotalRow :: Text -> GT.DistrictType -> Text -> F.Record ModelCompR -> DistDetailsRow ks
 
 
-distDetailsColonnade :: forall ks rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelT, MR.ModelP
-                                                      , StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
-                                       , ks F.⊆ rs
-                                       )
-                     => (F.Record ks -> Text) -> BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+ddState :: DistDetailsRow ks -> Text
+ddState (GroupRow r) = r ^. GT.stateAbbreviation
+ddState (TotalRow s _ _ _) = s
+
+ddDType :: DistDetailsRow ks -> GT.DistrictType
+ddDType (GroupRow r) = r ^. GT.districtTypeC
+ddDType (TotalRow _ dt _ _) = dt
+
+ddDName :: DistDetailsRow ks -> Text
+ddDName (GroupRow r) = r ^. GT.districtName
+ddDName (TotalRow _ _ dn _) = dn
+
+ddGroup :: (F.Record ks -> Text) -> DistDetailsRow ks -> Text
+ddGroup f (GroupRow r) = f $ F.rcast r
+ddGroup _ (TotalRow _ _ _ _) = "Total"
+
+toDetailsRec :: DistDetailsRow ks -> F.Record ModelCompR
+toDetailsRec (GroupRow r) = F.rcast r
+toDetailsRec (TotalRow _ _ _ r) = r
+
+distDetailsColonnade :: (F.Record ks -> Text) -> BR.CellStyle (DistDetailsRow ks) [Char] -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
 distDetailsColonnade kText cas =
-  let state = F.rgetField @GT.StateAbbreviation
-  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
-     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "Group" (BR.toCell cas "Group" "Group" (BR.textToStyledHtml . kText . F.rcast))
-     <> C.headed "N" (BR.toCell cas "N" "N" (BR.numberToStyledHtml "%2d" . view DT.popCount))
-     <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile))
-     <> C.headed "T" (BR.toCell cas "T" "T" (BR.numberToStyledHtml "%2.2f" . (100*) . view MR.modelT))
-     <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numberToStyledHtml "%2.2f" . (100*) . view stateModelT))
-     <> C.headed "P" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP))
-     <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP))
+  let state' = ddState
+      fullDName ddr = dTypeText' (ddDType ddr) <> "-" <> ddDName ddr
+  in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
+     <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDName))
+     <> C.headed "Group" (BR.toCell cas "Group" "Group" (BR.textToStyledHtml . ddGroup kText))
+     <> distDetailsColonnadeDC cas
+
+distDetailsColonnadeDC :: BR.CellStyle (DistDetailsRow ks) [Char] -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
+distDetailsColonnadeDC cas =
+  C.headed "N" (BR.toCell cas "N" "N" (BR.numberToStyledHtml "%2d" . view DT.popCount . toDetailsRec))
+  <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
+  <> C.headed "T" (BR.toCell cas "T" "T" (BR.numberToStyledHtml "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
+  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numberToStyledHtml "%2.2f" . (100*) . view stateModelT . toDetailsRec))
+  <> C.headed "P" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
+  <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
+
 
 
 type CombineDistrictPSMapsC ks =
@@ -729,36 +773,12 @@ type CombineDistrictPSMapsC ks =
   , FSI.RecVec (AndSLDKey2 ks [DT.PopCount, DT.PWPopPerSqMile])
   )
 
-combineDistrictPSMaps :: forall ks r .
-                         (K.KnitEffects r
-                         , CombineDistrictPSMapsC ks
-{-
-                         , FJ.CanLeftJoinWithMissing ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])
-                         , rSM ~ FJ.JoinResult ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])
-                         , FJ.CanLeftJoinWithMissing (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])
-                         , rDM ~ FJ.JoinResult  (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])
-                         , FJ.CanLeftJoinWithMissing ks rDM rSM
-                         , rAllM ~ FJ.JoinResult ks rDM rSM
-                         , FJ.CanLeftJoinWithMissing (AndSLDKey ks) rAllM (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile])
-                         , rAll ~ FJ.JoinResult (AndSLDKey ks) rAllM (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile])
-                         , FSI.RecVec (ks V.++ '[StateModelT])
-                         , FSI.RecVec (ks V.++ '[StateModelP])
-                         , FSI.RecVec (AndSLDKey2 ks '[MR.ModelT])
-                         , FSI.RecVec (AndSLDKey2 ks '[MR.ModelP])
-                         , Show (F.Record ks)
-                         , Show (F.Record (AndSLDKey ks))
-                         , SLDKeyAnd2 ks [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile] F.⊆ rAll
-                         , Ord (F.Record (AndSLDKey ks))
-                         , AndSLDKey ks F.⊆ DP.PSDataR SLDKeyR
-                         , FSI.RecVec (AndSLDKey2 ks [DT.PopCount, DT.PWPopPerSqMile])
--}
-                         )
+combineDistrictPSMaps :: forall ks r . (K.KnitEffects r, CombineDistrictPSMapsC ks)
                       => MC.PSMap ks MT.ConfidenceInterval
                       -> MC.PSMap (AndSLDKey ks) MT.ConfidenceInterval
                       -> MC.PSMap ks MT.ConfidenceInterval
                       -> MC.PSMap (AndSLDKey ks) MT.ConfidenceInterval
                       -> DP.PSData SLDKeyR
---                      -> K.Sem r (F.FrameRec (FJ.JoinResult (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP])))
                       -> K.Sem r (F.FrameRec (SLDKeyAnd2 ks '[MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]))
 combineDistrictPSMaps stateT dT stateP dP psData = do
   let stateTF = MC.psMapToFrame @StateModelT $ fmap MT.ciMid stateT
@@ -774,6 +794,21 @@ combineDistrictPSMaps stateT dT stateP dP psData = do
   when (not $ null allModelMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in dist/state join=" <> show allModelMissing
   when (not $ null allMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in model/psData join=" <> show allMissing
   pure $ fmap F.rcast all
+
+modelVStatetotalsFld :: FL.Fold (F.Record [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile])
+                        (F.Record [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile])
+modelVStatetotalsFld =
+  let popFld = FL.premap (view DT.popCount) FL.sum
+      posDiv x y = if y /= 0 then x / realToFrac y else 0
+      wgtd f r = realToFrac (r ^. DT.popCount) * f r
+      popWgtdFld f = posDiv <$> FL.premap (wgtd f) FL.sum <*> popFld
+      modelT = popWgtdFld (view MR.modelT)
+      modelP = popWgtdFld (view MR.modelP)
+      sModelT = popWgtdFld (view stateModelT)
+      sModelP = popWgtdFld (view stateModelP)
+      dens = popWgtdFld (view DT.pWPopPerSqMile)
+  in (\t p st sp n d -> t F.&: p F.&: st F.&: sp F.&: n F.&: d F.&: V.RNil)
+     <$> modelT <*> modelP <*> sModelT <*> sModelP <*> popFld <*> dens
 
 
 aggregatePS :: forall ks . (Ord (F.Record (AndSLDKey ks))
@@ -859,11 +894,15 @@ sldColonnade cas =
      <> C.headed "50%" (BR.toCell cas "50%" "50%" (rbStyle "%2.1f" . (100*) . share50))
      <> C.headed "95%" (BR.toCell cas "95%" "95%" (rbStyle "%2.1f" . (100*) . share95))
 
+
+dTypeText' :: GT.DistrictType -> Text
+dTypeText' dt = case dt of
+  GT.StateUpper -> "Upper"
+  GT.StateLower -> "Lower"
+  _ -> "Not State Leg!"
+
 dTypeText :: F.ElemOf rs GT.DistrictTypeC => F.Record rs -> Text
-dTypeText r = case (r ^. GT.districtTypeC) of
-        GT.StateUpper -> "Upper"
-        GT.StateLower -> "Lower"
-        _ -> "Not State Leg!"
+dTypeText r = dTypeText' (r ^. GT.districtTypeC)
 
 fullDNameText :: FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName] => F.Record rs -> Text
 fullDNameText r = dTypeText r <> "-" <> r ^. GT.districtName

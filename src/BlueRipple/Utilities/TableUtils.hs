@@ -7,6 +7,7 @@
 {-# LANGUAGE UndecidableInstances  #-}
 module BlueRipple.Utilities.TableUtils
   ( CellStyle(..)
+  , contramapCellStyle
   , cellStyleIf
   , toCell
   , normalCell
@@ -47,6 +48,9 @@ instance Semigroup (CellStyle r c) where
 instance Semigroup (CellStyle r c) => Monoid (CellStyle r c) where
   mempty = CellStyle (\_ _ -> "")
   mappend = (<>)
+
+contramapCellStyle :: (r -> rSubset) -> CellStyle rSubset col -> CellStyle r col
+contramapCellStyle f (CellStyle g) = CellStyle (g . f)
 
 cellStyleIf :: Text -> (row -> col -> Bool) -> CellStyle row col
 cellStyleIf s condF = CellStyle $ \r c -> if condF r c then s else ""
@@ -105,15 +109,9 @@ numColorBlackUntil until hi hue x =
 numberToStyledHtml'
   :: (PF.PrintfArg a, Ord a, Num a) => Bool -> T.Text -> a -> T.Text -> T.Text -> a -> (BH.Html, T.Text)
 numberToStyledHtml' parenNeg belowColor splitNumber aboveColor printFmt x =
-  let htmlNumber = if not parenNeg || x > 0
-                   then BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x
-                   else BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")") (negate x)
-      numColor y = if y >= splitNumber then aboveColor else belowColor
+  let numColor y = if y >= splitNumber then aboveColor else belowColor
   in numberToStyledHtmlFull parenNeg numColor printFmt x
-{-  in if x >= splitNumber
-     then (htmlNumber, "color: " <> aboveColor)
-     else (htmlNumber, "color: " <> belowColor)
--}
+
 numberToStyledHtml
   :: (PF.PrintfArg a, Ord a, Num a) => T.Text -> a -> (BH.Html, T.Text)
 numberToStyledHtml = numberToStyledHtml' True "red" 0 "green"
@@ -137,14 +135,14 @@ textToCell  = BC.Cell mempty . BH.toHtml
 brAddRawHtmlTable
   :: forall {-c k ct -} r f a.
      (K.KnitOne r, Foldable f)
-  => T.Text
+  => Maybe T.Text
   -> BH.Attribute
   -> K.Colonnade K.Headed a BC.Cell
   -> f a
   -> K.Sem r ()
-brAddRawHtmlTable title attr colonnade rows =
+brAddRawHtmlTable titleM attr colonnade rows =
   brAddMarkDown $ TL.toStrict $ B.renderHtml $ do
-    BH.div BH.! BHA.class_ "brTableTitle" $ BH.toHtml title
+    maybe (pure ()) ((BH.div BH.! BHA.class_ "brTableTitle") . BH.toHtml) titleM
     BC.encodeCellTable attr colonnade rows
 
 
