@@ -106,6 +106,8 @@ import qualified ModelNotes as MN
 --import Data.Monoid (Sum(getSum))
 FTH.declareColumn "StateModelT" ''Double
 FTH.declareColumn "StateModelP" ''Double
+FTH.declareColumn "Share" ''Double
+FTH.declareColumn "StateShare" ''Double
 FTH.declareColumn "Overlap" ''Double
 FTH.declareColumn "CongressionalPPL" ''Double
 
@@ -566,7 +568,7 @@ type SLDKeyAnd2 as bs = SLDKeyR V.++ as V.++ bs
 type AndSLDKey as = as V.++ SLDKeyR
 type AndSLDKey2 as bs = as V.++ SLDKeyR V.++ bs
 
-type ModelCompR = [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]
+type ModelCompR = [MR.ModelT, MR.ModelP, Share, StateModelT, StateModelP, StateShare, DT.PopCount, DT.PWPopPerSqMile]
 
 data TotalOrGroup g = Total | Group g
 
@@ -663,12 +665,12 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM catText cacheS
             (fmap rfPair <<$>> DCC.ccPartyLoHis ccSetup) (one (fullDNameText distRec, True, sbcs))
           BR.brAddRawHtmlTable (Just "Demographic Summary") (BHA.class_ "brTable") (distSummaryColonnade mempty) (F.filterFrame onlyDistrictB includedSummary)
           let totalRow = FL.fold  (FL.premap F.rcast modelVStatetotalsFld) $ F.filterFrame onlyDistrictB comboByCat
-          BR.brAddRawHtmlTable (Just "Group Details") (BHA.class_ "brTable") (distDetailsColonnade catText mempty)
+              nt = realToFrac (totalRow ^. DT.popCount) * totalRow ^. MR.modelT
+              snt = realToFrac (totalRow ^. DT.popCount) * totalRow ^. stateModelT
+          BR.brAddRawHtmlTable (Just "Group Details") (BHA.class_ "brTable") (distDetailsColonnade catText mempty nt snt)
             (FL.fold FL.list (fmap (GroupRow @ks) $ F.filterFrame onlyDistrictB comboByCat)
              <> [TotalRow state dt dn totalRow]
             )
-
-
     traverse_ oneDistrictDetails $ FL.fold FL.list upper_districts
     traverse_ oneDistrictDetails $ FL.fold FL.list lower_districts
 
@@ -703,7 +705,6 @@ data DistDetailsRow ks where
   GroupRow :: (ks F.⊆ SLDKeyAnd2 ks ModelCompR, ModelCompR F.⊆ SLDKeyAnd2 ks ModelCompR)  => F.Record (SLDKeyAnd2 ks ModelCompR) -> DistDetailsRow ks
   TotalRow :: Text -> GT.DistrictType -> Text -> F.Record ModelCompR -> DistDetailsRow ks
 
-
 ddState :: DistDetailsRow ks -> Text
 ddState (GroupRow r) = r ^. GT.stateAbbreviation
 ddState (TotalRow s _ _ _) = s
@@ -724,24 +725,27 @@ toDetailsRec :: DistDetailsRow ks -> F.Record ModelCompR
 toDetailsRec (GroupRow r) = F.rcast r
 toDetailsRec (TotalRow _ _ _ r) = r
 
-distDetailsColonnade :: (F.Record ks -> Text) -> BR.CellStyle (DistDetailsRow ks) [Char] -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
-distDetailsColonnade kText cas =
+distDetailsColonnade :: (F.Record ks -> Text) -> BR.CellStyle (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
+distDetailsColonnade kText cas nt stateNT =
   let state' = ddState
       fullDName ddr = dTypeText' (ddDType ddr) <> "-" <> ddDName ddr
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state'))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDName))
      <> C.headed "Group" (BR.toCell cas "Group" "Group" (BR.textToStyledHtml . ddGroup kText))
-     <> distDetailsColonnadeDC cas
+     <> distDetailsColonnadeDC cas nt stateNT
 
-distDetailsColonnadeDC :: BR.CellStyle (DistDetailsRow ks) [Char] -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
-distDetailsColonnadeDC cas =
-  C.headed "N" (BR.toCell cas "N" "N" (BR.numberToStyledHtml "%2d" . view DT.popCount . toDetailsRec))
+distDetailsColonnadeDC :: BR.CellStyle (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
+distDetailsColonnadeDC cas nt stateNT =
+  let share r = realToFrac (r ^. DT.popCount) * r ^. MR.modelP  * r ^. MR.modelT / nt
+      stateShare r = realToFrac (r ^. DT.popCount) * r ^. stateModelP  * r ^. stateModelT / stateNT
+  in C.headed "N" (BR.toCell cas "N" "N" (BR.numberToStyledHtml "%2d" . view DT.popCount . toDetailsRec))
   <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numberToStyledHtml "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
   <> C.headed "T" (BR.toCell cas "T" "T" (BR.numberToStyledHtml "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
   <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numberToStyledHtml "%2.2f" . (100*) . view stateModelT . toDetailsRec))
   <> C.headed "P" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
   <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
-
+  <> C.headed "Share" (BR.toCell cas "Share" "Share" (BR.numberToStyledHtml "%2.1f" . (100*) . share . toDetailsRec))
+  <> C.headed "State Share" (BR.toCell cas "State Share" "State Share" (BR.numberToStyledHtml "%2.1f" . (100*) . stateShare . toDetailsRec))
 
 
 type CombineDistrictPSMapsC ks =
@@ -762,12 +766,19 @@ type CombineDistrictPSMapsC ks =
   , FSI.RecVec (AndSLDKey2 ks '[MR.ModelP])
   , Show (F.Record ks)
   , Show (F.Record (AndSLDKey ks))
-  , SLDKeyAnd2 ks [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile] F.⊆
-    (FJ.JoinResult (AndSLDKey ks)
+  , SLDKeyAnd2 ks ModelCompR F.⊆
+    ((FJ.JoinResult (AndSLDKey ks)
      (FJ.JoinResult ks
       (FJ.JoinResult  (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP]))
       (FJ.JoinResult ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])))
      (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile]))
+      V.++ [Share, StateShare])
+  , FC.ElemsOf (FJ.JoinResult (AndSLDKey ks)
+                (FJ.JoinResult ks
+                 (FJ.JoinResult  (AndSLDKey ks) (AndSLDKey2 ks '[MR.ModelT]) (AndSLDKey2 ks '[MR.ModelP]))
+                 (FJ.JoinResult ks (ks V.++ '[StateModelT]) (ks V.++ '[StateModelP])))
+                (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile]))
+    ModelCompR
   , Ord (F.Record (AndSLDKey ks))
   , AndSLDKey ks F.⊆ DP.PSDataR SLDKeyR
   , FSI.RecVec (AndSLDKey2 ks [DT.PopCount, DT.PWPopPerSqMile])
@@ -779,7 +790,7 @@ combineDistrictPSMaps :: forall ks r . (K.KnitEffects r, CombineDistrictPSMapsC 
                       -> MC.PSMap ks MT.ConfidenceInterval
                       -> MC.PSMap (AndSLDKey ks) MT.ConfidenceInterval
                       -> DP.PSData SLDKeyR
-                      -> K.Sem r (F.FrameRec (SLDKeyAnd2 ks '[MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile]))
+                      -> K.Sem r (F.FrameRec (SLDKeyAnd2 ks ModelCompR))
 combineDistrictPSMaps stateT dT stateP dP psData = do
   let stateTF = MC.psMapToFrame @StateModelT $ fmap MT.ciMid stateT
       statePF = MC.psMapToFrame @StateModelP $ fmap MT.ciMid stateP
@@ -793,10 +804,17 @@ combineDistrictPSMaps stateT dT stateP dP psData = do
   when (not $ null dbMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in distT/distP join=" <> show dbMissing
   when (not $ null allModelMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in dist/state join=" <> show allModelMissing
   when (not $ null allMissing) $ K.knitError $ "combineDistrictPSMaps: Missing keys in model/psData join=" <> show allMissing
-  pure $ fmap F.rcast all
+  let rPop = realToFrac . view DT.popCount
+      ntF r = rPop r * r ^. MR.modelT
+      sntF r = rPop r * r ^. stateModelT
+      (nt, snt) = FL.fold ((,) <$> FL.premap ntF FL.sum <*> FL.premap sntF FL.sum) all
+      share r = rPop r * r ^. MR.modelT * r ^. MR.modelP / nt
+      stateShare r = rPop r * r ^. stateModelT * r ^. stateModelP / snt
+      addShares r = r F.<+> FT.recordSingleton @Share (share r) F.<+> FT.recordSingleton @StateShare (stateShare r)
+  pure $ fmap (F.rcast . addShares) all
 
-modelVStatetotalsFld :: FL.Fold (F.Record [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile])
-                        (F.Record [MR.ModelT, MR.ModelP, StateModelT, StateModelP, DT.PopCount, DT.PWPopPerSqMile])
+modelVStatetotalsFld :: FL.Fold (F.Record ModelCompR)
+                        (F.Record ModelCompR)
 modelVStatetotalsFld =
   let popFld = FL.premap (view DT.popCount) FL.sum
       posDiv x y = if y /= 0 then x / realToFrac y else 0
@@ -804,12 +822,13 @@ modelVStatetotalsFld =
       popWgtdFld f = posDiv <$> FL.premap (wgtd f) FL.sum <*> popFld
       modelT = popWgtdFld (view MR.modelT)
       modelP = popWgtdFld (view MR.modelP)
+      shr = FL.premap (view share) FL.sum
       sModelT = popWgtdFld (view stateModelT)
       sModelP = popWgtdFld (view stateModelP)
+      sshr = FL.premap (view stateShare) FL.sum
       dens = popWgtdFld (view DT.pWPopPerSqMile)
-  in (\t p st sp n d -> t F.&: p F.&: st F.&: sp F.&: n F.&: d F.&: V.RNil)
-     <$> modelT <*> modelP <*> sModelT <*> sModelP <*> popFld <*> dens
-
+  in (\t p s st sp ss n d -> t F.&: p F.&: s F.&: st F.&: sp F.&: ss F.&: n F.&: d F.&: V.RNil)
+     <$> modelT <*> modelP <*> shr <*> sModelT <*> sModelP <*> sshr <*> popFld <*> dens
 
 aggregatePS :: forall ks . (Ord (F.Record (AndSLDKey ks))
                            , AndSLDKey ks F.⊆ DP.PSDataR SLDKeyR
