@@ -15,6 +15,7 @@ module BlueRipple.Utilities.TableUtils
   , highlightCellBlue
   , highlightCellPurple
   , numberToStyledHtmlFull
+  , numSimple
   , numColorHiGrayLo
   , numColorBlackUntil
   , numberToStyledHtml'
@@ -88,6 +89,9 @@ numberToStyledHtmlFull parenNeg numColor printFmt x =
                    then BH.toHtml . T.pack $ PF.printf (T.unpack printFmt) x
                    else BH.toHtml . T.pack $ PF.printf ("(" ++ (T.unpack printFmt) ++ ")") (negate x)
   in (htmlNumber, "color: " <> numColor x)
+
+numSimple :: (PF.PrintfArg a, Ord a, Num a) => Text -> Text -> a -> (BH.Html, T.Text)
+numSimple color = numberToStyledHtmlFull False (const color)
 
 numColorHiGrayLo :: (Ord a, Fractional a, PF.PrintfArg a) => a -> a -> Double -> Double -> a -> T.Text
 numColorHiGrayLo lo hi hLo hHi x =
