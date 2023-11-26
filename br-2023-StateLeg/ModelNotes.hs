@@ -33,8 +33,8 @@ to field a poll. Additionally, there’s less information available about
 the demographic characteristics of the people who live in geographic
 regions as small as a state-legislative district. This makes the work of
 weighting a poll–adjusting the responses you get to
-estimate the responses you would’ve gotten from a representative sample–quite
-difficult.
+estimate the responses you would’ve gotten from a
+representative sample of voters–quite difficult.
 
 That leaves us with various options for using historical data to help Democratic donors
 figure out which state legislature candidates to support. The primary strategy
@@ -50,18 +50,18 @@ in previous elections, either for the same districts or statewide.
 does a spectacular job of joining district maps and precinct-level data from previous
 elections to create an estimate of the past-partisan-lean[^ppl] (PPL) of every
 state-legislative-district in the country. Their rich interface allows the user to choose various
-previous elections and combinations of them to estimate the partisan lean.
+previous elections (or combinations of them) to estimate the partisan lean.
 
 [^ppl]: By “partisan lean” we mean the 2-party vote share of Democratic votes, that
 is, given $D$ democratic votes and $R$ Republican votes,
 we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party votes.
 
-As an example, here is chart of the PPL in the VA house[^pplVA], the lower
+As an example, here is chart of the 2021 PPL in the VA house[^pplVA], the lower
 chamber of the VA state-legislature. As with many such maps,
 it looks mainly Republican (Red) but that is because the
 districts with Democratic leaning PPL are often geographically smaller, in
-places, like cities, with higher population density. As the 2023 election shows, VA
-has slightly more D leaning districts than R leaning ones.
+places, like cities, with higher population density. As the 2023 election showed,
+there are slightly more D leaning districts in VA than R leaning ones.
 
 [^pplVA]: Using 2020 ACS population estimates and a composite of presidential and statewide
 elections from 2016-2021: 2018 and 2020 senate as well as Governor and AG from 2021.
@@ -75,7 +75,7 @@ safe seat.
 
 part2 :: Text
 part2 = [here|
-The limitation of PPL is that it tells you nothing about *why* a district has the lean it does.
+PPL alone tells you nothing about *why* a district has the lean it does.
 For that you need local knowledge and/or some analysis of the demographics.
 You can look at the demographic composition of a district and make some educated guesses
 but it’s useful to do that more systematically, via a detailed demographic model applied to
@@ -83,8 +83,8 @@ robust estimates of the demographic composition of each district.
 
 This sort of analysis can help identify opportunities and vulnerabilities for Democrats.
 District PPLs inconsistent with their location and demographic makeup may
-be opportunities to spot a possibly flippable or safe-looking-but-vulnerable district
-or uncover districts that might be ruled out as donation targets because the underlying
+indicate a possibly flippable or safe-looking-but-vulnerable district.
+It may also uncover districts that might be ruled out as donation targets because the underlying
 demographics make them likely less close than history suggests.
 
 For example, imagine a state-legislative-district with PPL just below some cutoff for winnable.
@@ -129,7 +129,7 @@ sorts of effects.
 part3 :: Text
 part3 = [here|
 The maps of PPL and DPL are, unsurprisingly, very similar but there are some large differences which
-are clearer on the chart of the difference (DPL - PPL) below.
+are clearer on a chart of just the difference (DPL - PPL) below.
 |]
 
 part3b :: Text
@@ -150,14 +150,15 @@ A quick note: We did this analysis pre-election and all of the contested distric
 out pretty much as history (PPL) would suggest. For example, House district 52 (Lower-52) was won by the R candidate
 55-45. Looking at our model, we see a district right between the median R and D districts in terms of population
 density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
-who have graduated from college. So why did our model think this might be a D district? The voters in it are significantly
-*younger* than a typical district. Almost 60% of the voters are under 45. The model, even in VA, suggests that younger
-voters are significantly more D leaning. It might be interesting to try to campaign in this district with that
-in mind.
+who have graduated from college. So why did our model think this might be a D district? The white voters in the
+district are younger than in the average district in VA, pushing them to 50/50 preference
+and the district has a significant number of black voters (21% of the electorate, according to the model).
+Obviously something about that analysis is wrong in terms of what actually happened on election day! It
+would be interesting to figure out what it is.
 
 One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
-of turnout and party-preference. But sometimes the combination of categories is essential
+of turnout and party-preference. But sometimes the *combination* of categories is essential
 for understanding. For example, the Republican lean of white-non-college educated voters
 is greater than you expect from the Republican lean of white voters and the Republican lean
 of non-college-educated voters combined. This gets even more complex and harder to keep track of
@@ -166,11 +167,17 @@ affects party-preference quite strongly in ways not well captured by any of thos
 
 DPL is the partisan lean of a district if,
 within each demographic group, each person’s choice to vote and whom to vote for
-was more or less the same as everyone else in the state living at similar population density.
+was more or less the same as everyone else in the state living at similar population density[^dpl].
 This is less
 *predictive* than knowing who those same people voted for in the previous few elections. But
 it’s different information, and particularly interesting when it’s inconsistent with
 the PPL.
+
+[^dpl]: The model takes the state into account but the fit is not separate for each state. We use
+something called “partial-pooling” which means we allow the fitting
+process itself to choose how much it uses data from the state and when to “borrow strength”
+from the national data. We’d expect the state data to be more predictive but there isn’t that much
+of it for each category (since we have 200 categories!). So there’s a tradeoff.
 
 ### Scenario Analysis: Asking “what if...?” questions
 Since the DPL is built from an estimate of who lives in a district and how likely each of them is
@@ -207,7 +214,7 @@ This is a tricker thing to map out in VA. Here’s the same table but with that 
 
 part4c :: Text
 part4c = [here|
-In this case the shift varies from under one point to over 1.5 points, which, using our example,
+In this case the shift varies from 0.5 to over 1.5 points, which, using our example,
 makes HD-69 and HD-30 competitive (but not HD-49) and pushes HD-97 into safe territory.
 
 This might also be useful when considering a targeted intervention. E.g., how much would you have to
@@ -273,7 +280,7 @@ geographic information about each person as well as information about voting and
 CES in a particular year attempts to match a CES interviewee with a voter-file record in that state
 to validate the survey responses about registration and turnout.
 
-The CES data includes state and congressional district of each person interviewed. We use that
+The CES data includes the state and congressional district of each person interviewed. We use that
 to join the data to population-density data from the 5-year American Community
 Survey ([ACS](https://www.census.gov/programs-surveys/acs/microdata.html)) data, using
 the sample ending the same year as the CES survey was done.
@@ -283,29 +290,32 @@ turnout, one for party-preference and one for both at the same time.
 To compute expected turnout, party-preference of voters or DPL in a district,
 we  “post-stratify” the model using the demographics of the district. That
 demographic data is also sourced from the ACS, though via a different path
-because the microdata is not available at SLD size geographies. Due
-to the method we use for modeling (Hamiltonian Monte Carlo), the
-result of post-stratification is a distribution of
+because the microdata is not available at state-legislative-district sized
+geographies. Due to the method we use for modeling (Hamiltonian Monte Carlo),
+the result of post-stratification is a distribution of
 turnout, party-preference or DPL, giving us an expectation and various
 ways to look at uncertainty.
 
 Let’s dig into the details a bit!
 
 ### Choosing Our Sources
-Our present model uses the 2020 CES survey as its source. We will have the
+Our present model uses the 2020 CES survey as its source and
+we choose presidential vote as our
+party-preference indicator[^CES2022].
+
+[^CES2022]: We will have the
 2022 CES survey as a possible source available to us soon. It’s not clear
 which is more appropriate for thinking about 2024. 2022 is more recent and so
 might better capture current demographic voting trends,
 but 2020 is the most recent *presidential* election year.
-Using the 2020 survey, we choose presidential vote as our
-party-preference indicator. If we use 2022, we will
+If we use 2022, we will
 switch to house-candidate vote and include incumbency in the regression model
 for party-preference. We’re thinking about ways to combine these but it’s not
 straightforward for a variety of reasons. We could also model using both and
 have two DPL numbers to look at per district.
 
-ACS is the best available public data for figuring out the demographic breakdowns
-of who lives in a district. We get ACS population tables at the census-tract
+The ACS is the best available *public* data for figuring out the demographics
+of a district. We get ACS population tables at the census-tract
 level and aggregate them to the district level. Unfortunately, none of these
 tables alone has all the categories we want for post-stratification.
 So We use statistical methods[^nsm] to
@@ -337,13 +347,13 @@ weights are accounted for. For example, if you know that there are equal numbers
 (CES has just begun tracking gender categories other than male or female but the ACS does not)
 in a congressional district but your survey has twice as many women as men, you would adjust the
 weights so that those interviews have equal representation in a weighted sum. Because our demographic
-categories are more coarse-grained than what the CES provides (e.g., CES give age in years but we want
+categories are more coarse-grained than what the CES provides (e.g., CES gives age in years but we want
 to model with 5 age buckets) we need to aggregate the data. We use the weights when aggregating and this
 means that in the aggregated data we have non-whole numbers of voters and voters preferring one party or the other.
 
 We imagine each person in a demographic category and state has a
-specific fixed probability of voting and each voter a different probability of voting
-for the Democratic candidate. This would lead to a binomial model of vote
+specific fixed probability of voting and the voters among them a
+different probability of voting for the Democratic candidate. This would lead to a binomial model of vote
 counts. This is obviously a simplification but a fairly standard one, and a reasonable fit
 to the data. As mentioned above, we have non-whole counts. So we use a generalization of the
 binomial model^[bg] which allows for this.

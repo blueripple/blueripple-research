@@ -182,11 +182,11 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
---    modelNotesPost cmdLine
+    modelNotesPost cmdLine
 
-    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    stateUpperOnlyM <- stateUpperOnlyMap
-    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) ["LA", "MS", "NJ", "VA"]
+--    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+--    stateUpperOnlyM <- stateUpperOnlyMap
+--    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) ["LA", "MS", "NJ", "VA"]
 
   case resE of
     Right namedDocs →
