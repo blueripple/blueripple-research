@@ -59,8 +59,8 @@ we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party vote
 As an example, here is chart of the 2021 PPL in the VA house[^pplVA], the lower
 chamber of the VA state-legislature. As with many such maps,
 it looks mainly Republican (Red) but that is because the
-districts with Democratic leaning PPL are often geographically smaller, in
-places, like cities, with higher population density. As the 2023 election showed,
+Democratic leaning districts are often geographically smaller, in
+places like cities, with higher population density. As the 2023 election showed,
 there are slightly more D leaning districts in VA than R leaning ones.
 
 [^pplVA]: Using 2020 ACS population estimates and a composite of presidential and statewide
@@ -77,14 +77,15 @@ part2 :: Text
 part2 = [here|
 PPL alone tells you nothing about *why* a district has the lean it does.
 For that you need local knowledge and/or some analysis of the demographics.
-You can look at the demographic composition of a district and make some educated guesses
-but it’s useful to do that more systematically, via a detailed demographic model applied to
-robust estimates of the demographic composition of each district.
+You can look at the demographic composition of a district and make some inferences
+but doing that more systematically, via a detailed demographic model applied to
+robust estimates of the demographic composition of each district, provides more
+information with greater consistency across districts and states.
 
-This sort of analysis can help identify opportunities and vulnerabilities for Democrats.
+Demographic analysis can help identify opportunities and vulnerabilities for Democrats.
 District PPLs inconsistent with their location and demographic makeup may
 indicate a possibly flippable or safe-looking-but-vulnerable district.
-It may also uncover districts that might be ruled out as donation targets because the underlying
+It may also uncover districts that can be downgraded as donation targets because the underlying
 demographics make them likely less close than history suggests.
 
 For example, imagine a state-legislative-district with PPL just below some cutoff for winnable.
@@ -111,8 +112,9 @@ Almost none of our source data tracks sex in a more fine-grained way. For educat
 we use four categories: non high-school graduate, high-school graduate, some college, and college-graduate.
 And for race/ethnicity we use five categories:
 Black, Hispanic, Asian American/Pacific Islander (AAPI), White-Non-Hispanic and Other.
-With all of these categories there would be value to finer but
-that would also create computational and data difficulties.]
+With all of these categories there would be value to finer gradations but
+that would also create computational and data difficulties. As it is, this setup uses 200 buckets
+per state.]
 |]
 
 
@@ -128,7 +130,7 @@ sorts of effects.
 
 part3 :: Text
 part3 = [here|
-The maps of PPL and DPL are, unsurprisingly, very similar but there are some large differences which
+The maps of PPL and DPL are, unsurprisingly, similar but there are some large differences which
 are clearer on a chart of just the difference (DPL - PPL) below.
 |]
 
@@ -148,13 +150,17 @@ part4 :: Text
 part4 = [here|
 A quick note: We did this analysis pre-election and all of the contested districts in the list above played
 out pretty much as history (PPL) would suggest. For example, House district 52 (Lower-52) was won by the R candidate
-55-45. Looking at our model, we see a district right between the median R and D districts in terms of population
+54-45. House district 52 is between the median R and D districts in terms of population
 density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
-who have graduated from college. So why did our model think this might be a D district? The white voters in the
-district are younger than in the average district in VA, pushing them to 50/50 preference
-and the district has a significant number of black voters (21% of the electorate, according to the model).
-Obviously something about that analysis is wrong in terms of what actually happened on election day! It
-would be interesting to figure out what it is.
+who have graduated from college. So why did our model think this might be a D district? The
+median white voter in the district is younger than in the typical district in VA
+(moving their modeled preference from 45/55 to 50/50),
+and the district has a significant number of black voters (25% of the over-18 population
+and 21% of the modeled electorate).
+Obviously something about that analysis is wrong! It
+would be interesting to know what: Are these younger white voters very R leaning despite their age?
+Are Black voters a smaller fraction of the electorate than we thought?
+Either or both of those might suggest a path forward for a D candidate in the district.
 
 One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
@@ -174,8 +180,8 @@ it’s different information, and particularly interesting when it’s inconsist
 the PPL.
 
 [^dpl]: The model takes the state into account but the fit is not separate for each state. We use
-something called “partial-pooling” which means we allow the fitting
-process itself to choose how much it uses data from the state and when to “borrow strength”
+something called “partial-pooling”: we allow the fitting
+process itself to control how much it uses data from the state and when to “borrow strength”
 from the national data. We’d expect the state data to be more predictive but there isn’t that much
 of it for each category (since we have 200 categories!). So there’s a tradeoff.
 
@@ -183,14 +189,14 @@ of it for each category (since we have 200 categories!). So there’s a tradeoff
 Since the DPL is built from an estimate of who lives in a district and how likely each of them is
 to turn out and vote for the Democratic candidate, we can use it to answer some
 “what would happen if...” sorts of questions. If you imagine some voters are
-more energized and thus likely to vote and/or more likely to vote for the Democratic
+more energized and thus more likely to vote and/or more likely to vote for the Democratic
 candidate, that might change which seats are in play and which are safe. For example,
 suppose we think the Dobbs decision overturning Roe v. Wade will raise turnout among women
 by 5% and also pushes their party preference 5 points towards Democratic candidates[^scenario].
 What would this mean for the 20 closest (by PPL) house districts in VA?
 
 [^scenario]: A technical note: we don't actually move the probabilities by 5% (or whatever) for a couple of reasons.
-We don't want to end up with probabilities above 1 or below 0 which could happen with larger shifts and/or
+We don't want to end up with probabilities above 100% or below 0 which could happen with larger shifts and/or
 probabilities already closer to 0 or 1. And, intuitively, very low and very high probabilities are likely to
 shift less than probabilities closer to 50%. So we shift using the logistic function in such a way that
 for a shift of $x$, we would shift a probability of $\frac{1}{2} - \frac{x}{2}$ to $\frac{1}{2} + \frac{x}{2}$
@@ -243,14 +249,14 @@ ticket, the so-called “reverse-coattails” effect (“reverse” because we a
 for smaller offices helping a larger race on the same ballot).
 
 When a district overlaps geographically with another important election we call that a
-a “double-word score.” For instance, in a presidential election year, any close
+a “double-word-score.” For instance, in a presidential election year, any close
 state-legislative district in a swing state might be a good or appealing place to direct donor dollars.
 Close senate races also generate these sorts of opportunities.
 
-Looking at competitive *congressional* districts,
-gives “double-word score” opportunities for some state-legislative-districts
-and not others. These are trickier to find than statewide elections since we need to analyze the population overlaps
-of the congressional and state-legislative districts.
+Looking at competitive *congressional* districts
+gives “double-word-score” opportunities for some state-legislative-districts
+and not others. These are trickier to find than statewide elections since we need to
+know the population overlaps of the congressional and state-legislative districts.
 As an example, let’s consider the 2024 election in Wisconsin. The chart below
 contains all the competitive state-legislative districts (PPL between 45% and 55%) and whichever congressional
 district contains most of the state-legislative-district. In green, we’ve highlighted the districts where the
@@ -258,7 +264,7 @@ overlapping congressional districts are also competitive by PPL. The WI congress
 triple-word-scores in ‘24 because WI is a swing state and has a senate race as well.
 So the state-legislative-districts in green in the chart below are actually quadruple-word-scores!
 
-This can be a nice frame for driving donor money aimed at the bigger races into the state-legislative races.
+This might be a nice frame for driving donor money aimed at the bigger races into the state-legislative races.
 |]
 
 
@@ -285,13 +291,13 @@ to join the data to population-density data from the 5-year American Community
 Survey ([ACS](https://www.census.gov/programs-surveys/acs/microdata.html)) data, using
 the sample ending the same year as the CES survey was done.
 
-We then fit a multi-level regressions of that data, one for
-turnout, one for party-preference and one for both at the same time.
+We then fit a multi-level regression of that data, one for
+turnout, one for party-preference and one for both jointly.
 To compute expected turnout, party-preference of voters or DPL in a district,
 we  “post-stratify” the model using the demographics of the district. That
 demographic data is also sourced from the ACS, though via a different path
 because the microdata is not available at state-legislative-district sized
-geographies. Due to the method we use for modeling (Hamiltonian Monte Carlo),
+geographies. We use Hamiltonian Monte Carlo for fitting the model so
 the result of post-stratification is a distribution of
 turnout, party-preference or DPL, giving us an expectation and various
 ways to look at uncertainty.
@@ -318,7 +324,7 @@ The ACS is the best available *public* data for figuring out the demographics
 of a district. We get ACS population tables at the census-tract
 level and aggregate them to the district level. Unfortunately, none of these
 tables alone has all the categories we want for post-stratification.
-So We use statistical methods[^nsm] to
+We use statistical methods[^nsm] to
 combine those tables, producing an estimated population table with all of our
 demographic categories in each district.
 
@@ -335,7 +341,7 @@ in terms of accuracy and statistical bias and the disadvantage of being somewhat
 complex.
 
 There are various companies that use voter-file data
-(which is public but costs $$ and requires work to standardize) and various other data and
+(which is public but costs money and requires work to standardize) and various other data and
 modeling (e.g., using names to predict race and sex) to estimate a population table
 for any specific geography. We’ve not had a chance to compare the accuracy of our methods
 to theirs but we imagine those methods are capable of being quite accurate as well.
@@ -399,5 +405,13 @@ confidence interval for the adjusted parameter or post-stratification result.
 We do this for turnout and party-preference of voters, where we match to known
 vote totals for the candidate of each party.
 
-The final result of all this work is an estimate of the DPL for any SLD in the country.
+The final result of all this work is an estimate of the DPL for any SLD in the country along
+with the breakdowns necessary to do demographic scenario analysis.
+
+## Conclusion: How Can We Help?
+We developed these tools in order to help elect more Democrats to state legislative office.
+If there are ways we can deploy this data or these tools in order to help you decide where
+to send your money or help your donors make those decisions, please let us know! If it’s helpful,
+we’re happy to discuss the details, provide custom views into this data and our analysis or be
+pointed in helpful directions for further work.
 |]

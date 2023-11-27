@@ -328,10 +328,10 @@ mwoColonnade cas =
       competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
       cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
       olStyle = BR.numberToStyledHtmlFull False (BR.numColorBlackUntil 50 100 120)--BR.numberToStyledHtml' False "black" 75 "green"
-  in C.headed "District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.2f" . (100*) . view ET.demShare))
-     <> C.headed "Overlap" (BR.toCell cas' "Overlap" "Overlap" (olStyle "%2.2f" . (100*) . view overlap))
-     <> C.headed "Congressional District" (BR.toCell cas' "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
+  in C.headed "State District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
+     <> C.headed "State District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.2f" . (100*) . view ET.demShare))
+     <> C.headed "% Overlap" (BR.toCell cas' "% Overlap" "% Overlap" (olStyle "%2.2f" . (100*) . view overlap))
+     <> C.headed "CD" (BR.toCell cas' "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
      <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.2f" . (100*) . view congressionalPPL))
 
 dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
