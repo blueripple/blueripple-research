@@ -120,7 +120,10 @@ frameCompactMR unpack (MapReduce.Assign a) fld =
 
 
 toStreamlyFold :: Monad m => Foldl.Fold a b -> Streamly.Fold.Fold m a b
-#if MIN_VERSION_streamly(0,9,0)
+#if MIN_VERSION_streamly(0,10,0)
+toStreamlyFold (Foldl.Fold step init' done) = Streamly.Fold.Fold step' (pure $ Streamly.Fold.Partial $ init') (pure . done) (pure . done) where
+  step' x y = pure $ Streamly.Fold.Partial $ step x y
+#elif MIN_VERSION_streamly(0,9,0)
 toStreamlyFold (Foldl.Fold step init' done) = Streamly.Fold.Fold step' (pure $ Streamly.Fold.Partial $ init') (pure . done) where
   step' x y = pure $ Streamly.Fold.Partial $ step x y
 #elif MIN_VERSION_streamly(0,8,0)
@@ -227,7 +230,11 @@ classifyHT :: forall m ks cs . (Prim.PrimMonad m
 --                               , Eq (Frames.Record ks)
                                , Frames.InCore.RecVec cs)
            => Streamly.Fold.Fold m (Frames.Record ks, Frames.Record cs) (Stream m (Frames.Record ks, Frames.FrameRec cs))
+#if MIN_VERSION_streamly(0,10,0)
+classifyHT = Streamly.Fold.Fold step initF done done where
+#elif
 classifyHT = Streamly.Fold.Fold step initF done where
+#endif
 #if MIN_VERSION_streamly(0,8,0)
   initF = Streamly.Fold.Partial <$> Prim.stToPrim HashTable.new
 

@@ -183,11 +183,16 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     modelNotesPost cmdLine
-
---    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
---    stateUpperOnlyM <- stateUpperOnlyMap
---    traverse_ (analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) ["LA", "MS", "NJ", "VA"]
-
+{-
+    let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+        histCompetitive :: F.Record AnalyzeStateR -> Bool
+        histCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
+        rural ::  F.Record AnalyzeStateR -> Bool
+        rural r = r ^. DT.pWPopPerSqMile <= 100
+    stateUpperOnlyM <- stateUpperOnlyMap
+    let postsToDo = [("WI", rural), ("VA", histCompetitive)]
+    traverse_ (uncurry $ analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) postsToDo
+-}
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -481,8 +486,9 @@ analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  -> Map Text Bool
                  -> Map Text [(GT.DistrictType, Text, Text)]
                  -> Text
+                 -> (F.Record AnalyzeStateR -> Bool)
                  -> K.Sem r ()
-analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
+analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state include = do
   modelPostPaths <- postPaths state cmdLine
   let cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
                                     psName "AllCells" state
@@ -543,18 +549,18 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state = do
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
     BR.brAddRawHtmlTable (Just $ state <> " model (2020 data): Upper House") (BHA.class_ "brTable") (sldColonnade mempty {- $ sldTableCellStyle state -})
       $ sortBy byDistrictName $ FL.fold FL.list
-      $ F.filterFrame draCompetitive
+      $ F.filterFrame include
       $ F.filterFrame ((== GT.StateUpper) . view GT.districtTypeC) modeledAndDRA
     when (not upperOnly)
       $ BR.brAddRawHtmlTable (Just $ state <> " model (2020 data): Lower House") (BHA.class_ "brTable") (sldColonnade mempty {-$ sldTableCellStyle state -})
       $ sortBy byDistrictName $ FL.fold FL.list
-      $ F.filterFrame draCompetitive
+      $ F.filterFrame include
       $ F.filterFrame ((== GT.StateLower) . view GT.districtTypeC) modeledAndDRA
     let tc = turnoutConfig aggregation alphaModel
         pc = prefConfig aggregation alphaModel
-        draCompDists = FL.fold (FL.prefilter draCompetitive $ FL.premap (\r -> (r ^. GT.districtTypeC, r ^. GT.districtName)) FL.set) modeledAndDRA
+        distsForCompare = FL.fold (FL.prefilter include $ FL.premap (\r -> (r ^. GT.districtTypeC, r ^. GT.districtName)) FL.set) modeledAndDRA
     allDistrictDetails @'[DT.Race5C] cmdLine modelPostPaths postInfo
-      (MR.modelCacheStructure $ cacheStructure state "") tc pc (Just draCompDists) (show . view DT.race5C) "ByRace" state stateSLDs_C csSummary
+      (MR.modelCacheStructure $ cacheStructure state "") tc pc (Just distsForCompare) (show . view DT.race5C) "ByRace" state stateSLDs_C csSummary
     pure ()
   pure ()
 
@@ -675,7 +681,7 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM catText cacheS
     traverse_ oneDistrictDetails $ FL.fold FL.list lower_districts
 
 categoryChartSetup :: forall rs r .
-                   (FC.ElemsOf rs [DT.PWPopPerSqMile, DP.FracGradOfWhite, DP.FracWhite, MR.ModelCI]
+                   (FC.ElemsOf rs [DT.PWPopPerSqMile, DP.FracGradOfWhite, DP.FracWhite, MR.ModelCI, ET.DemShare]
                    , FSI.RecVec rs
                    , K.KnitEffects r
                    )
@@ -693,7 +699,8 @@ categoryChartSetup summaryRows = do
       quantileBreaks = DCC.sbcQuantileBreaks 20 categoryFunctions summaryRows
       quantileFunctionsE = DCC.sbcQuantileFunctions quantileBreaks
       quantileFunctionsDblE = (fmap (realToFrac @Int @Double) .) <<$>> quantileFunctionsE
-      partyFilters = let f = MT.ciMid . view MR.modelCI in DCC.SBCPartyData ((>= 0.5) . f) ((< 0.5) . f)
+      shareF = view ET.demShare {- MT.ciMid . view MR.modelCI -}
+      partyFilters = DCC.SBCPartyData ((>= 0.5) . shareF) ((< 0.5) . shareF)
       partyMediansE = DCC.partyMedians partyFilters quantileFunctionsDblE summaryRows
       partyRanksE = DCC.partyRanks partyFilters quantileFunctionsDblE summaryRows
       partyLoHisE = DCC.partyLoHis <$> partyRanksE
@@ -739,16 +746,16 @@ distDetailsColonnadeDC cas nt stateNT =
   let popR = realToFrac . view DT.popCount . toDetailsRec
       pctElectorate r = popR r * toDetailsRec r ^. MR.modelT / nt
       pctElectorateS r = popR r * toDetailsRec r ^. stateModelT / stateNT
-  in C.headed "N" (BR.toCell cas "N" "N" (BR.numSimple "black" "%2d" . view DT.popCount . toDetailsRec))
-  <> C.headed "PW Density"  (BR.toCell cas "Density" "Density" (BR.numSimple "black" "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
-  <> C.headed "T" (BR.toCell cas "T" "T" (BR.numSimple "black" "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
+  in C.headed "# People" (BR.toCell cas "N" "N" (BR.numSimple "black" "%2d" . view DT.popCount . toDetailsRec))
+  <> C.headed "Density (ppl/sq mile)"  (BR.toCell cas "Density" "Density" (BR.numSimple "black" "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
+  <> C.headed "Turnout %" (BR.toCell cas "T" "T" (BR.numSimple "black" "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
   <> C.headed "% Electorate" (BR.toCell cas "% Electorate" "% Electorate" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorate))
-  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numSimple "black" "%2.2f" . (100*) . view stateModelT . toDetailsRec))
-  <> C.headed "State % Electorate" (BR.toCell cas "State % Elec" "State % Elec" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorateS))
-  <> C.headed "P" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
-  <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
-  <> C.headed "Share" (BR.toCell cas "Share" "Share" (BR.numSimple "black" "%2.1f" . (100*) . view share . toDetailsRec))
-  <> C.headed "State Share" (BR.toCell cas "State Share" "State Share" (BR.numSimple "black" "%2.1f" . (100*) . view stateShare . toDetailsRec))
+--  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numSimple "black" "%2.2f" . (100*) . view stateModelT . toDetailsRec))
+--  <> C.headed "State % Electorate" (BR.toCell cas "State % Elec" "State % Elec" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorateS))
+  <> C.headed "D Pref %" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
+--  <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
+  <> C.headed "D Share" (BR.toCell cas "Share" "Share" (BR.numSimple "black" "%2.1f" . (100*) . view share . toDetailsRec))
+--  <> C.headed "State Share" (BR.toCell cas "State Share" "State Share" (BR.numSimple "black" "%2.1f" . (100*) . view stateShare . toDetailsRec))
 
 
 type CombineDistrictPSMapsC ks =
@@ -890,7 +897,7 @@ distSummaryColonnade cas =
      <> C.headed "% Black"  (BR.toCell cas "% Black" "% Black" (BR.numberToStyledHtml "%2.1f" . view DP.fracBlack))
      <> C.headed "% Hispanic"  (BR.toCell cas "% Hispanic" "% Hispanic" (BR.numberToStyledHtml "%2.1f" . view DP.fracHispanic))
      <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.1f" . view DP.fracAAPI))
-     <> C.headed "% Grad Of NWH"  (BR.toCell cas "% Grad of NWH" "% Grad of NWH" (BR.numberToStyledHtml "%2.1f" . view DP.fracGradOfWhite))
+     <> C.headed "% Grad Of White"  (BR.toCell cas "% Grad of White" "% Grad of White" (BR.numberToStyledHtml "%2.1f" . view DP.fracGradOfWhite))
 
 
 

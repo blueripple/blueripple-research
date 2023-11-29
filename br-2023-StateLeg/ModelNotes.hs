@@ -13,13 +13,27 @@ it’s increasingly important to know how to allocate money among those races.
 Ideally, knowing as much as possible about the competitiveness
 of each seat, especially in states where control of, or a supermajority in, a chamber
 is potentially up for grabs,
-allows us to focus our efforts on the ones where we can have the greatest “bang for the buck.”
+allows us to focus our efforts on the state legislature races where we can have the
+greatest “bang for the buck.”
 
-In the first part of this post, we’ll discuss what we think our modeling and data-driven approaches
-can contribute to this analysis and the refinement and framing of slates of races for donors.
+We think our modeling and data-driven approaches
+can contribute to this analysis and help refine slates of state legislature races
+for donors to support. In the first part of this post, we’ll explain the basic
+idea and give some examples of how we think our approach can be helpful.
 In the second part, we’ll dig into the technical details of our model.
 
-### It’s Hard to Analyze State Legislative Races!
+### Contents
+1. [Why It’s Hard to Analyze State Legislative Races](#s1)
+2. [Past Partisan Lean (PPL): The Standard Approach](#s2)
+3. [Demographic Partisan Lean (DPL): Our Modeling Approach](#s3)
+4. [Examples of insights from DPL for donors and organizers](#s4)
+   a. [Comparing PPL and DPL to identify “flippable” and “vulnerable” races](#s4a)
+   b. [Testing Various turnout / GOTV scenarios](#s4b)
+   c. [Identifying “double word score” opportunities](#s4c)
+5. [Conclusion: How Can We Help?](#s5)
+6. [Appendix: Technical Details about our model](#a1)
+
+### Why It’s Hard to Analyze State Legislative Races {#s1}
 
 Local expertise in a particular district or set of districts is often
 the best way to figure out which races are close-but-winnable.
@@ -43,12 +57,12 @@ We think our modeling approach–which incorporates data on the recent turnout a
 partisan lean of various demographic groups–provides an extra set of helpful
 tools for looking at these races.
 
-### Past Partisan Lean: Let history be your guide
+### Past Partisan Lean (PPL): The Standard Approach {#s2}
 The most straightforward way to find close-but-winnable races is to look at what happened
 in previous elections, either for the same districts or statewide.
 [Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
-elections to create an estimate of the past-partisan-lean[^ppl] (PPL) of every
+elections to create an estimate of the Past-Partisan-Lean[^ppl] of every
 state-legislative-district in the country. Their rich interface allows the user to choose various
 previous elections (or combinations of them) to estimate the partisan lean.
 
@@ -97,70 +111,17 @@ easily winnable by PPL standards but with “expected” partisan lean much clos
 That district might be vulnerable to the right opposition candidate,
 especially in a tough political environment.
 
-### Demographic Partisan Lean: Using the demographics of state legislative districts
-Rather than consider how people in a specific place have voted in previous elections,
-Demographic Partisan Lean (DPL) instead categorizes people demographically, in our case
+### Demographic Partisan Lean (DPL): Our Modeling Approach {#s3}
+Our model takes a different approach based on
+Rather than considering how people in a specific place have voted in previous elections,
+we categorize people demographically, in our case
 by state, age, sex, educational-attainment, race/ethnicity, and population-density[^buckets].
 Using large surveys of turnout and party-preference
 we model expected turnout and party-preference for each of those categories.
 Then, given the numbers of people in each of those categories in a district,
 we combine them to compute
-the (modeled) partisan lean among expected voters. Here’s what this looks like in VA:
-
-[^buckets]: For age we use five categories: 18-24, 25-34, 35-44, 45-64, and 65 and over. For sex we use two: male and female.
-Almost none of our source data tracks sex in a more fine-grained way. For educational attainment,
-we use four categories: non high-school graduate, high-school graduate, some college, and college-graduate.
-And for race/ethnicity we use five categories:
-Black, Hispanic, Asian American/Pacific Islander (AAPI), White-Non-Hispanic and Other.
-With all of these categories there would be value to finer gradations but
-that would also create computational and data difficulties. As it is, this setup uses 200 buckets
-per state.]
-|]
-
-
-{-
-However, a major drawback of PPL is that it doesn’t help much with scenario analysis.
-E.g., what would happen in a
-given seat if women turned out at higher rates and were more likely to vote
-for the democratic candidate? With a demographic
-breakdown and model of turnout and partisan lean we can estimate these
-sorts of effects.
--}
-
-
-part3 :: Text
-part3 = [here|
-The maps of PPL and DPL are, unsurprisingly, similar but there are some large differences which
-are clearer on a chart of just the difference (DPL - PPL) below.
-|]
-
-part3b :: Text
-part3b = [here|
-We can see
-that there are a few districts which might be interesting to look at. This is clearer
-in table form: below we list some districts which are not close in PPL but, when looked at
-demographically, *ought* to be close.
-These are districts that might be flippable or look like safe seats but need defending.
-It’s not that these seats *are* flippable (or in need of extra defense) but that they might
-be worth a second look to figure out why they have been voting in ways so different from what we
-might expect based on the demographics.
-|]
-
-part4 :: Text
-part4 = [here|
-A quick note: We did this analysis pre-election and all of the contested districts in the list above played
-out pretty much as history (PPL) would suggest. For example, House district 52 (Lower-52) was won by the R candidate
-54-45. House district 52 is between the median R and D districts in terms of population
-density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
-who have graduated from college. So why did our model think this might be a D district? The
-median white voter in the district is younger than in the typical district in VA
-(moving their modeled preference from 45/55 to 50/50),
-and the district has a significant number of black voters (25% of the over-18 population
-and 21% of the modeled electorate).
-Obviously something about that analysis is wrong! It
-would be interesting to know what: Are these younger white voters very R leaning despite their age?
-Are Black voters a smaller fraction of the electorate than we thought?
-Either or both of those might suggest a path forward for a D candidate in the district.
+the (modeled) partisan lean among expected voters. Technical details are at the
+end of this post.
 
 One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
@@ -185,7 +146,69 @@ process itself to control how much it uses data from the state and when to “bo
 from the national data. We’d expect the state data to be more predictive but there isn’t that much
 of it for each category (since we have 200 categories!). So there’s a tradeoff.
 
-### Scenario Analysis: Asking “what if...?” questions
+Here’s what this looks like in VA:
+
+[^buckets]: For age we use five categories: 18-24, 25-34, 35-44, 45-64, and 65 and over. For sex we use two: male and female.
+Almost none of our source data tracks sex in a more fine-grained way. For educational attainment,
+we use four categories: non high-school graduate, high-school graduate, some college, and college-graduate.
+And for race/ethnicity we use five categories:
+Black, Hispanic, Asian American/Pacific Islander (AAPI), White-Non-Hispanic and Other.
+With all of these categories there would be value to finer gradations but
+that would also create computational and data difficulties. As it is, this setup uses 200 buckets
+per state.]
+|]
+
+
+{-
+However, a major drawback of PPL is that it doesn’t help much with scenario analysis.
+E.g., what would happen in a
+given seat if women turned out at higher rates and were more likely to vote
+for the democratic candidate? With a demographic
+breakdown and model of turnout and partisan lean we can estimate these
+sorts of effects.
+-}
+
+
+part3 :: Text
+part3 = [here|
+## Examples of insights from DPL for donors and organizers {#s4}
+### Comparing PPL and DPL to identify “flippable” and “vulnerable” races {#s4a}
+The maps of PPL and DPL are, unsurprisingly, similar but there are some large differences which
+are clearer on a chart of just the difference (DPL - PPL) below.
+|]
+
+part3b :: Text
+part3b = [here|
+We can see
+that there are a few districts which might be interesting to look at. This is clearer
+in table form: below we list some districts which are not close in PPL but, when looked at
+demographically, *ought* to be close.
+These are districts that might be flippable or look like safe seats but need defending.
+It’s not that these seats *are* flippable (or in need of extra defense) but that they might
+be worth a second look to figure out why they have been voting in ways so different from what we
+might expect based on the demographics.
+|]
+
+part4 :: Text
+part4 = [here|
+A quick note: We did this analysis pre-election and all of the contested districts in the list above played
+out pretty much as history (PPL) would suggest. This leads to some questions about what we can glean from
+the difference between the PPL and DPL in these cases[^hd52].
+
+[^hd52]:For example, House district 52 (Lower-52) was won by the R candidate
+54-45. House district 52 is between the median R and D districts in terms of population
+density and %voters-of-color and slightly closer to the median R district in terms of the % of white voters
+who have graduated from college. So why did our model think this might be a D district? The
+median white voter in the district is younger than in the typical district in VA
+(moving their modeled preference from 45/55 to 50/50),
+and the district has a significant number of black voters (25% of the over-18 population
+and 21% of the modeled electorate).
+Obviously something about that analysis is wrong! It
+would be interesting to know what: Are these younger white voters very R leaning despite their age?
+Are Black voters a smaller fraction of the electorate than we thought?
+Either or both of those might suggest a path forward for a D candidate in the district.
+
+### Testing Various turnout / GOTV scenarios {#s4b}
 Since the DPL is built from an estimate of who lives in a district and how likely each of them is
 to turn out and vote for the Democratic candidate, we can use it to answer some
 “what would happen if...” sorts of questions. If you imagine some voters are
@@ -238,7 +261,7 @@ When doing these analyses, we’ve chosen PPL as our baseline. But one could jus
 some other framework or model to come up with a baseline and still use DPL based scenario
 analysis to understand how much and where things might change under various circumstances.
 
-### Geographical District Overlaps: Double-word scores
+### Identifying “double word score” opportunities {#s4c}
 Once we have PPL to make allocation recommendations for donors, e.g., give to any race within 5 points of 50/50,
 how can we narrow (or broaden) that list? Are we missing any districts worth an investment of resources?
 Are we including any that are too hard or too easy to win?
@@ -270,7 +293,14 @@ This might be a nice frame for driving donor money aimed at the bigger races int
 
 part6 :: Text
 part6 = [here|
-## DPL: our model
+## Conclusion: How Can We Help? {#s5}
+We developed these tools in order to help elect more Democrats to state legislative office.
+If there are ways we can deploy this data or these tools in order to help you decide where
+to send your money or help your donors make those decisions, please let us know! If it’s helpful,
+we’re happy to discuss the details, provide custom views into this data and our analysis or be
+pointed in helpful directions for further work.
+
+## Appendix: Technical Details about our model {#a1}
 We’re going to explain what we do in steps, expanding on each one further down in the document
 and putting some of the mathematical details in other, linked documents. Our purpose here
 is to present a thorough idea of what we do without spending too much time on any of the
@@ -408,10 +438,5 @@ vote totals for the candidate of each party.
 The final result of all this work is an estimate of the DPL for any SLD in the country along
 with the breakdowns necessary to do demographic scenario analysis.
 
-## Conclusion: How Can We Help?
-We developed these tools in order to help elect more Democrats to state legislative office.
-If there are ways we can deploy this data or these tools in order to help you decide where
-to send your money or help your donors make those decisions, please let us know! If it’s helpful,
-we’re happy to discuss the details, provide custom views into this data and our analysis or be
-pointed in helpful directions for further work.
+
 |]

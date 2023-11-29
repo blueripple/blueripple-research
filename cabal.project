@@ -29,27 +29,27 @@ flags: +streamly9
 --  tag: ba606d5c7515e1d9960749a412a67d93dc9fc360
 
 -- for 9.6
-source-repository-package
-  type: git
-  location: https://github.com/composewell/streamly
-  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
+--source-repository-package
+--  type: git
+--  location: https://github.com/composewell/streamly
+--  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
+
+--source-repository-package
+--  type: git
+--  location: https://github.com/composewell/streamly
+--  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
+--  subdir: core
 
 source-repository-package
   type: git
-  location: https://github.com/composewell/streamly
-  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
-  subdir: core
-
-source-repository-package
-  type: git
-  location: https://github.com/psibi/streamly-bytestring
-  tag: 94920f7c1ed4221fc4e829c8362243107a3c2d63
+  location: https://github.com/adamConnerSax/streamly-bytestring
+  tag: f5f73ebc0208370f7969635ddc34493ebd224fce
 
 
-source-repository-package
-  type: git
-  location: https://github.com/composewell/fusion-plugin
-  tag: ccfe7933f981fce895e3ac3f64077d8cb9e10f59
+--source-repository-package
+--  type: git
+--  location: https://github.com/composewell/fusion-plugin
+--  tag: ccfe7933f981fce895e3ac3f64077d8cb9e10f59
 -- end for 9.6
 
 source-repository-package
@@ -99,7 +99,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/map-reduce-folds
-  tag: 55cf9e583bdee8e613753b12f398a74ecc30429a
+  tag: d5f83c524a3503a8d64694dc070ab3ad72c2f9a9
 
 source-repository-package
   type: git
@@ -109,7 +109,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 03bddb05d22b813425ab02f46657206176efe02c
+  tag: 5467ef35f13ce81125d70183d125bbbb59ea0be4
 
 source-repository-package
   type: git

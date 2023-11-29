@@ -447,8 +447,13 @@ cachedMaybeFrameLoader dataPath mParserOptions mFilterMaybes fixMaybes transform
 
 
 -- tracing fold
+#if MIN_VERSION_streamly_core(0,2,0)
+runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
+runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done done where
+#else
 runningCountF :: ST.MonadIO m => T.Text -> (Int -> T.Text) -> T.Text -> Streamly.Fold.Fold m a ()
 runningCountF startMsg countMsg endMsg = Streamly.Fold.Fold step start done where
+#endif
 #if MIN_VERSION_streamly(0,8,0)
   start = ST.liftIO (putText startMsg) >> return (Streamly.Fold.Partial 0)
   step !n _ = ST.liftIO $ do
