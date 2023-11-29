@@ -62,7 +62,7 @@ The most straightforward way to find close-but-winnable races is to look at what
 in previous elections, either for the same districts or statewide.
 [Dave’s Redistricting](https://davesredistricting.org/maps#home)
 does a spectacular job of joining district maps and precinct-level data from previous
-elections to create an estimate of the Past-Partisan-Lean[^ppl] of every
+elections to create an estimate of the Past-Partisan-Lean[^ppl] (PPL) of every
 state-legislative-district in the country. Their rich interface allows the user to choose various
 previous elections (or combinations of them) to estimate the partisan lean.
 
@@ -72,7 +72,7 @@ we will report a partisan lean of $\frac{D}{D+R}$, ignoring the third-party vote
 
 As an example, here is chart of the 2021 PPL in the VA house[^pplVA], the lower
 chamber of the VA state-legislature. As with many such maps,
-it looks mainly Republican (Red) but that is because the
+it looks mainly Republican (Red) but that’s because the
 Democratic leaning districts are often geographically smaller, in
 places like cities, with higher population density. As the 2023 election showed,
 there are slightly more D leaning districts in VA than R leaning ones.
@@ -90,7 +90,7 @@ safe seat.
 part2 :: Text
 part2 = [here|
 PPL alone tells you nothing about *why* a district has the lean it does.
-For that you need local knowledge and/or some analysis of the demographics.
+For that you need local knowledge and/or some other sort of analysis.
 You can look at the demographic composition of a district and make some inferences
 but doing that more systematically, via a detailed demographic model applied to
 robust estimates of the demographic composition of each district, provides more
@@ -112,7 +112,7 @@ That district might be vulnerable to the right opposition candidate,
 especially in a tough political environment.
 
 ### Demographic Partisan Lean (DPL): Our Modeling Approach {#s3}
-Our model takes a different approach based on
+Our model takes a different approach based on Demographic Partisan Lean (DPL).
 Rather than considering how people in a specific place have voted in previous elections,
 we categorize people demographically, in our case
 by state, age, sex, educational-attainment, race/ethnicity, and population-density[^buckets].
@@ -184,9 +184,10 @@ that there are a few districts which might be interesting to look at. This is cl
 in table form: below we list some districts which are not close in PPL but, when looked at
 demographically, *ought* to be close.
 These are districts that might be flippable or look like safe seats but need defending.
-It’s not that these seats *are* flippable (or in need of extra defense) but that they might
-be worth a second look to figure out why they have been voting in ways so different from what we
-might expect based on the demographics.
+It’s not that these seats *are* flippable (or in need of extra defense) but that they are
+worth a second look. For each district like this, there is a story which explains why it votes how it does
+despite the demographic head- or tail-winds. But sometimers that story will suggest an opportunity for the right
+candidate or the necessity of bolstering a potentially vulnerable one.
 |]
 
 part4 :: Text
@@ -435,8 +436,7 @@ confidence interval for the adjusted parameter or post-stratification result.
 We do this for turnout and party-preference of voters, where we match to known
 vote totals for the candidate of each party.
 
-The final result of all this work is an estimate of the DPL for any SLD in the country along
+The final result of all this work is an estimate of the DPL for any state legislative
+district in the country along
 with the breakdowns necessary to do demographic scenario analysis.
-
-
 |]
