@@ -321,18 +321,19 @@ cdNameToCDRec t =
   $ maybe (Left $ "cdNameTOCDRec: Failed to parse " <> t <> " as an Int") Right
   $ TR.readMaybe $ toString t
 
-rbStyle :: (PF.PrintfArg a, Fractional a, Ord a) => Text -> a -> (HTML.Html, Text)
-rbStyle = BR.numberToStyledHtmlFull False (BR.numColorHiGrayLo 40 60 0 240)--BR.numberToStyledHtml' False "red" 50 "blue"
+rbStyle :: (PF.PrintfArg a, RealFrac a) => Text -> a -> (HTML.Html, Text)
+rbStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorHiGrayLo 0.7 30 70 10 240)
 
+bordered :: Text -> BR.CellStyles
+bordered c = BR.solidBorderedCell c 3
 
 mwoColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, ET.DemShare, GT.CongressionalDistrict, Overlap, CongressionalPPL])
-                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+                     => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 mwoColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-      bordered c = "border: 3px solid " <> c
       competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
       cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
-      olStyle = BR.numberToStyledHtmlFull False (BR.numColorBlackUntil 50 100 120)--BR.numberToStyledHtml' False "black" 75 "green"
+      olStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorWhiteUntil 50 100 120)--BR.numberToStyledHtml' False "black" 75 "green"
   in C.headed "State District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
      <> C.headed "State District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.2f" . (100*) . view ET.demShare))
      <> C.headed "% Overlap" (BR.toCell cas' "% Overlap" "% Overlap" (olStyle "%2.2f" . (100*) . view overlap))
@@ -440,15 +441,28 @@ modelNotesPost cmdLine = do
     BRK.brAddMarkDown MN.part6
     pure ()
 
+{-
+distDescription :: FC.ElemsOf rs [MR.ModelCI, ET.DemShare] => F.Record rs -> Text
+distDescription r =
+  let ppl r = r ^. ET.demShare
+      dpl r = MT.ciMid $ r ^. MR.modelCI
+      safeR x = x < 0.45
+      leanR x = x >= 0.45 && x < 0.48
+      tiltR x = x >= 0.48 && x < 0.5
+      tiltD x = x >= 0.5 && x < 0.52
+      leanD x = x >= 0.52 && x < 0.55
+      safeD x = x > 0.55
+-}
+
 distCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
-                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+                     => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 distCompColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
      <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (rbStyle "%2.1f" . (100*) . view ET.demShare ))
      <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (rbStyle "%2.1f" . (100*) . MT.ciMid . view MR.modelCI))
+     <> C.headed "Flippable/Vulnerable" (BR.toCell cas "Type" "Type" (BR.textToStyledHtml . const "FIXME"))
 
 mergeAnalyses :: (Show k, Ord k)
               => (F.Record AnalyzeStateR -> k)
@@ -467,7 +481,7 @@ mergeAnalyses key mergeData f1 f2 =
 scenarioCompColonnade :: forall rs qs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
                                       , FC.ElemsOf qs [ET.DemShare, MR.ModelCI]
                                      )
-                      => BR.CellStyle (F.Record rs, (F.Record qs, Double)) [Char]
+                      => BR.CellStyleF (F.Record rs, (F.Record qs, Double)) [Char]
                       -> C.Colonnade C.Headed (F.Record rs, (F.Record qs, Double)) K.Cell
 scenarioCompColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
@@ -732,7 +746,7 @@ toDetailsRec :: DistDetailsRow ks -> F.Record ModelCompR
 toDetailsRec (GroupRow r) = F.rcast r
 toDetailsRec (TotalRow _ _ _ r) = r
 
-distDetailsColonnade :: (F.Record ks -> Text) -> BR.CellStyle (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
+distDetailsColonnade :: (F.Record ks -> Text) -> BR.CellStyleF (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
 distDetailsColonnade kText cas nt stateNT =
   let state' = ddState
       fullDName ddr = dTypeText' (ddDType ddr) <> "-" <> ddDName ddr
@@ -741,20 +755,20 @@ distDetailsColonnade kText cas nt stateNT =
      <> C.headed "Group" (BR.toCell cas "Group" "Group" (BR.textToStyledHtml . ddGroup kText))
      <> distDetailsColonnadeDC cas nt stateNT
 
-distDetailsColonnadeDC :: BR.CellStyle (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
+distDetailsColonnadeDC :: BR.CellStyleF (DistDetailsRow ks) [Char] -> Double -> Double -> C.Colonnade C.Headed (DistDetailsRow ks) K.Cell
 distDetailsColonnadeDC cas nt stateNT =
   let popR = realToFrac . view DT.popCount . toDetailsRec
       pctElectorate r = popR r * toDetailsRec r ^. MR.modelT / nt
       pctElectorateS r = popR r * toDetailsRec r ^. stateModelT / stateNT
-  in C.headed "# People" (BR.toCell cas "N" "N" (BR.numSimple "black" "%2d" . view DT.popCount . toDetailsRec))
-  <> C.headed "Density (ppl/sq mile)"  (BR.toCell cas "Density" "Density" (BR.numSimple "black" "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
-  <> C.headed "Turnout %" (BR.toCell cas "T" "T" (BR.numSimple "black" "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
-  <> C.headed "% Electorate" (BR.toCell cas "% Electorate" "% Electorate" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorate))
+  in C.headed "# People" (BR.toCell cas "N" "N" (BR.numTextColor "black" "%2d" . view DT.popCount . toDetailsRec))
+  <> C.headed "Density (ppl/sq mile)"  (BR.toCell cas "Density" "Density" (BR.numTextColor "black" "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
+  <> C.headed "Turnout %" (BR.toCell cas "T" "T" (BR.numTextColor "black" "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
+  <> C.headed "% Electorate" (BR.toCell cas "% Electorate" "% Electorate" (BR.numTextColor "black" "%2.2f" . (100*) . pctElectorate))
 --  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numSimple "black" "%2.2f" . (100*) . view stateModelT . toDetailsRec))
 --  <> C.headed "State % Electorate" (BR.toCell cas "State % Elec" "State % Elec" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorateS))
   <> C.headed "D Pref %" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
 --  <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
-  <> C.headed "D Share" (BR.toCell cas "Share" "Share" (BR.numSimple "black" "%2.1f" . (100*) . view share . toDetailsRec))
+  <> C.headed "D Share" (BR.toCell cas "Share" "Share" (BR.numTextColor "black" "%2.1f" . (100*) . view share . toDetailsRec))
 --  <> C.headed "State Share" (BR.toCell cas "State Share" "State Share" (BR.numSimple "black" "%2.1f" . (100*) . view stateShare . toDetailsRec))
 
 
@@ -881,7 +895,7 @@ aggregatePS = FL.fold f . DP.unPSData
         (FMR.foldAndAddKey DT.pwDensityAndPopFldRec)
 
 distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI])
-                     => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+                     => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 distSummaryColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
 --      frac45AndOver r = r ^. DP.frac45To64 + r ^. DP.frac65plus
@@ -899,15 +913,12 @@ distSummaryColonnade cas =
      <> C.headed "% AAPI"  (BR.toCell cas "% AAPI" "% AAPI" (BR.numberToStyledHtml "%2.1f" . view DP.fracAAPI))
      <> C.headed "% Grad Of White"  (BR.toCell cas "% Grad of White" "% Grad of White" (BR.numberToStyledHtml "%2.1f" . view DP.fracGradOfWhite))
 
-
-
 sldTableCellStyle :: FC.ElemsOf rs '[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare]
-                  => Text -> BR.CellStyle (F.Record rs) String
+                  => Text -> BR.CellStyleF (F.Record rs) String
 sldTableCellStyle state =
   let dlcc = fromMaybe [] $ M.lookup state dlccMap
       toDistrict (x, y, _) = (x, y)
       isDLCC r = (r ^. GT.districtTypeC, r ^. GT.districtName) `elem` fmap toDistrict dlcc
-      bordered c = "border: 3px solid " <> c
       dlccChosenCS = bordered "purple" `BR.cellStyleIf` \r h -> (isDLCC r && h == "District")
       longShot ci = MT.ciUpper ci < 0.48
       leanR ci = MT.ciMid ci < 0.5 && MT.ciUpper ci >= 0.48
@@ -925,10 +936,9 @@ sldTableCellStyle state =
       resSafeDCS = bordered "blue" `BR.cellStyleIf` \r h -> eRes r > 0.52 && T.isPrefixOf "2019" h
   in mconcat [dlccChosenCS, longShotCS, leanRCS, leanDCS, safeDCS]
 
-leansCellStyle :: String -> (row -> Double) -> BR.CellStyle row String
+leansCellStyle :: String -> (row -> Double) -> BR.CellStyleF row String
 leansCellStyle col pl =
-  let bordered c = "border: 3px solid " <> c
-      longShot x = x < 0.47
+  let longShot x = x < 0.47
       leanR x = x < 0.5 && x >= 0.47
       leanD x = x >= 0.5 && x <= 0.53
       safeD x = x > 0.53
@@ -939,7 +949,7 @@ leansCellStyle col pl =
   in mconcat [longShotCS, leanRCS, leanDCS, safeDCS]
 
 sldColonnade :: (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
-             => BR.CellStyle (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
+             => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 sldColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
       share5 = MT.ciLower . F.rgetField @MR.ModelCI
