@@ -45,6 +45,7 @@ import qualified BlueRipple.Model.Election2.ModelRunner as MR
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
 import qualified BlueRipple.Model.Demographic.DataPrep as CDDP
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
+import qualified BlueRipple.Model.CategorizeElection as CE
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
@@ -367,9 +368,11 @@ modelNotesPost cmdLine = do
          lowerOnly r = r ^. GT.districtTypeC == GT.StateLower
 --         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
          dName = view GT.districtName
+         byDistrict (r1, _) (r2, _) = compare (r1 ^. GT.districtTypeC) (r2 ^. GT.districtTypeC)
+                            <> GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
+
     upperOnlyMap <- stateUpperOnlyMap
     modeledAndDRA_VA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
-
     BRK.brAddMarkDown MN.part1
     let ppl = view ET.demShare
     geoCompChart modelNotesPostPaths postInfo ("VA_geoPPL") "VA Past Partisan Lean"
@@ -414,7 +417,7 @@ modelNotesPost cmdLine = do
         scenarioDelta = snd . snd
         pplPlus x = scPpl x + scenarioDelta x
     let scenarioColonnade = scenarioCompColonnade mempty -- $ leansCellStyle "PPL" scPpl <> leansCellStyle "+Scenario" pplPlus
-    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedDobbs
     BRK.brAddMarkDown MN.part4b
     let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
@@ -422,12 +425,12 @@ modelNotesPost cmdLine = do
     modeledAndDRA_VA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
                                (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
     mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs2 modeledAndDRA_VA
-    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedDobbs2
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedDobbs2
     BRK.brAddMarkDown MN.part4c
     modeledAndDRA_VA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                    (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_YouthBoost modeledAndDRA_VA
-    BR.brAddRawHtmlTable (Just "Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ closeForTable 20 mergedYouthBoost
+    BR.brAddRawHtmlTable (Just "Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedYouthBoost
 -- geographic overlaps
     BRK.brAddMarkDown MN.part5
     modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
@@ -441,28 +444,21 @@ modelNotesPost cmdLine = do
     BRK.brAddMarkDown MN.part6
     pure ()
 
-{-
-distDescription :: FC.ElemsOf rs [MR.ModelCI, ET.DemShare] => F.Record rs -> Text
-distDescription r =
-  let ppl r = r ^. ET.demShare
-      dpl r = MT.ciMid $ r ^. MR.modelCI
-      safeR x = x < 0.45
-      leanR x = x >= 0.45 && x < 0.48
-      tiltR x = x >= 0.48 && x < 0.5
-      tiltD x = x >= 0.5 && x < 0.52
-      leanD x = x >= 0.52 && x < 0.55
-      safeD x = x > 0.55
--}
+
+leanRating :: Double -> CE.LeanRating
+leanRating = CE.leanRating 0.10 0.05 0.01
 
 distCompColonnade :: forall rs . (FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, ET.DemShare])
                      => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 distCompColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
+      ppl = view ET.demShare
+      dpl = MT.ciMid . view MR.modelCI
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (rbStyle "%2.1f" . (100*) . view ET.demShare ))
-     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (rbStyle "%2.1f" . (100*) . MT.ciMid . view MR.modelCI))
-     <> C.headed "Flippable/Vulnerable" (BR.toCell cas "Type" "Type" (BR.textToStyledHtml . const "FIXME"))
+     <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (rbStyle "%2.1f" . (100*) . ppl ))
+     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (rbStyle "%2.1f" . (100*) . dpl))
+     <> C.headed "Assessment" (BR.toCell cas "Type" "Type" (\r -> BR.textToStyledHtml $ CE.pPLAndDPL (leanRating $ ppl r) (leanRating $ dpl r)))
 
 mergeAnalyses :: (Show k, Ord k)
               => (F.Record AnalyzeStateR -> k)
@@ -488,11 +484,13 @@ scenarioCompColonnade cas =
       hpl = view ET.demShare . fst . snd
       scenarioDelta = snd . snd
       hplPlus x = hpl x + scenarioDelta x
+      assessmentText r = CE.ratingChangeText (leanRating $ hpl r) (leanRating $ hplPlus r)
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state . fst))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText . fst))
      <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (rbStyle "%2.1f" . (100*) . hpl ))
 --     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst . snd))
      <> C.headed "PPL + Scenario" (BR.toCell cas "+Scenario" "+Scenario" (rbStyle "%2.1f" . (100*) . hplPlus))
+     <> C.headed "Asessment" (BR.toCell cas "Assessment" "Assessment" (BR.textToStyledHtml . assessmentText))
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine

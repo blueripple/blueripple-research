@@ -179,15 +179,15 @@ numColorBlackUntil :: (RealFrac a) => a -> a -> Int -> a -> StyleColor
 numColorBlackUntil until hi hue x =
   let range = hi - until
       pctS = round . min 100 . max 0 . (*100)
-  in if x < until then HSL 50 0 0
+  in if x < until then HSL 50 0 100
   else HSL hue 50 $ pctS $ ((x - until) / (2 * range))
 
 numColorWhiteUntil :: (RealFrac a) => a -> a -> Int -> a -> StyleColor
 numColorWhiteUntil until hi hue x =
   let range = hi - until
       pctS = round . min 100 . max 0 . (*100)
-  in if x < until then HSL 50 0 100
-  else HSL hue 50 $ pctS $ (1 - (hi - x) / range)
+  in if x < until then HSL hue 50 100
+  else HSL hue 50 $ pctS (1 - (x - until) / (2 * range))
 
 numberToStyledHtml'
   :: (PF.PrintfArg a, Ord a, Num a) => Bool -> T.Text -> a -> T.Text -> T.Text -> a -> (BH.Html, T.Text)

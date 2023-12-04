@@ -217,7 +217,9 @@ more energized and thus more likely to vote and/or more likely to vote for the D
 candidate, that might change which seats are in play and which are safe. For example,
 suppose we think the Dobbs decision overturning Roe v. Wade will raise turnout among women
 by 5% and also pushes their party preference 5 points towards Democratic candidates[^scenario].
-What would this mean for the 20 closest (by PPL) house districts in VA?
+What would this mean for the 20 closest (by PPL) house districts in VA? A quick note, for the
+purposes of these tables, we consider any district which is more than 10% D or R to be "safe",
+5-10% to be "lean", 1-5% to be "tilt" and anything closer than 1% to be a tossup.
 
 [^scenario]: A technical note: we don't actually move the probabilities by 5% (or whatever) for a couple of reasons.
 We don't want to end up with probabilities above 100% or below 0 which could happen with larger shifts and/or
