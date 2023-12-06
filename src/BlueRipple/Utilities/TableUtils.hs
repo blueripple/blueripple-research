@@ -20,6 +20,7 @@ module BlueRipple.Utilities.TableUtils
   , normalCell
   , totalCell
   , solidBorderedCell
+  , filledCell
   , highlightCellBlue
   , highlightCellPurple
   , numberToStyledHtmlFull
@@ -139,6 +140,10 @@ solidBorderedCell :: Text -> Int -> CellStyles
 solidBorderedCell c w = cellStyle CellBorder (PartColor $ NamedColor c)
                         <> cellStyle CellBorder (PartWidth $ Px w)
                         <> cellStyle CellBorder (PartLine SolidLine)
+
+filledCell :: Text -> CellStyles
+filledCell c = cellStyle CellBackground (PartColor $ NamedColor c)
+
 
 normalCell :: CellStyles
 normalCell = solidBorderedCell "black" 1

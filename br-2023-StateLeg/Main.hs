@@ -333,13 +333,13 @@ mwoColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, E
 mwoColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
       competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
-      cas' = cas <> bordered "green" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
-      olStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorWhiteUntil 50 100 120)--BR.numberToStyledHtml' False "black" 75 "green"
+      cas' = cas <> BR.filledCell "DarkSeaGreen" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
+      olStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorWhiteUntil 50 100 300)--BR.numberToStyledHtml' False "black" 75 "green"
   in C.headed "State District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
-     <> C.headed "State District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.2f" . (100*) . view ET.demShare))
-     <> C.headed "% Overlap" (BR.toCell cas' "% Overlap" "% Overlap" (olStyle "%2.2f" . (100*) . view overlap))
+     <> C.headed "State District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.1f" . (100*) . view ET.demShare))
      <> C.headed "CD" (BR.toCell cas' "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
-     <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.2f" . (100*) . view congressionalPPL))
+     <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.1f" . (100*) . view congressionalPPL))
+     <> C.headed "Overlap" (BR.toCell cas' "Overlap" "Overlap" (BR.numberToStyledHtml "%2.0f" . (100*) . view overlap))
 
 dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
 dmr = MC.tDesignMatrixRow_d
@@ -368,8 +368,9 @@ modelNotesPost cmdLine = do
          lowerOnly r = r ^. GT.districtTypeC == GT.StateLower
 --         upperOnly r = r ^. GT.districtTypeC == GT.StateUpper
          dName = view GT.districtName
-         byDistrict (r1, _) (r2, _) = compare (r1 ^. GT.districtTypeC) (r2 ^. GT.districtTypeC)
+         byDistrict r1 r2 = compare (r1 ^. GT.districtTypeC) (r2 ^. GT.districtTypeC)
                             <> GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
+         scenarioByDistrict (r1, _) (r2, _) = byDistrict r1 r2
 
     upperOnlyMap <- stateUpperOnlyMap
     modeledAndDRA_VA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
@@ -417,7 +418,7 @@ modelNotesPost cmdLine = do
         scenarioDelta = snd . snd
         pplPlus x = scPpl x + scenarioDelta x
     let scenarioColonnade = scenarioCompColonnade mempty -- $ leansCellStyle "PPL" scPpl <> leansCellStyle "+Scenario" pplPlus
-    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedDobbs
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy scenarioByDistrict $ closeForTable 20 mergedDobbs
     BRK.brAddMarkDown MN.part4b
     let dobbs2F r = if (r ^. DT.sexC == DT.Female && r ^. DT.education4C == DT.E4_CollegeGrad) then MR.adjustP 0.05 else id
         dobbsTurnout2S = MR.SimpleScenario "Dobbs2T" dobbs2F
@@ -425,12 +426,12 @@ modelNotesPost cmdLine = do
     modeledAndDRA_VA_Dobbs2 <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just dobbsTurnout2S)
                                (prefConfig aggregation alphaModel) (Just dobbsPref2S) upperOnlyMap dlccMap "VA"
     mergedDobbs2 <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_Dobbs2 modeledAndDRA_VA
-    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedDobbs2
+    BR.brAddRawHtmlTable (Just "Dobbs Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy scenarioByDistrict $ closeForTable 20 mergedDobbs2
     BRK.brAddMarkDown MN.part4c
     modeledAndDRA_VA_YouthBoost <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) (Just youthBoostTurnoutS)
                                    (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     mergedYouthBoost <- K.knitEither $ mergeAnalyses mergeKey mergeVal modeledAndDRA_VA_YouthBoost modeledAndDRA_VA
-    BR.brAddRawHtmlTable (Just "Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy byDistrict $ closeForTable 20 mergedYouthBoost
+    BR.brAddRawHtmlTable (Just "Youth Enthusiasm Scenario") (BHA.class_ "brTable") scenarioColonnade $ sortBy scenarioByDistrict $ closeForTable 20 mergedYouthBoost
 -- geographic overlaps
     BRK.brAddMarkDown MN.part5
     modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
@@ -440,7 +441,8 @@ modelNotesPost cmdLine = do
     let interestingOverlap r =
           let c x = x >= 0.45 && x <= 0.55
           in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
-    BR.brAddRawHtmlTable (Just "WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty) $ F.filterFrame interestingOverlap modeledWOverlaps
+    BR.brAddRawHtmlTable (Just "WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty)
+      $ sortBy byDistrict $ FL.fold FL.list $ F.filterFrame interestingOverlap modeledWOverlaps
     BRK.brAddMarkDown MN.part6
     pure ()
 
@@ -485,12 +487,13 @@ scenarioCompColonnade cas =
       scenarioDelta = snd . snd
       hplPlus x = hpl x + scenarioDelta x
       assessmentText r = CE.ratingChangeText (leanRating $ hpl r) (leanRating $ hplPlus r)
+      cas' = cas <> BR.filledCell "DarkSeaGreen" `BR.cellStyleIf` \r h -> (h == "Change") && (assessmentText r /= "No Change")
   in C.headed "State" (BR.toCell cas "State" "State" (BR.textToStyledHtml . state . fst))
      <> C.headed "District" (BR.toCell cas "District" "District" (BR.textToStyledHtml . fullDNameText . fst))
      <> C.headed "PPL" (BR.toCell cas "PPL" "PPL" (rbStyle "%2.1f" . (100*) . hpl ))
---     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.2f" . (100*) . MT.ciMid . view MR.modelCI . fst . snd))
+--     <> C.headed "DPL" (BR.toCell cas "DPL" "DPL" (BR.numberToStyledHtml "%2.1f" . (100*) . MT.ciMid . view MR.modelCI . fst . snd))
      <> C.headed "PPL + Scenario" (BR.toCell cas "+Scenario" "+Scenario" (rbStyle "%2.1f" . (100*) . hplPlus))
-     <> C.headed "Asessment" (BR.toCell cas "Assessment" "Assessment" (BR.textToStyledHtml . assessmentText))
+     <> C.headed "Rating Change?" (BR.toCell cas' "Change" "Change" (BR.textToStyledHtml . assessmentText))
 
 analyzeStatePost :: (K.KnitMany r, BRK.CacheEffects r)
                  => BR.CommandLine
@@ -760,10 +763,10 @@ distDetailsColonnadeDC cas nt stateNT =
       pctElectorateS r = popR r * toDetailsRec r ^. stateModelT / stateNT
   in C.headed "# People" (BR.toCell cas "N" "N" (BR.numTextColor "black" "%2d" . view DT.popCount . toDetailsRec))
   <> C.headed "Density (ppl/sq mile)"  (BR.toCell cas "Density" "Density" (BR.numTextColor "black" "%2.1f" . view DT.pWPopPerSqMile . toDetailsRec))
-  <> C.headed "Turnout %" (BR.toCell cas "T" "T" (BR.numTextColor "black" "%2.2f" . (100*) . view MR.modelT . toDetailsRec))
-  <> C.headed "% Electorate" (BR.toCell cas "% Electorate" "% Electorate" (BR.numTextColor "black" "%2.2f" . (100*) . pctElectorate))
---  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numSimple "black" "%2.2f" . (100*) . view stateModelT . toDetailsRec))
---  <> C.headed "State % Electorate" (BR.toCell cas "State % Elec" "State % Elec" (BR.numSimple "black" "%2.2f" . (100*) . pctElectorateS))
+  <> C.headed "Turnout %" (BR.toCell cas "T" "T" (BR.numTextColor "black" "%2.1f" . (100*) . view MR.modelT . toDetailsRec))
+  <> C.headed "% Electorate" (BR.toCell cas "% Electorate" "% Electorate" (BR.numTextColor "black" "%2.1f" . (100*) . pctElectorate))
+--  <> C.headed "State T" (BR.toCell cas "State T" "State T" (BR.numSimple "black" "%2.1f" . (100*) . view stateModelT . toDetailsRec))
+--  <> C.headed "State % Electorate" (BR.toCell cas "State % Elec" "State % Elec" (BR.numSimple "black" "%2.1f" . (100*) . pctElectorateS))
   <> C.headed "D Pref %" (BR.toCell cas "P" "P" (rbStyle "%2.1f" . (100*) . view MR.modelP . toDetailsRec))
 --  <> C.headed "State P" (BR.toCell cas "State P" "State P" (rbStyle "%2.1f" . (100*) . view stateModelP . toDetailsRec))
   <> C.headed "D Share" (BR.toCell cas "Share" "Share" (BR.numTextColor "black" "%2.1f" . (100*) . view share . toDetailsRec))

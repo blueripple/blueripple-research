@@ -77,6 +77,9 @@ Democratic leaning districts are often geographically smaller, in
 places like cities, with higher population density. As the 2023 election showed,
 there are slightly more D leaning districts in VA than R leaning ones.
 
+In this chart and various charts and tables to follow, we use blue/red shading
+to indicate Democratic vs Republican vote share.
+
 [^pplVA]: Using 2020 ACS population estimates and a composite of presidential and statewide
 elections from 2016-2021: 2018 and 2020 senate as well as Governor and AG from 2021.
 |]
@@ -126,7 +129,7 @@ end of this post.
 One way to think of DPL is as a very detailed analysis of
 voting patterns based on race or education or age. Each of those can be a valuable predictor
 of turnout and party-preference. But sometimes the *combination* of categories is essential
-for understanding. For example, the Republican lean of white-non-college educated voters
+for understanding. For example, the Republican lean of white non-college-educated voters
 is greater than you expect from the Republican lean of white voters and the Republican lean
 of non-college-educated voters combined. This gets even more complex and harder to keep track of
 once you add age and sex. All of these things may vary from state to state. Population density
@@ -152,7 +155,7 @@ Here’s what this looks like in VA:
 Almost none of our source data tracks sex in a more fine-grained way. For educational attainment,
 we use four categories: non high-school graduate, high-school graduate, some college, and college-graduate.
 And for race/ethnicity we use five categories:
-Black, Hispanic, Asian American/Pacific Islander (AAPI), White-Non-Hispanic and Other.
+Black, Hispanic, Asian American/Pacific Islander (AAPI), white Non-Hispanic and Other.
 With all of these categories there would be value to finer gradations but
 that would also create computational and data difficulties. As it is, this setup uses 200 buckets
 per state.]
@@ -186,7 +189,7 @@ demographically, *ought* to be close.
 These are districts that might be flippable or look like safe seats but need defending.
 It’s not that these seats *are* flippable (or in need of extra defense) but that they are
 worth a second look. For each district like this, there is a story which explains why it votes how it does
-despite the demographic head- or tail-winds. But sometimers that story will suggest an opportunity for the right
+despite the demographic head- or tail-winds. But sometimes that story will suggest an opportunity for the right
 candidate or the necessity of bolstering a potentially vulnerable one.
 |]
 
@@ -217,9 +220,13 @@ more energized and thus more likely to vote and/or more likely to vote for the D
 candidate, that might change which seats are in play and which are safe. For example,
 suppose we think the Dobbs decision overturning Roe v. Wade will raise turnout among women
 by 5% and also pushes their party preference 5 points towards Democratic candidates[^scenario].
-What would this mean for the 20 closest (by PPL) house districts in VA? A quick note, for the
-purposes of these tables, we consider any district which is more than 10% D or R to be "safe",
-5-10% to be "lean", 1-5% to be "tilt" and anything closer than 1% to be a tossup.
+What would this mean for the 20 closest (by PPL) house districts in VA?
+
+A quick note on the numbers: for the
+purposes of these tables, we consider any district which has more than 60% D share to be "safe D", between
+55% and 60% share to be lean D, between 55% and 51% to be "tilt D" and between 49% and 51% to be a "tossup"
+(and similarly for R tilt/lean/safe). These break points are arbitrary but they help illustrate the general
+idea of how one can bucket the various districts.
 
 [^scenario]: A technical note: we don't actually move the probabilities by 5% (or whatever) for a couple of reasons.
 We don't want to end up with probabilities above 100% or below 0 which could happen with larger shifts and/or
@@ -231,9 +238,6 @@ but smoothly apply slightly smaller shifts as the probability moves away from $\
 
 part4b :: Text
 part4b = [here|
-We can see that it makes a bunch of safe R districts into Lean R and a couple of Lean D become safe.
-This would be helpful when advising donors or allocating donor funds.
-
 Of course, you don’t need any sort of model to figure out that shifting the
 turnout and preference of female voters by 5% would shift the resulting vote share
 by a bit more than 2.5%. Women make up slightly more than half the electorate in most
@@ -246,8 +250,8 @@ This is a tricker thing to map out in VA. Here’s the same table but with that 
 
 part4c :: Text
 part4c = [here|
-In this case the shift varies from 0.5 to over 1.5 points, which, using our example,
-makes HD-69 and HD-30 competitive (but not HD-49) and pushes HD-97 into safe territory.
+In this case the shift varies from 0.5 to over 1.5 points, making a smattering of rating changes among
+these districts.
 
 This might also be useful when considering a targeted intervention. E.g., how much would you have to
 boost turnout among people 18-35 to meaningfully shift the likely vote-share in competitive
@@ -275,20 +279,22 @@ ticket, the so-called “reverse-coattails” effect (“reverse” because we a
 for smaller offices helping a larger race on the same ballot).
 
 When a district overlaps geographically with another important election we call that a
-a “double-word-score.” For instance, in a presidential election year, any close
+a “double word score.” For instance, in a presidential election year, any close
 state-legislative district in a swing state might be a good or appealing place to direct donor dollars.
-Close senate races also generate these sorts of opportunities.
+Close senate races also generate these sorts of opportunities. (As above, this is intended to
+be illustrative; one could change the breakpoints to be more selective or permissive
+about identifying multi-word-score opportunities.)
 
 Looking at competitive *congressional* districts
-gives “double-word-score” opportunities for some state-legislative-districts
-and not others. These are trickier to find than statewide elections since we need to
+gives “double word score” opportunities for some state-legislative-districts
+and not others. These are trickier to find than statewide elections: we need to
 know the population overlaps of the congressional and state-legislative districts.
 As an example, let’s consider the 2024 election in Wisconsin. The chart below
 contains all the competitive state-legislative districts (PPL between 45% and 55%) and whichever congressional
 district contains most of the state-legislative-district. In green, we’ve highlighted the districts where the
 overlapping congressional districts are also competitive by PPL. The WI congressional races are already
-triple-word-scores in ‘24 because WI is a swing state and has a senate race as well.
-So the state-legislative-districts in green in the chart below are actually quadruple-word-scores!
+triple word scores in ‘24 because WI is a swing state and has a competitive senate race.
+The state-legislative-districts highlighted in green in the table below are actually *quadruple* word scores!
 
 This might be a nice frame for driving donor money aimed at the bigger races into the state-legislative races.
 |]

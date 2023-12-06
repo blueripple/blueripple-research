@@ -128,7 +128,7 @@ combineMarginalStructures' :: forall k ka kb ok ika ikb w .
                            -> MarginalStructure w ka
                            -> MarginalStructure w kb
                            -> MarginalStructure w k
-combineMarginalStructures' wgtLens innerProduct kaF expandA kbF expandB collapse msA msB = MarginalStructure sts prodFld
+combineMarginalStructures' wgtLens outerProduct kaF expandA kbF expandB collapse msA msB = MarginalStructure sts prodFld
   where
     expandedStencilsA = fmap (expandStencil kaF) $ msStencils msA
     expandedStencilsB = fmap (expandStencil kbF) $ msStencils msB
@@ -138,7 +138,7 @@ combineMarginalStructures' wgtLens innerProduct kaF expandA kbF expandB collapse
     bMapTblFld :: FL.Fold (k, w) (Map ok (Map ikb w))
     bMapTblFld = FL.fold (normalizedTableMapFld wgtLens) <$> (fmap (fmap (first expandB)) $ FL.premap (first kbF) $ msProdFld msB)
     prodFld :: FL.Fold (k, w) [(k, w)]
-    prodFld = fmap (fmap (first collapse)) $ tableProductL innerProduct <$> aMapTblFld <*> bMapTblFld
+    prodFld = fmap (fmap (first collapse)) $ tableProductL outerProduct <$> aMapTblFld <*> bMapTblFld
 {-# INLINEABLE combineMarginalStructures' #-}
 
 identityMarginalStructure :: forall k w . (Ord k, BRK.FiniteSet k, Monoid w)

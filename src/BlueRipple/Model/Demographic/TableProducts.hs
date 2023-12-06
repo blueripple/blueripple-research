@@ -112,7 +112,7 @@ frameTableProduct base splitUsing = DED.enrichFrameFromModel @count (fmap (DED.m
 
 -- k is a phantom here, unmentioned in the data. But it forces us to line things up with the marginal structure, etc.
 -- Given N entries in table and a marginal structure with a Q dimensional null space
--- First matrix, C, is the matrix of constraints coming from the structure of known marginals
+-- Given C constraints, f irst matrix is the C x N matrix of constraints coming from the structure of known marginals
 -- Second matrix, P, is projections, Q x N, each row is a basis vector of the null space.
 -- So Pv = projection of v onto the null space
 -- Third matrix, R, is rotation from SVD computed null space basis to eigenvector basis. Columns are eigenvectors.
