@@ -68,6 +68,7 @@ import qualified Data.Vinyl.Functor as V
 import qualified Data.Vector as Vector
 import qualified Data.Map.Merge.Strict as MM
 import qualified Data.Set as Set
+import qualified Data.Time.Calendar as Time
 import qualified Frames.Melt as F
 import qualified Frames.MapReduce as FMR
 import qualified Frames.Folds as FF
@@ -361,7 +362,8 @@ modelNotesPost :: (K.KnitMany r, BRK.CacheEffects r)
                -> K.Sem r ()
 modelNotesPost cmdLine = do
   modelNotesPostPaths <- postPaths "ModelNotes" cmdLine
-  let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
+  let postInfo = BR.PostInfo (BR.postStage cmdLine)
+                 (BR.PubTimes (BR.Published $ Time.fromGregorian 2023 12 6) Nothing)
   BRK.brNewPost modelNotesPostPaths postInfo "ModelNotes" $ do
     let  turnoutConfig agg am = MC.TurnoutConfig survey (MC.ModelConfig agg am (contramap F.rcast dmr))
          prefConfig agg am = MC.PrefConfig (MC.ModelConfig agg am (contramap F.rcast dmr))
