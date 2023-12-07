@@ -25,6 +25,7 @@ import qualified Control.Foldl as FL
 import Control.Lens (Lens', Traversal, view, set, over, lens, _2)
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Profunctor as PF
 import qualified Data.Set as S
 import Data.Type.Equality (type (~))
@@ -57,7 +58,8 @@ reKeyMarginalStructure :: forall k1 k2 w .
 reKeyMarginalStructure ik21 ms = case ik21 of
   (IsomorphicKeys f21 f12) -> case ms of
     MarginalStructure sts ptFld -> MarginalStructure sts' ptFld' where
-      sts' = fmap (expandStencil f21) sts
+--      sts' = fmap (expandStencil f21) sts
+      sts' = fmap (S.map f12) sts
       ptFld' = PF.dimap (first f21) (sortOn fst . fmap (first f12)) ptFld
 
 -- given a k2 stencil and a map (k1 -> k2), we can generate a k1 stencil by testing each k1 to see if it maps to a k2 which
@@ -128,11 +130,15 @@ combineMarginalStructures' :: forall k ka kb ok ika ikb w .
                            -> MarginalStructure w ka
                            -> MarginalStructure w kb
                            -> MarginalStructure w k
-combineMarginalStructures' wgtLens outerProduct kaF expandA kbF expandB collapse msA msB = MarginalStructure sts prodFld
+combineMarginalStructures' wgtLens outerProduct kaF expandA kbF expandB collapse msA msB = MarginalStructure subsets prodFld
   where
-    expandedStencilsA = fmap (expandStencil kaF) $ msStencils msA
-    expandedStencilsB = fmap (expandStencil kbF) $ msStencils msB
-    sts = expandedStencilsA <> expandedStencilsB
+--    expandedStencilsA = fmap (expandStencil kaF) $ msStencils msA
+--    expandedStencilsB = fmap (expandStencil kbF) $ msStencils msB
+--    sts = expandedStencilsA <> expandedStencilsB
+    subsetsA = fmap (mapSubset kaF) $ msSubsets msA
+    subsetsB = fmap (mapSubset kbF) $ msSubsets msB
+    subsets = subsetsA <> subsetsB
+
     aMapTblFld :: FL.Fold (k, w) (Map ok (Map ika w))
     aMapTblFld = FL.fold (normalizedTableMapFld wgtLens) <$> (fmap (fmap (first expandA)) $ FL.premap (first kaF) $ msProdFld msA)
     bMapTblFld :: FL.Fold (k, w) (Map ok (Map ikb w))
@@ -141,17 +147,45 @@ combineMarginalStructures' wgtLens outerProduct kaF expandA kbF expandB collapse
     prodFld = fmap (fmap (first collapse)) $ tableProductL outerProduct <$> aMapTblFld <*> bMapTblFld
 {-# INLINEABLE combineMarginalStructures' #-}
 
+mapSubset :: (Ord k, BRK.FiniteSet k, Ord k', BRK.FiniteSet k') => (k' -> k) -> Set k -> Set k'
+mapSubset f = S.fromList . mconcat . fmap inverseImage . S.toList
+  where
+    inverseImage k = filter ((== k) . f) $ S.toList BRK.elements
+
+{-
 identityMarginalStructure :: forall k w . (Ord k, BRK.FiniteSet k, Monoid w)
                           => Lens' w Double -> MarginalStructure w k
 identityMarginalStructure wgtLens = MarginalStructure (fmap (DED.Stencil . pure) $ [0..(numCats-1)] ) (M.toList <$> normalizeAndFillMapFld wgtLens)
   where
     numCats = S.size $ BRK.elements @k
+-}
+identityMarginalStructure :: forall k w . (Ord k, BRK.FiniteSet k, Monoid w)
+                          => Lens' w Double -> MarginalStructure w k
+identityMarginalStructure wgtLens = MarginalStructure eachAsSubset (M.toList <$> normalizeAndFillMapFld wgtLens)
+  where
+    eachAsSubset = fmap S.singleton $ S.toList BRK.elements
 {-# INLINEABLE identityMarginalStructure #-}
 
 
 -- NB: The stencil order is unspecified. So this only works if the stencils are used as a map from a joint distribution to a marginal one
 data MarginalStructure w k where
-  MarginalStructure :: (Monoid w, BRK.FiniteSet k, Ord k) => [DED.Stencil Int] -> FL.Fold (k, w) [(k, w)]-> MarginalStructure w k
+  MarginalStructure :: (Monoid w, BRK.FiniteSet k, Ord k) => [Set k] -> FL.Fold (k, w) [(k, w)]-> MarginalStructure w k
+
+subsetToStencil :: (BRK.FiniteSet k, Ord k) => Set k -> DED.Stencil Int
+subsetToStencil s = DED.Stencil $ fmap snd $ filter fst $ zip (M.elems comboMap) [0..]
+  where
+    allMap = M.fromList $ fmap (, False) $ S.toList BRK.elements
+    subsetMap = M.fromList $ fmap (, True) $ S.toList s
+    comboMap = M.unionWith (||) allMap subsetMap
+
+stencilToSubset :: (BRK.FiniteSet k, Ord k) => DED.Stencil Int -> Set k
+stencilToSubset (DED.Stencil indices) = S.fromList $ fmap snd $ filter fst $ zip (IM.elems comboMap) (S.toList elts)
+  where
+    elts = BRK.elements
+    nElts = S.size elts
+    allMap = IM.fromList $ fmap (, False) [0..(nElts - 1)]
+    subsetMap = IM.fromList $ fmap (, True) $ indices
+    comboMap = IM.unionWith (||) allMap subsetMap
 
 productFld :: MarginalStructure w k -> FL.Fold (k, w) [(k,w)]
 productFld ms = case ms of
@@ -166,8 +200,12 @@ stencilsToProductFld stencils =
   in fmap M.toList $ zeroFillSummedMapFld
 -}
 
+msSubsets :: MarginalStructure w k -> [Set k]
+msSubsets (MarginalStructure subsets _) = subsets
+{-# INLINE msSubsets #-}
+
 msStencils :: MarginalStructure w k -> [DED.Stencil Int]
-msStencils (MarginalStructure sts _) = sts
+msStencils (MarginalStructure subsets _) = fmap subsetToStencil subsets
 {-# INLINE msStencils #-}
 
 msProdFld :: MarginalStructure w k -> FL.Fold (k, w) [(k, w)]
@@ -278,14 +316,14 @@ tableProduct :: forall outerK a b w .
              -> Map outerK (Map a w)
              -> Map outerK (Map b w)
              -> Map outerK (Map (a, b) w)
-tableProduct innerProduct aTableMap bTableMap = MM.merge
+tableProduct outerProduct aTableMap bTableMap = MM.merge
                                                 (MM.mapMissing whenMissing)
                                                 (MM.mapMissing whenMissing)
                                                 (MM.zipWithMatched whenMatched)
                                                 aTableMap bTableMap
   where
     whenMissing _ _ = zeroMap
-    whenMatched _ = innerProduct
+    whenMatched _ = outerProduct
 {-# INLINEABLE tableProduct #-}
 
 innerProductSum :: (Ord a, Ord b, Eq x, Fractional x) => Map a (Sum x) -> Map b (Sum x) -> Map (a, b) (Sum x)
