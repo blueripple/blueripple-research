@@ -441,7 +441,7 @@ applyNSPWeightsFldG wl updateW logM ptd nsWsFldF =
 
 nullSpaceVectorsMS :: forall k w . DMS.MarginalStructure w k -> LA.Matrix LA.R
 nullSpaceVectorsMS = \cases
-  (DMS.MarginalStructure sts _) -> nullSpaceVectors (S.size $ BRK.elements @k) sts
+  (DMS.MarginalStructure subsets _) -> nullSpaceVectors (S.size $ BRK.elements @k) $ fmap DMS.subsetToStencil subsets
 
 nullSpaceVectors :: Int -> [DED.Stencil Int] -> LA.Matrix LA.R
 nullSpaceVectors n sts = LA.tr $ LA.nullspace $ DED.mMatrix n sts
@@ -481,7 +481,9 @@ diffCovarianceFldMS :: forall outerK k row w .
                     -> DMS.MarginalStructure w k
                     -> FL.Fold row (LA.Vector Double, LA.Herm Double)
 diffCovarianceFldMS wl outerKey catKey dat = \cases
-  (DMS.MarginalStructure sts ptFld) -> diffCovarianceFld wl outerKey catKey dat sts (fmap snd . FL.fold ptFld)
+  (DMS.MarginalStructure subsets ptFld) -> diffCovarianceFld wl outerKey catKey dat
+                                           (fmap DMS.subsetToStencil subsets)
+                                           (fmap snd . FL.fold ptFld)
 
 diffCovarianceFld :: forall outerK k row w .
                      (Ord outerK, Ord k, BRK.FiniteSet k, Monoid w)

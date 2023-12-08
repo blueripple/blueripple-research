@@ -146,6 +146,7 @@ compareResults :: forall ks key colKey rowKey a r f .
                => BR.PostPaths Path.Abs
                -> BR.PostInfo
                -> Bool
+               -> Bool
                -> Text
                -> (Text, Map a Int, F.Record ks -> a)
                -> Maybe Text
@@ -160,7 +161,7 @@ compareResults :: forall ks key colKey rowKey a r f .
                -> ResultFrame ks
                -> f (MethodResult ks)
                -> K.Sem r ()
-compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regionKey) exampleStateM
+compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regionPopMap, regionKey) exampleStateM
   catKey rowKey colKey showCellKey colorM shapeM byRegionErrorF byCellErrorF actual results = do
   let tableText d = toText (C.ascii (fmap toString $ mapColonnade)
                              $ FL.fold (fmap DED.totaledTable
@@ -217,9 +218,10 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
       when showTables $ do
         tableTextMF "Actual Joint" (Just actual)
         traverse_ (\mr -> maybe (pure ()) (\t -> tableTextMF t (Just $ mr.mrResult)) $ mr.mrChartTitle) results
-      K.logLE K.Info "Building example state charts."
-      traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False False (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
-      traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False True (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+      when showScatters $ do
+        K.logLE K.Info "Building example state charts."
+        traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False False (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+        traverse_ (\mr -> maybe (pure ()) (\t -> compChartM ff False True (stTitle t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
       pure ()
 
   -- compute errors
@@ -302,9 +304,10 @@ compareResults pp pi' showTables chartDataPrefix (regionType, regionPopMap, regi
     K.logLE K.Info "Error Table:"
     K.logLE K.Info $ "\n" <> toText (C.ascii (fmap toString $ errColonnadeFlex byRegionErrorF.errTableFmt errColHeaders "Region") byRegionErrTableRows)
 --  _ <- compChart True "Actual" $ mrActual results
-  K.logLE K.Info "Building national charts."
-  traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
-  traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False True (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+  when showScatters $ do
+    K.logLE K.Info "Building national charts."
+    traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False False (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
+    traverse_ (\mr -> maybe (pure ()) (\t -> compChartM id False True (title t) t $ Just mr.mrResult) $ mr.mrChartTitle) results
   pure ()
 
 pctFmt :: Double -> Text
@@ -598,7 +601,7 @@ compareCSR_ASR_ASE cmdLine postInfo = do
     pumaModelPaths <- postPaths "Model_CSR_ASR_ASE_ByPUMA" cmdLine
     BRK.brNewPost pumaModelPaths postInfo "Model_CSR_ASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
-        pumaModelPaths postInfo True "CSR_ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo True False "CSR_ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
@@ -652,7 +655,7 @@ compareCSR_ASR cmdLine postInfo = do
     pumaModelPaths <- postPaths "Model_CSR_ASR_ByPUMA" cmdLine
     BRK.brNewPost pumaModelPaths postInfo "Model_CSR_ASR_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.CASR)
-        pumaModelPaths postInfo True "CSR_ASR" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo True False "CSR_ASR" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.CASR)
         (\r -> (r ^. DT.citizenC, r ^. DT.race5C))
         (\r -> (r ^. DT.sexC, r ^. DT.age5C))
@@ -681,7 +684,7 @@ compareCSR_ASR cmdLine postInfo = do
     cdModelPaths <- postPaths "Model_CSR_ASR_ByCD" cmdLine
     BRK.brNewPost cdModelPaths postInfo "Model_CSR_ASR_ByCD" $ do
       compareResults @(DMC.CDOuterKeyR V.++ DMC.CASR)
-        pumaModelPaths postInfo True "CSR_ASR" ("CD", cdPopMap, DDP.districtKeyT) (Just "NY")
+        pumaModelPaths postInfo True False "CSR_ASR" ("CD", cdPopMap, DDP.districtKeyT) (Just "NY")
         (F.rcast @DMC.CASR)
         (\r -> (r ^. DT.citizenC, r ^. DT.race5C))
         (\r -> (r ^. DT.sexC, r ^. DT.age5C))
@@ -777,13 +780,13 @@ compareASR_ASE cmdLine postInfo = do
     pumaModelPaths <- postPaths "Model_ASR_ASE_ByPUMA" cmdLine
     BRK.brNewPost pumaModelPaths postInfo "Model_ASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
-        pumaModelPaths postInfo False "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        pumaModelPaths postInfo False False "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) Nothing --(Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
         showCellKey
-        (Just ("Race", show . view DT.race5C, Just raceOrder))
-        (Just ("Age", show . view DT.age5C, Just ageOrder))
+        Nothing --(Just ("Race", show . view DT.race5C, Just raceOrder))
+        Nothing --(Just ("Age", show . view DT.age5C, Just ageOrder))
         (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
         (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
@@ -874,7 +877,7 @@ compareCASR_ASE cmdLine postInfo = do
     synthModelPaths <- postPaths "Model_CASR_ASE_ByPUMA" cmdLine
     BRK.brNewPost synthModelPaths postInfo "Model_CASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.CASER)
-        synthModelPaths postInfo False "CASR_ASER" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
+        synthModelPaths postInfo False False "CASR_ASER" ("PUMA", pumaPopMap, pumaKey) (Just "NY")
         (F.rcast @DMC.CASER)
         (\r -> (r ^. DT.age5C, r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.citizenC, r ^. DT.age5C))
@@ -914,7 +917,7 @@ compareSER_ASR cmdLine postInfo = do
     synthModelPaths <- postPaths "Model_SER_A6SR" cmdLine
     BRK.brNewPost synthModelPaths postInfo "Model_SER_A6SR" $ do
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.ASER)
-        synthModelPaths postInfo True "SER_ASR" ("CD", cdPopMap,  DDP.districtKeyT) (Just "NY")
+        synthModelPaths postInfo True False "SER_ASR" ("CD", cdPopMap,  DDP.districtKeyT) (Just "NY")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
@@ -929,7 +932,7 @@ compareSER_ASR cmdLine postInfo = do
         ,MethodResult (fmap F.rcast modeled_SER_ASR) (Just "NS Model") (Just "NS Model") (Just "NS Model")
         ]
       compareResults @([BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DMC.ASER)
-        synthModelPaths postInfo True "SER_ASR" ("State", statePopMap, view GT.stateAbbreviation) (Just "PA")
+        synthModelPaths postInfo True False "SER_ASR" ("State", statePopMap, view GT.stateAbbreviation) (Just "PA")
         (F.rcast @DMC.ASER)
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.education4C, r ^. DT.age5C))
@@ -1309,7 +1312,7 @@ originalPost cmdLine postInfo = do
           age5Order = show <$> S.toList (Keyed.elements @DT.Age5F)
           simpleAgeOrder = show <$> S.toList (Keyed.elements @DT.SimpleAge)
       compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C]
-        synthModelPaths postInfo cdPopMap DDP.districtKeyT (Just "NY")
+        synthModelPaths postInfo False False cdPopMap DDP.districtKeyT (Just "NY")
         (F.rcast @[DT.SimpleAgeC, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.simpleAgeC, r ^. DT.education4C))
@@ -1327,7 +1330,7 @@ originalPost cmdLine postInfo = do
 
       let showCellKey r = show (r ^. GT.stateAbbreviation, r ^. DT.age5FC, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
       compareResults @[BRDF.Year, GT.StateAbbreviation, GT.CongressionalDistrict, DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C]
-        synthModelPaths postInfo statePopMap (view GT.stateAbbreviation) (Just "NY")
+        synthModelPaths postInfo False False statePopMap (view GT.stateAbbreviation) (Just "NY")
         (F.rcast @[DT.Age5FC, DT.SexC, DT.Education4C, DT.Race5C])
         (\r -> (r ^. DT.sexC, r ^. DT.race5C))
         (\r -> (r ^. DT.age5FC, r ^. DT.education4C))
