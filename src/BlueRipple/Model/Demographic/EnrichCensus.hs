@@ -766,15 +766,20 @@ data ErrorProjectionSource w k where
   ViaSubsets :: [Set k] -> ErrorProjectionSource w k
   ViaMarginalStructure :: DMS.MarginalStructure w k -> ErrorProjectionSource w k
 
-subsetsToNVP :: forall k . (Ord k, Keyed.FiniteSet k) => [Set k] -> DTP.NullVectorProjections k
-subsetsToNVP subsets = DTP.NullVectorProjections cMatrix a ident
-  where
-    n = S.size $ Keyed.elements @k
-    a = DED.mMatrix n $ fmap DMS.subsetToStencil subsets
-    at = LA.tr a
-    proj = a LA.<> (LA.inv $ at LA.<> a) LA.<> at
-    ident = LA.ident n
-    cMatrix = LA.ident n - proj
+subsetsToNVP :: forall k r . (K.KnitEffects r, Ord k, Keyed.FiniteSet k) => [Set k] -> K.Sem r (DTP.NullVectorProjections k)
+subsetsToNVP subsets = do
+  let n = S.size $ Keyed.elements @k
+      projections = DED.mMatrix n $ fmap DMS.subsetToStencil subsets
+      a = LA.tr projections
+  K.logLE (K.Debug 5) $ "A=" <> toText (LA.dispf 1 a)
+  let at = LA.tr a
+      ata =  at LA.<> a
+  K.logLE (K.Debug 5) $ "A'A=" <> toText (LA.dispf 1 ata)
+  let proj = a LA.<> (LA.inv ata) LA.<> at
+      ident = LA.ident $ length subsets
+      cMatrix = LA.ident n - proj
+  K.logLE (K.Debug 5) $ "C=" <> toText (LA.dispf 1 cMatrix)
+  pure $ DTP.NullVectorProjections cMatrix projections ident
 
 cachedNVProjections :: forall rs ks r .
                        (K.KnitEffects r, BRK.CacheEffects r
@@ -800,7 +805,9 @@ cachedNVProjections cacheKey eps cachedDataRows = do
           <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym projCovariances)
           <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
         pure $ DTP.uncorrelatedNullVecsMS ms projCovariances
-    ViaSubsets subsets -> pure $ pure $ subsetsToNVP subsets
+    ViaSubsets subsets ->  BRK.retrieveOrMakeD cacheKey (pure ()) $ \_ -> do
+      K.logLE K.Info $ "Retrieving or rebuilding error projections for key=" <> cacheKey
+      subsetsToNVP subsets
   nvp <- K.ignoreCacheTime nvp_C
   K.logLE K.Info $ "Null-Space/Error-structure is " <> show (fst $ LA.size $ DTP.nvpProj nvp) <> " dimensional."
   pure nvp_C
