@@ -1,16 +1,17 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ConstraintKinds     #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE QuasiQuotes         #-}
-{-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeOperators       #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE ConstraintKinds      #-}
+{-# LANGUAGE DataKinds            #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE GADTs                #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE QuasiQuotes          #-}
+{-# LANGUAGE RankNTypes           #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
+{-# LANGUAGE TypeApplications     #-}
+{-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE TypeSynonymInstances #-}
-{-# LANGUAGE UnicodeSyntax       #-}
+{-# LANGUAGE UnicodeSyntax        #-}
 --{-# LANGUAGE NoStrictData #-}
 
 module BlueRipple.Model.Demographic.EnrichCensus
@@ -552,7 +553,6 @@ predictedTables onSimplexM predictionCacheDirE geoTextMF predictor_C caTables_C 
   predicted_C <- BRK.retrieveOrMakeFrame predictedCacheKey predictionDeps $ uncurry f
   pure (predicted_C, products_C)
 
-
 predictCA6SRFrom_CSR_A6SR :: forall outerKey r .
                              (K.KnitEffects r, BRK.CacheEffects r
                              , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age6C]
@@ -762,30 +762,47 @@ projCovFld ms = DTP.diffCovarianceFldMS
                 DTM3.cwdF
                 ms
 
+data ErrorProjectionSource w k where
+  ViaSubsets :: [Set k] -> ErrorProjectionSource w k
+  ViaMarginalStructure :: DMS.MarginalStructure w k -> ErrorProjectionSource w k
+
+subsetsToNVP :: forall k . (Ord k, Keyed.FiniteSet k) => [Set k] -> DTP.NullVectorProjections k
+subsetsToNVP subsets = DTP.NullVectorProjections cMatrix a ident
+  where
+    n = S.size $ Keyed.elements @k
+    a = DED.mMatrix n $ fmap DMS.subsetToStencil subsets
+    at = LA.tr a
+    proj = a LA.<> (LA.inv $ at LA.<> a) LA.<> at
+    ident = LA.ident n
+    cMatrix = LA.ident n - proj
+
 cachedNVProjections :: forall rs ks r .
                        (K.KnitEffects r, BRK.CacheEffects r
                        , Ord (F.Record ks)
                        , Keyed.FiniteSet (F.Record ks)
                        , ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)
                     => Text
-                    -> DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
+                    -> ErrorProjectionSource DMS.CellWithDensity (F.Record ks) --DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                     -> K.ActionWithCacheTime r (F.FrameRec rs)
                     -> K.Sem r (K.ActionWithCacheTime r (DTP.NullVectorProjections (F.Record ks)))
-cachedNVProjections cacheKey ms cachedDataRows = do
-  let fld = projCovFld ms
-  K.logLE K.Info $ "Retrieving or rebuilding null-space projections for key=" <> cacheKey
-  nvp_C <- BRK.retrieveOrMakeD cacheKey cachedDataRows $ \dataRows -> do
-    K.logLE K.Info $ "Rebuilding null-space projections for key=" <> cacheKey
-    K.logLE K.Info $ "Computing covariance matrix of projected differences."
-    let (projMeans, projCovariances) = FL.fold fld dataRows
-        (eigVals, _) = LA.eigSH projCovariances
-    K.logLE K.Diagnostic
-      $ "mean=" <> toText (DED.prettyVector projMeans)
-      <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym projCovariances)
-      <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
-    pure $ DTP.uncorrelatedNullVecsMS ms projCovariances
+cachedNVProjections cacheKey eps cachedDataRows = do
+  nvp_C <- case eps of
+    ViaMarginalStructure ms -> do
+      let fld = projCovFld ms
+      K.logLE K.Info $ "Retrieving or rebuilding null-space projections for key=" <> cacheKey
+      BRK.retrieveOrMakeD cacheKey cachedDataRows $ \dataRows -> do
+        K.logLE K.Info $ "Rebuilding null-space projections for key=" <> cacheKey
+        K.logLE K.Info $ "Computing covariance matrix of projected differences."
+        let (projMeans, projCovariances) = FL.fold fld dataRows
+            (eigVals, _) = LA.eigSH projCovariances
+        K.logLE K.Diagnostic
+          $ "mean=" <> toText (DED.prettyVector projMeans)
+          <> "\ncov=" <> toText (LA.disps 3 $ LA.unSym projCovariances)
+          <> "\ncovariance eigenValues: " <> DED.prettyVector eigVals
+        pure $ DTP.uncorrelatedNullVecsMS ms projCovariances
+    ViaSubsets subsets -> pure $ pure $ subsetsToNVP subsets
   nvp <- K.ignoreCacheTime nvp_C
-  K.logLE K.Info $ "Null-Space is " <> show (fst $ LA.size $ DTP.nvpProj nvp) <> " dimensional."
+  K.logLE K.Info $ "Null-Space/Error-structure is " <> show (fst $ LA.size $ DTP.nvpProj nvp) <> " dimensional."
   pure nvp_C
 
 innerFoldWD :: forall as bs rs . (F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile
@@ -862,18 +879,22 @@ predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks q
                 -> Bool
                 -> BR.CommandLine
                 -> Maybe (LA.Matrix Double)
+                -> Maybe [Set (F.Record ks)]
                 -> K.ActionWithCacheTime r (F.FrameRec (PUMARowR ks))
                 -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor (F.Record ks) Text)
                            , DMS.MarginalStructure DMS.CellWithDensity (F.Record ks)
                            )
-predictorModel3 modelIdE predictorCacheDirE meanAsModel cmdLine amM acs_C = do
+predictorModel3 modelIdE predictorCacheDirE meanAsModel cmdLine amM seM acs_C = do
   let (modelId, modelCacheDirE) = case modelIdE of
         Left mId -> (mId, Left DTM3.model3A5CacheDir)
         Right mId -> (mId, Right DTM3.model3A5CacheDir)
   nvpsCacheKey <- BRK.cacheFromDirE modelCacheDirE (modelId <> "_NVPs.bin")
   predictorCacheKey <- BRK.cacheFromDirE predictorCacheDirE "Predictor.bin"
   let ms = marginalStructure @ks @as @bs @DMS.CellWithDensity @qs DMS.cwdWgtLens DMS.innerProductCWD'
-  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey ms acs_C
+      eps = case seM of
+        Nothing -> ViaMarginalStructure ms
+        Just subsets -> ViaSubsets subsets
+  nullVectorProjections_C <- cachedNVProjections nvpsCacheKey eps acs_C
   let projectionsToDiff_C = case amM of
         Nothing -> DTP.RawDiff <$> nullVectorProjections_C
         Just am -> DTP.AvgdDiff am <$> nullVectorProjections_C

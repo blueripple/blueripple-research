@@ -177,6 +177,7 @@ projToFull nvps v = v LA.<# fullToProjM nvps
 fullToProj :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 fullToProj nvps v = fullToProjM nvps LA.#> v
 
+{-
 baseNullVectorProjections :: forall w k . (BRK.FiniteSet k) => DMS.MarginalStructure w k -> NullVectorProjections k
 baseNullVectorProjections ms = case ms of
   DMS.MarginalStructure _ _ -> NullVectorProjections cM nullVecs (LA.ident nNullVecs)
@@ -185,6 +186,7 @@ baseNullVectorProjections ms = case ms of
     cM = DED.mMatrix nProbs $ DMS.msStencils ms
     nullVecs = nullSpaceVectors (DMS.msNumCategories ms) (DMS.msStencils ms)
     nNullVecs = fst $ LA.size nullVecs
+-}
 
 -- given list in a order, produce list in b order
 permuteList :: forall a b c . DMS.IsomorphicKeys a b -> [c] -> [c]
