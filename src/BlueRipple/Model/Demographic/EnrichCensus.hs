@@ -557,13 +557,13 @@ predictCA6SRFrom_CSR_A6SR :: forall outerKey r .
                              (K.KnitEffects r, BRK.CacheEffects r
                              , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age6C]
                              , outerKey V.++ KeysWD CA6SR F.⊆ (outerKey V.++ KeysWD SRCA6)
-                             , Ord (F.Record outerKey)
-                             , V.ReifyConstraint Show F.ElField outerKey
-                             , V.RecordToList outerKey
-                             , FS.RecFlat (outerKey V.++ KeysWD SRCA6)
-                             , V.RMap outerKey
-                             , V.RMap (outerKey V.++ KeysWD SRCA6)
-                             , FSI.RecVec (outerKey V.++ KeysWD SRCA)
+--                             , Ord (F.Record outerKey)
+--                             , V.ReifyConstraint Show F.ElField outerKey
+--                             , V.RecordToList outerKey
+--                             , FS.RecFlat (outerKey V.++ KeysWD SRCA6)
+--                             , V.RMap outerKey
+--                             , V.RMap (outerKey V.++ KeysWD SRCA6)
+--                             , FSI.RecVec (outerKey V.++ KeysWD SRCA)
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.PopCount
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.PWPopPerSqMile
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.SexC
@@ -596,13 +596,13 @@ predictCASRFrom_CSR_ASR :: forall outerKey r .
                            (K.KnitEffects r, BRK.CacheEffects r
                            , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age5C]
                            , outerKey V.++ KeysWD CASR F.⊆ (outerKey V.++ KeysWD SRCA)
-                           , Ord (F.Record outerKey)
-                           , V.ReifyConstraint Show F.ElField outerKey
-                           , V.RecordToList outerKey
-                           , FS.RecFlat (outerKey V.++ KeysWD SRCA)
-                           , V.RMap outerKey
-                           , V.RMap (outerKey V.++ KeysWD SRCA)
-                           , FSI.RecVec (outerKey V.++ KeysWD SRCA)
+--                           , Ord (F.Record outerKey)
+--                           , V.ReifyConstraint Show F.ElField outerKey
+--                           , V.RecordToList outerKey
+--                           , FS.RecFlat (outerKey V.++ KeysWD SRCA)
+--                           , V.RMap outerKey
+--                           , V.RMap (outerKey V.++ KeysWD SRCA)
+--                           , FSI.RecVec (outerKey V.++ KeysWD SRCA)
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PopCount
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PWPopPerSqMile
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.SexC
@@ -638,12 +638,12 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                              , TableProductsC outerKey AS '[DT.CitizenC, DT.Race5C] '[DT.Education4C]
                              , outerKey V.++ KeysWD CASER F.⊆ (outerKey V.++ KeysWD ASCRE)
 --                             , Ord (F.Record outerKey)
-                             , V.ReifyConstraint Show F.ElField outerKey
-                             , V.RecordToList outerKey
-                             , FS.RecFlat (outerKey V.++ KeysWD ASCRE)
-                             , V.RMap outerKey
-                             , V.RMap (outerKey V.++ KeysWD ASCRE)
-                             , FSI.RecVec (outerKey V.++ KeysWD ASCRE)
+--                             , V.ReifyConstraint Show F.ElField outerKey
+--                             , V.RecordToList outerKey
+--                             , FS.RecFlat (outerKey V.++ KeysWD ASCRE)
+--                             , V.RMap outerKey
+--                             , V.RMap (outerKey V.++ KeysWD ASCRE)
+--                             , FSI.RecVec (outerKey V.++ KeysWD ASCRE)
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PopCount
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PWPopPerSqMile
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.SexC
@@ -652,8 +652,8 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.CitizenC
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.Education4C
                              , outerKey F.⊆ (outerKey V.++ KeysWD ASCRE)
-                             , outerKey V.++ KeysWD (AS V.++ '[DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
-                             , outerKey V.++ KeysWD (AS V.++ '[DT.Education4C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
+--                             , outerKey V.++ KeysWD (AS V.++ '[DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
+--                             , outerKey V.++ KeysWD (AS V.++ '[DT.Education4C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
                              , outerKey V.++ KeysWD (AS V.++ [DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD CASR)
 
                            )
@@ -771,14 +771,15 @@ subsetsToNVP subsets = do
   let n = S.size $ Keyed.elements @k
       projections = DED.mMatrix n $ fmap DMS.subsetToStencil subsets
       a = LA.tr projections
-  K.logLE (K.Debug 5) $ "A=" <> toText (LA.dispf 1 a)
-  let at = LA.tr a
+      logLevel = K.Debug 5
+  K.logLE logLevel $ "A=" <> toText (LA.dispf 1 a)
+  let at = projections
       ata =  at LA.<> a
-  K.logLE (K.Debug 5) $ "A'A=" <> toText (LA.dispf 1 ata)
+  K.logLE logLevel $ "A'A=" <> toText (LA.dispf 1 ata)
   let proj = a LA.<> (LA.inv ata) LA.<> at
       ident = LA.ident $ length subsets
       cMatrix = LA.ident n - proj
-  K.logLE (K.Debug 5) $ "C=" <> toText (LA.dispf 1 cMatrix)
+  K.logLE logLevel $ "C=" <> toText (LA.dispf 1 cMatrix)
   pure $ DTP.NullVectorProjections cMatrix projections ident
 
 cachedNVProjections :: forall rs ks r .
@@ -829,9 +830,7 @@ runAllModels :: (K.KnitEffects r, BRK.CacheEffects r, Ord k, Keyed.FiniteSet k)
              -> (Int -> K.Sem r (K.ActionWithCacheTime r (DTM3.ComponentPredictor Text)))
              -> K.ActionWithCacheTime r (F.FrameRec rs)
              -> K.ActionWithCacheTime r (DTP.ProjectionsToDiff k)
-             -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor k Text)
---                        , K.ActionWithCacheTime r (DTP.NullVectorProjections k)
-                        )
+             -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor k Text))
 runAllModels cacheKey modelOne cachedDataRows cachedPTDs = do
   K.logLE K.Info "Running marginals as covariates model, if necessary."
   let modelResultDeps = (,) <$> cachedDataRows <*> cachedPTDs

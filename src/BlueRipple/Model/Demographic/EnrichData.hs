@@ -441,6 +441,7 @@ removeFromStencilAtIndexes is (Stencil ks) = Stencil ms where
   stencilIM = IM.union (IM.fromList $ fmap (,1 :: Int) ks) (IM.fromList $ fmap (,0) [0..L.maximum ks])
   ms = fmap fst $ filter ((/= 0) . snd) $ zip [0..] $ removeFromListAtIndexes is $ fmap snd $ IM.toList stencilIM
 
+-- produce the nStencils x nProbs matrix of marginals corresponding to these stencils
 mMatrix :: Int -> [Stencil Int] -> LA.Matrix LA.R
 mMatrix nProbs stencils = LA.assoc (nStencils, nProbs) 0 $ mconcat $ fmap f $ zip [0..nStencils] stencils
   where

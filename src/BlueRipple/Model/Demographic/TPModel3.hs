@@ -91,10 +91,10 @@ nullVecProjectionsModelDataFld ::  forall outerK k row w .
                                -> FL.Fold row (VS.Vector Double) -- covariates
                                -> FL.Fold row [(outerK, VS.Vector Double, VS.Vector Double)]
 nullVecProjectionsModelDataFld wl ms nvps outerKey catKey datF datFold = case ms of
-  DMS.MarginalStructure _ ptFld -> MR.mapReduceFold
-                                   MR.noUnpack
-                                   (MR.assign outerKey id)
-                                   (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
+  DMS.MarginalStructure _ _ -> MR.mapReduceFold
+                               MR.noUnpack
+                               (MR.assign outerKey id)
+                               (MR.foldAndLabel innerFld (\ok (d, v) -> (ok, d, v)))
     where
 {-      allKs :: Set k = BRK.elements
       wgtVec = VS.fromList . fmap (view wl)

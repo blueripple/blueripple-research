@@ -420,7 +420,8 @@ testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs
        -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (TestRow outerK ks), F.FrameRec (TestRow outerK ks)))
 testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLine amM seM byPUMA_C test_C = do
 --  productFrameCacheKey <- BRK.cacheFromDirE predictionCacheDirE  "productFrame.bin"
-  let seM' = fmap (fmap (S.map F.rcast)) $ seM
+  let seM' :: Maybe [Set (F.Record (qs V.++ as V.++ bs))]
+      seM' = fmap (fmap (S.map F.rcast)) seM
   (predictor_C, ms) <- DMC.predictorModel3 @as @bs @(qs V.++ as V.++ bs) @qs
     modelIdE predictionCacheDirE meanAsModel cmdLine amM seM' $ fmap (fmap F.rcast) byPUMA_C
   test <- K.ignoreCacheTime test_C
@@ -431,7 +432,6 @@ testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLin
   (predictions_C, products_C) <- DMC.predictedTables @outerK @qs @as @bs
                                  onSimplexM
                                  predictionCacheDirE
---                                 (pure . testRowKeyText)
                                  (pure . view GT.stateAbbreviation)
                                  predictor_C
                                  (fmap F.rcast <$> testAs_C)
@@ -773,6 +773,7 @@ compareASR_ASE cmdLine postInfo = do
                                      (show . view GT.pUMA) cmdLine (Just mRE_SRE_ARE_ASRE) Nothing byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER_SER_AER_ASER) <- K.ignoreCacheTime pumaTestAvgER_SER_AER_ASER_C
 
+{-
     let subsetER :: DT.Education4 -> DT.Race5 -> Set (F.Record [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C])
         subsetER e r = S.fromList $ [a F.&: s F.&: e F.&: r F.&: V.RNil | a <- S.toList Keyed.elements, s <- S.toList Keyed.elements]
         subsetsER = [subsetER e r | e <- S.toList Keyed.elements, r <- S.toList Keyed.elements]
@@ -783,6 +784,7 @@ compareASR_ASE cmdLine postInfo = do
                          False
                          (show . view GT.pUMA) cmdLine Nothing (Just subsetsER) byPUMA_C testPUMAs_C
     (_, pumaModeledOnlyER) <- K.ignoreCacheTime pumaTestOnlyER_C
+-}
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         pumaKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.pUMA)
@@ -806,7 +808,7 @@ compareASR_ASE cmdLine postInfo = do
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
         ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
-        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
+--        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER) (Just "NS: +E+R & +SER") (Just "NS: +E+R & +SER (L2)") (Just "NS: +E+R & +SER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER_AER_ASER) (Just "NS: Full via avg") (Just "NS: Full via avg (L2)") (Just "NS: Full via avg")
