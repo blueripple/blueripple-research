@@ -232,7 +232,7 @@ euclideanFull nvps projWs _ v =
       a = projToFullM nvps
       x = a LA.#> d
 --      ata = LA.tr (projToFullM nvps) LA.<> (projToFullM nvps)
-  in (VS.sum $ VS.map (^ (2 :: Int)) x, (LA.tr a) LA.#> (2 * x))
+  in (VS.sum $ VS.map (^ (2 :: Int)) x, LA.tr a LA.#> (2 * x))
 
 klDiv :: ObjectiveF
 klDiv nvps projWs pV v =
@@ -249,8 +249,8 @@ optimalWeights :: DED.EnrichDataEffects r
 optimalWeights objectiveF nvps projWs pV = do
 --  K.logLE K.Info $ "Initial: pV + nsWs <.> nVs = " <> DED.prettyVector (pV + nsWs LA.<# nsVs)
   let n = VS.length projWs
-      prToFull = projToFull nvps
-      scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
+--      prToFull = projToFull nvps
+--      scaleGradM = fullToProjM nvps LA.<> LA.tr (fullToProjM nvps)
       objD = objectiveF nvps projWs pV
       constraintData =  L.zip (VS.toList pV) (LA.toColumns $ fullToProjM nvps)
       constraintF :: (Double, LA.Vector LA.R)-> LA.Vector LA.R -> (Double, LA.Vector LA.R)
@@ -285,7 +285,7 @@ viaNearestOnSimplex nvps projWs prodV = do
 
 -- after Chen & Ye: https://arxiv.org/pdf/1101.6081
 projectToSimplex :: VS.Vector Double -> VS.Vector Double
-projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x-tHat)) yL
+projectToSimplex y = VS.fromList $ fmap (\x -> max 0 (x - tHat)) yL
   where
     yL = VS.toList y
     n = VS.length y

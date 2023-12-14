@@ -359,36 +359,14 @@ type TestRow ok ks =  ok V.++ DMC.KeysWD ks
 -- E.g. if you are combining ASR and SER to make ASER ks=ASER, as=E, bs=A
 testNS :: forall  outerK ks (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) qs r .
            (K.KnitEffects r, BRK.CacheEffects r
+           , DMC.PredictorModelC as bs (qs V.++ as V.++ bs) qs
+           , DMC.PredictedTablesC outerK qs as bs
            , qs ~ F.RDeleteAll (as V.++ bs) ks
            , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-           , Ord (F.Record qs)
-           , Ord (F.Record as)
-           , Ord (F.Record bs)
-           , Ord (F.Record (qs V.++ as))
-           , Ord (F.Record (qs V.++ bs))
-           , Ord (F.Record ((qs V.++ as) V.++ bs))
-           , Keyed.FiniteSet (F.Record qs)
-           , Keyed.FiniteSet (F.Record as)
-           , Keyed.FiniteSet (F.Record bs)
-           , Keyed.FiniteSet (F.Record (qs V.++ as))
-           , Keyed.FiniteSet (F.Record (qs V.++ bs))
-           , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
-           , as F.⊆ (qs V.++ as)
-           , bs F.⊆ (qs V.++ bs)
-           , qs F.⊆ (qs V.++ as)
-           , qs F.⊆ (qs V.++ bs)
-           , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
-           , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
            , qs V.++ as F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
            , qs V.++ bs F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
            , ((qs V.++ as) V.++ bs) F.⊆ DMC.PUMARowR ((qs V.++ as) V.++ bs)
            , DMC.KeysWD (qs V.++ as V.++ bs) F.⊆ DMC.PUMARowR ks
-           , V.RMap as
-           , V.ReifyConstraint Show F.ElField as
-           , V.RecordToList as
-           , V.RMap bs
-           , V.ReifyConstraint Show F.ElField bs
-           , V.RecordToList bs
            , AggregateAndZeroFillC outerK (F.RDeleteAll as ks)
            , AggregateAndZeroFillC outerK (F.RDeleteAll bs ks)
            , DMC.PredictedTablesC outerK qs as bs
@@ -424,7 +402,6 @@ testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLin
       seM' = fmap (fmap (S.map F.rcast)) seM
   (predictor_C, ms) <- DMC.predictorModel3 @as @bs @(qs V.++ as V.++ bs) @qs
     modelIdE predictionCacheDirE meanAsModel cmdLine amM seM' $ fmap (fmap F.rcast) byPUMA_C
-  test <- K.ignoreCacheTime test_C
   let testAs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll bs ks) . fmap F.rcast) <$> test_C
       testBs_C = (aggregateAndZeroFillTables @outerK @(F.RDeleteAll as ks) . fmap F.rcast) <$> test_C
 --      iso :: DMS.IsomorphicKeys (F.Record ks) (F.Record (qs V.++ as V.++ bs)) = DMS.IsomorphicKeys F.rcast F.rcast
@@ -437,11 +414,12 @@ testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLin
                                  (fmap F.rcast <$> testAs_C)
                                  (fmap F.rcast <$> testBs_C)
 
-  when (BR.logLevel cmdLine >= BR.LogDebugMinimal) $ do
+  when (BR.logLevel cmdLine > BR.LogDebugMinimal) $ do
     predictor <- K.ignoreCacheTime predictor_C
+    test <- K.ignoreCacheTime test_C
     let ptd = DTM3.predPTD predictor
         nvps = DTP.nullVectorProjections ptd
-        cdModelData = FL.fold
+        testModelData = FL.fold
           (DTM3.nullVecProjectionsModelDataFldCheck
            DMS.cwdWgtLens
            ms
@@ -452,9 +430,8 @@ testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLin
            (DMC.innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(TestRow outerK ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs)))
           )
           test
-        cMatrix = DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
---    predictor <- K.ignoreCacheTime predictor_C
-    forM_ cdModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
+        cMatrix =  DTP.nvpConstraints (DTP.nullVectorProjections $ DTM3.predPTD predictor) --DED.mMatrix (DMS.msNumCategories ms) (DMS.msStencils ms)
+    forM_ testModelData $ \(sar, md, nVpsActual, pKWs, oKWs) -> do
       let keyT = testRowKeyText sar
           pV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) pKWs
           nV = VS.fromList $ fmap (view (_2 . DMS.cwdWgtLens)) oKWs
@@ -463,13 +440,14 @@ testNS onSimplexM modelIdE predictionCacheDirE meanAsModel testRowKeyText cmdLin
       K.logLE K.Info $ keyT <> " actual  counts=" <> DED.prettyVector nV <> showSum nV
       K.logLE K.Info $ keyT <> " prod counts=" <> DED.prettyVector pV <> showSum pV
       let nvpsV = DTP.applyNSPWeights (DTM3.predPTD predictor) (VS.map (* n) nVpsActual) pV
-      K.logLE K.Info $ keyT <> "NS projections=" <> DED.prettyVector nVpsActual
-      K.logLE K.Info $ "sumSq(projections)=" <> show (VS.sum $ VS.zipWith (*) nVpsActual nVpsActual)
       let cCheckV = cMatrix LA.#> (nV - pV)
       K.logLE K.Info $ keyT <> " C * (actual - prod) =" <> DED.prettyVector cCheckV <> showSum cCheckV
       K.logLE K.Info $ keyT <> " predictors: " <> DED.prettyVector md
       nvpsModeled <- VS.fromList <$> (K.knitEither $ DTM3.modelResultNVPs predictor (view GT.stateAbbreviation sar) md)
+      K.logLE K.Info $ keyT <> " projections=" <> DED.prettyVector nVpsActual
+      K.logLE K.Info $ "sumSq(projections)=" <> show (VS.sum $ VS.zipWith (*) nVpsActual nVpsActual)
       K.logLE K.Info $ keyT <> " modeled  =" <> DED.prettyVector nvpsModeled <> showSum nvpsModeled
+      K.logLE K.Info $ "sumSq(modeled)=" <> show (VS.sum $ VS.zipWith (*) nvpsModeled nvpsModeled)
       let dNVPs = VS.zipWith (-) nVpsActual nvpsModeled
       K.logLE K.Info $ "dNVPS=" <> DED.prettyVector dNVPs
       K.logLE K.Info $ "sumSq(dNVPS)=" <>  show (VS.sum $ VS.zipWith (*) dNVPs dNVPs)
@@ -725,6 +703,7 @@ compareASR_ASE cmdLine postInfo = do
                       False
                       (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeledRaw) <- K.ignoreCacheTime pumaTestRaw_C
+{-
     pumaTestMean_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                        (DTP.viaOptimalWeights DTP.euclideanFull)
                        (Right "ASR_ASE_ByPUMA")
@@ -772,8 +751,8 @@ compareASR_ASE cmdLine postInfo = do
                                      False
                                      (show . view GT.pUMA) cmdLine (Just mRE_SRE_ARE_ASRE) Nothing byPUMA_C testPUMAs_C
     (_, pumaModeledAvgER_SER_AER_ASER) <- K.ignoreCacheTime pumaTestAvgER_SER_AER_ASER_C
+-}
 
-{-
     let subsetER :: DT.Education4 -> DT.Race5 -> Set (F.Record [DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C])
         subsetER e r = S.fromList $ [a F.&: s F.&: e F.&: r F.&: V.RNil | a <- S.toList Keyed.elements, s <- S.toList Keyed.elements]
         subsetsER = [subsetER e r | e <- S.toList Keyed.elements, r <- S.toList Keyed.elements]
@@ -784,7 +763,7 @@ compareASR_ASE cmdLine postInfo = do
                          False
                          (show . view GT.pUMA) cmdLine Nothing (Just subsetsER) byPUMA_C testPUMAs_C
     (_, pumaModeledOnlyER) <- K.ignoreCacheTime pumaTestOnlyER_C
--}
+
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
         pumaKey ok = (ok ^. GT.stateAbbreviation, ok ^. GT.pUMA)
@@ -807,8 +786,8 @@ compareASR_ASE cmdLine postInfo = do
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
---        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
+--        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
+        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER) (Just "NS: +E+R & +SER") (Just "NS: +E+R & +SER (L2)") (Just "NS: +E+R & +SER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER_AER_ASER) (Just "NS: Full via avg") (Just "NS: Full via avg (L2)") (Just "NS: Full via avg")

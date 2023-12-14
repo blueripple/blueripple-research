@@ -55,6 +55,7 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Melt as F
 import qualified Frames.Transform as FT
+import qualified Frames.Constraints as FC
 import qualified Frames.Serialize as FS
 import qualified Frames.Streamly.Transform as FST
 import qualified Frames.Streamly.InCore as FSI
@@ -156,35 +157,37 @@ type CensusCASR = CensusOuterKeyR V.++ KeysWD CASR
 type CensusCASER = CensusOuterKeyR V.++ KeysWD CASER
 type CensusCA6SR = CensusOuterKeyR V.++ KeysWD CA6SR
 
-marginalStructure :: forall ks as bs w qs .
-                     (Monoid w
-                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-                     , Ord (F.Record ks)
-                     , Keyed.FiniteSet (F.Record ks)
-                     , ((qs V.++ as) V.++ bs) F.⊆ ks
-                     , ks F.⊆ ((qs V.++ as) V.++ bs)
-                     , Ord (F.Record qs)
-                     , Ord (F.Record as)
-                     , Ord (F.Record bs)
-                     , Ord (F.Record (qs V.++ as))
-                     , Ord (F.Record (qs V.++ bs))
-                     , Ord (F.Record ((qs V.++ as) V.++ bs))
-                     , Keyed.FiniteSet (F.Record qs)
-                     , Keyed.FiniteSet (F.Record as)
-                     , Keyed.FiniteSet (F.Record bs)
-                     , Keyed.FiniteSet (F.Record (qs V.++ as))
-                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
-                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
-                     , as F.⊆ (qs V.++ as)
-                     , bs F.⊆ (qs V.++ bs)
-                     , qs F.⊆ (qs V.++ as)
-                     , qs F.⊆ (qs V.++ bs)
-                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
-                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
-                     )
-                 => Lens' w Double
-                 -> (Map (F.Record as) w -> Map (F.Record bs) w -> Map (F.Record as, F.Record bs) w)
-                 -> DMS.MarginalStructure w (F.Record ks)
+type MarginalStructureC ks as bs qs w =
+  (Monoid w
+  , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
+  , Ord (F.Record ks)
+  , Keyed.FiniteSet (F.Record ks)
+  , ((qs V.++ as) V.++ bs) F.⊆ ks
+  , ks F.⊆ ((qs V.++ as) V.++ bs)
+  , Ord (F.Record qs)
+  , Ord (F.Record as)
+  , Ord (F.Record bs)
+  , Ord (F.Record (qs V.++ as))
+  , Ord (F.Record (qs V.++ bs))
+  , Ord (F.Record ((qs V.++ as) V.++ bs))
+  , Keyed.FiniteSet (F.Record qs)
+  , Keyed.FiniteSet (F.Record as)
+  , Keyed.FiniteSet (F.Record bs)
+  , Keyed.FiniteSet (F.Record (qs V.++ as))
+  , Keyed.FiniteSet (F.Record (qs V.++ bs))
+  , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
+  , as F.⊆ (qs V.++ as)
+  , bs F.⊆ (qs V.++ bs)
+  , qs F.⊆ (qs V.++ as)
+  , qs F.⊆ (qs V.++ bs)
+  , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
+  , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
+  )
+
+marginalStructure :: forall ks as bs w qs . MarginalStructureC ks as bs qs w
+                  => Lens' w Double
+                  -> (Map (F.Record as) w -> Map (F.Record bs) w -> Map (F.Record as, F.Record bs) w)
+                  -> DMS.MarginalStructure w (F.Record ks)
 marginalStructure wl innerProduct =  DMS.reKeyMarginalStructure
                                      (DMS.IsomorphicKeys
                                       (F.rcast @(qs V.++ as V.++ bs))
@@ -419,7 +422,7 @@ censusASR_CSR_Products cacheKey censusTables_C = fmap (fmap F.rcast)
     recodedA6SR_C = fmap (fmap F.rcast . recodeA6SR . BRC.ageSexRace) censusTables_C
 
 
-type LogitMarginalsC' cs as bs =
+type LogitMarginalsC cs as bs =
   (
    cs V.++ (as V.++ bs) ~ ((cs V.++ as) V.++ bs)
   , Ord (F.Record cs)
@@ -444,7 +447,7 @@ type LogitMarginalsC' cs as bs =
 
 
 logitMarginalsCMatrix :: forall (cs :: [(Symbol, Type)]) (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) .
-                             (LogitMarginalsC' cs as bs
+                             (LogitMarginalsC cs as bs
                              )
                       =>  LA.Matrix Double
 logitMarginalsCMatrix =
@@ -468,8 +471,7 @@ popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
 
 type PredictedTablesC outerK cs as bs =
   (
---    LogitMarginalsC (cs V.++ as) (cs V.++ bs) (cs V.++ as V.++ bs)
-    LogitMarginalsC' cs as bs
+    LogitMarginalsC cs as bs
   , TableProductsC outerK cs as bs
   , (bs V.++ cs) F.⊆ ((bs V.++ cs) V.++ as)
   , (bs V.++ as) F.⊆ ((bs V.++ cs) V.++ as)
@@ -503,11 +505,13 @@ predictedTables :: forall outerK cs as bs r .
 predictedTables onSimplexM predictionCacheDirE geoTextMF predictor_C caTables_C cbTables_C = do
   productCacheKey <- BRK.cacheFromDirE predictionCacheDirE "products.bin"
   predictedCacheKey <- BRK.cacheFromDirE predictionCacheDirE "predicted.bin"
+  K.logLE (K.Debug 1) $ "predictedTables: product cache key=" <> productCacheKey
+  K.logLE (K.Debug 1) $ "predictedTables: predicted cache key=" <> predictedCacheKey
   let marginalsCMatrix = logitMarginalsCMatrix @cs @as @bs
   K.logLE K.Info $ "predictedTables called with (cs ++ as)=" <> catsText @(cs V.++ as)
     <> "; (cs ++ bs)=" <> catsText @(cs V.++ bs)
     <> "; (cs ++ as ++ bs)=" <> catsText @(cs V.++ as V.++ bs)
-  K.logLE (K.Debug 1) $ "predictedTables marginals cMatrix = " <> toText (LA.dispf 3 marginalsCMatrix)
+  K.logLE (K.Debug 2) $ "predictedTables marginals cMatrix = " <> toText (LA.dispf 3 marginalsCMatrix)
   let logitMarginals' = logitMarginals marginalsCMatrix
 --  when rebuild $ BRK.clearIfPresentD productCacheKey >> BRK.clearIfPresentD predictedCacheKey
   products_C <- tableProducts @outerK @cs @as @bs productCacheKey caTables_C cbTables_C
@@ -557,13 +561,6 @@ predictCA6SRFrom_CSR_A6SR :: forall outerKey r .
                              (K.KnitEffects r, BRK.CacheEffects r
                              , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age6C]
                              , outerKey V.++ KeysWD CA6SR F.⊆ (outerKey V.++ KeysWD SRCA6)
---                             , Ord (F.Record outerKey)
---                             , V.ReifyConstraint Show F.ElField outerKey
---                             , V.RecordToList outerKey
---                             , FS.RecFlat (outerKey V.++ KeysWD SRCA6)
---                             , V.RMap outerKey
---                             , V.RMap (outerKey V.++ KeysWD SRCA6)
---                             , FSI.RecVec (outerKey V.++ KeysWD SRCA)
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.PopCount
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.PWPopPerSqMile
                              , F.ElemOf (outerKey V.++ KeysWD SRCA6) DT.SexC
@@ -596,13 +593,6 @@ predictCASRFrom_CSR_ASR :: forall outerKey r .
                            (K.KnitEffects r, BRK.CacheEffects r
                            , TableProductsC outerKey SR '[DT.CitizenC] '[DT.Age5C]
                            , outerKey V.++ KeysWD CASR F.⊆ (outerKey V.++ KeysWD SRCA)
---                           , Ord (F.Record outerKey)
---                           , V.ReifyConstraint Show F.ElField outerKey
---                           , V.RecordToList outerKey
---                           , FS.RecFlat (outerKey V.++ KeysWD SRCA)
---                           , V.RMap outerKey
---                           , V.RMap (outerKey V.++ KeysWD SRCA)
---                           , FSI.RecVec (outerKey V.++ KeysWD SRCA)
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PopCount
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.PWPopPerSqMile
                            , F.ElemOf (outerKey V.++ KeysWD SRCA) DT.SexC
@@ -637,13 +627,6 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                              (K.KnitEffects r, BRK.CacheEffects r
                              , TableProductsC outerKey AS '[DT.CitizenC, DT.Race5C] '[DT.Education4C]
                              , outerKey V.++ KeysWD CASER F.⊆ (outerKey V.++ KeysWD ASCRE)
---                             , Ord (F.Record outerKey)
---                             , V.ReifyConstraint Show F.ElField outerKey
---                             , V.RecordToList outerKey
---                             , FS.RecFlat (outerKey V.++ KeysWD ASCRE)
---                             , V.RMap outerKey
---                             , V.RMap (outerKey V.++ KeysWD ASCRE)
---                             , FSI.RecVec (outerKey V.++ KeysWD ASCRE)
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PopCount
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.PWPopPerSqMile
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.SexC
@@ -652,8 +635,6 @@ predictCASERFrom_CASR_ASE :: forall outerKey r .
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.CitizenC
                              , F.ElemOf (outerKey V.++ KeysWD ASCRE) DT.Education4C
                              , outerKey F.⊆ (outerKey V.++ KeysWD ASCRE)
---                             , outerKey V.++ KeysWD (AS V.++ '[DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
---                             , outerKey V.++ KeysWD (AS V.++ '[DT.Education4C]) F.⊆ (outerKey V.++ KeysWD ASCRE)
                              , outerKey V.++ KeysWD (AS V.++ [DT.CitizenC, DT.Race5C]) F.⊆ (outerKey V.++ KeysWD CASR)
 
                            )
@@ -745,13 +726,6 @@ predictedCensusCASER' onSimplexM predictionCacheDirE predictSRCA_C predictACSRE_
                             geoTextMF predictSRCA_C recodedCSR_C recodedASR_C
   predictCASERFrom_CASR_ASE @LDOuterKeyR onSimplexM  (BRK.mapDirE (<> "_CASR_ASE") predictionCacheDirE) geoTextMF predictACSRE_C casrPrediction_C ase_C
 
-{-
-censusCASER :: forall r . (K.KnitEffects r, BRK.CacheEffects r)
-            => DTP.OptimalOnSimplexF r
-            -> Bool
-            -> Bool
-            ->
--}
 
 projCovFld :: forall rs ks . (ks F.⊆ rs, F.ElemOf rs GT.PUMA, F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs DT.PopCount, F.ElemOf rs DT.PWPopPerSqMile)
            => DMS.MarginalStructure DMS.CellWithDensity (F.Record ks) -> FL.Fold (F.Record rs) (LA.Vector Double, LA.Herm Double)
@@ -831,54 +805,30 @@ runAllModels :: (K.KnitEffects r, BRK.CacheEffects r, Ord k, Keyed.FiniteSet k)
              -> K.ActionWithCacheTime r (F.FrameRec rs)
              -> K.ActionWithCacheTime r (DTP.ProjectionsToDiff k)
              -> K.Sem r (K.ActionWithCacheTime r (DTM3.Predictor k Text))
-runAllModels cacheKey modelOne cachedDataRows cachedPTDs = do
+runAllModels cacheKey modelOne _ cachedPTDs = do
   K.logLE K.Info "Running marginals as covariates model, if necessary."
-  let modelResultDeps = (,) <$> cachedDataRows <*> cachedPTDs
-  model3Res_C <- BRK.retrieveOrMakeD cacheKey modelResultDeps
-                 $ \(_, ptd) -> (do
-                                     cachedModelResults <- sequenceA <$> traverse modelOne [0..(DTP.numProjections (DTP.nullVectorProjections ptd) - 1)]
-                                     modelResults <- K.ignoreCacheTime cachedModelResults
-                                     pure $ DTM3.Predictor ptd modelResults
-                                 )
-  pure model3Res_C
+--  let modelResultDeps = (,) <$> cachedDataRows <*> cachedPTDs
+  BRK.retrieveOrMakeD cacheKey cachedPTDs --modelResultDeps
+    $ \ptd -> (do
+                       modelResults_C <- sequenceA <$> traverse modelOne [0..(DTP.numProjections (DTP.nullVectorProjections ptd) - 1)]
+                       DTM3.Predictor ptd <$> K.ignoreCacheTime modelResults_C
+                   )
 
+type PredictorModelC as bs ks qs =
+  (
+    MarginalStructureC ks as bs qs DMS.CellWithDensity
+  , FC.RecordShow as
+  , FC.RecordShow bs
+  , ks F.⊆ PUMARowR ks
+  , F.ElemOf (KeysWD ks) DT.PopCount
+  , F.ElemOf (KeysWD ks) DT.PWPopPerSqMile
+  , qs V.++ as F.⊆ PUMARowR ks
+  , qs V.++ bs F.⊆ PUMARowR ks
+  )
 
 predictorModel3 :: forall (as :: [(Symbol, Type)]) (bs :: [(Symbol, Type)]) ks qs r
                    . (K.KnitEffects r, BRK.CacheEffects r
-                     , qs V.++ (as V.++ bs) ~ (qs V.++ as) V.++ bs
-                     , Ord (F.Record ks)
-                     , V.RMap as
-                     , V.ReifyConstraint Show F.ElField as
-                     , V.RecordToList as
-                     , V.RMap bs
-                     , V.ReifyConstraint Show F.ElField bs
-                     , V.RecordToList bs
-                     , ks F.⊆ PUMARowR ks
-                     , Keyed.FiniteSet (F.Record ks)
-                     , ((qs V.++ as) V.++ bs) F.⊆ ks
-                     , ks F.⊆ ((qs V.++ as) V.++ bs)
-                     , Ord (F.Record qs)
-                     , Ord (F.Record as)
-                     , Ord (F.Record bs)
-                     , Ord (F.Record (qs V.++ as))
-                     , Ord (F.Record (qs V.++ bs))
-                     , Ord (F.Record ((qs V.++ as) V.++ bs))
-                     , Keyed.FiniteSet (F.Record qs)
-                     , Keyed.FiniteSet (F.Record as)
-                     , Keyed.FiniteSet (F.Record bs)
-                     , Keyed.FiniteSet (F.Record (qs V.++ as))
-                     , Keyed.FiniteSet (F.Record (qs V.++ bs))
-                     , Keyed.FiniteSet (F.Record ((qs V.++ as) V.++ bs))
-                     , as F.⊆ (qs V.++ as)
-                     , bs F.⊆ (qs V.++ bs)
-                     , qs F.⊆ (qs V.++ as)
-                     , qs F.⊆ (qs V.++ bs)
-                     , (qs V.++ as) F.⊆ ((qs V.++ as) V.++ bs)
-                     , (qs V.++ bs) F.⊆ ((qs V.++ as) V.++ bs)
-                     , F.ElemOf (KeysWD ks) DT.PopCount
-                     , F.ElemOf (KeysWD ks) DT.PWPopPerSqMile
-                     , qs V.++ as F.⊆ PUMARowR ks
-                     , qs V.++ bs F.⊆ PUMARowR ks
+                     , PredictorModelC as bs ks qs
                      )
                 => Either Text Text
                 -> Either Text Text
@@ -901,6 +851,14 @@ predictorModel3 modelIdE predictorCacheDirE meanAsModel cmdLine amM seM acs_C = 
         Nothing -> ViaMarginalStructure ms
         Just subsets -> ViaSubsets subsets
   nullVectorProjections_C <- cachedNVProjections nvpsCacheKey eps acs_C
+  when (BR.logLevel cmdLine >= BR.LogDebugMinimal && isJust seM) $ do
+    (DTP.NullVectorProjections _ subsetNS _) <- K.ignoreCacheTime nullVectorProjections_C
+    msNvpsCacheKey <- BRK.cacheFromDirE modelCacheDirE (modelId <> "_msNVPs.bin")
+    (DTP.NullVectorProjections fullC _ _) <- K.ignoreCacheTimeM $ cachedNVProjections msNvpsCacheKey (ViaMarginalStructure ms) acs_C
+    let checkSubset = fullC LA.<> LA.tr subsetNS
+    K.logLE K.Info $ "subset check=" <> toText (LA.dispf 2 checkSubset)
+
+
   let projectionsToDiff_C = case amM of
         Nothing -> DTP.RawDiff <$> nullVectorProjections_C
         Just am -> DTP.AvgdDiff am <$> nullVectorProjections_C

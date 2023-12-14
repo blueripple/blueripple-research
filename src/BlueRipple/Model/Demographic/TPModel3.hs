@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
@@ -270,6 +271,7 @@ predictedJoint :: forall g k w r . (Show g, Ord g, K.KnitEffects r)
                -> g
                -> VS.Vector Double
                -> [(k, w)]
+
                -> K.Sem r [(k, w)]
 predictedJoint onSimplexM wgtLens p gk covariates keyedProduct = do
   let n = FL.fold (FL.premap (view wgtLens . snd) FL.sum) keyedProduct
@@ -334,7 +336,7 @@ data ModelConfig =
   , distribution :: Distribution
   }
 
-data MeanOrModel = Mean | Model ModelConfig
+data MeanOrModel = Mean | Model !ModelConfig
 
 momText :: MeanOrModel -> Text
 momText Mean = "mean"
