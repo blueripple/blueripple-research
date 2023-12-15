@@ -711,6 +711,7 @@ compareASR_ASE cmdLine postInfo = do
                        True
                        (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaMeanFull) <- K.ignoreCacheTime pumaTestMean_C
+-}
     let aRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Race5C, DT.Education4C]) F.rcast
         mId :: LA.Matrix Double = LA.ident 200
     pumaTestAvgER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
@@ -719,6 +720,7 @@ compareASR_ASE cmdLine postInfo = do
                         (Right  "model/demographic/asr_ase_AvgRE")
                         False
                         (show . view GT.pUMA) cmdLine (Just aRE) Nothing byPUMA_C testPUMAs_C
+
     (_, pumaModeledAvgER) <- K.ignoreCacheTime pumaTestAvgER_C
     let aSRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.SexC, DT.Race5C, DT.Education4C]) F.rcast
         mPlus mSoFar mNew = mSoFar + mNew LA.<> (mId - mSoFar)
@@ -729,6 +731,7 @@ compareASR_ASE cmdLine postInfo = do
                             (Right  "model/demographic/asr_ase_AvgER_SER")
                             False
                             (show . view GT.pUMA) cmdLine (Just mRE_SRE) Nothing byPUMA_C testPUMAs_C
+{-
     (_, pumaModeledAvgER_SER) <- K.ignoreCacheTime pumaTestAvgER_SER_C
     let aARE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Age5C, DT.Race5C, DT.Education4C]) F.rcast
         mRE_ARE = mPlus aRE aARE --aRE + aARE LA.<> (mId - aRE)
@@ -786,7 +789,7 @@ compareASR_ASE cmdLine postInfo = do
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
         ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
---        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
+        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
         ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER) (Just "NS: +E+R & +SER") (Just "NS: +E+R & +SER (L2)") (Just "NS: +E+R & +SER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")

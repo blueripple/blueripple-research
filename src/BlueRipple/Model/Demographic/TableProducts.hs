@@ -177,6 +177,7 @@ projToFull nvps v = v LA.<# fullToProjM nvps
 fullToProj :: NullVectorProjections k -> LA.Vector LA.R -> LA.Vector LA.R
 fullToProj nvps v = fullToProjM nvps LA.#> v
 
+
 {-
 baseNullVectorProjections :: forall w k . (BRK.FiniteSet k) => DMS.MarginalStructure w k -> NullVectorProjections k
 baseNullVectorProjections ms = case ms of
