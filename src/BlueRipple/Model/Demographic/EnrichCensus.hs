@@ -741,22 +741,27 @@ projCovFld ms = DTP.diffCovarianceFldMS
 --  ViaMarginalStructure :: DMS.MarginalStructure w k -> ErrorProjectionSource w k
 
 subsetsNVP :: forall k r . (K.KnitEffects r, Ord k, Keyed.FiniteSet k) => [Set k] -> DTP.NullVectorProjections k -> K.Sem r (DTP.NullVectorProjections k)
-subsetsNVP subsets (DTP.NullVectorProjections fullC p _) = do
+subsetsNVP subsets (DTP.NullVectorProjections fullC fullP _) = do
   let n = S.size $ Keyed.elements @k
+      logLevel = K.Debug 1
       rawProjections = DED.mMatrix n $ fmap DMS.subsetToStencil subsets
       aRaw = LA.tr rawProjections
-      a = LA.tr p LA.<> p LA.<> aRaw -- project onto null space and then back. The rotations cancel.
-      logLevel = K.Debug 1
-  K.logLE logLevel $ "A=" <> toText (LA.dispf 1 a)
-  let at = LA.tr a
-      ata =  at LA.<> a
-  K.logLE logLevel $ "A'A=" <> toText (LA.dispf 1 ata)
-  let proj = a LA.<> (LA.inv ata) LA.<> at
-      ident = LA.ident $ length subsets
-      cMatrix = LA.ident n - proj
-  K.logLE logLevel $ "C=" <> toText (LA.dispf 1 cMatrix)
+  K.logLE logLevel $ "aRaw=" <> toText (LA.dispf 1 aRaw)
+  K.logLE logLevel $ "fullP=" <> toText (LA.dispf 1 fullP)
+  let aProj = LA.tr fullP LA.<> fullP LA.<> aRaw -- project onto null space and then back. The rotations cancel.
+  K.logLE logLevel $ "aProj=" <> toText (LA.dispf 1 aProj)
+  let (a, _, _) = LA.compactSVD aProj
+  K.logLE logLevel $ "a=" <> toText (LA.dispf 1 a)
+  let m = LA.cols a
+      a' = LA.tr a
+--  K.logLE logLevel $ "a=" <> toText (LA.dispf 1 a)
+  let ata =  a' LA.<> a
+  K.logLE logLevel $ "a'a=" <> toText (LA.dispf 1 ata)
+  let p = a LA.<> (LA.inv ata) LA.<> a'
+      c = LA.ident n - p
+  K.logLE logLevel $ "C=" <> toText (LA.dispf 1 c)
   K.logLE logLevel $ "Full C * subset projections=" <> toText (LA.dispf 1 (fullC LA.<> a))
-  pure $ DTP.NullVectorProjections cMatrix at ident
+  pure $ DTP.NullVectorProjections c a' (LA.ident $ LA.rows a')
 
 cachedNVProjections :: forall rs ks r .
                        (K.KnitEffects r, BRK.CacheEffects r
@@ -858,12 +863,11 @@ predictorModel3 modelIdE predictorCacheDirE meanAsModel cmdLine amM seM acs_C = 
   let projectionsToDiff_C = case amM of
         Nothing -> DTP.RawDiff <$> nullVectorProjections_C
         Just am -> DTP.AvgdDiff am <$> nullVectorProjections_C
-
   let tp3NumKeys = S.size (Keyed.elements @(F.Record (qs V.++ as))) + S.size (Keyed.elements @(F.Record (qs V.++ bs)))
       tp3InnerFld = innerFoldWD @(qs V.++ as) @(qs V.++ bs) @(PUMARowR ks) (F.rcast @(qs V.++ as)) (F.rcast @(qs V.++ bs))
       tp3RunConfig n = DTM3.RunConfig n False False Nothing
       tp3ModelConfig = DTM3.ModelConfig True (DTM3.dmr modelId (tp3NumKeys + 1)) -- +1 for pop density
-                         DTM3.AlphaHierNonCentered DTM3.NormalDist
+                       DTM3.AlphaHierNonCentered DTM3.NormalDist
       tp3MOM = if meanAsModel then DTM3.Mean else DTM3.Model tp3ModelConfig
       modelOne n = DTM3.runProjModel @ks @(PUMARowR ks) modelCacheDirE cmdLine (tp3RunConfig n) tp3MOM acs_C nullVectorProjections_C ms tp3InnerFld
   predictor_C <- runAllModels predictorCacheKey modelOne acs_C projectionsToDiff_C
