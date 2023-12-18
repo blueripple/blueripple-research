@@ -189,7 +189,7 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
         case fM of
           Just f -> do
             vl <- distCompareChart pp pi' chartDataPrefix
-                  (FV.ViewConfig hvWidth hvHeight hvPad)
+                  (FV.fixedSizeVC hvWidth hvHeight hvPad)
                   title
                   (F.rcast @ks)
                   showCellKey
@@ -263,10 +263,10 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
       byRegionErrTableRows = zipWith (\region errs -> ErrTableRow region errs) (fmap show allRegions) (transp errCols)
       byCellErrTableRows = zipWith (\cell errs -> ErrTableRow cell errs) [1..] (transp $ fmap errByCell resultErrs)
   byRegionErrCompChartVL <- errorCompareHistogram pp pi' (byRegionErrorF.errLabel <> " Histogram")
-                            chartDataPrefix (FV.ViewConfig 400 400 5) regionType errColHeaders
+                            chartDataPrefix (FV.fixedSizeVC 400 400 5) regionType errColHeaders
                             (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionErrCompChartVL
-  byRegionXYChart <- errorCompareXYScatter pp pi' (byRegionErrorF.errLabel <> " XY") chartDataPrefix (FV.ViewConfig 400 400 5)
+  byRegionXYChart <- errorCompareXYScatter pp pi' (byRegionErrorF.errLabel <> " XY") chartDataPrefix (FV.fixedSizeVC 600 600 5)
                      regionType errColHeaders (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionXYChart
 
@@ -280,7 +280,7 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
 --  _ <- traverse (uncurry byRegionXY) $ allPairs $ zip errColHeaders byRegionErrTableRows
 
   byCellErrCompChartVL <- errorCompareScatter pp pi' (byCellErrorF.errLabel <> " by Cell")
-                          chartDataPrefix (FV.ViewConfig 400 400 5) "Cell" errColHeaders
+                          chartDataPrefix (FV.fixedSizeVC 400 400 5) "Cell" errColHeaders
                           (byCellErrorF.errLabel, byCellErrorF.errChartScale) byCellErrTableRows
   _ <- K.addHvega Nothing Nothing byCellErrCompChartVL
 
@@ -696,7 +696,7 @@ compareASR_ASE cmdLine postInfo = do
     testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
                  <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
     testCDs <- K.ignoreCacheTime testCDs_C
-{-
+
     pumaTestRaw_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                       (DTP.viaOptimalWeights DTP.euclideanFull)
                       (Right "ASR_ASE_ByPUMA")
@@ -711,7 +711,7 @@ compareASR_ASE cmdLine postInfo = do
                        True
                        (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaMeanFull) <- K.ignoreCacheTime pumaTestMean_C
--}
+
     let aRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Race5C, DT.Education4C]) F.rcast
         mId :: LA.Matrix Double = LA.ident 200
     pumaTestAvgER_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
@@ -789,13 +789,13 @@ compareASR_ASE cmdLine postInfo = do
         (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
         (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs)
         [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER testPUMAs) (Just "Actual") Nothing Nothing
-        ,MethodResult (fmap F.rcast pumaProduct') (Just "Product") (Just "Marginal Product") (Just "Product")
-        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "NS: +E+R") (Just "NS: +E+R (L2)") (Just "NS: +E+R")
-        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "Err: +E+R") (Just "Err: +E+R (L2)") (Just "Err: +E+R")
+        ,MethodResult (fmap F.rcast pumaProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+--        ,MethodResult (fmap F.rcast pumaModeledAvgER) (Just "+E+R (via Avg)") (Just "+E+R (via Avg)") (Just "+E+R (via Avg)")
+        ,MethodResult (fmap F.rcast pumaModeledOnlyER) (Just "+E+R") (Just "+E+R") (Just "+E+R")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER) (Just "NS: +E+R & +SER") (Just "NS: +E+R & +SER (L2)") (Just "NS: +E+R & +SER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_AER) (Just "NS: +E+R & A+ER") (Just "NS: +E+R & A+ER (L2)") (Just "NS: +E+R & A+ER")
 --        ,MethodResult (fmap F.rcast pumaModeledAvgER_SER_AER_ASER) (Just "NS: Full via avg") (Just "NS: Full via avg (L2)") (Just "NS: Full via avg")
---        ,MethodResult (fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full (L2)") (Just "NS: Full")
+        ,MethodResult (fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full") (Just "NS: Full")
 --        ,MethodResult (fmap F.rcast pumaMeanFull) (Just "NS: Mean Only") (Just "NS: Mean Only (L2)") (Just "NS: Mean Only")
         ]
 {-
@@ -1603,12 +1603,12 @@ errorCompareXYScatter postPaths' postInfo title chartID vc regionName labels (er
         . GV.position GV.X [GV.PName refLabel, GV.PmType GV.Quantitative]
         . GV.position GV.Y [GV.PName errLabel, GV.PmType GV.Quantitative]
         . GV.color [GV.MName "Source", GV.MmType GV.Nominal]
-      markScatter = GV.mark GV.Point [GV.MSize 1]
+      markScatter = GV.mark GV.Point [GV.MSize 0.3, GV.MOpacity 0.8]
       scatterSpec = GV.asSpec [encScatter [], markScatter]
       encXYLine = GV.encoding
                   . GV.position GV.Y [GV.PName refLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
                   . GV.position GV.X [GV.PName refLabel, GV.PmType GV.Quantitative, GV.PNoTitle]
-      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MFillOpacity 0.5]
+      markXYLine = GV.mark GV.Line [GV.MColor "black", GV.MSize 0.5, GV.MFillOpacity 0.5]
       xyLineSpec = GV.asSpec [encXYLine [], markXYLine]
       layers = GV.layer [scatterSpec, xyLineSpec]
   pure $ FV.configuredVegaLite vc [FV.title title

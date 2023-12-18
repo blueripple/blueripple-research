@@ -1,4 +1,4 @@
-packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/polysemy-Extra/polysemy-RandomFu ../../DataScience/knit-haskell
+packages: ./ ../data-sets ../../DataScience/haskell-stan/haskell-stan ../../DataScience/polysemy-Extra/polysemy-RandomFu ../../DataScience/knit-haskell ../../DataScience/hvega-utils
 jobs: 4
 with-compiler: ghc
 -- ghc-9.4.4
@@ -121,10 +121,10 @@ source-repository-package
   location: https://github.com/adamConnerSax/Frames-hvega
   tag: 72a5103fe6bd6ae6b71c87f885c775d665af1d03
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/hvega-utils
-  tag: 4adb45fa4bfda7c6cdcba93bf8e238144a8e520f
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/hvega-utils
+--  tag: 4adb45fa4bfda7c6cdcba93bf8e238144a8e520f
 
 source-repository-package
   type: git

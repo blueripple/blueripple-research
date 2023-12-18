@@ -648,7 +648,7 @@ allModelsCompChart pp postInfo runModel catLabel modelType catText aggs' alphaMo
       _numCats = length cats
       numSources = length allModels
   catCompChart <- categoryChart @ks pp postInfo (modelType <> " Comparison By Category") (modelType <> "Comp")
-                  (FV.ViewConfig 300 (30 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
+                  (FV.fixedSizeVC 300 (30 * realToFrac numSources) 10) (Just cats) (Just $ fmap fst allModels)
                   catText allModels
   _ <- K.addHvega Nothing Nothing catCompChart
   pure ()
