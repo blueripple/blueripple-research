@@ -159,6 +159,10 @@ dlccMS = [(GT.StateLower,"86","Annita Bonner")
           , (GT.StateLower,"12","Donna Niewiaroski")
          ]
 
+dlccNH = [(GT.StateLower,"CO1","Cathleen Fountain")
+         ,(GT.StateLower,"CO6","Edith Tucker")
+         ]
+
 dlccMap = M.fromList [("LA",[]), ("MS",dlccMS), ("NJ", dlccNJ), ("VA", dlccVA)]
 
 stateUpperOnlyMap :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (Map Text Bool)
@@ -184,17 +188,27 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
-    modelNotesPost cmdLine
-{-
+--    modelNotesPost cmdLine
+
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         histCompetitive :: F.Record AnalyzeStateR -> Bool
         histCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
         rural ::  F.Record AnalyzeStateR -> Bool
         rural r = r ^. DT.pWPopPerSqMile <= 100
     stateUpperOnlyM <- stateUpperOnlyMap
-    let postsToDo = [("WI", rural), ("VA", histCompetitive)]
+    let postsToDo = [("WI", histCompetitive)
+                    , ("VA", histCompetitive)
+                    , ("AZ", histCompetitive)
+                    , ("KS", histCompetitive)
+                    , ("MI", histCompetitive)
+                    , ("MS", histCompetitive)
+                    , ("NV", histCompetitive)
+                    , ("KS", histCompetitive)
+--                    , ("NH", histCompetitive)
+                    , ("PA", histCompetitive)
+                    ]
     traverse_ (uncurry $ analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) postsToDo
--}
+
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -225,8 +239,8 @@ analyzeState :: (K.KnitEffects r, BRK.CacheEffects r)
              -> Text
              -> K.Sem r (F.FrameRec AnalyzeStateR)
 analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state = do
-  let cacheStructure state psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
-                                    psName "AllCells" state
+  let cacheStructure state' psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
+                                    psName "AllCells" state'
   let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
 
@@ -379,19 +393,19 @@ modelNotesPost cmdLine = do
     BRK.brAddMarkDown MN.part1
     let ppl = view ET.demShare
     geoCompChart modelNotesPostPaths postInfo ("VA_geoPPL") "VA Past Partisan Lean"
-      (FV.ViewConfig 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
+      (FV.fixedSizeVC 400 250 10) "VA" GT.StateLower dName ("PPL", (* 100) . ppl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part2
     let dpl r = MT.ciMid $ r ^. MR.modelCI
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDPL") "VA Demographic Partisan Lean"
-      (FV.ViewConfig 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
+      (FV.fixedSizeVC 400 200 10) "VA" GT.StateLower dName ("DPL", (* 100) . dpl, Just "redblue", Just (0, 100))
       (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3
     let delta r = 100 * (dpl r -  ppl r)
     geoCompChart modelNotesPostPaths postInfo ("VA_geoDelta") "VA: DPL-PPL"
-      (FV.ViewConfig 400 150 10) "VA" GT.StateLower dName ("DPL-PPL", delta, Just "redblue", Just (-50, 50))
+      (FV.fixedSizeVC 400 150 10) "VA" GT.StateLower dName ("DPL-PPL", delta, Just "redblue", Just (-50, 50))
       (F.filterFrame lowerOnly modeledAndDRA_VA)
       >>= K.addHvega Nothing Nothing
     BRK.brAddMarkDown MN.part3b
@@ -532,7 +546,7 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state include = do
         csSummary = fmap normalizeSummary summaryLD
 
     compChart <- modelDRAComparisonChart modelPostPaths postInfo (state <> "comp") (state <> ": model vs historical (DRA)")
-                 (FV.ViewConfig 500 500 10) modeledAndDRA
+                 (FV.fixedSizeVC 500 500 10) modeledAndDRA
     _ <- K.addHvega Nothing Nothing compChart
     let delta r = 100 * ((MT.ciMid $ r ^. MR.modelCI) -  r ^. ET.demShare)
         detailChamber = if upperOnly then GT.StateUpper else GT.StateLower
@@ -544,23 +558,23 @@ analyzeStatePost cmdLine postInfo stateUpperOnlyMap dlccMap state include = do
 --        chamberName uo dt =
     when (not upperOnly) $ do
       void $ geoCompChart modelPostPaths postInfo (state <> "_geoDeltaL") (state <> ": model - historical")
-        (FV.ViewConfig 500 300 10) state GT.StateLower dName ("delta", delta, Nothing, Nothing)
+        (FV.fixedSizeVC 500 300 10) state GT.StateLower dName ("delta", delta, Nothing, Nothing)
         (F.filterFrame lOnly modeledAndDRA)
         >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDeltaU") (state <> ": model - historical")
-      (FV.ViewConfig 500 300 10) state GT.StateUpper dName ("delta", delta, Nothing, Nothing)
+      (FV.fixedSizeVC 500 300 10) state GT.StateUpper dName ("delta", delta, Nothing, Nothing)
       (F.filterFrame uOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoDensityL") (state <> ": log density")
-      (FV.ViewConfig 500 300 10) state detailChamber dName ("log density", Numeric.log . view DT.pWPopPerSqMile, Nothing, Nothing)
+      (FV.fixedSizeVC 500 300 10) state detailChamber dName ("log density", Numeric.log . view DT.pWPopPerSqMile, Nothing, Nothing)
       (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoAgeL") (state <> ": % Over 45")
-      (FV.ViewConfig 500 300 10) state detailChamber dName ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus), Nothing, Nothing)
+      (FV.fixedSizeVC 500 300 10) state detailChamber dName ("Over 45 (%)", \r -> 100 * (r ^. DP.frac45To64 + r ^. DP.frac65plus), Nothing, Nothing)
       (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     geoCompChart modelPostPaths postInfo (state <> "_geoCGradL") (state <> ": % College Grad")
-      (FV.ViewConfig 500 300 10) state detailChamber dName ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad), Nothing, Nothing)
+      (FV.fixedSizeVC 500 300 10) state detailChamber dName ("College Grad (%)", \r -> 100 * (r ^. DP.fracCollegeGrad), Nothing, Nothing)
       (F.filterFrame dOnly modeledAndDRA)
       >>= K.addHvega Nothing Nothing
     let draCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
@@ -684,7 +698,7 @@ allDistrictDetails cmdLine pp pi cacheStructure' tc pc districtsM catText cacheS
                      (viaNonEmpty head $ FL.fold FL.list $ F.filterFrame onlyDistrictB summaryRows)
           sbcs <- K.knitEither $  DCC.sbcComparison (DCC.ccQuantileFunctions ccSetup) (DCC.ccPartyMedians ccSetup) distRec
           _ <- K.addHvega Nothing Nothing
-            $ DCC.sbcChart DCC.SBCState (DCC.ccNumQuantiles ccSetup) 10 (FV.ViewConfig 300 80 5) (Just $ DCC.ccNames ccSetup)
+            $ DCC.sbcChart DCC.SBCState (DCC.ccNumQuantiles ccSetup) 10 (FV.fixedSizeVC 300 80 5) (Just $ DCC.ccNames ccSetup)
             (fmap rfPair <<$>> DCC.ccPartyLoHis ccSetup) (one (fullDNameText distRec, True, sbcs))
           BR.brAddRawHtmlTable (Just "Demographic Summary") (BHA.class_ "brTable") (distSummaryColonnade mempty) (F.filterFrame onlyDistrictB includedSummary)
           let totalRow = FL.fold  (FL.premap F.rcast modelVStatetotalsFld) $ F.filterFrame onlyDistrictB comboByCat
@@ -1070,13 +1084,13 @@ modeledACSBySLD cmdLine = do
                                                  (Right "CSR_ASR_ByPUMA")
                                                  (Right "model/demographic/csr_asr_PUMA")
                                                  False -- use model not just mean
-                                                 cmdLine Nothing . fmap (fmap F.rcast)
+                                                 cmdLine Nothing Nothing . fmap (fmap F.rcast)
   (jointFromMarginalPredictorCASR_ASE_C, _) <- CDDP.cachedACSa5ByPUMA ACS.acs1Yr2012_21 2021 -- most recent available
                                                   >>= DMC.predictorModel3 @[DT.CitizenC, DT.Race5C] @'[DT.Education4C] @DMC.ASCRE @DMC.AS
                                                   (Right "CASR_SER_ByPUMA")
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
-                                                  cmdLine Nothing . fmap (fmap F.rcast)
+                                                  cmdLine Nothing Nothing . fmap (fmap F.rcast)
   (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
