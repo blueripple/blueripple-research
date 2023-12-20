@@ -789,6 +789,39 @@ FTH.declareColumn "EmploymentStatusC" ''EmploymentStatus
 
 type PctUnemployed = "PctUnemployed" F.:-> Double
 
+data Religion = NonCatholicChristian
+              | Catholic
+              | Jewish
+              | OtherReligion
+              | NoReligion deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+
+instance Flat.Flat Religion
+instance Grouping Religion
+instance K.FiniteSet Religion
+derivingUnbox "Religion"
+  [t|Religion -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FSI.VectorFor Religion = UVec.Vector
+
+FTH.declareColumn "ReligionC" ''Religion
+
+data Evangelical = Evangelical
+                 | NonEvangelical deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+
+
+instance Flat.Flat Evangelical
+instance Grouping Evangelical
+instance K.FiniteSet Evangelical
+derivingUnbox "Evangelical"
+  [t|Evangelical -> Word8|]
+  [|toEnum . fromEnum|]
+  [|toEnum . fromEnum|]
+type instance FSI.VectorFor Evangelical = UVec.Vector
+
+FTH.declareColumn "EvangelicalC" ''Evangelical
+
+
 type CatColsASER = '[SimpleAgeC, SexC, CollegeGradC, SimpleRaceC]
 catKeyASER :: SimpleAge -> Sex -> CollegeGrad -> SimpleRace -> F.Record CatColsASER
 catKeyASER a s e r = a F.&: s F.&: e F.&: r F.&: V.RNil

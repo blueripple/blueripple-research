@@ -79,6 +79,7 @@ type CESR = [BR.Year
             , DT.Race5C
             , DT.SimpleRaceC
             , DT.HispC
+            , DT.EvangelicalC
             , PartisanId3
             , PartisanId7
             , CatalistRegistrationC
@@ -257,7 +258,7 @@ fixHouseVote x = F.rcast @(F.RDelete CESHouseVote rs) x F.<+> (missingHouseVote 
 
 
 type TransformAddsR = [BR.Year, GT.CongressionalDistrict, GT.StateFIPS, DT.Age5C, DT.SimpleAgeC, DT.SexC, DT.EducationC, DT.CollegeGradC
-                      , DT.Race5C, DT.SimpleRaceC, DT.HispC, PartisanId3, PartisanId7, MHouseVoteParty]
+                      , DT.Race5C, DT.SimpleRaceC, DT.HispC, DT.EvangelicalC, PartisanId3, PartisanId7, MHouseVoteParty]
 
 transformCES :: (F.ElemOf rs CESCD
                 , F.ElemOf rs CESStateFips
@@ -266,6 +267,7 @@ transformCES :: (F.ElemOf rs CESCD
                 , F.ElemOf rs CESEduc
                 , F.ElemOf rs CESRace
                 , F.ElemOf rs CESHispanic
+                , F.ElemOf rs CESPewBornagain
                 , F.ElemOf rs CESPid3
                 , F.ElemOf rs CESPid7
                 , F.ElemOf rs MCESHouseVote
@@ -297,6 +299,7 @@ transformCES yr = addCols where
             . (FT.addOneFromOne @CESRace @DT.Race5C (raceToRace5 . intToRaceT))
             . (FT.addOneFromOne @CESRace @DT.SimpleRaceC (raceToSimpleRace . intToRaceT))
             . (FT.addOneFromOne @CESHispanic @DT.HispC intToHisp)
+            . (FT.addOneFromOne @CESPewBornagain @DT.EvangelicalC intToEvangelical)
             . (FT.addOneFromOne @CESPid3 @PartisanId3 parsePartisanIdentity3)
             . (FT.addOneFromOne @CESPid7 @PartisanId7 parsePartisanIdentity7)
             . (FT.addOneFrom @[MCESHouseVote,CESHouseCand1Party,CESHouseCand2Party,CESHouseCand3Party,CESHouseCand4Party] @MHouseVoteParty houseVoteParty)
@@ -375,6 +378,7 @@ type CCES_MRP_Raw = '[ CCESYear
                      , CCESEduc
                      , CCESRace
                      , CCESHispanic -- 1 for yes, 2 for no.  Missing is no. hispanic race + no = hispanic.  any race + yes = hispanic (?)
+--                     , CESPewBornagain
                      , CCESPid3
                      , CCESPid7
                      , CCESPid3Leaner
@@ -401,6 +405,7 @@ type CCES_MRP = '[ BR.Year
                  , DT.Race5C
                  , DT.HispC
                  , DT.SimpleRaceC
+--                 , DT.EvangelicalC
                  , PartisanId3
                  , PartisanId7
                  , PartisanIdLeaner
@@ -657,6 +662,10 @@ fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
 --  missingEducation :: F.Rec (Maybe :. F.ElField) '[CCESEduc] -> F.Rec (Maybe :. F.ElField) '[CCESEduc]
 --  missingEducation = FM.fromMaybeMono 5
 
+intToEvangelical :: Int -> DT.Evangelical
+intToEvangelical 1 = DT.Evangelical
+intToEvangelical _ = DT.NonEvangelical
+
 --textToInt :: T.Text -> Int
 --textToInt = either (const 0) fst . Text.Read.decimal
 
@@ -675,6 +684,7 @@ transformCCESRow = F.rcast . addCols where
             . (FT.addOneFromOne @CCESHispanic @DT.HispC intToHisp)
             . (FT.addOneFromOne @CCESAge @DT.Age5C intToAgeT)
             . (FT.addOneFromOne @CCESAge @DT.SimpleAgeC intToSimpleAge)
+--            . (FT.addOneFromOne @CESPewBornagain @DT.EvangelicalC intToEvangelical)
             . (FT.addOneFromOne @CCESVvRegstatus @Registration parseRegistration)
             . (FT.addOneFromOne @CCESVvTurnoutGvm @Turnout parseTurnout)
             . (FT.addOneFromOne @CCESVotedRepParty @HouseVoteParty parseHouseVoteParty)

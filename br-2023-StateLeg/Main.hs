@@ -196,17 +196,18 @@ main = do
         rural ::  F.Record AnalyzeStateR -> Bool
         rural r = r ^. DT.pWPopPerSqMile <= 100
     stateUpperOnlyM <- stateUpperOnlyMap
-    let postsToDo = [("WI", histCompetitive)
-                    , ("VA", histCompetitive)
-                    , ("AZ", histCompetitive)
-                    , ("KS", histCompetitive)
-                    , ("MI", histCompetitive)
-                    , ("MS", histCompetitive)
-                    , ("NV", histCompetitive)
-                    , ("KS", histCompetitive)
---                    , ("NH", histCompetitive)
-                    , ("PA", histCompetitive)
-                    ]
+    let postsToDo =
+          [
+            ("WI", histCompetitive)
+          , ("VA", histCompetitive)
+          , ("AZ", histCompetitive)
+          , ("KS", histCompetitive)
+          , ("MI", histCompetitive)
+          , ("MS", histCompetitive)
+          , ("NV", histCompetitive)
+--           ("NH", histCompetitive)
+          , ("PA", histCompetitive)
+          ]
     traverse_ (uncurry $ analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) postsToDo
 
   case resE of
