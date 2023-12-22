@@ -235,6 +235,7 @@ library
                  , BlueRipple.Model.Election2.ModelCommon
                  , BlueRipple.Model.Election2.ModelCommon2
                  , BlueRipple.Model.Election2.ModelRunner
+                 , BlueRipple.Model.TSP_Religion.Model
                  , BlueRipple.Utilities.Heidi
                  , BlueRipple.Utilities.KnitUtils
                  , BlueRipple.Utilities.TableUtils

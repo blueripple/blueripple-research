@@ -218,6 +218,7 @@ addStateAbbreviations stateXWalk allButStateAbbrevs = do
 fixCES :: (F.ElemOf rs CESWeight
 --          , F.ElemOf rs CESRegisteredWeight
           , F.ElemOf rs CESHispanic
+          , F.ElemOf rs CESPewBornagain
           , F.ElemOf rs CESPid3
           , F.ElemOf rs CESPid7
           , F.ElemOf rs CESEduc
@@ -230,6 +231,7 @@ fixCES r = fixHouseVote
            $ (F.rsubset %~ missingWeight)
 --           $ (F.rsubset %~ missingRegWeight)
            $ (F.rsubset %~ missingHispanicToNo)
+           $ (F.rsubset %~ missingEvangelicalToNo)
            $ (F.rsubset %~ missingPID3)
            $ (F.rsubset %~ missingPID7)
            $ (F.rsubset %~ missingEducation) r
@@ -353,7 +355,8 @@ missingHouseVote :: F.Rec (Maybe :. F.ElField) '[CESHouseVote] -> F.Rec (Maybe :
 missingHouseVote = FM.maybeMono (MT.MaybeData Nothing) (MT.MaybeData . Just)
 missingPresVote :: F.Rec (Maybe :. F.ElField) '[CESPresVote] -> F.Rec (Maybe :. F.ElField) '[MCESPresVote]
 missingPresVote = FM.maybeMono (MT.MaybeData Nothing) (MT.MaybeData . Just)
-
+missingEvangelicalToNo :: F.Rec (Maybe :. F.ElField) '[CESPewBornagain] -> F.Rec (Maybe :. F.ElField) '[CESPewBornagain]
+missingEvangelicalToNo = FM.fromMaybeMono 2
 
 ccesDataLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (K.ActionWithCacheTime r (F.FrameRec CCES_MRP))
 ccesDataLoader = K.wrapPrefix "ccesDataLoader" $ do
@@ -646,6 +649,7 @@ type Pres2020VoteParty = "Pres2020VoteParty" F.:-> ET.PartyT
 -- to use in maybeRecsToFrame
 fixCCESRow :: F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw -> F.Rec (Maybe F.:. F.ElField) CCES_MRP_Raw
 fixCCESRow r = (F.rsubset %~ missingHispanicToNo)
+--               $ (F.rsubset %~ missingEvangelicalToNo)
                $ (F.rsubset %~ missingPID3)
                $ (F.rsubset %~ missingPID7)
                $ (F.rsubset %~ missingPIDLeaner)
