@@ -24,10 +24,10 @@ where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Data.Loaders as BRDF
-import qualified BlueRipple.Data.DataFrames as BRDF
+--import qualified BlueRipple.Data.DataFrames as BRDF
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
 import qualified BlueRipple.Model.Election2.DataPrep as DP
-import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+--import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Data.DemographicTypes as DT
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.ModelingTypes as MT
@@ -47,7 +47,7 @@ import qualified Data.Set as S
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
-import qualified Data.Vinyl.TypeLevel as V
+--import qualified Data.Vinyl.TypeLevel as V
 
 import qualified Frames as F
 import qualified Frames.Melt as F
