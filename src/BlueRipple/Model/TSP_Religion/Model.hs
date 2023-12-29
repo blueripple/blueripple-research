@@ -170,7 +170,7 @@ model :: forall k lk l a b .
       => RunConfig l
       -> ModelConfig b
       -> [Text]
-      -> SMB.StanBuilderM CESData (DP.PSData k, CESData) ()
+      -> SMB.StanBuilderM CESData (DP.PSData k) ()
 model rc mc states = do
   mData <- evangelicalModelData mc
   paramSetup <- MC2.setupParameters Nothing states mc
@@ -221,8 +221,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
 --  modelData <- K.ignoreCacheTime modelData_C
   states <- S.toList . FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) . unCESData <$> K.ignoreCacheTime modelData_C
   psKeys <- S.toList . FL.fold (FL.premap (F.rcast @l) FL.set) . DP.unPSData <$> K.ignoreCacheTime psData_C
-  let gqData_C = (,) <$> psData_C <*> modelData_C
-  (dw, code) <- SMR.dataWranglerAndCode modelData_C gqData_C
+  (dw, code) <- SMR.dataWranglerAndCode modelData_C psData_C
                 (groupBuilder config states psKeys)
                 (model runConfig config states)
 
@@ -243,7 +242,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
            (modelResultAction config runConfig) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
            (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            modelData_C
-           gqData_C
+           psData_C
   K.logLE K.Info $ modelName <> " run complete."
   pure res_C
 
@@ -260,7 +259,7 @@ groupBuilder :: forall g k l b .
                => ModelConfig b
                -> g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM CESData (DP.PSData k, CESData) ()
+               -> SMB.StanGroupBuilderM CESData (DP.PSData k) ()
 groupBuilder config states psKeys = do
   let groups' = MC.groups states
   SMB.addModelDataToGroupBuilder "CES" (SMB.ToFoldable unCESData) >>= MC.addGroupIndexesAndIntMaps groups'
@@ -282,12 +281,11 @@ psGroupBuilder :: forall g k l md .
                  )
                => g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM md (DP.PSData k, CESData) ()
+               -> SMB.StanGroupBuilderM md (DP.PSData k) ()
 psGroupBuilder states psKeys = do
   let groups' = MC.groups states
       psGtt = MC.psGroupTag @l
-  cesRowTag <- SMB.addGQDataToGroupBuilder "CESGQ" (SMB.ToFoldable $ unCESData . snd)
-  psRowTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable $ DP.unPSData . fst)
+  psRowTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
   SMB.addGroupIndexForData psGtt psRowTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
   SMB.addGroupIntMapForDataSet psGtt psRowTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
   SG.addModelIndexes psRowTag F.rcast groups'
@@ -303,7 +301,7 @@ modelResultAction :: forall k l r b .
                      )
                   => ModelConfig b
                   -> RunConfig l
-                  -> SC.ResultAction r CESData (DP.PSData k, CESData) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters)
+                  -> SC.ResultAction r CESData (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters)
 modelResultAction config runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
