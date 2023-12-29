@@ -24,7 +24,7 @@ where
 
 import qualified BlueRipple.Configuration as BR
 import qualified BlueRipple.Utilities.KnitUtils as BRKU
-import qualified BlueRipple.Model.Demographic.DataPrep as DDP
+--import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichData as DED
 import qualified BlueRipple.Model.Demographic.MarginalStructure as DMS
 import qualified BlueRipple.Model.Demographic.TableProducts as DTP
@@ -41,7 +41,7 @@ import qualified Control.Foldl as FL
 import qualified Data.IntMap.Strict as IM
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
-import Data.Type.Equality (type (~))
+--import Data.Type.Equality (type (~))
 
 import qualified Data.List as List
 import qualified Frames as F

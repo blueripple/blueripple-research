@@ -240,7 +240,7 @@ modelData :: forall pd alphaK rs . (Typeable rs)
           -> SMB.StanBuilderM (DataRows rs) () (ModelData rs)
 modelData mc catKey predF = do
   dat <- SMB.dataSetTag @(DataRow rs) SC.ModelData "CountData"
-  (countsE', nCatsE') <- SBB.addArrayOfIntArrays  dat "MCounts" Nothing mc.nCounts dataRowCounts (Just 0) Nothing
+  (countsE', nCatsE') <- SBB.addArrayOfIntArrays dat "MCounts" Nothing mc.nCounts dataRowCounts (Just 0) Nothing
   let (_, nCovariatesE') = DM.designMatrixColDimBinding mc.alphaDMR Nothing
   covariatesDME <- if DM.rowLength mc.alphaDMR > 0
                    then DM.addDesignMatrix dat (contramap (catKey . dataRowRec) mc.alphaDMR) Nothing

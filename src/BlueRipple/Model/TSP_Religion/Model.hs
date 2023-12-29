@@ -22,7 +22,7 @@ where
 
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
-import BlueRipple.Model.Election2.ModelCommon (ModelConfig)
+import BlueRipple.Model.Election2.ModelCommon (ModelConfig(..))
 import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
 import qualified BlueRipple.Model.Election2.ModelRunner as MR
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
@@ -35,7 +35,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.ModelingTypes as MT
 import qualified BlueRipple.Data.CCES as CCES
 import qualified BlueRipple.Data.ACS_PUMS as ACS
---import qualified BlueRipple.Data.Loaders as BR
+import qualified BlueRipple.Data.Loaders as BR
 import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Utilities.FramesUtils as BRF
 import qualified BlueRipple.Utilities.KnitUtils as BR
@@ -46,6 +46,8 @@ import qualified Stan.ModelBuilder as SMB
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
 import qualified Stan.ModelBuilder.TypedExpressions.Statements as TE
+import qualified Stan.ModelBuilder.TypedExpressions.Operations as TEO
+import qualified Stan.ModelBuilder.TypedExpressions.StanFunctions as SF
 import qualified Stan.Parameters as SP
 import qualified Stan.ModelConfig as SC
 import qualified Stan.RScriptBuilder as SR
@@ -106,12 +108,13 @@ runEvangelicalModel :: forall l r ks a b .
                 => Int
                 -> MR.CacheStructure () ()
                 -> BR.CommandLine
+                -> PSType (F.Record DP.DCatsR -> Bool)
                 -> ModelConfig b
                 -> K.ActionWithCacheTime r (DP.PSData ks)
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters))
-runEvangelicalModel year cacheStructure cmdLine mc psData_C = do
+runEvangelicalModel year cacheStructure cmdLine psType mc psData_C = do
   let --config = MC2.TurnoutOnly tc
-      runConfig = MC.RunConfig False False (Just $ MC.psGroupTag @l)
+      runConfig = RunConfig False False (Just (MC.psGroupTag @l, psType))
   modelData_C <- cachedPreppedCES cacheStructure
   runModel (MR.csModelDirE cacheStructure)  ("E_" <> show year)
     (MR.csPSName cacheStructure) cmdLine runConfig mc modelData_C psData_C
@@ -128,16 +131,46 @@ evangelicalModelData mc = do
         MC.WeightedAggregation _ -> fmap MC.ModelData $ cesSurveyDataTag >>= \rtt -> MC.covariatesAndCountsFromData rtt mc wSurveyed wEvangelical
 
 
+data PSType a = PSAll Text | PSGiven Text Text a | PSAmong Text Text a
+
+psPrefix :: PSType a -> Text
+psPrefix (PSAll p) = p
+psPrefix (PSGiven p _ _) = p
+psPrefix (PSAmong p _ _) = p
+
+psTypeDataGQ :: DP.DCatsR F.⊆ DP.PSDataR k
+             => SMB.RowTypeTag (F.Record (DP.PSDataR k)) -> PSType (F.Record DP.DCatsR -> Bool) -> SMB.StanBuilderM md gq (PSType TE.IntArrayE)
+psTypeDataGQ psRowTag pst = do
+--  cesGQRowTag <- SMB.dataSetTag @CESByCD SC.ModelData "CES"
+  let boolToInt :: Bool -> Int
+      boolToInt False = 0
+      boolToInt True = 1
+  case pst of
+    PSAll p -> pure $ PSAll p
+    PSGiven p vName cF -> SBB.addIntData psRowTag vName (Just 0) (Just 1) (boolToInt . cF . F.rcast) >>= pure . PSGiven p vName
+    PSAmong p vName cF -> SBB.addIntData psRowTag vName (Just 0) (Just 1) (boolToInt . cF . F.rcast) >>= pure . PSAmong p vName
+
+psTypeToArgs :: PSType TE.IntArrayE
+             -> (Text, Maybe (TE.CodeWriter (TE.VectorE -> TE.VectorE)), Maybe (TE.CodeWriter (TE.IntArrayE -> TE.IntArrayE)))
+psTypeToArgs (PSAll p) = (p, Nothing, Nothing)
+psTypeToArgs (PSGiven p vName ia) = let eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+                                    in (p, Just $ pure $ \v -> v `eltTimes` SF.toVec ia, Nothing)
+psTypeToArgs (PSAmong p vName ia) = let eltTimes = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
+                                    in (p, Nothing, Just $ pure $ \v -> v `eltTimes` ia)
+
+
+data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcPS :: Maybe (SMB.GroupTypeTag (F.Record l), PSType (F.Record DP.DCatsR -> Bool)) }
 -- not returning anything for now
 model :: forall k lk l a b .
          (Typeable (DP.PSDataR k)
          , F.ElemOf (DP.PSDataR k) DT.PopCount
          , DP.LPredictorsR F.⊆ DP.PSDataR k
+         , DP.DCatsR F.⊆ DP.PSDataR k
          )
-      => MC.RunConfig l
+      => RunConfig l
       -> ModelConfig b
       -> [Text]
-      -> SMB.StanBuilderM CESData (DP.PSData k) ()
+      -> SMB.StanBuilderM CESData (DP.PSData k, CESData) ()
 model rc mc states = do
   mData <- evangelicalModelData mc
   paramSetup <- MC2.setupParameters Nothing states mc
@@ -147,8 +180,10 @@ model rc mc states = do
   when rc.rcIncludeLL llM
   case rc.rcPS of
     Nothing -> pure ()
-    Just gtt -> MC2.postStratifyOne "E" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
-
+    Just (gtt, pst) -> do
+      psRowTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+      (prefix, modP, modN) <- fmap psTypeToArgs $ psTypeDataGQ @k psRowTag pst
+      MC2.postStratifyOne psRowTag (view DT.popCount) F.rcast prefix paramSetup modP modN mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
 runModel :: forall l k r b .
             (K.KnitEffects r
@@ -161,19 +196,17 @@ runModel :: forall l k r b .
             , FS.RecFlat l
             , Typeable (DP.PSDataR k)
             , F.ElemOf (DP.PSDataR k) GT.StateAbbreviation
---            , F.ElemOf (DP.CESByR  GT.StateAbbreviation
             , DP.DCatsR F.⊆ DP.PSDataR k
             , DP.DCatsR F.⊆ CESByCDR
             , DP.LPredictorsR F.⊆ CESByCDR
             , Show (F.Record l)
             , Typeable l
---            , Typeable (CESByR lk)
             )
          => Either Text Text
          -> Text
          -> Text
          -> BR.CommandLine
-         -> MC.RunConfig l
+         -> RunConfig l
          -> ModelConfig b
          -> K.ActionWithCacheTime r CESData
          -> K.ActionWithCacheTime r (DP.PSData k)
@@ -181,14 +214,15 @@ runModel :: forall l k r b .
 runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData_C = do
   let dataName = MC.modelConfigText config
       runnerInputNames = SC.RunnerInputNames
-                         ("br-2023-evangelicalModel/stan/" <> modelName <> "/")
+                         ("br-2023-TSP/stan/" <> modelName <> "/")
                          (MC.modelConfigText config)
                          (Just $ SC.GQNames "GQ" (dataName <> "_" <> gqName))
                          dataName
 --  modelData <- K.ignoreCacheTime modelData_C
   states <- S.toList . FL.fold (FL.premap (view GT.stateAbbreviation) FL.set) . unCESData <$> K.ignoreCacheTime modelData_C
   psKeys <- S.toList . FL.fold (FL.premap (F.rcast @l) FL.set) . DP.unPSData <$> K.ignoreCacheTime psData_C
-  (dw, code) <- SMR.dataWranglerAndCode modelData_C psData_C
+  let gqData_C = (,) <$> psData_C <*> modelData_C
+  (dw, code) <- SMR.dataWranglerAndCode modelData_C gqData_C
                 (groupBuilder config states psKeys)
                 (model runConfig config states)
 
@@ -200,7 +234,6 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
       unwraps = case config.mcSurveyAggregation of
         MC.WeightedAggregation MC.BetaProportion -> [SR.UnwrapExpr (evangelical <> " / " <> surveyed) ("yEvangelicalRate_" <> rSuffix)]
         _ -> [SR.UnwrapNamed "Evangelical" ("yEvangelical_" <> rSuffix)]
-
   res_C <- SMR.runModel' @BRKU.SerializerC @BRKU.CacheData
            modelDirE
            (Right runnerInputNames)
@@ -210,7 +243,7 @@ runModel modelDirE modelName gqName _cmdLine runConfig config modelData_C psData
            (modelResultAction config runConfig) --SC.DoNothing -- (stateModelResultAction mcWithId dmr)
            (SMR.Both unwraps) --(SMR.Both [SR.UnwrapNamed "successes" "yObserved"])
            modelData_C
-           psData_C
+           gqData_C
   K.logLE K.Info $ modelName <> " run complete."
   pure res_C
 
@@ -227,7 +260,7 @@ groupBuilder :: forall g k l b .
                => ModelConfig b
                -> g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM CESData (DP.PSData k) ()
+               -> SMB.StanGroupBuilderM CESData (DP.PSData k, CESData) ()
 groupBuilder config states psKeys = do
   let groups' = MC.groups states
   SMB.addModelDataToGroupBuilder "CES" (SMB.ToFoldable unCESData) >>= MC.addGroupIndexesAndIntMaps groups'
@@ -237,7 +270,7 @@ groupBuilder config states psKeys = do
 -- But say you want to predict turnout by race, nationally.
 -- Now l ~ '[Race5C]
 -- How about turnout by Education in each state? Then l ~ [StateAbbreviation, Education4C]
-psGroupBuilder :: forall g k l .
+psGroupBuilder :: forall g k l md .
                  (Foldable g
                  , Typeable (DP.PSDataR k)
                  , Show (F.Record l)
@@ -249,14 +282,15 @@ psGroupBuilder :: forall g k l .
                  )
                => g Text
                -> g (F.Record l)
-               -> SMB.StanGroupBuilderM CESData (DP.PSData k) ()
+               -> SMB.StanGroupBuilderM md (DP.PSData k, CESData) ()
 psGroupBuilder states psKeys = do
   let groups' = MC.groups states
       psGtt = MC.psGroupTag @l
-  psTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable DP.unPSData)
-  SMB.addGroupIndexForData psGtt psTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
-  SMB.addGroupIntMapForDataSet psGtt psTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
-  SG.addModelIndexes psTag F.rcast groups'
+  cesRowTag <- SMB.addGQDataToGroupBuilder "CESGQ" (SMB.ToFoldable $ unCESData . snd)
+  psRowTag <- SMB.addGQDataToGroupBuilder "PSData" (SMB.ToFoldable $ DP.unPSData . fst)
+  SMB.addGroupIndexForData psGtt psRowTag $ SMB.makeIndexFromFoldable show F.rcast psKeys
+  SMB.addGroupIntMapForDataSet psGtt psRowTag $ SMB.dataToIntMapFromFoldable F.rcast psKeys
+  SG.addModelIndexes psRowTag F.rcast groups'
 
 --NB: parsed summary data has stan indexing, i.e., Arrays start at 1.
 --NB: Will return no prediction (Nothing) for "both" model for now. Might eventually return both predictions?
@@ -268,8 +302,8 @@ modelResultAction :: forall k l r b .
 --                     , DP.LPredictorsR F.⊆ DP.CESByR lk
                      )
                   => ModelConfig b
-                  -> MC.RunConfig l
-                  -> SC.ResultAction r CESData (DP.PSData k) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters)
+                  -> RunConfig l
+                  -> SC.ResultAction r CESData (DP.PSData k, CESData) SMB.DataSetGroupIntMaps () (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters)
 modelResultAction config runConfig = SC.UseSummary f where
   f summary _ modelDataAndIndexes_C gqDataAndIndexes_CM = do
     (modelData, resultIndexesE) <- K.ignoreCacheTime modelDataAndIndexes_C
@@ -294,15 +328,14 @@ modelResultAction config runConfig = SC.UseSummary f where
     betaSIM <- betaSIF config.mcDesignMatrixRow $ mdMeansLM config.mcDesignMatrixRow
     psMap <- case runConfig.rcPS of
       Nothing -> mempty
-      Just gtt -> case gqDataAndIndexes_CM of
+      Just (gtt, pst) -> case gqDataAndIndexes_CM of
         Nothing -> K.knitError "modelResultAction: Expected gq data and indexes but got Nothing."
         Just gqDaI_C -> do
           let getVectorPcts n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
-              psPrefix = "E"
           (_, gqIndexesE) <- K.ignoreCacheTime gqDaI_C
           grpIM <- K.knitEither
              $ gqIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData") (MC.psGroupTag @l)
-          psTByGrpV <- getVectorPcts $ psPrefix <> "_byGrp"
+          psTByGrpV <- getVectorPcts $ psPrefix pst <> "_byGrp"
           K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
     pure $ (MC.PSMap psMap, MC2.ModelParameters betaSIM)
 
@@ -335,10 +368,12 @@ cesAddDensity :: (K.KnitEffects r)
               -> K.Sem r (F.FrameRec CESByCDR)
 cesAddDensity acs ces = K.wrapPrefix "TSP_Religion.Model.cesAddDensity" $ do
   K.logLE K.Info "Adding people-weighted pop density to CES"
-  let (joined, missing) = FJ.leftJoinWithMissing @(DP.CDKeyR V.++ DP.DCatsR) ces
-                          $ DP.withZeros @DP.CDKeyR @DP.DCatsR $ fmap F.rcast acs
+  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
+      (joined, missing) = FJ.leftJoinWithMissing @(DP.CDKeyR V.++ DP.DCatsR) ces
+                          $ DP.withZeros @DP.CDKeyR @DP.DCatsR
+                          $ fmap F.rcast $ fixSingleDistricts acs
   when (not $ null missing) $ do
-    BR.logFrame $ F.filterFrame ((== "DC") . view GT.stateAbbreviation) acs
+--    BR.logFrame $ F.filterFrame ((== "DC") . view GT.stateAbbreviation) acs
     K.knitError $ "cesAddDensity: Missing keys in CES/ACS join: " <> show missing
   pure $ fmap F.rcast joined
 

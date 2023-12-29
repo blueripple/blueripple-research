@@ -462,34 +462,29 @@ stateTargetsModel prefixM ps cc std cM rM = do
         sd = DAG.parameterExpr sigmaTargetsP `TE.timesE` TE.functionE SF.sqrt (sd1 :> TNil)
     TE.addStmt $ TE.sample acsPS SF.normal (tP :> sd :> TNil)
 -}
-
-postStratificationWeights :: forall k md . (Typeable (DP.PSDataR k)
-                                              , F.ElemOf (DP.PSDataR k) DT.PopCount
---                                              , ps F.⊆ DP.PSDataR k
-                                              )
-                          => SMB.StanBuilderM md (DP.PSData k) TE.IntArrayE
-postStratificationWeights = do
-   psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
-   SBB.addCountData psDataTag "PSWgts" (view DT.popCount)
-
-postStratificationProbsCW :: forall l md k . (Typeable (DP.PSDataR k)
---                                             , F.ElemOf (DP.PSDataR k) DT.PopCount
-                                             , DP.LPredictorsR F.⊆ DP.PSDataR k
-                                             )
-                          => Text
-                          -> ParameterSetup md (DP.PSData k)
+{-
+postStratificationWeights :: forall k md . (Typeable psRow)
+                          => SMB.RowTypeTag psRow -> (psRow -> Int) -> SMB.StanBuilderM md (DP.PSData k) TE.IntArrayE
+postStratificationWeights psDataTag psWgt = SBB.addCountData psDataTag "PSWgts" psWgt
+-}
+postStratificationProbsCW :: forall l psRow md gq . (Typeable psRow
+                                                 --                                             , F.ElemOf (DP.PSDataR k) DT.PopCount
+                                                 --                                             , DP.LPredictorsR F.⊆ DP.PSDataR k
+                                                 )
+                          => SMB.RowTypeTag psRow
+                          -> (psRow -> F.Record DP.LPredictorsR)
+                          -> Text
+                          -> ParameterSetup md gq
                           -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                          -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md (DP.PSData k) TE.MatrixE)
+                          -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
                           -> Maybe TE.MatrixE
                           -> SMB.GroupTypeTag l
-                          -> SMB.StanBuilderM md (DP.PSData k) (TE.CodeWriter TE.VectorE)
-postStratificationProbsCW prefix ps dmr cM rM gtt = do
-  psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+                          -> SMB.StanBuilderM md gq (TE.CodeWriter TE.VectorE)
+postStratificationProbsCW psRowTag psRowPredictors prefix ps dmr cM rM gtt = do
   let prefixed t = prefix <> "_" <> t
---      psDataGrpIndex = SMB.byGroupIndexE psDataTag gtt
   let nCovariates = DM.rowLength dmr
   psCovariates <-  if nCovariates > 0
-                   then DM.addDesignMatrix psDataTag (contramap F.rcast dmr) Nothing
+                   then DM.addDesignMatrix psRowTag (contramap psRowPredictors dmr) Nothing
                    else pure $ TE.namedE (prefixed "ERROR") TE.SMat -- this shouldn't show up in stan code at all
   dmPS' <- case cM of
     Nothing -> pure psCovariates
@@ -497,30 +492,39 @@ postStratificationProbsCW prefix ps dmr cM rM gtt = do
   dmPS <- case rM of
     Nothing -> pure dmPS'
     Just r -> SMB.inBlock SMB.SBTransformedDataGQ $ SMB.addFromCodeWriter $ do
-      let rowsE = SMB.dataSetSizeE psDataTag
+      let rowsE = SMB.dataSetSizeE psRowTag
           colsE = SMB.mrfdColumnsE $ DM.matrixFromRowData dmr Nothing
       TE.declareRHSNW (TE.NamedDeclSpec (prefixed "dmPS_QR") $ TE.matrixSpec rowsE colsE []) $ dmPS' `TE.timesE` r
-  probabilitiesCW ps psDataTag dmPS
+  probabilitiesCW ps psRowTag dmPS
 
 
-postStratifyOne :: forall l md k . (Typeable (DP.PSDataR k)
-                                   , F.ElemOf (DP.PSDataR k) DT.PopCount
-                                   , DP.LPredictorsR F.⊆ DP.PSDataR k
+postStratifyOne :: forall l psRow md gq . (Typeable psRow
+--                                   , F.ElemOf (DP.PSDataR k) DT.PopCount
+--                                   , DP.LPredictorsR F.⊆ DP.PSDataR k
                                    )
-                  => Text
-                  -> ParameterSetup md (DP.PSData k)
-                  -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
-                  -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md (DP.PSData k) TE.MatrixE)
-                  -> Maybe TE.MatrixE
-                  -> SMB.GroupTypeTag l
-                  -> SMB.StanBuilderM md (DP.PSData k) TE.VectorE
-postStratifyOne prefix ps dmr cM rM gtt = do
-  psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
-  psWgts <- postStratificationWeights
-  psCW <- postStratificationProbsCW prefix ps dmr cM rM gtt
+                => SMB.RowTypeTag psRow
+                -> (psRow -> Int)
+                -> (psRow -> F.Record DP.LPredictorsR)
+                -> Text
+                -> ParameterSetup md gq
+                -> Maybe (TE.CodeWriter (TE.VectorE -> TE.VectorE))
+                -> Maybe (TE.CodeWriter (TE.IntArrayE -> TE.IntArrayE))
+                -> DM.DesignMatrixRow (F.Record DP.LPredictorsR)
+                -> Maybe (TE.MatrixE -> TE.StanName -> SMB.StanBuilderM md gq TE.MatrixE)
+                -> Maybe TE.MatrixE
+                -> SMB.GroupTypeTag l
+                -> SMB.StanBuilderM md gq TE.VectorE
+postStratifyOne psRowTag psRowWgt psRowPredictors prefix ps modPF modWgtsF dmr cM rM gtt = do
+--  psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+  psWgts' <- SBB.addCountData psRowTag "PSWgts" psRowWgt --postStratificationWeights psRowTag psWgt
+  let psWgts = SF.toVec <$> maybe (TE.NoCW psWgts') (\mwF -> TE.NeedsCW $ mwF <*> pure psWgts') modWgtsF
+
+  psCW' <- postStratificationProbsCW psRowTag psRowPredictors prefix ps dmr cM rM gtt
+  let psCW = maybe psCW' (<*> psCW') modPF
+
   let prefixed t = prefix <> "_" <> t
-      psDataGrpIndex = SMB.byGroupIndexE psDataTag gtt
-  SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just $ prefixed "byGrp") psDataTag gtt psDataGrpIndex (TE.NoCW $ SF.toVec psWgts) psCW Nothing
+      psDataGrpIndex = SMB.byGroupIndexE psRowTag gtt
+  SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just $ prefixed "byGrp") psRowTag gtt psDataGrpIndex psWgts psCW Nothing
 
 
 --data RunConfig l = RunConfig { rcIncludePPCheck :: Bool, rcIncludeLL :: Bool, rcIncludeDMSplits :: Bool, rcTurnoutPS :: Maybe (SMB.GroupTypeTag (F.Record l)) }
@@ -625,7 +629,9 @@ model rc c states = case c of
     when rc.rcIncludeLL llM
     case rc.rcPS of
       Nothing -> pure ()
-      Just gtt -> postStratifyOne "R" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
+      Just gtt -> do
+        psRowTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+        postStratifyOne psRowTag (view DT.popCount) F.rcast "R" paramSetup Nothing Nothing mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
   TurnoutOnly turnoutConfig@(MC.TurnoutConfig _ mc) -> do
     mData <- turnoutModelData turnoutConfig
@@ -636,7 +642,9 @@ model rc c states = case c of
     when rc.rcIncludeLL llM
     case rc.rcPS of
       Nothing -> pure ()
-      Just gtt -> postStratifyOne "T" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
+      Just gtt -> do
+        psRowTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+        postStratifyOne psRowTag (view DT.popCount) F.rcast "T" paramSetup Nothing Nothing mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
   PrefOnly prefConfig@(MC.PrefConfig mc) -> do
     mData <- prefModelData prefConfig
@@ -647,7 +655,9 @@ model rc c states = case c of
     when rc.rcIncludeLL llM
     case rc.rcPS of
       Nothing -> pure ()
-      Just gtt -> postStratifyOne "P" paramSetup mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
+      Just gtt -> do
+        psRowTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+        postStratifyOne psRowTag (view DT.popCount) F.rcast "P" paramSetup Nothing Nothing mc.mcDesignMatrixRow (Just $ centerF SC.GQData) Nothing gtt >> pure ()
 
   TurnoutAndPref tConfig@(MC.TurnoutConfig _ tMC) pConfig@(MC.PrefConfig pMC) -> do
     tData <- turnoutModelData tConfig
@@ -661,14 +671,14 @@ model rc c states = case c of
     case rc.rcPS of
       Nothing -> pure ()
       Just gtt -> do
-        psDataTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
-        psWgts <- postStratificationWeights
-        tProbsCW <- postStratificationProbsCW "T" tParamS tMC.mcDesignMatrixRow (Just $ tCenterF SC.GQData) Nothing gtt
-        pProbsCW <- postStratificationProbsCW "P" pParamS pMC.mcDesignMatrixRow (Just $ pCenterF SC.GQData) Nothing gtt
-        let psDataGrpIndex = SMB.byGroupIndexE psDataTag gtt
+        psRowTag <- SMB.dataSetTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData"
+        psWgts <- SBB.addCountData psRowTag "PSWgts" (view DT.popCount) --postStratificationWeights psRowTag (view )
+        tProbsCW <- postStratificationProbsCW psRowTag F.rcast "T" tParamS tMC.mcDesignMatrixRow (Just $ tCenterF SC.GQData) Nothing gtt
+        pProbsCW <- postStratificationProbsCW psRowTag F.rcast "P" pParamS pMC.mcDesignMatrixRow (Just $ pCenterF SC.GQData) Nothing gtt
+        let psDataGrpIndex = SMB.byGroupIndexE psRowTag gtt
             eltMultiply = TE.binaryOpE (TEO.SElementWise TEO.SMultiply)
             wgtsMCW = TE.NeedsCW $ fmap (`eltMultiply` SF.toVec psWgts) tProbsCW
-        SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "DVS_byGrp") psDataTag gtt psDataGrpIndex wgtsMCW pProbsCW Nothing >> pure ()
+        SBB.postStratifiedParameterF False SMB.SBGeneratedQuantities (Just "DVS_byGrp") psRowTag gtt psDataGrpIndex wgtsMCW pProbsCW Nothing >> pure ()
 
 runModel :: forall l k lk r a b .
             (K.KnitEffects r
