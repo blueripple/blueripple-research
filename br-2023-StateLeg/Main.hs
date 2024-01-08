@@ -110,8 +110,8 @@ FTH.declareColumn "StateModelT" ''Double
 FTH.declareColumn "StateModelP" ''Double
 FTH.declareColumn "Share" ''Double
 FTH.declareColumn "StateShare" ''Double
-FTH.declareColumn "Overlap" ''Double
-FTH.declareColumn "CongressionalPPL" ''Double
+--FTH.declareColumn "Overlap" ''Double
+--FTH.declareColumn "CongressionalPPL" ''Double
 
 
 templateVars ∷ Map String String
@@ -272,7 +272,7 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state
   when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
   pure modeledAndDRA
 
-
+{-
 -- for each SLD, provide the CD, if any, with overlap over 50%, along with the PPL of that CD and the Overlap
 sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text
               -> K.Sem r (F.FrameRec [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL])
@@ -280,14 +280,6 @@ sldCDOverlaps stateUpperOnlyMap sa = do
   upperOnly <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ M.lookup sa stateUpperOnlyMap
   allSLDPlansMap <- DRA.allPassedSLDPlans
   allCDPlansMap <- DRA.allPassedCongressionalPlans
-{-  draSLD <- do
-    upper <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateUpper)
-    if upperOnly then pure upper
-      else (do
-               lower <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allSLDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.StateLower)
-               pure $ upper <> lower
-           )
--}
   draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
   let cdRow r = not $ (r ^. GT.districtName) `elem` ["Summary", "Un"]
 --      sLDs = F.filterFrame nonSummary draSLD
@@ -337,6 +329,7 @@ cdNameToCDRec t =
   fmap (FT.recordSingleton @GT.CongressionalDistrict)
   $ maybe (Left $ "cdNameTOCDRec: Failed to parse " <> t <> " as an Int") Right
   $ TR.readMaybe $ toString t
+-}
 
 rbStyle :: (PF.PrintfArg a, RealFrac a) => Text -> a -> (HTML.Html, Text)
 rbStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorHiGrayLo 0.7 30 70 10 240)
@@ -344,18 +337,18 @@ rbStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.P
 bordered :: Text -> BR.CellStyles
 bordered c = BR.solidBorderedCell c 3
 
-mwoColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, ET.DemShare, GT.CongressionalDistrict, Overlap, CongressionalPPL])
+mwoColonnade :: forall rs . (FC.ElemsOf rs [GT.DistrictTypeC, GT.DistrictName, ET.DemShare, GT.CongressionalDistrict, DO.Overlap, DO.CongressionalPPL])
                      => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell
 mwoColonnade cas =
   let state = F.rgetField @GT.StateAbbreviation
-      competitive r = let x = r ^. congressionalPPL in x >= 0.45 && x <= 0.55
+      competitive r = let x = r ^. DO.congressionalPPL in x >= 0.45 && x <= 0.55
       cas' = cas <> BR.filledCell "DarkSeaGreen" `BR.cellStyleIf` \r h -> (h == "District") && competitive r
       olStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorWhiteUntil 50 100 300)--BR.numberToStyledHtml' False "black" 75 "green"
   in C.headed "State District" (BR.toCell cas' "District" "District" (BR.textToStyledHtml . fullDNameText))
      <> C.headed "State District PPL" (BR.toCell cas' "D. PPL" "D. PPL" (rbStyle "%2.1f" . (100*) . view ET.demShare))
      <> C.headed "CD" (BR.toCell cas' "CD" "CD" (BR.textToStyledHtml . show . view GT.congressionalDistrict))
-     <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.1f" . (100*) . view congressionalPPL))
-     <> C.headed "Overlap" (BR.toCell cas' "Overlap" "Overlap" (BR.numberToStyledHtml "%2.0f" . (100*) . view overlap))
+     <> C.headed "CD PPL" (BR.toCell cas' "CD PPL" "CD PPL" (rbStyle "%2.1f" . (100*) . view DO.congressionalPPL))
+     <> C.headed "Overlap" (BR.toCell cas' "Overlap" "Overlap" (BR.numberToStyledHtml "%2.0f" . (100*) . view DO.overlap))
 
 dmr ::  DM.DesignMatrixRow (F.Record DP.LPredictorsR)
 dmr = MC.tDesignMatrixRow_d
@@ -452,12 +445,12 @@ modelNotesPost cmdLine = do
 -- geographic overlaps
     BRK.brAddMarkDown MN.part5
     modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
-    overlaps_WI <- sldCDOverlaps upperOnlyMap "WI"
+    overlaps_WI <- DO.sldCDOverlaps upperOnlyMap "WI"
     let (modeledWOverlaps, mwoMissing) = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] modeledAndDRA_WI overlaps_WI
     when (not $ null mwoMissing) $ K.knitError $ "modelNotesPost: missing overlaps in model+DRA/overlap join: " <> show mwoMissing
     let interestingOverlap r =
           let c x = x >= 0.45 && x <= 0.55
-          in c (r ^. ET.demShare) && (r ^. overlap > 0.5)
+          in c (r ^. ET.demShare) && (r ^. DO.overlap > 0.5)
     BR.brAddRawHtmlTable (Just "WI SLD/CD Overlaps") (BHA.class_ "brTable") (mwoColonnade mempty)
       $ sortBy byDistrict $ FL.fold FL.list $ F.filterFrame interestingOverlap modeledWOverlaps
     BRK.brAddMarkDown MN.part6

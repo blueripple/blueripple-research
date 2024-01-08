@@ -535,6 +535,25 @@ executable br-2023-TSP
          , relude (Relude as Prelude
          , Relude.Extra)
 
+executable br-Gaba
+  import: common-options
+  ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16
+  hs-source-dirs: br-Gaba
+  main-is: Main.hs
+  build-depends: base
+               , blueripple-research
+               , blueripple-data-sets
+               , cmdargs
+               , colonnade
+               , blaze-colonnade
+               , haskell-stan
+               , hs-cmdstan
+               , pandoc
+  mixins:  base hiding (Prelude)
+         , relude (Relude as Prelude
+         , Relude.Extra)
+
+
 executable ga-work
   import: common-options
   ghc-options: -O2 -Wall -threaded  -fdicts-strict -fmax-worker-args=16 -fspec-constr-recursive=16

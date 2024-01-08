@@ -82,7 +82,10 @@ raceG = SMB.GroupTypeTag "Race"
 --psGroupTag = SMB.GroupTypeTag "PSGrp"
 
 data Alphas = St_A_S_E_R
-            | St_A_S_E_R_ER | St_A_S_E_R_StR
+            | St_A_S_E_R_ER
+            | St_A_S_E_R_AR
+            | St_A_S_E_R_StR
+            | St_A_S_E_R_StA
             | St_A_S_E_R_ER_StR | St_A_S_E_R_AE_AR_ER_StR
             | St_A_S_E_R_ER_StE_StR | St_A_S_E_R_ER_StA_StE_StR
             | St_A_S_E_R_ER_StR_StER deriving stock (Eq, Ord, Show)

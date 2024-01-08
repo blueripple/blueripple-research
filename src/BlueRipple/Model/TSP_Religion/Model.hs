@@ -114,7 +114,7 @@ runEvangelicalModel :: forall l r ks a b .
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters))
 runEvangelicalModel year cacheStructure cmdLine psType mc psData_C = do
   let --config = MC2.TurnoutOnly tc
-      runConfig = RunConfig False False (Just (MC.psGroupTag @l, psType))
+      runConfig = RunConfig False True (Just (MC.psGroupTag @l, psType))
   modelData_C <- cachedPreppedCES cacheStructure
   runModel (MR.csModelDirE cacheStructure)  ("E_" <> show year)
     (MR.csPSName cacheStructure) cmdLine runConfig mc modelData_C psData_C

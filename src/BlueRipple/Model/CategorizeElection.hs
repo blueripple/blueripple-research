@@ -64,7 +64,7 @@ pPLAndDPL pplR dplR
   | pplR == SafeD && dplR > LeanR = "Historically Safe D/Demographically close"
   | pplR == SafeD = "Historically Safe D/Demographically R!"
   | pplR == LeanD && dplR > TiltD = "Lean D"
-  | pplR == LeanD && dplR < LeanR = "Historically Lean D/Demographically close"
+  | pplR == LeanD && dplR > LeanR = "Historically Lean D/Demographically close"
   | pplR == LeanD = "Historically Lean D/Demographically R. Vulnerable?"
   | pplR == TiltD && dplR >= Tossup = "Tilt D"
   | pplR == TiltD = "Historically Tilt D/Demographically R. Vulnerable?"
