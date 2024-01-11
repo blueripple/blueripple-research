@@ -196,6 +196,7 @@ writeModeled csvName modeledEv = do
                                 ,("ModelCI","5%,50%,95%")
                                 ]
   K.liftKnit @IO $ FCSV.writeLines (toString $ "../forTSP/" <> csvName <> ".csv") $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatModeled "," $ FCSV.foldableToStream modeledEv
+
 modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD cmdLine = do
   (jointFromMarginalPredictorCSR_ASR_C, _) <- DDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
@@ -210,7 +211,7 @@ modeledACSBySLD cmdLine = do
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
                                                   cmdLine Nothing Nothing . fmap (fmap F.rcast)
-  (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
+  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2021
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C

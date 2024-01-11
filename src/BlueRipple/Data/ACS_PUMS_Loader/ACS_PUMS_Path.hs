@@ -43,6 +43,9 @@ pumsACS1Yr2010_20CSV = toString $ dataDir <> "/acsByPUMA_2010To2020.csv"
 pumsACS1Yr2012_21CSV :: FilePath
 pumsACS1Yr2012_21CSV = toString $ dataDir <> "/acsByPUMA_2012To2021.csv"
 
+pumsACS1Yr2012_22CSV :: FilePath
+pumsACS1Yr2012_22CSV = toString $ dataDir <> "/acsByPUMA_2012To2022.csv"
+
 
 {-
 pumsACS1YrCSV' :: FilePath
@@ -66,6 +69,14 @@ pumsACS1Yr2012_21RowGen' = (F.rowGen pumsACS1Yr2012_21CSV) { F.tablePrefix = "PU
                                                            , F.rowTypeName = "PUMS_Raw2"
                                                            }
 
+pumsACS1Yr2012_22RowGen :: F.RowGen
+                           F.DefaultStream
+                           'F.ColumnByName
+                           FCU.CommonColumns
+pumsACS1Yr2012_22RowGen = (F.rowGen pumsACS1Yr2012_22CSV) { F.tablePrefix = "PUMS"
+                                                           , F.separator   = F.CharSeparator ','
+                                                           , F.rowTypeName = "PUMS_Raw2"
+                                                           }
 
 
 

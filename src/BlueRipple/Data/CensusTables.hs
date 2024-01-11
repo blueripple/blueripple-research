@@ -207,9 +207,10 @@ type instance FI.VectorFor Employment = UVec.Vector
 F.declareColumn "EmploymentC" ''Employment
 
 newtype NHGISPrefix = NHGISPrefix { unNHGISPrefix :: Text } deriving stock (Eq, Ord, Show)
-data TableYear = TY2021 | TY2020 | TY2018 | TY2016 | TY2014 | TY2012
+data TableYear = TY2022 | TY2021 | TY2020 | TY2018 | TY2016 | TY2014 | TY2012
 
 tableYear :: TableYear -> Int
+tableYear TY2022 = 2022
 tableYear TY2021 = 2021
 tableYear TY2020 = 2020
 tableYear TY2018 = 2018
@@ -292,6 +293,7 @@ sexByAgeByEducation (NHGISPrefix p) =
                ]
 
 sexByAgeByEducationPrefix :: TableYear -> NHGISPrefix
+sexByAgeByEducationPrefix TY2022 = NHGISPrefix "AQ44"
 sexByAgeByEducationPrefix TY2021 = NHGISPrefix "AO4V"
 sexByAgeByEducationPrefix TY2020 = NHGISPrefix "AM6L"
 sexByAgeByEducationPrefix TY2018 = error "No 2018 sex by age by education data" -- NHGISPrefix "AM6L"
@@ -300,6 +302,13 @@ sexByAgeByEducationPrefix TY2014 = error "No 2014 sex by age by education data" 
 sexByAgeByEducationPrefix TY2012 = error "No 2012 sex by age by education data" -- NHGISPrefix "Q8Z"
 
 sexByAgeByEmploymentPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByAgeByEmploymentPrefix TY2022 R_White = [NHGISPrefix "ARBB"]
+sexByAgeByEmploymentPrefix TY2022 R_Black = [NHGISPrefix "ARBC"]
+sexByAgeByEmploymentPrefix TY2022 R_Asian = NHGISPrefix <$> ["ARBE","ARBF"] -- AAPI
+sexByAgeByEmploymentPrefix TY2022 R_Other = NHGISPrefix <$> ["ARBD", "ARBG", "ARBH"]
+sexByAgeByEmploymentPrefix TY2022 E_Hispanic = [NHGISPrefix "ARBJ"]
+sexByAgeByEmploymentPrefix TY2022 E_WhiteNonHispanic = [NHGISPrefix "ARBI"]
+
 sexByAgeByEmploymentPrefix TY2021 R_White = [NHGISPrefix "APGN"]
 sexByAgeByEmploymentPrefix TY2021 R_Black = [NHGISPrefix "APGO"]
 sexByAgeByEmploymentPrefix TY2021 R_Asian = NHGISPrefix <$> ["APGQ","APGR"] -- AAPI
@@ -366,6 +375,12 @@ sexByAgeByEmployment (NHGISPrefix p) =
                ]
 
 sexByAgePrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByAgePrefix TY2022 R_White = [NHGISPrefix "AQYH"]
+sexByAgePrefix TY2022 R_Black = [NHGISPrefix "AQYI"]
+sexByAgePrefix TY2022 R_Asian = NHGISPrefix <$> ["AQYK", "AQYL"] -- AAPI
+sexByAgePrefix TY2022 R_Other = NHGISPrefix <$> ["AQYJ", "AQYM", "AQYN"]
+sexByAgePrefix TY2022 E_Hispanic = [NHGISPrefix "AQYP"]
+sexByAgePrefix TY2022 E_WhiteNonHispanic = [NHGISPrefix "AQYO"]
 sexByAgePrefix TY2021 R_White = [NHGISPrefix "AOYA"]
 sexByAgePrefix TY2021 R_Black = [NHGISPrefix "AOYB"]
 sexByAgePrefix TY2021 R_Asian = NHGISPrefix <$> ["AOYD", "AOYE"] -- AAPI
@@ -437,6 +452,13 @@ sexByAge (NHGISPrefix p) =
                ]
 
 sexByCitizenshipPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByCitizenshipPrefix TY2022 R_White = [NHGISPrefix "AQY7"]
+sexByCitizenshipPrefix TY2022 R_Black = [NHGISPrefix "AQY8"]
+sexByCitizenshipPrefix TY2022 R_Asian = NHGISPrefix <$> ["AQZA", "AQZB"]
+sexByCitizenshipPrefix TY2022 R_Other = NHGISPrefix <$> ["AQY9", "AQZC", "AQZD"]
+sexByCitizenshipPrefix TY2022 E_Hispanic = [NHGISPrefix "AQZF"]
+sexByCitizenshipPrefix TY2022 E_WhiteNonHispanic = [NHGISPrefix "AQZE"]
+
 sexByCitizenshipPrefix TY2021 R_White = [NHGISPrefix "AOYY"]
 sexByCitizenshipPrefix TY2021 R_Black = [NHGISPrefix "AOYZ"]
 sexByCitizenshipPrefix TY2021 R_Asian = NHGISPrefix <$> ["AOY1", "AOY2"]
@@ -489,6 +511,13 @@ sexByCitizenship (NHGISPrefix p) = Map.fromList [((DT.Male, Native), p <> "E009"
                                                 ]
 
 sexByEducationPrefix :: TableYear -> RaceEthnicity -> [NHGISPrefix]
+sexByEducationPrefix TY2022 R_White = [NHGISPrefix "AQ45"]
+sexByEducationPrefix TY2022 R_Black = [NHGISPrefix "AQ46"]
+sexByEducationPrefix TY2022 R_Asian = NHGISPrefix <$> ["AQ48", "AQ49"]
+sexByEducationPrefix TY2022 R_Other = NHGISPrefix <$> ["AQ47", "AQ5A", "AQ5B"]
+sexByEducationPrefix TY2022 E_Hispanic = [NHGISPrefix "AQ5D"]
+sexByEducationPrefix TY2022 E_WhiteNonHispanic = [NHGISPrefix "AQ5C"]
+
 sexByEducationPrefix TY2021 R_White = [NHGISPrefix "APFZ"]
 sexByEducationPrefix TY2021 R_Black = [NHGISPrefix "APF0"]
 sexByEducationPrefix TY2021 R_Asian = NHGISPrefix <$> ["APF2", "APF3"]

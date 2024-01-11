@@ -271,7 +271,7 @@ writeModeled csvName modeledEv = do
         FOM.Missing -> ifMissing
 
       formatModeled = FCSV.formatTextAsIs
-                       V.:& FCSV.formatWithShow
+                       V.:& formatDistrictType
                        V.:& FCSV.formatTextAsIs
                        V.:& wPrintf' 2 0 (* 100)
                        V.:& wDPL 2 0
@@ -294,6 +294,12 @@ writeModeled csvName modeledEv = do
     $ FCSV.writeLines (toString $ "../forGaba/" <> csvName <> ".csv")
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatModeled ","
     $ FCSV.foldableToStream modeledEv
+
+formatDistrictType :: (V.KnownField t, V.Snd t ~ GT.DistrictType) => V.Lift (->) V.ElField (V.Const Text) t
+formatDistrictType = FCSV.liftFieldFormatter $ \case
+  GT.StateUpper -> "Upper House"
+  GT.StateLower -> "Lower House"
+  GT.Congressional -> "Error: Congressional District!"
 
 modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD cmdLine = do
