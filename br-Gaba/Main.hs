@@ -74,6 +74,8 @@ import qualified Frames.Streamly.TH as FS
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.CSV as FCSV
 import qualified Frames.Streamly.TH as FTH
+import qualified Frames.Streamly.OrMissing as FOM
+
 --import qualified Frames.Streamly.Transform as FST
 
 import Frames.Streamly.Streaming.Streamly (StreamlyStream, Stream)
@@ -96,8 +98,11 @@ import qualified Data.Vinyl.Functor as V
 
 import qualified Text.Printf as PF
 
-FTH.declareColumn "CDOverlap" ''Double
-FTH.declareColumn "CDPPL" ''Double
+type OrMissingInt = FOM.OrMissing Int
+type OrMissingDouble = FOM.OrMissing Double
+
+FTH.declareColumn "CD" ''OrMissingInt
+FTH.declareColumn "CDPPL" ''OrMissingDouble
 
 
 templateVars ∷ Map String String
@@ -148,15 +153,16 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    allStatesL <- filter (`elem` ["VA", "PA"])
+    allStatesL <- filter (\sa -> (sa `notElem` ["DC","NH"]))
                   . fmap (view GT.stateAbbreviation)
                   . filter ((< 60) . view GT.stateFIPS)
                   . FL.fold FL.list
                   <$> (K.ignoreCacheTimeM $ BRL.stateAbbrCrosswalkLoader)
-    upperOnlyMap <- stateUpperOnlyMap
+    upperOnlyMap <- BRL.stateUpperOnlyMap
+    singleCDMap <- BRL.stateSingleCDMap
     let  turnoutConfig = MC.TurnoutConfig survey (MC.ModelConfig aggregation alphaModel (contramap F.rcast dmr))
          prefConfig = MC.PrefConfig (MC.ModelConfig aggregation alphaModel (contramap F.rcast dmr))
-         analyzeOne s = K.logLE K.Info ("Working on " <> s) >> analyzeState cmdLine turnoutConfig Nothing prefConfig Nothing upperOnlyMap s
+         analyzeOne s = K.logLE K.Info ("Working on " <> s) >> analyzeState cmdLine turnoutConfig Nothing prefConfig Nothing upperOnlyMap singleCDMap s
     allStateAnalysis_C <- fmap (fmap mconcat . sequenceA) $ traverse analyzeOne allStatesL
     K.ignoreCacheTime allStateAnalysis_C >>= writeModeled "modeled" . fmap F.rcast
 
@@ -173,23 +179,24 @@ stateUpperOnlyMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. B
 type AnalyzeStateR = (FJ.JoinResult [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName]
                       (SLDKeyR V.++ '[MR.ModelCI])
                       BLR.DRAnalysisR)
-                     V.++ '[CE.DistCategory]
+                     V.++ [CE.DistCategory, DO.Overlap, CD, CDPPL]
 
 analyzeState :: (K.KnitEffects r, BRK.CacheEffects r)
              => BR.CommandLine
-             → MC.TurnoutConfig a b
+             -> MC.TurnoutConfig a b
              -> Maybe (MR.Scenario DP.PredictorsR)
-             → MC.PrefConfig b
+             -> MC.PrefConfig b
              -> Maybe (MR.Scenario DP.PredictorsR)
+             -> Map Text Bool
              -> Map Text Bool
              -> Text
              -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec AnalyzeStateR))
-analyzeState cmdLine tc tScenarioM pc pScenarioM upperOnlyMap state = do
+analyzeState cmdLine tc tScenarioM pc pScenarioM upperOnlyMap singleCDMap state = do
   let cacheStructure state' psName = MR.CacheStructure (Right "model/election2/stan/") (Right "model/election2")
                                     psName "AllCells" state'
   let psDataForState :: Text -> DP.PSData SLDKeyR -> DP.PSData SLDKeyR
       psDataForState sa = DP.PSData . F.filterFrame ((== sa) . view GT.stateAbbreviation) . DP.unPSData
-
+      modelMid = MT.ciMid . view MR.modelCI
   modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
   let stateSLDs_C = fmap (psDataForState state) modeledACSBySLDPSData_C
   presidentialElections_C <- BRL.presidentialElectionsWithIncumbency
@@ -198,12 +205,13 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM upperOnlyMap state = do
       dVSModel psName
         = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine tc tScenarioM pc pScenarioM dVSPres2020
   modeled_C <- fmap modeledMapToFrame <$> dVSModel (state <> "_SLD") stateSLDs_C
-  draSLD_C <- BLR.allPassedSLD
-  draCD_C <- BLR.allPassedCongressional
+  draSLD_C <- BLR.allPassedSLD 2024 BRC.TY2021
+  draCD_C <- BLR.allPassedCongressional 2024 BRC.TY2021
   let deps = (,,) <$> modeled_C <*> draSLD_C <*> draCD_C
   BRK.retrieveOrMakeFrame ("gaba/" <> state <> "_analysis.bin") deps $ \(modeled, draSLD, draCD) -> do
     let draSLD_forState = F.filterFrame ((== state) . view GT.stateAbbreviation) draSLD
-        draCD_forState =F.filterFrame ((== state) . view GT.stateAbbreviation) draCD
+        draCDPPLMap = FL.fold (FL.premap (\r -> (r ^. GT.districtName, r ^. ET.demShare )) FL.map)
+                      $ F.filterFrame ((== state) . view GT.stateAbbreviation) draCD
         (modeledAndDRA, missingModelDRA)
           = FJ.leftJoinWithMissing @[GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] modeled draSLD_forState
     when (not $ null missingModelDRA) $ K.knitError $ "br-Gaba: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
@@ -212,7 +220,7 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM upperOnlyMap state = do
         compText :: (FC.ElemsOf rs [ET.DemShare, MR.ModelCI]) => F.Record rs -> Text
         compText r =
           let lrPPL = lrF (r ^. ET.demShare)
-              lrDPL = lrF (MT.ciMid $ r ^. MR.modelCI)
+              lrDPL = lrF $ modelMid r
           in CE.pPLAndDPL lrPPL lrDPL
         compareOn f x y = compare (f x) (f y)
         compareRows x y = compareOn (view GT.stateAbbreviation) x y
@@ -221,16 +229,31 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM upperOnlyMap state = do
         competitivePPL r = let x = r ^. ET.demShare in x >= 0.4 && x <= 0.6
         sortAndFilter = F.toFrame . sortBy compareRows . filter competitivePPL . FL.fold FL.list
         withModelComparison = fmap (\r -> r F.<+> FT.recordSingleton @CE.DistCategory (compText r)) $ sortAndFilter modeledAndDRA
-    allOverlaps <- DO.maxSLD_CDOverlaps <$> DO.sldCDOverlaps upperOnlyMap state
-    maxOverlaps <- K.knitMaybe "Failed to find max overlaps" allOverlaps
-    BRK.logFrame maxOverlaps
-    pure withModelComparison
+    maxOverlapsM <- fmap (>>= DO.maxSLD_CDOverlaps) $ DO.sldCDOverlaps upperOnlyMap singleCDMap 2024 BRC.TY2021 state
+--    maxOverlaps <- K.knitMaybe "Failed to find max overlaps" maxOverlapsM
+    case maxOverlapsM of
+      Just maxOverlaps -> do
+        let (withOverlaps, missingOverlaps)
+              = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] withModelComparison maxOverlaps
+        when (not $ null missingOverlaps) $ K.knitError $ "br-Gaba: Missing keys in modeledDVs+dra/overlaps join: " <> show missingOverlaps
+        let cd r = r ^. GT.congressionalDistrict
+            omCD = FT.recordSingleton @CD . FOM.Present . cd
+            omCDPPL r = FT.recordSingleton @CDPPL $ FOM.toOrMissing $ M.lookup (show $ cd r) draCDPPLMap
+            addBoth r = FT.mutate (\r -> omCD r F.<+> omCDPPL r) r
+        pure $ fmap (F.rcast . addBoth) withOverlaps
+      Nothing -> do
+        let overlapCols :: F.Record [DO.Overlap, CD, CDPPL] = 1 F.&: FOM.Missing F.&: FOM.Missing F.&: V.RNil
+            withOverlaps = FT.mutate (const overlapCols) <$> withModelComparison
+        pure withOverlaps
+
 
 modeledMapToFrame :: MC.PSMap SLDKeyR MT.ConfidenceInterval -> F.FrameRec ModeledR
 modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR.ModelCI ci) . M.toList . MC.unPSMap
 
 writeModeled :: (K.KnitEffects r)
-             => Text -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName,ET.DemShare, MR.ModelCI, CE.DistCategory] -> K.Sem r ()
+             => Text
+             -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName,ET.DemShare, MR.ModelCI, CE.DistCategory, CD, DO.Overlap, CDPPL]
+             -> K.Sem r ()
 writeModeled csvName modeledEv = do
   let wText = FCSV.formatTextAsIs
       printNum n m = PF.printf ("%" <> show n <> "." <> show m <> "g")
@@ -242,19 +265,30 @@ writeModeled csvName modeledEv = do
       wModeled :: (V.KnownField t, V.Snd t ~ MT.ConfidenceInterval) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
       wModeled n m = FCSV.liftFieldFormatter
                      $ toText @String . \ci -> printNum n m (100 * MT.ciMid ci) <> ","
+      wOrMissing :: (V.KnownField t, V.Snd t ~ FOM.OrMissing a) => (a -> Text) -> Text -> V.Lift (->) V.ElField (V.Const Text) t
+      wOrMissing ifPresent ifMissing =  FCSV.liftFieldFormatter $ \case
+        FOM.Present a -> ifPresent a
+        FOM.Missing -> ifMissing
+
       formatModeled = FCSV.formatTextAsIs
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatTextAsIs
-                       V.:& wPrintf' 2 1 (* 100)
-                       V.:& wDPL 2 1
+                       V.:& wPrintf' 2 0 (* 100)
+                       V.:& wDPL 2 0
                        V.:& FCSV.formatTextAsIs
+                       V.:& wOrMissing show "At Large"--FCSV.formatWithShow
+                       V.:& wPrintf' 2 0 (* 100)
+                       V.:& wOrMissing (toText @String . printNum 2 0 . (* 100)) "N/A" --wPrintf' 2 0 (* 100)
                        V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "State")
                                 , ("DistrictTypeC", "District Type")
                                 , ("DistrictName", "District Name")
-                                , ("DemShare", "Historical (Dave's Redistricting)")
+                                , ("DemShare", "Partisan Lean (Dave's Redistricting)")
                                 , ("ModelCI", "Model (BlueRipple)")
                                 , ("DistCategory", "BlueRipple Comment")
+                                , ("CongressionalDistrict","CD")
+                                , ("Overlap", "Overlap (%)")
+                                , ("CongressionalPPL", "CD Partisan Lean (Dave's Redistricting)")
                                 ]
   K.liftKnit @IO
     $ FCSV.writeLines (toString $ "../forGaba/" <> csvName <> ".csv")
@@ -275,7 +309,7 @@ modeledACSBySLD cmdLine = do
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
                                                   cmdLine Nothing Nothing . fmap (fmap F.rcast)
-  (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
+  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2021
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C

@@ -165,9 +165,6 @@ dlccNH = [(GT.StateLower,"CO1","Cathleen Fountain")
 
 dlccMap = M.fromList [("LA",[]), ("MS",dlccMS), ("NJ", dlccNJ), ("VA", dlccVA)]
 
-stateUpperOnlyMap :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r (Map Text Bool)
-stateUpperOnlyMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BRDF.sLDUpperOnly)) FL.map)
-                    <$> K.ignoreCacheTimeM BRL.stateAbbrCrosswalkLoader
 
 main :: IO ()
 main = do
@@ -195,7 +192,7 @@ main = do
         histCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
         rural ::  F.Record AnalyzeStateR -> Bool
         rural r = r ^. DT.pWPopPerSqMile <= 100
-    stateUpperOnlyM <- stateUpperOnlyMap
+    stateUpperOnlyM <- BRL.stateUpperOnlyMap
     let postsToDo =
           [
             ("WI", histCompetitive)
@@ -256,7 +253,7 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state
       dVSModel psName
         = MR.runFullModelAH @SLDKeyR 2020 (cacheStructure state psName) cmdLine tc tScenarioM pc pScenarioM dVSPres2020
   modeledDVSMap <- K.ignoreCacheTimeM $ dVSModel (state <> "_SLD") stateSLDs_C
-  allPlansMap <- DRA.allPassedSLDPlans
+  allPlansMap <- DRA.allPassedSLDPlans 2024 BRC.TY2021
   upperOnly <- K.knitMaybe ("analyzeStatePost: " <> state <> " missing from stateUpperOnlyMap") $ M.lookup state stateUpperOnlyMap
   let modeledDVs = modeledMapToFrame modeledDVSMap
   dra <- do
@@ -271,65 +268,6 @@ analyzeState cmdLine tc tScenarioM pc pScenarioM stateUpperOnlyMap dlccMap state
   when (not $ null missingModelDRA) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs/dra join: " <> show missingModelDRA
   when (not $ null missingSummary) $ K.knitError $ "br-2023-StateLeg: Missing keys in modeledDVs+dra/sumamry join: " <> show missingSummary
   pure modeledAndDRA
-
-{-
--- for each SLD, provide the CD, if any, with overlap over 50%, along with the PPL of that CD and the Overlap
-sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text
-              -> K.Sem r (F.FrameRec [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL])
-sldCDOverlaps stateUpperOnlyMap sa = do
-  upperOnly <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ M.lookup sa stateUpperOnlyMap
-  allSLDPlansMap <- DRA.allPassedSLDPlans
-  allCDPlansMap <- DRA.allPassedCongressionalPlans
-  draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
-  let cdRow r = not $ (r ^. GT.districtName) `elem` ["Summary", "Un"]
---      sLDs = F.filterFrame nonSummary draSLD
-      cDs = F.filterFrame cdRow draCD
-  overlapsL ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDL" <> "_CD.csv") GT.StateLower GT.Congressional
-  overlapsU ← DO.overlapCollection (Set.singleton sa) (\x → toString $ "data/districtOverlaps/" <> x <> "_SLDU" <> "_CD.csv") GT.StateUpper GT.Congressional
-  let overlappingSLDs' cdn overlaps' = do
-        let
-          pwo = Vector.zip (DO.populations overlaps') (DO.overlaps overlaps')
-          nameByRow = fmap fst $ sortOn snd $ M.toList $ DO.rowByName overlaps'
-          intDiv x y = realToFrac x / realToFrac y
-          olFracM (pop, ols) = fmap (\x → intDiv x pop) $ M.lookup cdn ols
-          olFracsM = traverse olFracM pwo
-        olFracs ← K.knitMaybe ("sldCDOverlaps: Missing CD in overlap data for " <> cdn) olFracsM
-        let namedOlFracs = zip nameByRow (Vector.toList olFracs)
-        pure namedOlFracs
-
-      overlappingSLDs cdn = do
-        overlapsU ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for upper chamber of " <> sa) $ M.lookup sa overlapsU
-        namedOverU ← overlappingSLDs' cdn overlapsU
-        let upperRes =  fmap (\(n, x) → (GT.StateUpper, n, x)) namedOverU
-        case upperOnly of
-          True -> pure upperRes
-          False -> do
-            overlapsL ← K.knitMaybe ("sldCDOverlap: Failed to find overlap data for lower chamber of " <> sa) $ M.lookup sa overlapsL
-            namedOverL ← overlappingSLDs' cdn overlapsL
-            pure $ upperRes <> fmap (\(n, x) → (GT.StateLower, n, x)) namedOverL
-      stAbbr = view GT.stateAbbreviation
-      dName = view GT.districtName
-      sld r = (r ^. GT.districtTypeC, dName r)
---      compSLDSet = FL.fold (FL.premap sld FL.set) competitiveSLDs
---      isCompetitive (dt, dn, _) = (dt, dn) `Set.member` compSLDSet
-      f r = fmap (\ols -> (dName r, r ^. ET.demShare, ols)) $ overlappingSLDs (dName r)
-  overlapsByCD ← traverse f $ FL.fold FL.list cDs
-  let toRecInner :: (GT.DistrictType, Text, Double) -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
-      toRecInner (dt, dn, ol) = dt F.&: dn F.&: ol F.&: V.RNil
-      toRec :: Double -> F.Record '[GT.CongressionalDistrict] -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
-            -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]
-      toRec cdPPL cdRec ri = ri F.<+> cdRec F.<+> FT.recordSingleton @CongressionalPPL cdPPL
-      toRecs :: (Text, Double, [(GT.DistrictType, Text, Double)])
-             -> Either Text [F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]]
-      toRecs (cdT, cdPPL, slds) = fmap (\cdRec ->  fmap (toRec cdPPL cdRec) $ fmap toRecInner slds) $ cdNameToCDRec cdT
-  F.toFrame . mconcat <$> (K.knitEither $ traverse toRecs overlapsByCD)
-
-cdNameToCDRec :: Text -> Either Text (F.Record '[GT.CongressionalDistrict])
-cdNameToCDRec t =
-  fmap (FT.recordSingleton @GT.CongressionalDistrict)
-  $ maybe (Left $ "cdNameTOCDRec: Failed to parse " <> t <> " as an Int") Right
-  $ TR.readMaybe $ toString t
--}
 
 rbStyle :: (PF.PrintfArg a, RealFrac a) => Text -> a -> (HTML.Html, Text)
 rbStyle = BR.numberToStyledHtmlFull False (BR.cellStyle BR.CellBackground . BR.PartColor . BR.numColorHiGrayLo 0.7 30 70 10 240)
@@ -382,7 +320,8 @@ modelNotesPost cmdLine = do
                             <> GT.districtNameCompare (r1 ^. GT.districtName) (r2 ^. GT.districtName)
          scenarioByDistrict (r1, _) (r2, _) = byDistrict r1 r2
 
-    upperOnlyMap <- stateUpperOnlyMap
+    upperOnlyMap <- BRL.stateUpperOnlyMap
+    singleCDMap <- BRL.stateSingleCDMap
     modeledAndDRA_VA <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "VA"
     BRK.brAddMarkDown MN.part1
     let ppl = view ET.demShare
@@ -445,7 +384,7 @@ modelNotesPost cmdLine = do
 -- geographic overlaps
     BRK.brAddMarkDown MN.part5
     modeledAndDRA_WI <- analyzeState cmdLine (turnoutConfig aggregation alphaModel) Nothing (prefConfig aggregation alphaModel) Nothing upperOnlyMap dlccMap "WI"
-    overlaps_WI <- DO.sldCDOverlaps upperOnlyMap "WI"
+    overlaps_WI <- DO.sldCDOverlaps upperOnlyMap singleCDMap 2024 BRC.TY2021 "WI" >>= K.knitMaybe ("modelNotesPost: DO.sldCDOverlaps returned Nothing as if WI is single district!")
     let (modeledWOverlaps, mwoMissing) = FJ.leftJoinWithMissing @[GT.DistrictTypeC, GT.DistrictName] modeledAndDRA_WI overlaps_WI
     when (not $ null mwoMissing) $ K.knitError $ "modelNotesPost: missing overlaps in model+DRA/overlap join: " <> show mwoMissing
     let interestingOverlap r =
@@ -1050,11 +989,11 @@ geoCompChart pp pi chartID title vc sa dType districtName (label, f, cSchemeM, e
   jsonFilePrefix <- K.getNextUnusedId $ ("2023-StateLeg_" <> chartID)
   jsonDataUrl <-  BRK.brAddJSON pp pi jsonFilePrefix jsonRows
   (geoJsonPrefix, titleSuffix) <- case dType of
-    GT.StateUpper -> pure $ (sa <> "_2022_sldu", " (Upper Chamber)")
-    GT.StateLower -> pure $ (sa <> "_2022_sldl", " (Lower Chamber)")
+    GT.StateUpper -> pure $ (sa <> "_sldu", " (Upper Chamber)")
+    GT.StateLower -> pure $ (sa <> "_sldl", " (Lower Chamber)")
     _ -> K.knitError $ "modelGeoChart: Bad district type (" <> show dType <> ") specified"
 
-  geoJsonSrc <- K.liftKnit @IO $ Path.parseAbsFile $ toString $ "/Users/adam/BlueRipple/GeoData/input_data/StateLegDistricts/" <> sa <> "/" <> geoJsonPrefix <> "_topo.json"
+  geoJsonSrc <- K.liftKnit @IO $ Path.parseAbsFile $ toString $ "/Users/adam/BlueRipple/GeoData/input_data/StateLegDistricts/2024/" <> geoJsonPrefix <> "_topo.json"
   jsonGeoUrl <- BRK.brCopyDataForPost pp pi BRK.LeaveExisting geoJsonSrc Nothing
   let rowData = GV.dataFromUrl jsonDataUrl [GV.JSON "values"]
       geoData = GV.dataFromUrl jsonGeoUrl [GV.TopojsonFeature geoJsonPrefix]
@@ -1085,7 +1024,7 @@ modeledACSBySLD cmdLine = do
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
                                                   cmdLine Nothing Nothing . fmap (fmap F.rcast)
-  (acsCASERBySLD, _products) <- BRC.censusTablesFor2022SLD_ACS2021
+  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2021
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C

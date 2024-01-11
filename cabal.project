@@ -109,7 +109,7 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/adamConnerSax/Frames-streamly
-  tag: 5467ef35f13ce81125d70183d125bbbb59ea0be4
+  tag: dbe33c82ef3cb9159b341a633af81ec7e2796c72
 
 source-repository-package
   type: git

@@ -24,6 +24,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified BlueRipple.Data.Loaders.Redistricting as DRA
 
 import BlueRipple.Data.CensusLoaders (noMaps)
+import qualified BlueRipple.Data.CensusTables as ACS
 import qualified Control.Foldl as FL
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map as Map
@@ -122,53 +123,62 @@ maxSLD_CDOverlaps = FL.foldM outerFldM
     innerFldM = fmap (fmap unCompareOverlap) $ FL.premap CompareOverlap FL.maximum
 
 -- overlaps along with congressionalPPL
-sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r) =>  Map Text Bool -> Text
-              -> K.Sem r (F.FrameRec [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL])
-sldCDOverlaps stateUpperOnlyMap sa = do
+sldCDOverlaps :: (K.KnitEffects r, BRK.CacheEffects r)
+              => Map Text Bool
+              -> Map Text Bool
+              -> Int
+              -> ACS.TableYear
+              -> Text
+              -> K.Sem r (Maybe (F.FrameRec [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]))
+sldCDOverlaps stateUpperOnlyMap stateSingleDistrictMap mapYear acsTableYear sa = do
   upperOnly <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ Map.lookup sa stateUpperOnlyMap
---  allSLDPlansMap <- DRA.allPassedSLDPlans
-  allCDPlansMap <- DRA.allPassedCongressionalPlans
-  draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
-  let cdRow r = not $ (r ^. GT.districtName) `elem` ["Summary", "Un","\"\""]
---      sLDs = F.filterFrame nonSummary draSLD
-      cDs = F.filterFrame cdRow draCD
-  overlapsL <- overlapCollection (Set.singleton sa) (\x -> toString $ "data/districtOverlaps/" <> x <> "_SLDL" <> "_CD.csv") GT.StateLower GT.Congressional
-  overlapsU <- overlapCollection (Set.singleton sa) (\x -> toString $ "data/districtOverlaps/" <> x <> "_SLDU" <> "_CD.csv") GT.StateUpper GT.Congressional
-  let overlappingSLDs' cdn overlaps' = do
-        let
-          pwo = Vec.zip (populations overlaps') (overlaps overlaps')
-          nameByRow = fmap fst $ sortOn snd $ Map.toList $ rowByName overlaps'
-          intDiv x y = realToFrac x / realToFrac y
-          olFracM (pop', ols) = fmap (\x-> intDiv x pop') $ Map.lookup cdn ols
-          olFracsM = traverse olFracM pwo
-        olFracs <- K.knitMaybe ("sldCDOverlaps: Missing CD in overlap data for " <> cdn) olFracsM
-        let namedOlFracs = zip nameByRow (Vec.toList olFracs)
-        pure namedOlFracs
+  singleCD <- K.knitMaybe ("sldCDOverlaps: " <> sa <> " missing from stateUpperOnlyMap") $ Map.lookup sa stateSingleDistrictMap
+  case singleCD of
+    True -> pure Nothing
+    False -> do
+      allCDPlansMap <- DRA.allPassedCongressionalPlans mapYear acsTableYear
+      draCD <- K.ignoreCacheTimeM $ DRA.lookupAndLoadRedistrictingPlanAnalysis allCDPlansMap (DRA.redistrictingPlanId sa "Passed" GT.Congressional)
+      let cdRow r = not $ (r ^. GT.districtName) `elem` ["Summary", "Un","\"\""]
+          cDs = F.filterFrame cdRow draCD
+      let overlappingSLDs' cdn overlaps' = do
+            let
+              pwo = Vec.zip (populations overlaps') (overlaps overlaps')
+              nameByRow = fmap fst $ sortOn snd $ Map.toList $ rowByName overlaps'
+              intDiv x y = realToFrac x / realToFrac y
+              olFracM (pop', ols) = fmap (\x-> intDiv x pop') $ Map.lookup cdn ols
+              olFracsM = traverse olFracM pwo
+            olFracs <- K.knitMaybe ("sldCDOverlaps: Missing CD in overlap data for " <> cdn) olFracsM
+            let namedOlFracs = zip nameByRow (Vec.toList olFracs)
+            pure namedOlFracs
 
-      overlappingSLDs cdn = do
-        overlapsU' <- K.knitMaybe ("sldCDOverlap: Failed to find overlap data for upper chamber of " <> sa) $ Map.lookup sa overlapsU
-        namedOverU <- overlappingSLDs' cdn overlapsU'
-        let upperRes =  fmap (\(n, x) -> (GT.StateUpper, n, x)) namedOverU
-        case upperOnly of
-          True -> pure upperRes
-          False -> do
-            overlapsL' <- K.knitMaybe ("sldCDOverlap: Failed to find overlap data for lower chamber of " <> sa) $ Map.lookup sa overlapsL
-            namedOverL <- overlappingSLDs' cdn overlapsL'
-            pure $ upperRes <> fmap (\(n, x) -> (GT.StateLower, n, x)) namedOverL
-      dName = view GT.districtName
+          overlappingSLDs cdn = do
+            overlapsU <- overlapCollection (Set.singleton sa)
+                         (\x -> toString $ "data/districtOverlaps/" <> show mapYear <> "/" <> x <> "_SLDU" <> "_CD.csv") GT.StateUpper GT.Congressional
+            overlapsU' <- K.knitMaybe ("sldCDOverlap: Failed to find overlap data for upper chamber of " <> sa) $ Map.lookup sa overlapsU
+            namedOverU <- overlappingSLDs' cdn overlapsU'
+            let upperRes =  fmap (\(n, x) -> (GT.StateUpper, n, x)) namedOverU
+            case upperOnly of
+              True -> pure upperRes
+              False -> do
+                overlapsL <- overlapCollection (Set.singleton sa)
+                             (\x -> toString $ "data/districtOverlaps/" <> show mapYear <> "/" <> x <> "_SLDL" <> "_CD.csv") GT.StateLower GT.Congressional
+                overlapsL' <- K.knitMaybe ("sldCDOverlap: Failed to find overlap data for lower chamber of " <> sa) $ Map.lookup sa overlapsL
+                namedOverL <- overlappingSLDs' cdn overlapsL'
+                pure $ upperRes <> fmap (\(n, x) -> (GT.StateLower, n, x)) namedOverL
+          dName = view GT.districtName
 --      sld r = (r ^. GT.districtTypeC, dName r)
-      f r = fmap (\ols -> (dName r, r ^. ET.demShare, ols)) $ overlappingSLDs (dName r)
-  BRK.logFrame cDs
-  overlapsByCD <- traverse f $ FL.fold FL.list cDs
-  let toRecInner :: (GT.DistrictType, Text, Double) -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
-      toRecInner (dt, dn, ol) = dt F.&: dn F.&: ol F.&: V.RNil
-      toRec :: Double -> F.Record '[GT.CongressionalDistrict] -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
-            -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]
-      toRec cdPPL cdRec ri = ri F.<+> cdRec F.<+> FT.recordSingleton @CongressionalPPL cdPPL
-      toRecs :: (Text, Double, [(GT.DistrictType, Text, Double)])
-             -> Either Text [F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]]
-      toRecs (cdT, cdPPL, slds) = fmap (\cdRec ->  fmap (toRec cdPPL cdRec) $ fmap toRecInner slds) $ cdNameToCDRec cdT
-  F.toFrame . mconcat <$> (K.knitEither $ traverse toRecs overlapsByCD)
+          f r = fmap (\ols -> (dName r, r ^. ET.demShare, ols)) $ overlappingSLDs (dName r)
+--          BRK.logFrame cDs
+      overlapsByCD <- traverse f $ FL.fold FL.list cDs
+      let toRecInner :: (GT.DistrictType, Text, Double) -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
+          toRecInner (dt, dn, ol) = dt F.&: dn F.&: ol F.&: V.RNil
+          toRec :: Double -> F.Record '[GT.CongressionalDistrict] -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap]
+                -> F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]
+          toRec cdPPL cdRec ri = ri F.<+> cdRec F.<+> FT.recordSingleton @CongressionalPPL cdPPL
+          toRecs :: (Text, Double, [(GT.DistrictType, Text, Double)])
+                 -> Either Text [F.Record [GT.DistrictTypeC, GT.DistrictName, Overlap, GT.CongressionalDistrict, CongressionalPPL]]
+          toRecs (cdT, cdPPL, slds) = fmap (\cdRec ->  fmap (toRec cdPPL cdRec) $ fmap toRecInner slds) $ cdNameToCDRec cdT
+      Just . F.toFrame . mconcat <$> (K.knitEither $ traverse toRecs overlapsByCD)
 
 foldToFoldM :: Monad m => FL.Fold a (m b) -> FL.FoldM m a b
 foldToFoldM = FMR.postMapM id . FL.generalize

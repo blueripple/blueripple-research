@@ -22,6 +22,7 @@ import qualified BlueRipple.Data.DataFrames as BR
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.Loaders as BR
 import BlueRipple.Data.CensusLoaders (noMaps)
+import qualified BlueRipple.Data.CensusTables as ACS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
 import qualified Data.Map as M
@@ -59,8 +60,9 @@ plans = M.fromList
   ]
 -}
 
-allPassedCongressionalPlans ::  (K.KnitEffects r, BR.CacheEffects r) => K.Sem r  (Map RedistrictingPlanId RedistrictingPlanFiles)
-allPassedCongressionalPlans = do
+allPassedCongressionalPlans ::  (K.KnitEffects r, BR.CacheEffects r)
+                            => Int -> ACS.TableYear -> K.Sem r  (Map RedistrictingPlanId RedistrictingPlanFiles)
+allPassedCongressionalPlans mapYear acsTableYear = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
   let states = FL.fold (FL.premap (F.rgetField @GT.StateAbbreviation) FL.list)
                $ F.filterFrame (\r -> (F.rgetField @GT.StateFIPS r < 60)
@@ -68,31 +70,59 @@ allPassedCongressionalPlans = do
                                  && not (F.rgetField @GT.StateAbbreviation r `S.member` noMaps)
                                ) stateInfo
       planId sa = redistrictingPlanId sa "Passed" GT.Congressional
-      planFiles sa = RedistrictingPlanFiles ("../bigData/Census/cd117_" <> sa <> ".csv") ("data/redistricting/" <> sa <> "_congressional.csv")
+      planFiles sa = RedistrictingPlanFiles
+        ("../bigData/Census/cd" <> show mapYear <> "_ACS" <> show (ACS.tableYear acsTableYear) <> "/" <> sa <> ".csv")
+        ("data/districtStats/" <> show mapYear <> "/" <> sa <> "_congressional.csv")
       mapPair sa = (planId sa, planFiles sa)
   return $ M.fromList $ fmap mapPair states
 
-allPassedSLDPlans :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r  (Map RedistrictingPlanId RedistrictingPlanFiles)
-allPassedSLDPlans = do
+allPassedSLDPlans :: (K.KnitEffects r, BR.CacheEffects r) => Int -> ACS.TableYear -> K.Sem r  (Map RedistrictingPlanId RedistrictingPlanFiles)
+allPassedSLDPlans mapYear acsTableYear = do
   stateInfo <- K.ignoreCacheTimeM BR.stateAbbrCrosswalkLoader
   let statesAnd = FL.fold (FL.premap (\r -> (F.rgetField @GT.StateAbbreviation r, F.rgetField @BR.SLDUpperOnly r)) FL.list)
                   $ F.filterFrame (\r -> (F.rgetField @GT.StateFIPS r < 60)
                                          && not (F.rgetField @GT.StateAbbreviation r `S.member` S.insert "DC" noMaps)
                                   ) stateInfo
       planUpper sa = redistrictingPlanId sa "Passed" GT.StateUpper
-      planUpperFiles sa = RedistrictingPlanFiles ("../bigData/Census/" <> sa <> "_2022_sldu.csv") ("data/redistricting/" <> sa <> "_sldu.csv")
+      planUpperFiles sa = RedistrictingPlanFiles
+                          ("../bigData/Census/sldu" <> show mapYear <> "_ACS" <> show (ACS.tableYear acsTableYear) <> "/" <> sa <> ".csv")
+                          ("data/districtStats/" <> show mapYear <> "/" <> sa <> "_sldu.csv")
       mapPairUpper sa = (planUpper sa, planUpperFiles sa)
       planLower sa = redistrictingPlanId sa "Passed" GT.StateLower
-      planLowerFiles sa = RedistrictingPlanFiles ("../bigData/Census/" <> sa <> "_2022_sldl.csv") ("data/redistricting/" <> sa <> "_sldl.csv")
+      planLowerFiles sa = RedistrictingPlanFiles
+                          ("../bigData/Census/sldl" <> show mapYear <> "_ACS" <> show (ACS.tableYear acsTableYear) <> "/" <> sa <> ".csv")
+                          ("data/districtStats/" <> show mapYear <> "/" <> sa <> "_sldl.csv")
       mapPairLower sa = (planLower sa, planLowerFiles sa)
       mapPairs (sa, upperOnly) = mapPairUpper sa : if upperOnly then [] else [mapPairLower sa]
   return $ M.fromList $ concat $ fmap mapPairs statesAnd
 
 redistrictingAnalysisCols :: Set FS.HeaderText
-redistrictingAnalysisCols = S.fromList $ FS.HeaderText <$> ["ID","Total Pop","Dem","Rep","Oth","Total VAP","White","Minority","Hispanic","Black","Asian"]
+redistrictingAnalysisCols =
+  S.fromList
+  $ FS.HeaderText
+  <$> ["NAME","TotalPop","DemPct","RepPct","TotalVAP","WhitePct","MinorityPct","HispanicPct","BlackPct","AsianPct","NativePct"]
 
 redistrictingAnalysisRenames :: Map FS.HeaderText FS.ColTypeName
-redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "DistrictName")
+redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "NAME", FS.ColTypeName "DistrictName")
+                                          ,(FS.HeaderText "TotalPop", FS.ColTypeName "Population")
+                                          ,(FS.HeaderText "TotalVAP", FS.ColTypeName "VAP")
+                                          ,(FS.HeaderText "DemPct", FS.ColTypeName "DemShare")
+                                          ,(FS.HeaderText "RepPct", FS.ColTypeName "RepShare")
+--                                          ,(FS.HeaderText "Oth", FS.ColTypeName "OthShare")
+                                          ,(FS.HeaderText "WhitePct", FS.ColTypeName "WhiteFrac")
+                                          ,(FS.HeaderText "MinorityPct", FS.ColTypeName "MinorityFrac")
+                                          ,(FS.HeaderText "HispanicPct", FS.ColTypeName "HispanicFrac")
+                                          ,(FS.HeaderText "BlackPct", FS.ColTypeName "BlackFrac")
+                                          ,(FS.HeaderText "AsianPct", FS.ColTypeName "AsianFrac")
+                                          ,(FS.HeaderText "NativePct", FS.ColTypeName "NativeFrac")
+                                          ]
+
+redistrictingAnalysisCols' :: Set FS.HeaderText
+redistrictingAnalysisCols' = S.fromList $ FS.HeaderText <$> ["ID","Total Pop","Dem","Rep","Oth","Total VAP","White","Minority","Hispanic","Black","Asian"]
+
+
+redistrictingAnalysisRenames' :: Map FS.HeaderText FS.ColTypeName
+redistrictingAnalysisRenames' = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "DistrictName")
                                           ,(FS.HeaderText "Total Pop", FS.ColTypeName "Population")
                                           ,(FS.HeaderText "Total VAP", FS.ColTypeName "VAP")
                                           ,(FS.HeaderText "Dem", FS.ColTypeName "DemShare")
@@ -105,12 +135,13 @@ redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "
                                           ,(FS.HeaderText "Asian", FS.ColTypeName "AsianFrac")
                                           ]
 
+
 -- this assumes these files are all like this one
 redistrictingAnalysisRowGen :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 redistrictingAnalysisRowGen = FS.modifyColumnSelector modF rg where
-  rg = (FS.rowGen "data/redistricting/NC-CST-13.csv") { FS.tablePrefix = ""
-                                                      , FS.separator = FS.CharSeparator ','
-                                                      , FS.rowTypeName = "DRAnalysisRaw"
-                                                      }
+  rg = (FS.rowGen "data/districtStats/2024/NY_congressional.csv") { FS.tablePrefix = ""
+                                                                  , FS.separator = FS.CharSeparator ','
+                                                                  , FS.rowTypeName = "DRAnalysisRaw"
+                                                                  }
   modF = FS.renameSomeUsingNames redistrictingAnalysisRenames
          . FS.columnSubset redistrictingAnalysisCols

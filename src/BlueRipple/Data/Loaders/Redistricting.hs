@@ -27,6 +27,7 @@ import qualified BlueRipple.Utilities.KnitUtils as BR
 --import qualified BlueRipple.Data.DemographicTypes as DT
 --import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
+import qualified BlueRipple.Data.CensusTables as ACS
 
 import qualified Data.Map as M
 import qualified Data.Vinyl.TypeLevel as V
@@ -70,16 +71,16 @@ loadRedistrictingPlanAnalysis pi' pf = do
   BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi')
 
 allPassedCongressional :: (K.KnitEffects r, BR.CacheEffects r)
-                       => K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
-allPassedCongressional = do
-  plans <- allPassedCongressionalPlans
+                       => Int -> ACS.TableYear -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
+allPassedCongressional mapYear acsTableYear = do
+  plans <- allPassedCongressionalPlans mapYear acsTableYear
   deps <- sequenceA <$> (traverse (uncurry loadRedistrictingPlanAnalysis) $ M.toList plans)
   BR.retrieveOrMakeFrame "data/redistricting/allPassedCongressional.bin" deps $ pure . mconcat
 
 
 allPassedSLD :: (K.KnitEffects r, BR.CacheEffects r)
-                       => K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
-allPassedSLD = do
-  plans <- allPassedSLDPlans
+             => Int -> ACS.TableYear -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))
+allPassedSLD mapYear acsTableYear = do
+  plans <- allPassedSLDPlans mapYear acsTableYear
   deps <- sequenceA <$> (traverse (uncurry loadRedistrictingPlanAnalysis) $ M.toList plans)
   BR.retrieveOrMakeFrame "data/redistricting/allPassedSLD.bin" deps $ pure . mconcat

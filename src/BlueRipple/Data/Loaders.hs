@@ -26,7 +26,7 @@ import qualified BlueRipple.Data.ElectionTypes as ET
 import BlueRipple.Data.LoadersCore
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
-import Control.Lens ((%~), view)
+import Control.Lens ((%~), view, (^.))
 import qualified Data.Map as M
 import qualified Data.Sequence as Sequence
 import Data.Serialize.Text ()
@@ -322,6 +322,17 @@ stateAbbrCrosswalkLoader = do
   BR.retrieveOrMakeFrame "data/stateAbbr.bin" statesRaw_C $ \fRaw ->
     K.knitEither $ F.toFrame <$> (traverse parseCensusCols $ FL.fold FL.list fRaw)
 {-# INLINEABLE stateAbbrCrosswalkLoader #-}
+
+stateUpperOnlyMap :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Text Bool)
+stateUpperOnlyMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BR.sLDUpperOnly)) FL.map)
+                    <$> K.ignoreCacheTimeM stateAbbrCrosswalkLoader
+{-# INLINEABLE stateUpperOnlyMap #-}
+
+
+stateSingleCDMap :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Text Bool)
+stateSingleCDMap = FL.fold (FL.premap (\r -> (r ^. GT.stateAbbreviation, r ^. BR.oneDistrict)) FL.map)
+                   <$> K.ignoreCacheTimeM stateAbbrCrosswalkLoader
+{-# INLINEABLE stateSingleCDMap #-}
 
 stateAbbrFromFIPSMapLoader :: (K.KnitEffects r, BR.CacheEffects r) => K.Sem r (Map Int Text)
 stateAbbrFromFIPSMapLoader = do
