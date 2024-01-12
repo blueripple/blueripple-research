@@ -153,7 +153,7 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-    allStatesL <- filter (\sa -> (sa `notElem` ["DC","NH"]))
+    allStatesL <- filter (\sa -> (sa `notElem` ["DC"]))
                   . fmap (view GT.stateAbbreviation)
                   . filter ((< 60) . view GT.stateFIPS)
                   . FL.fold FL.list
