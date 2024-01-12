@@ -1024,11 +1024,11 @@ modeledACSBySLD cmdLine = do
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
                                                   cmdLine Nothing Nothing . fmap (fmap F.rcast)
-  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2021
+  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2022
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C
-  BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD
+  BRK.retrieveOrMakeD "model/election2/data/sld2024_ACS2022_PSData.bin" acsCASERBySLD
     $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
 {-
 modeledACSBySLD' :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))

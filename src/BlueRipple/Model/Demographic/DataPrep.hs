@@ -218,15 +218,18 @@ cachedACSa5ByPUMA :: (K.KnitEffects r, BRK.CacheEffects r)
                   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS_Typed))
                   -> Int
                   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa5ByPUMAR))
-cachedACSa5ByPUMA source year = K.wrapPrefix "Model.Demographic.cachedACSByPUMA" $ do
+cachedACSa5ByPUMA source year = K.wrapPrefix "Model.Demographic.cachedACSa5ByPUMA" $ do
   typedACS_C <- source
   stateAbbrXWalk_C <- BRL.stateAbbrCrosswalkLoader
   let cacheKey = "model/demographic/data/acs" <> show year <> "ByPUMA_a5.bin"
-      typedACSForYear_C = F.filterFrame ((== year) . view BRDF.year) <$> typedACS_C
-      deps = (,) <$> typedACSForYear_C <*> stateAbbrXWalk_C
+      deps = (,) <$> typedACS_C <*> stateAbbrXWalk_C
   BRK.retrieveOrMakeFrame cacheKey deps $ \(acs, xWalk) -> do
     K.logLE K.Info "Cached doesn't exist or is older than dependencies. Loading raw ACS rows..."
-    K.logLE K.Info $ "raw ACS has " <> show (FL.fold FL.length acs) <> " rows. Aggregating..."
+    let acsForYear =  F.filterFrame ((== year) . view BRDF.year) acs
+    K.logLE K.Info $ "full ACS has " <> show (FL.fold FL.length acs) <> " rows."
+    let lengthACSForYear = FL.fold FL.length acsForYear
+    when (lengthACSForYear == 0) $ BRK.logFrame $ F.takeRows 100 acs
+    K.logLE K.Info $ show year <> " ACS has " <> show lengthACSForYear <> " rows. Aggregating..."
     aggregatedACS <- K.streamlyToKnit $ acsA5ByPUMARF year acs
     K.logLE K.Info $ "aggregated ACS (by PUMA) has " <> show (FL.fold FL.length aggregatedACS) <> " rows. Adding state abbreviations..."
     let (withSA, missing) = FJ.leftJoinWithMissing @'[GT.StateFIPS] aggregatedACS xWalk
@@ -238,7 +241,7 @@ cachedACSa6ByPUMA :: (K.KnitEffects r, BRK.CacheEffects r)
                   => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS_Typed))
                   -> Int
                   -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa6ByPUMAR))
-cachedACSa6ByPUMA source year = K.wrapPrefix "Model.Demographic.cachedACSByPUMA" $ do
+cachedACSa6ByPUMA source year = K.wrapPrefix "Model.Demographic.cachedACSa6ByPUMA" $ do
   typedACS_C <- source
   stateAbbrXWalk_C <- BRL.stateAbbrCrosswalkLoader
   let cacheKey = "model/demographic/data/acs" <> show year <> "ByPUMA_a6.bin"

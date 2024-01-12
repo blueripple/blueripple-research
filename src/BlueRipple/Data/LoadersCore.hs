@@ -114,19 +114,20 @@ recStreamLoader dataPath parserOptionsM mFilter fixRow = Streamly.concatEffect $
       parserOptions = (fromMaybe csvParserOptions parserOptionsM)
       filterF !r = fromMaybe (const True) mFilter r
       strictFix !r = fixRow r
+      notifyEvery = 250000
   path <- liftIO $ getPath dataPath
   pure
     $ sMap strictFix
     $! Streamly.tapOffsetEvery
-    250000
-    250000
+    notifyEvery
+    notifyEvery
     (runningCountF
-      ("Read (k rows, from \"" <> toText path <> "\")")
-      (\n-> " "
-            <> ("from \""
-                 <> toText path
-                 <> "\": "
-                 <> (show $ 250000 * n))
+      ("Read (# rows, from \"" <> toText path <> "\")")
+      (\n -> " "
+             <> ("from \""
+                  <> toText path
+                  <> "\": "
+                  <> (show $ notifyEvery * n))
       )
       ("loading \"" <> toText path <> "\" from disk finished.")
     )
