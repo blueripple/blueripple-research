@@ -236,15 +236,15 @@ fixCES r = fixHouseVote
            $ (F.rsubset %~ missingPID7)
            $ (F.rsubset %~ missingEducation) r
 
-fixCESCLInt :: ( F.ElemOf rs CESCVoterStatus
-               , F.ElemOf rs CESCTurnout)
+fixCESCLInt :: ( F.ElemOf rs CESVVoterStatus
+               , F.ElemOf rs CESVTurnout)
          => F.Rec (Maybe F.:. F.ElField) rs  -> F.Rec (Maybe F.:. F.ElField) rs
 fixCESCLInt = (F.rsubset %~ missingCatalistRegI)
               . (F.rsubset %~ missingCatalistTurnoutI)
 
 
-fixCESCLText :: ( F.ElemOf rs CESCVoterStatusT
-                , F.ElemOf rs CESCTurnoutT)
+fixCESCLText :: ( F.ElemOf rs CESVVoterStatusT
+                , F.ElemOf rs CESVTurnoutT)
          => F.Rec (Maybe F.:. F.ElField) rs  -> F.Rec (Maybe F.:. F.ElField) rs
 fixCESCLText = (F.rsubset %~ missingCatalistRegT)
                . (F.rsubset %~ missingCatalistTurnoutT)
@@ -307,25 +307,25 @@ transformCES yr = addCols where
             . (FT.addOneFrom @[MCESHouseVote,CESHouseCand1Party,CESHouseCand2Party,CESHouseCand3Party,CESHouseCand4Party] @MHouseVoteParty houseVoteParty)
 --            . (FT.addOneFromOne @CESPresVote @PresVoteParty pres2020intToParty)
 
-transformCESCLInt :: (F.ElemOf rs CESCVoterStatus
-                     , F.ElemOf rs CESCTurnout)
+transformCESCLInt :: (F.ElemOf rs CESVVoterStatus
+                     , F.ElemOf rs CESVTurnout)
                   =>  F.Record rs -> F.Record ([CatalistRegistrationC, CatalistTurnoutC] V.++ rs)
-transformCESCLInt =   (FT.addOneFromOne @CESCVoterStatus @CatalistRegistrationC cesIntToRegistration)
-                      . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC cesIntToTurnout)
+transformCESCLInt =   (FT.addOneFromOne @CESVVoterStatus @CatalistRegistrationC cesIntToRegistration)
+                      . (FT.addOneFromOne @CESVTurnout @CatalistTurnoutC cesIntToTurnout)
 
 {-
-transformCESTS :: (F.ElemOf rs CESCVoterStatus
-                     , F.ElemOf rs CESCTurnout)
+transformCESTS :: (F.ElemOf rs CESVVoterStatus
+                     , F.ElemOf rs CESVTurnout)
                   =>  F.Record rs -> F.Record ([CatalistRegistrationC, CatalistTurnoutC] V.++ rs)
-transformCESTS =   (FT.addOneFromOne @CESCVoterStatus @CatalistRegistrationC tsBoolToRegistration)
-                      . (FT.addOneFromOne @CESCTurnout @CatalistTurnoutC tsIntToTurnout)
+transformCESTS =   (FT.addOneFromOne @CESVVoterStatus @CatalistRegistrationC tsBoolToRegistration)
+                      . (FT.addOneFromOne @CESVTurnout @CatalistTurnoutC tsIntToTurnout)
 -}
 
-transformCESCLText :: (F.ElemOf rs CESCVoterStatusT
-                     , F.ElemOf rs CESCTurnoutT)
+transformCESCLText :: (F.ElemOf rs CESVVoterStatusT
+                     , F.ElemOf rs CESVTurnoutT)
                   =>  F.Record rs -> F.Record ([CatalistRegistrationC, CatalistTurnoutC] V.++ rs)
-transformCESCLText =   (FT.addOneFromOne @CESCVoterStatusT @CatalistRegistrationC $ catalistRegistrationFromNText 7)
-                      . (FT.addOneFromOne @CESCTurnoutT @CatalistTurnoutC $ catalistTurnoutFromNText 7)
+transformCESCLText =   (FT.addOneFromOne @CESVVoterStatusT @CatalistRegistrationC $ catalistRegistrationFromNText 7)
+                      . (FT.addOneFromOne @CESVTurnoutT @CatalistTurnoutC $ catalistTurnoutFromNText 7)
 
 
 type MCESHouseVote = "HouseVoteInt" F.:-> MT.MaybeData Int
@@ -343,13 +343,13 @@ missingPID7 :: F.Rec (Maybe :. F.ElField) '[CESPid7] -> F.Rec (Maybe :. F.ElFiel
 missingPID7 = FM.fromMaybeMono 9
 missingEducation :: F.Rec (Maybe :. F.ElField) '[CESEduc] -> F.Rec (Maybe :. F.ElField) '[CESEduc]
 missingEducation = FM.fromMaybeMono 5
-missingCatalistRegI :: F.Rec (Maybe :. F.ElField) '[CESCVoterStatus] -> F.Rec (Maybe :. F.ElField) '[CESCVoterStatus]
+missingCatalistRegI :: F.Rec (Maybe :. F.ElField) '[CESVVoterStatus] -> F.Rec (Maybe :. F.ElField) '[CESVVoterStatus]
 missingCatalistRegI = FM.fromMaybeMono 10
-missingCatalistTurnoutI :: F.Rec (Maybe :. F.ElField) '[CESCTurnout] -> F.Rec (Maybe :. F.ElField) '[CESCTurnout]
+missingCatalistTurnoutI :: F.Rec (Maybe :. F.ElField) '[CESVTurnout] -> F.Rec (Maybe :. F.ElField) '[CESVTurnout]
 missingCatalistTurnoutI = FM.fromMaybeMono 10
-missingCatalistRegT :: F.Rec (Maybe :. F.ElField) '[CESCVoterStatusT] -> F.Rec (Maybe :. F.ElField) '[CESCVoterStatusT]
+missingCatalistRegT :: F.Rec (Maybe :. F.ElField) '[CESVVoterStatusT] -> F.Rec (Maybe :. F.ElField) '[CESVVoterStatusT]
 missingCatalistRegT = FM.fromMaybeMono "missing"
-missingCatalistTurnoutT :: F.Rec (Maybe :. F.ElField) '[CESCTurnoutT] -> F.Rec (Maybe :. F.ElField) '[CESCTurnoutT]
+missingCatalistTurnoutT :: F.Rec (Maybe :. F.ElField) '[CESVTurnoutT] -> F.Rec (Maybe :. F.ElField) '[CESVTurnoutT]
 missingCatalistTurnoutT = FM.fromMaybeMono "missing"
 missingHouseVote :: F.Rec (Maybe :. F.ElField) '[CESHouseVote] -> F.Rec (Maybe :. F.ElField) '[MCESHouseVote]
 missingHouseVote = FM.maybeMono (MT.MaybeData Nothing) (MT.MaybeData . Just)
