@@ -32,7 +32,7 @@ import qualified Frames.Streamly.Transform as FST
 
 import qualified Control.Foldl as FL
 import qualified Control.Lens as Lens
-import Control.Lens (view , (^.))
+import Control.Lens (view , (^.), over)
 import qualified Data.Map as M
 
 import qualified Data.Vinyl as V
@@ -260,7 +260,7 @@ cachedACSa6ByPUMA source year = K.wrapPrefix "Model.Demographic.cachedACSa6ByPUM
 type PUMAToCDRow ks = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA] V.++ ks V.++ DatFieldsTo
 type CDFromPUMARow ks = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.CongressionalDistrict] V.++ ks V.++ DatFieldsTo
 type PUMAJoinKey = [BRDF.Year, GT.StateAbbreviation, GT.StateFIPS, GT.PUMA]
-type XRow ks = (ks V.++ DatFieldsTo) V.++ [GT.CongressionalDistrict, BRDF.Population2016, BRDF.FracCDInPUMA, BRDF.FracPUMAInCD]
+type XRow ks = (ks V.++ DatFieldsTo) V.++ [GT.CongressionalDistrict, BRDF.Population, BRDF.FracCDInPUMA, BRDF.FracPUMAInCD]
 
 cachedPUMAsToCDs :: forall ks r .
                     (FS.RecFlat (ks V.++ DatFieldsTo)
@@ -281,6 +281,7 @@ cachedPUMAsToCDs :: forall ks r .
                  -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (CDFromPUMARow ks)))
 cachedPUMAsToCDs cacheKey byPUMAs_C = do
   cdFromPUMA_C <- BR.allCDFromPUMA2012Loader
+--  K.ignoreCacheTime cdFromPUMA_C >>= BRK.logFrame . F.filterFrame ((== 2022) . view BRDF.year)
   let deps = (,) <$> byPUMAs_C <*> cdFromPUMA_C
   BRK.retrieveOrMakeFrame cacheKey deps $ \(byPUMAs, cdFromPUMA) -> do
     K.logLE K.Info $ "cachedPUMAsToCDs (" <> cacheKey <> "): Cached doesn't exist or is older than dependencies. Loading byPUMAs rows..."
@@ -310,10 +311,17 @@ pumaToCDFld =
 cachedACSa5ByCD :: (K.KnitEffects r, BRK.CacheEffects r)
                 => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS_Typed))
                 -> Int
+                -> Maybe Int
                 -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec ACSa5ByCDR))
-cachedACSa5ByCD source year = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
+cachedACSa5ByCD source year cdYearM = K.wrapPrefix "Model.Demographic.cachedACSByCD" $ do
   acsByPUMA_C <- cachedACSa5ByPUMA source year
-  cachedPUMAsToCDs @CategoricalsA5 ("model/demographic/data/acs" <> show year <> "ByCD_a5.bin") acsByPUMA_C
+  let adjCDYear = case cdYearM of
+        Nothing -> id
+        Just y -> over BRDF.year (const y)
+      cacheKey = case cdYearM of
+        Nothing -> "model/demographic/data/acs" <> show year <> "ByCD_a5.bin"
+        Just y -> "model/demographic/data/acs" <> show year <> "ByCD" <> show y <> "_a5.bin"
+  cachedPUMAsToCDs @CategoricalsA5 cacheKey $ fmap (fmap adjCDYear) acsByPUMA_C
 
 cachedACSa6ByCD :: (K.KnitEffects r, BRK.CacheEffects r)
                 => K.Sem r (K.ActionWithCacheTime r (F.FrameRec PUMS.PUMS_Typed))

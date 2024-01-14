@@ -585,14 +585,14 @@ ccesCountedDemHouseVotesByCD clearCaches = do
 
 countCESVotesF
   ∷ FL.Fold
-      (F.Record [CCES.CatalistTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
+      (F.Record [CCES.VTurnoutC, CCES.MHouseVoteParty, CCES.MPresVoteParty])
       (F.Record [Surveyed, Voted, HouseVotes, HouseDVotes, HouseRVotes, PresVotes, PresDVotes, PresRVotes])
 countCESVotesF =
   let vote (MT.MaybeData x) = maybe False (const True) x
       dVote (MT.MaybeData x) = maybe False (== ET.Democratic) x
       rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
       surveyedF = FL.length
-      votedF = FL.prefilter (CCES.catalistVoted . F.rgetField @CCES.CatalistTurnoutC) FL.length
+      votedF = FL.prefilter (CCES.voted . F.rgetField @CCES.VTurnoutC) FL.length
       houseVotesF = FL.prefilter (vote . F.rgetField @CCES.MHouseVoteParty) votedF
       houseDVotesF = FL.prefilter (dVote . F.rgetField @CCES.MHouseVoteParty) votedF
       houseRVotesF = FL.prefilter (rVote . F.rgetField @CCES.MHouseVoteParty) votedF
@@ -757,7 +757,7 @@ prepCCESAndPums clearCache = do
 --      lengthInYear y = fLength . F.filterFrame ((== y) . F.rgetField @BR.Year)
   pums_C ← PUMS.pumsLoaderAdults
 --  pumsByState_C ← cachedPumsByState pums_C
-  countedCCES_C ← fmap (BR.fixAtLargeDistricts 0) <$> cesCountedDemVotesByCD clearCache
+  countedCCES_C ← fmap (BR.fixAtLargeDistricts 2020 0) <$> cesCountedDemVotesByCD clearCache
   cpsVByState_C ← fmap (F.filterFrame $ earliest earliestYear) <$> cpsCountedTurnoutByState
   cdFromPUMA_C ← BR.allCDFromPUMA2012Loader
   pumsByCD_C ← cachedPumsByCD pums_C cdFromPUMA_C

@@ -298,21 +298,21 @@ pumsCDRollup
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PWPopPerSqMile
    , F.ElemOf (ks ++ PUMSCountToFields) DT.PopCount
    , ks ⊆ (ks ++ PUMSCountToFields)
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgIncome
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgSocSecIncome
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopCount
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.FracPUMAInCD
---   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.MedianIncome
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.PctInMetro
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNativeEnglish
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNoEnglish
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnderPovertyLine
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnder2xPovertyLine
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnemployed
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PWPopPerSqMile
-   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.CongressionalDistrict
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.AvgSocSecIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PopCount
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.FracPUMAInCD
+--   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) BR.MedianIncome
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.PctInMetro
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNativeEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctNoEnglish
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnderPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnder2xPovertyLine
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PctUnemployed
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) DT.PWPopPerSqMile
+   , F.ElemOf (ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD]) GT.CongressionalDistrict
    , F.ElemOf ('[BR.Year] ++ CDDescWA ++ ks) GT.CongressionalDistrict
-   , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population2016, BR.FracCDInPUMA, BR.FracPUMAInCD])
+   , ks ⊆ (PUMADescWA ++ ks ++ PUMSCountToFields ++ [GT.CongressionalDistrict, GT.StateAbbreviation,BR.Population, BR.FracCDInPUMA, BR.FracPUMAInCD])
    , Ord (F.Record ks)
    , BR.FiniteSet (F.Record ks)
 --   , V.RMap ks

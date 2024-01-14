@@ -2,7 +2,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-
+{-# LANGUAGE TemplateHaskell #-}
 module BlueRipple.Data.CCESPath
   (
     module BlueRipple.Data.CCESPath
@@ -16,6 +16,8 @@ import qualified Data.Set as S
 import qualified Data.Map as M
 --import BlueRipple.Data.Loaders (presidentialElectionsWithIncumbency, presidentialByStateFrame)
 
+--FS.declareColumn "CESVVoterStatus" ''Int
+
 data ValidationSource = Catalist | TargetSmart deriving stock (Show, Eq)
 data ElectionYearType = Presidential Text | Midterm
 
@@ -27,10 +29,16 @@ data CESConfig = CESConfig
                  , configCongress :: Int
                  , configYrSuffix :: Int
                  , configCLAsInt :: Bool
---                 , configCols :: S.Set FS.HeaderText
---                 , congigColRenames :: Map FS.HeaderText FS.ColTypeName
                  }
-data CESYear = CES2016 | CES2018 | CES2020 | CES2022 deriving (Show, Eq)
+
+data CESYear = CES2016 | CES2018 | CES2020 | CES2022 deriving stock (Show, Eq)
+
+cesYear :: CESYear -> Int
+cesYear CES2016 = 2016
+cesYear CES2018 = 2019
+cesYear CES2020 = 2020
+cesYear CES2022 = 2022
+{-# INLINEABLE cesYear #-}
 
 cesConfig :: CESYear -> CESConfig
 cesConfig CES2016 = CESConfig ces2016CSV Catalist (Presidential "CC16_410a") 115 16 False
@@ -43,16 +51,16 @@ cols cy =
   let config = cesConfig cy
       yrSuffix = configYrSuffix config
   in commonCols yrSuffix (configCongress config)
-        <> case (configVS config) of
-             Catalist -> catalistCols yrSuffix
-             TargetSmart -> targetSmartCols yrSuffix
+     <> case (configVS config) of
+          Catalist -> catalistCols yrSuffix
+          TargetSmart -> targetSmartCols yrSuffix
 
 renames :: CESYear -> Map FS.HeaderText FS.ColTypeName
 renames cy =
   let config = cesConfig cy
       yrSuffix = configYrSuffix config
       clAsInt = configCLAsInt config
-  in commonRenames clAsInt yrSuffix (configCongress config)
+  in commonRenames yrSuffix (configCongress config)
      <> case (configVS config) of
           Catalist -> catalistRenames clAsInt yrSuffix
           TargetSmart -> targetSmartRenames clAsInt yrSuffix
@@ -70,27 +78,28 @@ colsAndRenames CES2016 = f $ baseColsAndRenames CES2016 where
       unRenameHeader (FS.HeaderText "CL_2016gvm") (FS.HeaderText "CL_E2016GVM")
 colsAndRenames CES2018 = baseColsAndRenames CES2018
 colsAndRenames CES2020 = baseColsAndRenames CES2020
-colsAndRenames CES2022 = baseColsAndRenames CES2022
+colsAndRenames CES2022 = f $ baseColsAndRenames CES2022 where
+  f = unRenameHeader (FS.HeaderText "gender") (FS.HeaderText "gender4")
 
 cesRowGen2022 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 cesRowGen2022 = FS.modifyColumnSelector modF ccesRowGen2022AllCols where
-  (cols, renames) =  colsAndRenames CES2022
-  modF = FS.renameSomeUsingNames renames . FS.columnSubset cols
+  (cols', renames') =  colsAndRenames CES2022
+  modF = FS.renameSomeUsingNames renames' . FS.columnSubset cols'
 
 cesRowGen2020 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 cesRowGen2020 = FS.modifyColumnSelector modF ccesRowGen2020AllCols where
-  (cols, renames) = colsAndRenames CES2020
-  modF = FS.renameSomeUsingNames renames . FS.columnSubset cols
+  (cols', renames') = colsAndRenames CES2020
+  modF = FS.renameSomeUsingNames renames' . FS.columnSubset cols'
 
 cesRowGen2018 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 cesRowGen2018 = FS.modifyColumnSelector modF ccesRowGen2018AllCols where
-  (cols, renames) = colsAndRenames CES2018
-  modF = FS.renameSomeUsingNames renames . FS.columnSubset cols
+  (cols', renames') = colsAndRenames CES2018
+  modF = FS.renameSomeUsingNames renames' . FS.columnSubset cols'
 
 cesRowGen2016 :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 cesRowGen2016 = FS.modifyColumnSelector modF ccesRowGen2016AllCols where
-  (cols, renames) = colsAndRenames CES2016
-  modF = FS.renameSomeUsingNames renames . FS.columnSubset cols
+  (cols', renames') = colsAndRenames CES2016
+  modF = FS.renameSomeUsingNames renames' . FS.columnSubset cols'
 
 ccesRowGen2022AllCols :: FS.RowGen FS.DefaultStream 'FS.ColumnByName FCU.CommonColumns
 ccesRowGen2022AllCols = (FS.rowGen ces2022CSV) { FS.tablePrefix = "CES"
@@ -180,14 +189,12 @@ targetSmartRenames :: Bool -> Int ->  Map FS.HeaderText FS.ColTypeName
 targetSmartRenames clAsInt yrSuffix =
   let tSuffix = if clAsInt then "" else "T"
   in M.fromList
-   [ (FS.HeaderText ("TS_g20" <> show yrSuffix <> "gvm"), FS.ColTypeName $ "VTurnout" <> tSuffix)
+   [ (FS.HeaderText ("TS_g20" <> show yrSuffix), FS.ColTypeName $ "VTurnout" <> tSuffix)
    , (FS.HeaderText ("TS_voterstatus"), FS.ColTypeName $ "VVoterStatus" <> tSuffix)
    ]
 
-commonRenames :: Bool -> Int -> Int -> Map FS.HeaderText FS.ColTypeName
-commonRenames clAsInt yrSuffix congress =
-  let tSuffix = if clAsInt then "" else "T"
-  in M.fromList
+commonRenames :: Int -> Int -> Map FS.HeaderText FS.ColTypeName
+commonRenames yrSuffix congress = M.fromList
      [ (FS.HeaderText "caseid", FS.ColTypeName "CaseId")
      , (FS.HeaderText "commonpostweight", FS.ColTypeName "Weight")
      , (FS.HeaderText "inputstate", FS.ColTypeName "StateFips")
@@ -199,15 +206,15 @@ unRenameHeader :: FS.HeaderText
                -> FS.HeaderText
                -> (S.Set FS.HeaderText, M.Map FS.HeaderText FS.ColTypeName)
                -> (S.Set FS.HeaderText, M.Map FS.HeaderText FS.ColTypeName)
-unRenameHeader shouldBe is (cols, renames) = (newCols, newRenames) where
+unRenameHeader shouldBe is (cols', renames') = (newCols, newRenames) where
   asColTypeName (FS.HeaderText ht) = FS.ColTypeName ht
-  newCols = S.insert is $ S.delete shouldBe cols
-  newRenames = case M.lookup shouldBe renames of
-    Nothing -> M.insert is (asColTypeName shouldBe) renames
-    Just v -> M.insert is v $ M.delete shouldBe renames
+  newCols = S.insert is $ S.delete shouldBe cols'
+  newRenames = case M.lookup shouldBe renames' of
+    Nothing -> M.insert is (asColTypeName shouldBe) renames'
+    Just v -> M.insert is v $ M.delete shouldBe renames'
 
 addPresVote :: FS.HeaderText -> S.Set FS.HeaderText ->  Map FS.HeaderText FS.ColTypeName -> (S.Set FS.HeaderText, Map FS.HeaderText FS.ColTypeName)
-addPresVote header cols renames = (S.insert header cols, M.insert header (FS.ColTypeName "PresVote") renames)
+addPresVote header cols' renames' = (S.insert header cols', M.insert header (FS.ColTypeName "PresVote") renames')
 
 {-
 cesCols22 :: Int -> Int -> S.Set FS.HeaderText

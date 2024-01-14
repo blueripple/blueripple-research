@@ -431,12 +431,15 @@ cpsCountedTurnoutByState = do
 -- CES
 -- Add Density
 cesAddDensity :: (K.KnitEffects r)
-              => F.FrameRec DDP.ACSa5ByCDR
+              => CCES.CESYear
+              -> F.FrameRec DDP.ACSa5ByCDR
               -> F.FrameRec (CDKeyR V.++ DCatsR V.++ CountDataR V.++ PrefDataR)
               -> K.Sem r (F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR))
-cesAddDensity acs ces = K.wrapPrefix "Election2.DataPrep" $ do
+cesAddDensity cesYr acs ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding people-weighted pop density to CES"
-  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
+  let fixSingleDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f)
+                         =>   f (F.Record rs) -> f (F.Record rs)
+      fixSingleDistricts = BR.fixSingleDistricts ("DC" : (BR.atLargeDistrictStates (CCES.cesYear cesYr))) 1
       (joined, missing) = FJ.leftJoinWithMissing @(CDKeyR V.++ DCatsR) (fixSingleDistricts ces)
                           $ withZeros @CDKeyR @DCatsR $ fmap F.rcast $ fixSingleDistricts acs
   when (not $ null missing) $ do
@@ -458,13 +461,14 @@ cesAddDensity2 acs ces = K.wrapPrefix "Election2.DataPrep.cesAddDensity2" $ do
   pure $ fmap F.rcast joined
 -- add House Incumbency
 cesAddHouseIncumbency :: (K.KnitEffects r)
-                      => F.FrameRec BR.HouseElectionColsI
+                      => CCES.CESYear
+                      -> F.FrameRec BR.HouseElectionColsI
                       -> F.FrameRec (CDKeyR V.++ PredictorsR V.++ CountDataR V.++ PrefDataR)
                       -> K.Sem r (F.FrameRec (CESByR CDKeyR))
-cesAddHouseIncumbency houseElections ces = K.wrapPrefix "Election2.DataPrep" $ do
+cesAddHouseIncumbency cesYr houseElections ces = K.wrapPrefix "Election2.DataPrep" $ do
   K.logLE K.Info "Adding house incumbency to CES (+ density)"
   houseElectionsByContest <- K.knitEither $ FL.foldM (electionF @CDKeyR) $ fmap F.rcast houseElections
-  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
+  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : (BR.atLargeDistrictStates (CCES.cesYear cesYr))) 1
       (joined, missing) = FJ.leftJoinWithMissing @CDKeyR ces $ fixSingleDistricts houseElectionsByContest
   when (not $ null missing) $ K.knitError $ "cesAddHouseIncumbency: Missing keys in CES/Elections join: " <> show missing
   let g = FT.mutate $ \r -> FT.recordSingleton @HouseIncumbency (F.rgetField @Incumbency r)
@@ -488,12 +492,12 @@ cachedPreppedCES cacheE ces_C = do
   cacheKey <- case cacheE of
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
-  acs_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 -- so we get density from same year as survey
+  acs_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing -- so we get density from same year as survey
   houseElections_C <- fmap (F.filterFrame ((>= 2008) . view BR.year)) <$> BR.houseElectionsWithIncumbency
   let deps = (,,) <$> ces_C <*> acs_C <*> houseElections_C
   BR.retrieveOrMakeFrame cacheKey deps $ \(ces, acs, elex) -> do
-    cesWD <- cesAddDensity acs ces
-    cesAddHouseIncumbency elex cesWD
+    cesWD <- cesAddDensity CCES.CES2020 acs ces
+    cesAddHouseIncumbency CCES.CES2020 elex cesWD
 
 cachedPreppedCES2 :: (K.KnitEffects r, BR.CacheEffects r)
                   => Either Text Text
@@ -532,7 +536,7 @@ cesCountedDemPresVotesByState clearCaches = do
   BR.retrieveOrMakeFrame cacheKey ces2020_C $ \ces → cesMR @StateKeyR 2020 (F.rgetField @CCES.MPresVoteParty) ces
 
 
-countCESVotesF :: (F.ElemOf rs CCES.CatalistRegistrationC, F.ElemOf rs CCES.CatalistTurnoutC, F.ElemOf rs CCES.CESWeight)
+countCESVotesF :: (F.ElemOf rs CCES.VRegistrationC, F.ElemOf rs CCES.VTurnoutC, F.ElemOf rs CCES.CESWeight)
                => (F.Record rs -> MT.MaybeData ET.PartyT)
                -> FL.Fold
                   (F.Record rs)
@@ -543,16 +547,16 @@ countCESVotesF votePartyMD =
       rVote (MT.MaybeData x) = maybe False (== ET.Republican) x
       wgt = view CCES.cESWeight
       surveyedF = FL.length
-      registeredF = FL.prefilter (CCES.catalistRegistered . view CCES.catalistRegistrationC) FL.length
-      votedF = FL.prefilter (CCES.catalistVoted . view CCES.catalistTurnoutC) FL.length
+      registeredF = FL.prefilter (CCES.registered . view CCES.vRegistrationC) FL.length
+      votedF = FL.prefilter (CCES.voted . view CCES.vTurnoutC) FL.length
       votesF = FL.prefilter (vote . votePartyMD) votedF
       dVotesF = FL.prefilter (dVote . votePartyMD) votedF
       rVotesF = FL.prefilter (rVote . votePartyMD) votedF
       surveyWgtF = FL.premap wgt FL.sum
       lmvskSurveyedF = FL.premap wgt FLS.fastLMVSK
       essSurveyedF = effSampleSizeFld lmvskSurveyedF
-      waRegisteredF = wgtdAverageBoolFld wgt (CCES.catalistRegistered . view CCES.catalistRegistrationC)
-      waVotedF = wgtdAverageBoolFld wgt (CCES.catalistVoted . view CCES.catalistTurnoutC)
+      waRegisteredF = wgtdAverageBoolFld wgt (CCES.registered . view CCES.vRegistrationC)
+      waVotedF = wgtdAverageBoolFld wgt (CCES.voted . view CCES.vTurnoutC)
 --      wVotesF = FL.prefilter (vote . votePartyMD) wSurveyedF
       lmvskVotesF = FL.prefilter (vote . votePartyMD) lmvskSurveyedF
       essVotesF = effSampleSizeFld lmvskVotesF
@@ -596,8 +600,8 @@ cesMR ∷ forall lk rs f m .
         , F.ElemOf rs DT.HispC
         , F.ElemOf rs DT.Race5C
         , rs F.⊆ (DT.Education4C ': rs)
-        , F.ElemOf rs CCES.CatalistRegistrationC
-        , F.ElemOf rs CCES.CatalistTurnoutC
+        , F.ElemOf rs CCES.VRegistrationC
+        , F.ElemOf rs CCES.VTurnoutC
         , F.ElemOf rs CCES.CESWeight
         , (lk V.++ DCatsR) V.++ (CountDataR V.++ PrefDataR) ~ (((lk V.++ DCatsR) V.++ CountDataR) V.++ PrefDataR)
         , Ord (F.Record (lk V.++ DCatsR))

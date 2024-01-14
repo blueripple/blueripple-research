@@ -187,9 +187,10 @@ cdFromPUMA2012Loader congress = do
     114 -> return (BR.cd114FromPUMA2012CSV, "data/cd114FromPUMA2012.bin")
     115 -> return (BR.cd115FromPUMA2012CSV, "data/cd115FromPUMA2012.bin")
     116 -> return (BR.cd116FromPUMA2012CSV, "data/cd116FromPUMA2012.bin")
-    _ -> K.knitError "PUMA for congressional district crosswalk only available for 113th, 114th, 115th and 116th congress"
+    117 -> return (BR.cd117FromPUMA2012CSV, "data/cd117FromPUMA2012.bin")
+    118 -> return (BR.cd118FromPUMA2012CSV, "data/cd118FromPUMA2012.bin")
+    _ -> K.knitError "PUMA for congressional district crosswalk only available for 113th, 114th, 115th, 116th, 117th, 118th congresses"
   cachedFrameLoader (DataSets $ toText csvPath) Nothing Nothing id Nothing cacheKey --"cd116FromPUMA2012.bin"
-
 
 type DatedCDFromPUMA2012 = '[BR.Year] V.++ CDFromPUMA2012R
 
@@ -201,7 +202,7 @@ allCDFromPUMA2012Loader = do
       addYear y r = (y F.&: V.RNil) `V.rappend` r
       loadWithYear :: (K.KnitEffects r, BR.CacheEffects r) => (Int, Int) -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec DatedCDFromPUMA2012))
       loadWithYear (year, congress) = fmap (fmap (addYear year)) <$> cdFromPUMA2012Loader congress
-  withYears_C <- sequenceA <$> traverse loadWithYear [(2012, 113), (2014, 114), (2016, 115), (2018, 116),(2019,116), (2020,116)]
+  withYears_C <- sequenceA <$> traverse loadWithYear [(2012, 113), (2014, 114), (2016, 115), (2018, 116),(2019,116), (2020,117), (2021, 117), (2022, 118)]
   BR.retrieveOrMakeFrame "data/cdFromPUMA2012.bin" withYears_C $ \withYears -> return $ mconcat withYears
 
 {-
@@ -536,20 +537,22 @@ addIncumbency n key sameCand runoff wm r =
         Just prs -> not $ null $ filter (sameCand r) prs
   in r V.<+> ((incumbent F.&: V.RNil) :: F.Record '[ET.Incumbent])
 
-atLargeDistrictStates :: [Text]
-atLargeDistrictStates =  ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
+atLargeDistrictStates :: Int -> [Text]
+atLargeDistrictStates n
+  | n < 2022 = ["AK", "DE", "MT", "ND", "SD", "VT", "WY"]
+  | otherwise = ["AK", "DE", "ND", "SD", "VT", "WY"]
 
 fixSingleDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f)
                    => [Text] -> Int -> f (F.Record rs) -> f (F.Record rs)
-fixSingleDistricts ds n recs = fmap fixOne recs where
+fixSingleDistricts districts setTo recs = fmap fixOne recs where
   fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` ds then F.rputField @GT.CongressionalDistrict n r else r
 
 
 fixDCDistrict :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
 fixDCDistrict = fixSingleDistricts ["DC"]
 
-fixAtLargeDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)
-fixAtLargeDistricts = fixSingleDistricts atLargeDistrictStates
+fixAtLargeDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> Int -> f (F.Record rs) -> f (F.Record rs)
+fixAtLargeDistricts year = fixSingleDistricts (atLargeDistrictStates year)
 
 type SenateElectionCols = [BR.Year, BR.State, GT.StateAbbreviation, BR.StateFIPS] V.++ ([BR.Special, BR.Stage] V.++ ElectionDataCols)
 

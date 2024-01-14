@@ -143,25 +143,27 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         psName = "GivenWWH"
         psType = RM.PSGiven "E" psName ((`elem` [DT.R5_WhiteNonHispanic, DT.R5_Hispanic]) . view DT.race5C)
-        cacheStructure = MR.CacheStructure (Right "model/evangelical/stan/") (Right "model/evangelical")
-                         psName () ()
+        cacheStructure cy = MR.CacheStructure (Right $ "model/evangelical/stan/CES" <> show (CCES.cesYear cy)) (Right "model/evangelical")
+                            psName () ()
         modelConfig am = RM.ModelConfig aggregation am (contramap F.rcast dmr)
         modeledToCSVFrame = F.toFrame . fmap (\(k, v) -> k F.<+> FT.recordSingleton @MR.ModelCI v) . M.toList . MC.unPSMap . fst
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
-    modeledEvangelical_C <- RM.runEvangelicalModel @SLDKeyR 2020 cacheStructure cmdLine psType (modelConfig MC.St_A_S_E_R) modeledACSBySLDPSData_C
-    modeledEvangelical_AR_C <- RM.runEvangelicalModel @SLDKeyR 2020 cacheStructure cmdLine psType (modelConfig MC.St_A_S_E_R_AR) modeledACSBySLDPSData_C
-    modeledEvangelical_StA_C <- RM.runEvangelicalModel @SLDKeyR 2020 cacheStructure cmdLine psType (modelConfig MC.St_A_S_E_R_StA) modeledACSBySLDPSData_C
-    modeledEvangelical_StR_C <- RM.runEvangelicalModel @SLDKeyR 2020 cacheStructure cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
+--    modeledEvangelical_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R) modeledACSBySLDPSData_C
+--    modeledEvangelical_AR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_AR) modeledACSBySLDPSData_C
+--    modeledEvangelical_StA_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StA) modeledACSBySLDPSData_C
+    modeledEvangelical22_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2022 (cacheStructure CCES.CES2022) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
+--    modeledEvangelical20_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
     let compareOn f x y = compare (f x) (f y)
         compareRows x y = compareOn (view GT.stateAbbreviation) x y
                           <> compareOn (view GT.districtTypeC) x y
                           <> GT.districtNameCompare (x ^. GT.districtName) (y ^. GT.districtName)
         csvSort = F.toFrame . sortBy compareRows . FL.fold FL.list
 --    modeledEvangelical <-
-    K.ignoreCacheTime modeledEvangelical_C >>= writeModeled "modeledEvangelical_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
-    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
-    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
-    K.ignoreCacheTime modeledEvangelical_StR_C >>= writeModeled "modeledEvangelical_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical_C >>= writeModeled "modeledEvangelical_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+    K.ignoreCacheTime modeledEvangelical22_StR_C >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical20_StR_C >>= writeModeled "modeledEvangelical20_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    let modeledEvangelicalFrame = modeledToCSVFrame modeledEvangelical
 --    writeModeled "modeledEvangelical_StA_GivenWWH" $ fmap F.rcast modeledEvangelicalFrame
 --    K.logLE K.Info $ show $ MC.unPSMap $ fst $ modeledEvangelical

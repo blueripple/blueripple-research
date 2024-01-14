@@ -41,10 +41,11 @@ F.declareColumn "Date" ''FP.FrameDay
 
 --these columns are parsed wrong so we fix them before parsing
 FS.declarePrefixedColumn "hispanic" "CCES" ''Int
+FS.declarePrefixedColumn "VVoterStatus" "CES" ''Int
 
 --FS.tableTypes' ccesRowGen2018
 FS.tableTypes' ccesRowGen2020C
---FS.tableTypes' cesRowGen2022
+FS.tableTypes' cesRowGen2022
 FS.tableTypes' cesRowGen2020
 FS.tableTypes' cesRowGen2018
 FS.tableTypes' cesRowGen2016
@@ -54,88 +55,88 @@ minus1 :: Num a => a -> a
 minus1 x = x - 1
 {-# INLINE minus1 #-}
 
-data CatalistRegistration = CR_Active
-                          | CR_Dropped
-                          | CR_Inactive
-                          | CR_Multiple
-                          | CR_UnRegistered
-                          | CR_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor CatalistRegistration = UVec.Vector
-instance S.Serialize CatalistRegistration
-instance Flat.Flat CatalistRegistration
+data VRegistration = VR_Active
+                   | VR_Dropped
+                   | VR_Inactive
+                   | VR_Multiple
+                   | VR_UnRegistered
+                   | VR_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor VRegistration = UVec.Vector
+instance S.Serialize VRegistration
+instance Flat.Flat VRegistration
 
 derivingUnbox
-  "CatalistRegistration"
-  [t|CatalistRegistration -> Word8|]
+  "VRegistration"
+  [t|VRegistration -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 
-F.declareColumn "CatalistRegistrationC" ''CatalistRegistration
+F.declareColumn "VRegistrationC" ''VRegistration
 
-catalistRegistrationFromNText :: Int -> Text -> CatalistRegistration
+catalistRegistrationFromNText :: Int -> Text -> VRegistration
 catalistRegistrationFromNText n t
-  | f t == f "active" = CR_Active
-  | f t == f "dropped" = CR_Dropped
-  | f t == f "inactive" = CR_Inactive
-  | f t == f "multiple" = CR_Multiple
-  | f t == f "unregistered" = CR_UnRegistered
-  | otherwise = CR_Missing
+  | f t == f "active" = VR_Active
+  | f t == f "dropped" = VR_Dropped
+  | f t == f "inactive" = VR_Inactive
+  | f t == f "multiple" = VR_Multiple
+  | f t == f "unregistered" = VR_UnRegistered
+  | otherwise = VR_Missing
   where
     f = T.take n
 
-cesIntToRegistration :: Int -> CatalistRegistration
-cesIntToRegistration = fromMaybe CR_Missing . Relude.safeToEnum . minus1
+cesIntToRegistration :: Int -> VRegistration
+cesIntToRegistration = fromMaybe VR_Missing . Relude.safeToEnum . minus1
 
-tsBoolToRegistration :: Bool -> CatalistRegistration
-tsBoolToRegistration True = CR_Active
-tsBoolToRegistration True = CR_UnRegistered
+tsIntToRegistration :: Int -> VRegistration
+tsIntToRegistration 1 = VR_Active
+tsIntToRegistration _ = VR_UnRegistered
 
 
-catalistRegistered :: CatalistRegistration -> Bool
-catalistRegistered CR_Active = True
-catalistRegistered _ = False
+registered :: VRegistration -> Bool
+registered VR_Active = True
+registered _ = False
 
-data CatalistTurnout = CT_Absentee
-                     | CT_Early
-                     | CT_Mail
-                     | CT_Polling
-                     | CT_Unknown
-                     | CT_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
-type instance FI.VectorFor CatalistTurnout = UVec.Vector
-instance S.Serialize CatalistTurnout
-instance Flat.Flat CatalistTurnout
+data VTurnout = VT_Absentee
+             | VT_Early
+             | VT_Mail
+             | VT_Polling
+             | VT_Unknown
+             | VT_Missing deriving stock (Show, Enum, Bounded, Eq, Ord, Generic)
+type instance FI.VectorFor VTurnout = UVec.Vector
+instance S.Serialize VTurnout
+instance Flat.Flat VTurnout
 
 derivingUnbox
-  "CatalistTurnout"
-  [t|CatalistTurnout -> Word8|]
+  "VTurnout"
+  [t|VTurnout -> Word8|]
   [|toEnum . fromEnum|]
   [|toEnum . fromEnum|]
 
-F.declareColumn "CatalistTurnoutC" ''CatalistTurnout
+F.declareColumn "VTurnoutC" ''VTurnout
 
-catalistTurnoutFromNText :: Int -> Text -> CatalistTurnout
+catalistTurnoutFromNText :: Int -> Text -> VTurnout
 catalistTurnoutFromNText n t
-  | f t == f "absentee" = CT_Absentee
-  | f t == f "earlyVote" = CT_Early
-  | f t == f "mail" = CT_Mail
-  | f t == f "polling" = CT_Polling
-  | f t == f "unknown" = CT_Unknown
-  | otherwise = CT_Missing
+  | f t == f "absentee" = VT_Absentee
+  | f t == f "earlyVote" = VT_Early
+  | f t == f "mail" = VT_Mail
+  | f t == f "polling" = VT_Polling
+  | f t == f "unknown" = VT_Unknown
+  | otherwise = VT_Missing
   where
     f = T.take n
 
-cesIntToTurnout :: Int -> CatalistTurnout
-cesIntToTurnout = fromMaybe CT_Missing . Relude.safeToEnum . minus1
+cesIntToTurnout :: Int -> VTurnout
+cesIntToTurnout = fromMaybe VT_Missing . Relude.safeToEnum . minus1
 
-tsIntToTurnout :: Int -> CatalistTurnout
-tsIntToTurnout n | n == 1 = CT_Absentee
-                 | n == 2 = CT_Early
-                 | n == 3 = CT_Mail
-                 | n == 4 = CT_Polling
-                 | n == 5 = CT_Polling -- this is actually provisional but we have no field for that
-                 | n == 6 = CT_Unknown
-                 | otherwise = CT_Missing -- this is also bad since missing is not the same as did not vote
+tsIntToTurnout :: Int -> VTurnout
+tsIntToTurnout n | n == 1 = VT_Absentee
+                 | n == 2 = VT_Early
+                 | n == 3 = VT_Mail
+                 | n == 4 = VT_Polling
+                 | n == 5 = VT_Polling -- this is actually provisional but we have no field for that
+                 | n == 6 = VT_Unknown
+                 | otherwise = VT_Missing -- this is also bad since missing is not the same as did not vote
 
-catalistVoted :: CatalistTurnout -> Bool
-catalistVoted CT_Missing = False
-catalistVoted _ = True
+voted :: VTurnout -> Bool
+voted VT_Missing = False
+voted _ = True

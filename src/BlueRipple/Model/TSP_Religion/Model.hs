@@ -105,18 +105,18 @@ runEvangelicalModel :: forall l r ks a b .
                    , l F.⊆ DP.PSDataR ks --'[GT.StateAbbreviation]
                    , Show (F.Record l)
                    )
-                => Int
+                => CCES.CESYear
                 -> MR.CacheStructure () ()
                 -> BR.CommandLine
                 -> PSType (F.Record DP.DCatsR -> Bool)
                 -> ModelConfig b
                 -> K.ActionWithCacheTime r (DP.PSData ks)
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters))
-runEvangelicalModel year cacheStructure cmdLine psType mc psData_C = do
+runEvangelicalModel cesYear cacheStructure cmdLine psType mc psData_C = do
   let --config = MC2.TurnoutOnly tc
       runConfig = RunConfig False True (Just (MC.psGroupTag @l, psType))
-  modelData_C <- cachedPreppedCES cacheStructure
-  runModel (MR.csModelDirE cacheStructure)  ("E_" <> show year)
+  modelData_C <- cachedPreppedCES cacheStructure cesYear
+  runModel (MR.csModelDirE cacheStructure)  ("E_" <> show (CCES.cesYear cesYear))
     (MR.csPSName cacheStructure) cmdLine runConfig mc modelData_C psData_C
 
 evangelicalModelData ::  forall b gq . ModelConfig b -> SMB.StanBuilderM CESData gq (MC.ModelData '[] CESByCD b)
@@ -346,11 +346,14 @@ instance Flat.Flat CESData where
 
 cachedPreppedCES :: (K.KnitEffects r, BR.CacheEffects r)
                  => MR.CacheStructure () ()
+                 -> CCES.CESYear
                  -> K.Sem r (K.ActionWithCacheTime r CESData)
-cachedPreppedCES cacheStructure = do
+cachedPreppedCES cacheStructure cy = do
   cacheDirE' <- K.knitMaybe "cachedPreppedCES: Empty cacheDir given!" $ BRKU.insureFinalSlashE $ MR.csProjectCacheDirE cacheStructure
-  rawCESByCD_C <- cesCountedEvangelicalsByCD False
-  acs_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 -- so we get density from same year as survey
+  rawCESByCD_C <- cesCountedEvangelicalsByCD False cy
+  let cyInt = CCES.cesYear cy
+  acs_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> (DDP.cachedACSa5ByCD ACS.acs1Yr2012_21 (min 2021 cyInt) (Just cyInt)) -- so we get density from closest year as survey
+  K.ignoreCacheTime acs_C >>= BRKU.logFrame . F.filterFrame ((== "MT") . view GT.stateAbbreviation)
   let appendCacheFile :: Text -> Text -> Text
       appendCacheFile t d = d <> t
       cesByCDModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByCDModelData.bin") cacheDirE'
@@ -358,16 +361,19 @@ cachedPreppedCES cacheStructure = do
     Left ck -> BR.clearIfPresentD ck >> pure ck
     Right ck -> pure ck
   let deps = (,) <$> rawCESByCD_C <*> acs_C -- <*> houseElections_C
-  BR.retrieveOrMakeD cacheKey deps $ \(ces, acs) -> (fmap CESData $ cesAddDensity acs ces)
+  BR.retrieveOrMakeD cacheKey deps $ \(ces, acs) -> (fmap CESData $ cesAddDensity cy acs ces)
 
 cesAddDensity :: (K.KnitEffects r)
-              => F.FrameRec DDP.ACSa5ByCDR
+              => CCES.CESYear
+              -> F.FrameRec DDP.ACSa5ByCDR
               -> F.FrameRec (DP.CDKeyR V.++ DP.DCatsR V.++ CountDataR)
               -> K.Sem r (F.FrameRec CESByCDR)
-cesAddDensity acs ces = K.wrapPrefix "TSP_Religion.Model.cesAddDensity" $ do
+cesAddDensity cesYr acs ces = K.wrapPrefix "TSP_Religion.Model.cesAddDensity" $ do
   K.logLE K.Info "Adding people-weighted pop density to CES"
-  let fixSingleDistricts = BR.fixSingleDistricts ("DC" : BR.atLargeDistrictStates) 1
-      (joined, missing) = FJ.leftJoinWithMissing @(DP.CDKeyR V.++ DP.DCatsR) ces
+  let fixSingleDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f)
+                         => f (F.Record rs) -> f (F.Record rs)
+      fixSingleDistricts = BR.fixSingleDistricts ("DC" : (BR.atLargeDistrictStates (CCES.cesYear cesYr))) 1
+      (joined, missing) = FJ.leftJoinWithMissing @(DP.CDKeyR V.++ DP.DCatsR) ces -- @([GT.StateAbbreviation, GT.CongressionalDistrict] V.++ DP.DCatsR) ces --
                           $ DP.withZeros @DP.CDKeyR @DP.DCatsR
                           $ fmap F.rcast $ fixSingleDistricts acs
   when (not $ null missing) $ do
@@ -376,13 +382,14 @@ cesAddDensity acs ces = K.wrapPrefix "TSP_Religion.Model.cesAddDensity" $ do
   pure $ fmap F.rcast joined
 
 cesCountedEvangelicalsByCD ∷ (K.KnitEffects r, BR.CacheEffects r)
-                           ⇒ Bool
-                           → K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DP.CDKeyR V.++ DP.DCatsR V.++ CountDataR)))
-cesCountedEvangelicalsByCD clearCaches = do
-  ces2020_C ← CCES.ces20Loader
-  let cacheKey = "model/TSP_Religion/ces20ByCD.bin"
+                           => Bool
+                           -> CCES.CESYear
+                           -> K.Sem r (K.ActionWithCacheTime r (F.FrameRec (DP.CDKeyR V.++ DP.DCatsR V.++ CountDataR)))
+cesCountedEvangelicalsByCD clearCaches cy = do
+  ces_C ← CCES.cesLoader cy
+  let cacheKey = "model/TSP_Religion/ces" <> show (CCES.cesYear cy) <> "ByCD.bin"
   when clearCaches $ BR.clearIfPresentD cacheKey
-  BR.retrieveOrMakeFrame cacheKey ces2020_C $ (fmap (fmap F.rcast) . cesMR @DP.CDKeyR 2020)
+  BR.retrieveOrMakeFrame cacheKey ces_C $ (fmap (fmap F.rcast) . cesMR @DP.CDKeyR (CCES.cesYear cy))
 
 cesMR ∷ forall lk rs f m .
         (Foldable f, Functor f, Monad m
