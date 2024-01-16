@@ -545,7 +545,7 @@ atLargeDistrictStates n
 fixSingleDistricts :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f)
                    => [Text] -> Int -> f (F.Record rs) -> f (F.Record rs)
 fixSingleDistricts districts setTo recs = fmap fixOne recs where
-  fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` ds then F.rputField @GT.CongressionalDistrict n r else r
+  fixOne r = if F.rgetField @GT.StateAbbreviation r `elem` districts then F.rputField @GT.CongressionalDistrict setTo r else r
 
 
 fixDCDistrict :: (F.ElemOf rs GT.StateAbbreviation, F.ElemOf rs GT.CongressionalDistrict, Functor f) => Int -> f (F.Record rs) -> f (F.Record rs)

@@ -283,12 +283,12 @@ writeModeled csvName modeledEv = do
       newHeaderMap = M.fromList [("StateAbbreviation", "State")
                                 , ("DistrictTypeC", "District Type")
                                 , ("DistrictName", "District Name")
-                                , ("DemShare", "Partisan Lean (Dave's Redistricting)")
-                                , ("ModelCI", "Model (BlueRipple)")
+                                , ("DemShare", "Historical D % (Dave's Redistricting)")
+                                , ("ModelCI", "Demographic D % (BlueRipple)")
                                 , ("DistCategory", "BlueRipple Comment")
-                                , ("CongressionalDistrict","CD")
-                                , ("Overlap", "Overlap (%)")
-                                , ("CongressionalPPL", "CD Partisan Lean (Dave's Redistricting)")
+                                , ("CongressionalDistrict","Congressional District")
+                                , ("Overlap", "% SLD in CD")
+                                , ("CDPPL", "CD Historical D% (Dave's Redistricting)")
                                 ]
   K.liftKnit @IO
     $ FCSV.writeLines (toString $ "../forGaba/" <> csvName <> ".csv")
