@@ -114,7 +114,7 @@ runEvangelicalModel :: forall l r ks a b .
                 -> K.Sem r (K.ActionWithCacheTime r (MC.PSMap l MT.ConfidenceInterval, MC2.ModelParameters))
 runEvangelicalModel cesYear cacheStructure cmdLine psType mc psData_C = do
   let --config = MC2.TurnoutOnly tc
-      runConfig = RunConfig False True (Just (MC.psGroupTag @l, psType))
+      runConfig = RunConfig False False (Just (MC.psGroupTag @l, psType))
   modelData_C <- cachedPreppedCES cacheStructure cesYear
   runModel (MR.csModelDirE cacheStructure)  ("E_" <> show (CCES.cesYear cesYear))
     (MR.csPSName cacheStructure) cmdLine runConfig mc modelData_C psData_C
@@ -330,9 +330,10 @@ modelResultAction config runConfig = SC.UseSummary f where
         Nothing -> K.knitError "modelResultAction: Expected gq data and indexes but got Nothing."
         Just gqDaI_C -> do
           let getVectorPcts n = K.knitEither $ SP.getVector . fmap CS.percents <$> SP.parse1D n (CS.paramStats summary)
-          (_, gqIndexesE) <- K.ignoreCacheTime gqDaI_C
+          (gqData, gqIndexesE) <- K.ignoreCacheTime gqDaI_C
           grpIM <- K.knitEither
              $ gqIndexesE >>= SMB.getGroupIndex (SMB.RowTypeTag @(F.Record (DP.PSDataR k)) SC.GQData "PSData") (MC.psGroupTag @l)
+
           psTByGrpV <- getVectorPcts $ psPrefix pst <> "_byGrp"
           K.knitEither $ M.fromList . zip (IM.elems grpIM) <$> (traverse MT.listToCI $ V.toList psTByGrpV)
     pure $ (MC.PSMap psMap, MC2.ModelParameters betaSIM)
@@ -353,7 +354,7 @@ cachedPreppedCES cacheStructure cy = do
   rawCESByCD_C <- cesCountedEvangelicalsByCD False cy
   let cyInt = CCES.cesYear cy
   acs_C <- fmap (F.filterFrame ((== DT.Citizen) . view DT.citizenC)) <$> (DDP.cachedACSa5ByCD ACS.acs1Yr2012_21 (min 2021 cyInt) (Just cyInt)) -- so we get density from closest year as survey
-  K.ignoreCacheTime acs_C >>= BRKU.logFrame . F.filterFrame ((== "MT") . view GT.stateAbbreviation)
+--  K.ignoreCacheTime acs_C >>= BRKU.logFrame . F.filterFrame ((== "MT") . view GT.stateAbbreviation)
   let appendCacheFile :: Text -> Text -> Text
       appendCacheFile t d = d <> t
       cesByCDModelCacheE = bimap (appendCacheFile "CESModelData.bin") (appendCacheFile "CESByCDModelData.bin") cacheDirE'

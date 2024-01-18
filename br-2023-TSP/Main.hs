@@ -22,8 +22,8 @@ where
 import qualified BlueRipple.Model.TSP_Religion.Model as RM
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
-import BlueRipple.Model.Election2.ModelCommon (ModelConfig)
-import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
+--import BlueRipple.Model.Election2.ModelCommon (ModelConfig)
+--import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
 import qualified BlueRipple.Model.Election2.ModelRunner as MR
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
@@ -94,6 +94,9 @@ import qualified Data.Vinyl.Functor as V
 
 import qualified Text.Printf as PF
 
+FS.declareColumn "WhiteVAP" ''Int
+FS.declareColumn "WhiteEv" ''Int
+
 templateVars ∷ Map String String
 templateVars =
   M.fromList
@@ -148,6 +151,30 @@ main = do
         modelConfig am = RM.ModelConfig aggregation am (contramap F.rcast dmr)
         modeledToCSVFrame = F.toFrame . fmap (\(k, v) -> k F.<+> FT.recordSingleton @MR.ModelCI v) . M.toList . MC.unPSMap . fst
     modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+--    districtPSData <- K.ignoreCacheTime modeledACSBySLDPSData_C
+    let dBDInnerF :: FL.Fold (F.Record '[DT.Race5C, DT.PopCount]) (F.Record [DT.PopCount, WhiteVAP])
+        dBDInnerF =
+          let pop = view DT.popCount
+              race = view DT.race5C
+              isWhite = (== DT.R5_WhiteNonHispanic) . race
+              popF = FL.premap pop FL.sum
+              whiteF = FL.prefilter isWhite popF
+          in (\p w -> p F.&: w F.&: V.RNil) <$> popF <*> whiteF
+        dataByDistrictF = FMR.concatFold
+                          $ FMR.mapReduceFold
+                          FMR.noUnpack
+                          (FMR.assignKeysAndData @SLDKeyR @[DT.Race5C, DT.PopCount])
+                          (FMR.foldAndAddKey dBDInnerF)
+    dataByDistrict <-  fmap (FL.fold dataByDistrictF . DP.unPSData) $ K.ignoreCacheTime modeledACSBySLDPSData_C
+
+    let addDistrictData :: K.KnitEffects r
+                        =>  F.FrameRec (SLDKeyR V.++ '[MR.ModelCI])
+                        -> K.Sem r (F.FrameRec (SLDKeyR V.++ [MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv]))
+        addDistrictData x =  do
+          let (joined, missing) = FJ.leftJoinWithMissing @SLDKeyR x dataByDistrict
+          when (not $ null missing) $ K.logLE K.Error $ "Missing keys in result/district data join=" <> show missing
+          let addEv r = r F.<+> FT.recordSingleton @WhiteEv (round $ MT.ciMid (r ^. MR.modelCI) * realToFrac (r ^. DT.popCount))
+          pure $ fmap addEv joined
 --    modeledEvangelical_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R) modeledACSBySLDPSData_C
 --    modeledEvangelical_AR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_AR) modeledACSBySLDPSData_C
 --    modeledEvangelical_StA_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StA) modeledACSBySLDPSData_C
@@ -162,7 +189,9 @@ main = do
 --    K.ignoreCacheTime modeledEvangelical_C >>= writeModeled "modeledEvangelical_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
-    K.ignoreCacheTime modeledEvangelical22_StR_C >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+    K.ignoreCacheTime modeledEvangelical22_StR_C
+      >>= addDistrictData . csvSort . fmap F.rcast . modeledToCSVFrame
+      >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . fmap F.rcast
 --    K.ignoreCacheTime modeledEvangelical20_StR_C >>= writeModeled "modeledEvangelical20_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    let modeledEvangelicalFrame = modeledToCSVFrame modeledEvangelical
 --    writeModeled "modeledEvangelical_StA_GivenWWH" $ fmap F.rcast modeledEvangelicalFrame
@@ -175,12 +204,14 @@ main = do
 
 
 writeModeled :: (K.KnitEffects r)
-             => Text -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI] -> K.Sem r ()
+             => Text -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv] -> K.Sem r ()
 writeModeled csvName modeledEv = do
   let wText = FCSV.formatTextAsIs
       printNum n m = PF.printf ("%" <> show n <> "." <> show m <> "g")
       wPrintf :: (V.KnownField t, V.Snd t ~ Double) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
       wPrintf n m = FCSV.liftFieldFormatter $ toText @String . printNum n m
+--      wPrint :: (V.KnownField t, V.Snd t ~ Double) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
+--      wPrintf n m = FCSV.liftFieldFormatter $ toText @String . printNum n m
       wCI :: (V.KnownField t, V.Snd t ~ MT.ConfidenceInterval) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
       wCI n m = FCSV.liftFieldFormatter
                 $ toText @String .
@@ -191,11 +222,17 @@ writeModeled csvName modeledEv = do
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatTextAsIs
                        V.:& wCI 2 1
+                       V.:& FCSV.formatWithShow
+                       V.:& FCSV.formatWithShow
+                       V.:& FCSV.formatWithShow
                        V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "State")
                                 , ("DistrictTypeC","District Type")
                                 ,("DistrictName","District Name")
                                 ,("ModelCI","5%,50%,95%")
+                                ,("PopCount", "CVAP")
+                                ,("WhiteEv", "White Evangelicals")
+                                ,("WhiteVAP", "White Voters")
                                 ]
   K.liftKnit @IO $ FCSV.writeLines (toString $ "../forTSP/" <> csvName <> ".csv") $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatModeled "," $ FCSV.foldableToStream modeledEv
 
