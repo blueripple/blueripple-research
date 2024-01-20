@@ -263,7 +263,7 @@ writeModeled csvName modeledEv = do
                                 , ("Chamber", "chamber_name")
                                 , ("DistrictTypeC","District Type")
                                 ,("DistrictName","District Name")
-                                ,("ModelCI","5%,50%,95%")
+                                ,("ModelCI","%Ev Lo,%Ev Median,%Ev Hi")
                                 ,("PopCount", "CVAP")
                                 ,("WhiteEv", "White Evangelicals")
                                 ,("WhiteVAP", "White Voters")
