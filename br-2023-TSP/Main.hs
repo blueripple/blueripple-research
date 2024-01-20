@@ -86,6 +86,7 @@ import qualified Data.IntMap.Strict as IM
 import qualified Data.List as List
 import qualified Data.Map.Strict as M
 import qualified Data.Set as S
+import qualified Data.Text as T
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vinyl as V
@@ -93,9 +94,12 @@ import qualified Data.Vinyl.TypeLevel as V
 import qualified Data.Vinyl.Functor as V
 
 import qualified Text.Printf as PF
+import qualified Text.Read as TR
 
 FS.declareColumn "WhiteVAP" ''Int
 FS.declareColumn "WhiteEv" ''Int
+FS.declareColumn "TSPStateId" ''Text
+FS.declareColumn "Chamber" ''Text
 
 templateVars ∷ Map String String
 templateVars =
@@ -190,7 +194,7 @@ main = do
 --    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
     K.ignoreCacheTime modeledEvangelical22_StR_C
-      >>= addDistrictData . csvSort . fmap F.rcast . modeledToCSVFrame
+      >>= fmap (fmap addTSPId) . addDistrictData . csvSort . fmap F.rcast . modeledToCSVFrame
       >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . fmap F.rcast
 --    K.ignoreCacheTime modeledEvangelical20_StR_C >>= writeModeled "modeledEvangelical20_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
 --    let modeledEvangelicalFrame = modeledToCSVFrame modeledEvangelical
@@ -202,9 +206,37 @@ main = do
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
+lowerHouseNameMap :: Map Text (Text, Text)
+lowerHouseNameMap = M.fromList [("CA", ("Assembly", "A"))
+                               ,("NJ", ("Assembly", "A"))
+                               ,("NV", ("Assembly", "A"))
+                               ,("NY", ("Assembly", "A"))
+                               ,("NY", ("Assembly", "A"))
+                               ,("WI", ("Assembly", "A"))
+                               ]
+
+upperHouseNameMap :: Map Text (Text, Text)
+upperHouseNameMap = mempty
+
+addTSPId :: FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] => F.Record rs -> F.Record (rs V.++ '[TSPStateId, Chamber])
+addTSPId r = let (tspId, chamber) = tspIds r in r F.<+> (FT.recordSingleton @TSPStateId tspId) F.<+> (FT.recordSingleton @Chamber chamber)
+
+tspIds :: FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName] => F.Record rs -> (Text, Text)
+tspIds r =
+  let sa = r ^. GT.stateAbbreviation
+      dt = r ^. GT.districtTypeC
+      (prefix, chamber) = case dt of
+        GT.StateLower -> fromMaybe ("H", "House") $ M.lookup sa lowerHouseNameMap
+        GT.StateUpper -> fromMaybe ("S", "Senate") $ M.lookup sa upperHouseNameMap
+      n = r ^. GT.districtName
+      nameFix = fromMaybe (const $ zeroPadName 3) $ M.lookup sa nameFixMap
+  in (sa <> " " <> prefix <> "D-" <> nameFix dt n, sa <> " " <> chamber)
+
+zeroPadName :: Int -> Text -> Text
+zeroPadName n t = let l = T.length t in (if l < n then T.replicate (n - l) "0" else "") <> t
 
 writeModeled :: (K.KnitEffects r)
-             => Text -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv] -> K.Sem r ()
+             => Text -> F.FrameRec [TSPStateId, GT.StateAbbreviation, Chamber, MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv] -> K.Sem r ()
 writeModeled csvName modeledEv = do
   let wText = FCSV.formatTextAsIs
       printNum n m = PF.printf ("%" <> show n <> "." <> show m <> "g")
@@ -219,14 +251,16 @@ writeModeled csvName modeledEv = do
                        <> printNum n m (100 * MT.ciMid ci) <> ","
                        <> printNum n m (100 * MT.ciUpper ci)
       formatModeled = FCSV.formatTextAsIs
-                       V.:& FCSV.formatWithShow
+                       V.:& FCSV.formatTextAsIs
                        V.:& FCSV.formatTextAsIs
                        V.:& wCI 2 1
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatWithShow
                        V.:& V.RNil
-      newHeaderMap = M.fromList [("StateAbbreviation", "State")
+      newHeaderMap = M.fromList [("StateAbbreviation", "state_code")
+                                , ("TSPStateId", "state_district_id")
+                                , ("Chamber", "chamber_name")
                                 , ("DistrictTypeC","District Type")
                                 ,("DistrictName","District Name")
                                 ,("ModelCI","5%,50%,95%")
@@ -235,6 +269,41 @@ writeModeled csvName modeledEv = do
                                 ,("WhiteVAP", "White Voters")
                                 ]
   K.liftKnit @IO $ FCSV.writeLines (toString $ "../forTSP/" <> csvName <> ".csv") $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatModeled "," $ FCSV.foldableToStream modeledEv
+
+nameFixMap :: Map Text (GT.DistrictType -> Text -> Text)
+nameFixMap = M.fromList [("NH", nhNameFix), ("VT", vtNameFix), ("MA", maNameFix)]
+
+nhNameFix :: GT.DistrictType -> Text -> Text
+nhNameFix GT.StateLower x =
+  let xPrefix = T.take 2 x
+      xNumText = zeroPadName 2 (T.drop 2 x)
+      regions = ["BELKNAP", "CARROL", "CHESHIRE", "COOS", "GRAFTON", "HILLSBOROUGH", "MERRIMACK", "ROCKINGHAM", "STRAFFORD", "SULLIVAN"]
+      regionMap = M.fromList $ zip (fmap (T.take 2) regions) regions
+      fullRegion p = fromMaybe p $ M.lookup p regionMap
+  in fullRegion xPrefix  <> " " <> xNumText
+nhNameFix _ x = x
+
+vtNameFix :: GT.DistrictType -> Text -> Text
+vtNameFix _ n =
+  let simpleRegions = ["ADDISON", "RUTLAND", "BENNINGTON", "CHITTENDEN", "CALEDONIA", "ESSEX", "WASHINGTON", "FRANKLIN", "ORLEANS", "LAMOILLE", "ORANGE"]
+      regionMap = (M.fromList $ zip (fmap (T.take 3) simpleRegions) simpleRegions)
+                  <> M.fromList [("0GI","GRAND ISLE"), ("GI", "GRAND ISLE"), ("WDH", "WINDHAM"), ("ESX", "ESSEX"), ("WDR", "WINDSOR"), ("WSR", "WINDSOR")]
+                  <> M.fromList [("N", "North"), ("C", "CENTRAL"), ("SE", "SOUTHEAST")]
+      fixOne x = fromMaybe x $ M.lookup x regionMap
+      fix = T.intercalate "-" . fmap fixOne . T.splitOn "-"
+  in fix n
+
+maNameFix :: GT.DistrictType -> Text -> Text
+maNameFix GT.StateUpper n =
+  let maSenateNameMap = [("D1", "Berkshire, Hampshire, Franklin And Hampden")
+                        ,("D2", "Second Hampden And Hampshire")
+                        ,("D3", "Hampden")
+                        ,("D4", "First Hampden And Hampshire")
+                        ,("D5", "Hampshire, Franklin And Worcester")
+                        ,("D6", "Worcester, Hampden, Hampshire And MiddleSex")
+                        ,("D7", "Worcester And Norfolk")
+                        ]
+maNameFix _ x = x
 
 modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
 modeledACSBySLD cmdLine = do

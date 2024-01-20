@@ -25,29 +25,43 @@ import BlueRipple.Data.Loaders.RedistrictingTables
 
 import qualified BlueRipple.Utilities.KnitUtils as BR
 --import qualified BlueRipple.Data.DemographicTypes as DT
---import qualified BlueRipple.Data.ElectionTypes as ET
+import qualified BlueRipple.Data.ElectionTypes as ET
 import qualified BlueRipple.Data.GeographicTypes as GT
 import qualified BlueRipple.Data.CensusTables as ACS
 
 import qualified Data.Map as M
+import qualified Data.Vinyl as V
 import qualified Data.Vinyl.TypeLevel as V
 import qualified Frames as F
 import qualified Frames.Streamly.LoadInCore as FS
 import qualified Frames.Streamly.TH as FS
 import qualified Knit.Report as K
 
+import Control.Lens (view, (^.))
+
 -- so these are not re-declared and take on the correct types
 import BlueRipple.Data.DataFrames (Population)
-import BlueRipple.Data.ElectionTypes (VAP,DemShare,RepShare)
+import BlueRipple.Data.ElectionTypes (VAP, DemPct, RepPct, DemShare, RepShare, RawPVI, SharePVI)
 import BlueRipple.Data.GeographicTypes (DistrictName)
 
 FS.tableTypes' redistrictingAnalysisRowGen -- declare types and build parser
 
-type DRAnalysisR = ([GT.StateAbbreviation, PlanName, GT.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw)
+type DRAnalysisR = ([GT.StateAbbreviation, PlanName, GT.DistrictTypeC] V.++ F.RecordColumns DRAnalysisRaw V.++ [DemShare, RepShare, RawPVI, SharePVI])
 type DRAnalysis = F.Record DRAnalysisR
 
 fixRow :: RedistrictingPlanId -> DRAnalysisRaw -> Maybe DRAnalysis
-fixRow pi' r = Just $ pi' F.<+> r
+fixRow pi' r = Just $ pi' F.<+> r F.<+> sharesAndPVI r
+
+sharesAndPVI :: DRAnalysisRaw -> F.Record [DemShare, RepShare, RawPVI, SharePVI]
+sharesAndPVI r =
+  let dPct = r ^. ET.demPct
+      rPct = r ^. ET.repPct
+      twoPartyTotal = dPct + rPct
+      dShare = dPct  / twoPartyTotal
+      rShare = rPct / twoPartyTotal
+      rawPVI = dPct - rPct
+      sharePVI = rawPVI  / twoPartyTotal
+  in dShare F.&: rShare F.&: rawPVI F.&: sharePVI F.&: V.RNil
 
 lookupAndLoadRedistrictingPlanAnalysis ::  (K.KnitEffects r, BR.CacheEffects r)
                               => Map RedistrictingPlanId RedistrictingPlanFiles
@@ -68,7 +82,9 @@ loadRedistrictingPlanAnalysis pi' pf = do
                  <> "_" <> show (F.rgetField @GT.DistrictTypeC pi')
                  <> "_" <> F.rgetField @PlanName pi' <> ".bin"
   fileDep <- K.fileDependency $ toString aFP
-  BR.retrieveOrMakeFrame cacheKey fileDep $ const $ K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi')
+  BR.retrieveOrMakeFrame cacheKey fileDep $ const $ do
+    K.logLE K.Info $ "(re)loading map analysis for " <> planIdText pi'
+    K.liftKnit $ FS.loadInCore @FS.DefaultStream @IO dRAnalysisRawParser (toString aFP) (fixRow pi')
 
 allPassedCongressional :: (K.KnitEffects r, BR.CacheEffects r)
                        => Int -> ACS.TableYear -> K.Sem r (K.ActionWithCacheTime r (F.Frame DRAnalysis))

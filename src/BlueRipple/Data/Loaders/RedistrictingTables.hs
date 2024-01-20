@@ -6,6 +6,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE Rank2Types #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -25,6 +26,7 @@ import BlueRipple.Data.CensusLoaders (noMaps)
 import qualified BlueRipple.Data.CensusTables as ACS
 import qualified BlueRipple.Utilities.KnitUtils as BR
 import qualified Control.Foldl as FL
+import Control.Lens ((^.))
 import qualified Data.Map as M
 import qualified Data.Set as S
 import Data.Serialize.Text ()
@@ -35,10 +37,11 @@ import qualified Frames.Streamly.ColumnUniverse as FCU
 import qualified Knit.Report as K
 
 
+FS.declareColumn "PlanName" ''Text
+
 redistrictingPath :: Text
 redistrictingPath = "data/redistricting"
 
-type PlanName = "PlanName" F.:-> Text
 
 type RedistrictingPlanIdR = [GT.StateAbbreviation, PlanName, GT.DistrictTypeC]
 type RedistrictingPlanId = F.Record RedistrictingPlanIdR
@@ -46,6 +49,9 @@ data RedistrictingPlanFiles = RedistrictingPlanFiles { districtDemographicsFP ::
 
 redistrictingPlanId :: Text -> Text -> GT.DistrictType -> RedistrictingPlanId
 redistrictingPlanId sa name dt = sa F.&: name F.&: dt F.&: V.RNil
+
+planIdText :: RedistrictingPlanId -> Text
+planIdText r = "state=" <> r ^. GT.stateAbbreviation <> " for " <> show (r ^. GT.districtTypeC) <> " districts (" <> r ^. planName <> ")"
 
 {-
 plans :: Map RedistrictingPlanId RedistrictingPlanFiles
@@ -106,8 +112,8 @@ redistrictingAnalysisRenames :: Map FS.HeaderText FS.ColTypeName
 redistrictingAnalysisRenames = M.fromList [(FS.HeaderText "NAME", FS.ColTypeName "DistrictName")
                                           ,(FS.HeaderText "TotalPop", FS.ColTypeName "Population")
                                           ,(FS.HeaderText "TotalVAP", FS.ColTypeName "VAP")
-                                          ,(FS.HeaderText "DemPct", FS.ColTypeName "DemShare")
-                                          ,(FS.HeaderText "RepPct", FS.ColTypeName "RepShare")
+--                                          ,(FS.HeaderText "DemPct", FS.ColTypeName "DemShare")
+--                                          ,(FS.HeaderText "RepPct", FS.ColTypeName "RepShare")
 --                                          ,(FS.HeaderText "Oth", FS.ColTypeName "OthShare")
                                           ,(FS.HeaderText "WhitePct", FS.ColTypeName "WhiteFrac")
                                           ,(FS.HeaderText "MinorityPct", FS.ColTypeName "MinorityFrac")
@@ -125,9 +131,9 @@ redistrictingAnalysisRenames' :: Map FS.HeaderText FS.ColTypeName
 redistrictingAnalysisRenames' = M.fromList [(FS.HeaderText "ID", FS.ColTypeName "DistrictName")
                                           ,(FS.HeaderText "Total Pop", FS.ColTypeName "Population")
                                           ,(FS.HeaderText "Total VAP", FS.ColTypeName "VAP")
-                                          ,(FS.HeaderText "Dem", FS.ColTypeName "DemShare")
-                                          ,(FS.HeaderText "Rep", FS.ColTypeName "RepShare")
-                                          ,(FS.HeaderText "Oth", FS.ColTypeName "OthShare")
+                                          ,(FS.HeaderText "Dem", FS.ColTypeName "DemPct")
+                                          ,(FS.HeaderText "Rep", FS.ColTypeName "RepPct")
+                                          ,(FS.HeaderText "Oth", FS.ColTypeName "OthPct")
                                           ,(FS.HeaderText "White", FS.ColTypeName "WhiteFrac")
                                           ,(FS.HeaderText "Minority", FS.ColTypeName "MinorityFrac")
                                           ,(FS.HeaderText "Hispanic", FS.ColTypeName "HispanicFrac")

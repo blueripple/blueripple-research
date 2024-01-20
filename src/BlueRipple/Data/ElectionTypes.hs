@@ -400,8 +400,12 @@ derivingUnbox
 type instance FI.VectorFor RegisteredYN = UVec.Vector
 
 FS.declareColumn "DemPref" ''Double
+FS.declareColumn "DemPct" ''Double
+FS.declareColumn "RepPct" ''Double
 FS.declareColumn "DemShare" ''Double
 FS.declareColumn "RepShare" ''Double
+FS.declareColumn "SharePVI" ''Double
+FS.declareColumn "RawPVI" ''Double
 FS.declareColumn "DemVPV" ''Double
 FS.declareColumn "Incumbent" ''Bool
 FS.declareColumn "Unopposed" ''Bool

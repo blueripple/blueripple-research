@@ -252,7 +252,7 @@ modeledMapToFrame = F.toFrame . fmap (\(k, ci) -> k F.<+> FT.recordSingleton @MR
 
 writeModeled :: (K.KnitEffects r)
              => Text
-             -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName,ET.DemShare, MR.ModelCI, CE.DistCategory, CD, DO.Overlap, CDPPL]
+             -> F.FrameRec [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName,ET.DemShare, ET.RawPVI, MR.ModelCI, CE.DistCategory, CD, DO.Overlap, CDPPL]
              -> K.Sem r ()
 writeModeled csvName modeledEv = do
   let wText = FCSV.formatTextAsIs
@@ -274,6 +274,7 @@ writeModeled csvName modeledEv = do
                        V.:& formatDistrictType
                        V.:& FCSV.formatTextAsIs
                        V.:& wPrintf' 2 0 (* 100)
+                       V.:& wPrintf' 2 0 (* 100)
                        V.:& wDPL 2 0
                        V.:& FCSV.formatTextAsIs
                        V.:& wOrMissing show "At Large"--FCSV.formatWithShow
@@ -283,7 +284,8 @@ writeModeled csvName modeledEv = do
       newHeaderMap = M.fromList [("StateAbbreviation", "State")
                                 , ("DistrictTypeC", "District Type")
                                 , ("DistrictName", "District Name")
-                                , ("DemShare", "Historical D % (Dave's Redistricting)")
+                                , ("DemShare", "Historical D Share % (Dave's Redistricting)")
+                                , ("RawPVI" , "Historical PVI")
                                 , ("ModelCI", "Demographic D % (BlueRipple)")
                                 , ("DistCategory", "BlueRipple Comment")
                                 , ("CongressionalDistrict","Congressional District")
