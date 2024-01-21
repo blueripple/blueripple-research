@@ -225,9 +225,9 @@ tspIds :: FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName
 tspIds r =
   let sa = r ^. GT.stateAbbreviation
       dt = r ^. GT.districtTypeC
-      (prefix, chamber) = case dt of
-        GT.StateLower -> fromMaybe ("H", "House") $ M.lookup sa lowerHouseNameMap
-        GT.StateUpper -> fromMaybe ("S", "Senate") $ M.lookup sa upperHouseNameMap
+      (chamber, prefix) = case dt of
+        GT.StateLower -> fromMaybe ("House", "H") $ M.lookup sa lowerHouseNameMap
+        GT.StateUpper -> fromMaybe ("Senate", "S") $ M.lookup sa upperHouseNameMap
       n = r ^. GT.districtName
       nameFix = fromMaybe (const $ zeroPadName 3) $ M.lookup sa nameFixMap
   in (sa <> " " <> prefix <> "D-" <> nameFix dt n, sa <> " " <> chamber)
@@ -250,7 +250,7 @@ writeModeled csvName modeledEv = do
                 \ci -> printNum n m (100 * MT.ciLower ci) <> ","
                        <> printNum n m (100 * MT.ciMid ci) <> ","
                        <> printNum n m (100 * MT.ciUpper ci)
-      formatModeled = FCSV.formatTextAsIs
+      formatModeled = FCSV.quoteField FCSV.formatTextAsIs
                        V.:& FCSV.formatTextAsIs
                        V.:& FCSV.formatTextAsIs
                        V.:& wCI 2 1
