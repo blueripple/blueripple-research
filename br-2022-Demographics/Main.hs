@@ -78,6 +78,8 @@ import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
 --import Data.Monoid (Sum(getSum))
 
+import System.Random as SR
+
 templateVars ∷ M.Map String String
 templateVars =
   M.fromList
@@ -607,7 +609,7 @@ compareCSR_ASR cmdLine postInfo = do
     let testPUMAs_C = byPUMA_C
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
     testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASR . fmap F.rcast)
-                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
+                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing
     testCDs <- K.ignoreCacheTime testCDs_C
 
 --    byPUMA <- K.ignoreCacheTime byPUMA_C
@@ -694,7 +696,7 @@ compareASR_ASE cmdLine postInfo = do
     testPUMAs <- K.ignoreCacheTime testPUMAs_C
 
     testCDs_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
-                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
+                 <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing
     testCDs <- K.ignoreCacheTime testCDs_C
 
     pumaTestRaw_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
@@ -849,7 +851,7 @@ compareCASR_ASE cmdLine postInfo = do
                 <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     let testPUMAs_C = {- fmap (F.filterFrame $ filterToState "RI") -} byPUMA_C
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.CASER . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
+              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing
     byCD <- K.ignoreCacheTime byCD_C
     byPUMA <- K.ignoreCacheTime byPUMA_C
     (product_CASR_ASE, modeled_CASR_ASE) <- K.ignoreCacheTimeM
@@ -898,7 +900,7 @@ compareSER_ASR cmdLine postInfo = do
     byPUMA_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.ASER . fmap F.rcast)
                 <$> DDP.cachedACSa5ByPUMA ACS.acs1Yr2010_20 2020
     byCD_C <- fmap (aggregateAndZeroFillTables @DDP.ACSByCDGeoR @DMC.ASER . fmap F.rcast)
-              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020
+              <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing
     byCD <- K.ignoreCacheTime byCD_C
     byPUMA <- K.ignoreCacheTime byPUMA_C
     (product_SER_ASR, modeled_SER_ASR) <- K.ignoreCacheTimeM
@@ -1001,6 +1003,23 @@ main = do
 type ShiroACS k = (k V.++ DMC.CASER V.++ '[DT.PopCount])
 type ShiroMicro k = (k V.++ DMC.CASER V.++ '[ACS.PUMSWeight])
 
+-- split within each outer, keeping inner together
+splitGEOs :: forall a b rs r . (FSI.RecVec rs, K.KnitEffects r, Eq a, Eq b) => (F.Record rs -> a) -> (F.Record rs -> b) -> F.FrameRec rs -> (F.FrameRec rs, F.FrameRec rs)
+splitGEOs outer inner = f . FL.fold FL.list where
+  f :: [F.Record rs] -> (F.FrameRec rs, F.FrameRec rs)
+  f = reassemble . unzip . fmap randomPartition . innersInOuters
+  randomGen = SR.mkStdGen 125
+  groupBy :: Eq x => (y -> x) -> [y] -> [[y]]
+  groupBy g = List.groupBy (\a b -> g a == g b)
+  innersInOuters :: [F.Record rs] -> [[[F.Record rs]]]
+  innersInOuters = fmap (groupBy inner) . groupBy outer
+  reassemble :: ([[[F.Record rs]]],[[[F.Record rs]]]) -> (F.FrameRec rs, F.FrameRec rs)
+  reassemble (a, b) = (F.toFrame $ mconcat $ mconcat a, F.toFrame $ mconcat $ mconcat b)
+  randomPartition :: [x] -> ([x], [x])
+  randomPartition l = List.splitAt sp $ fmap fst $ List.sortOn snd $ zip l $ unfoldr (Just . SR.uniformR (1::Int, 2)) randomGen
+    where n = length l
+          sp = if even n then n `div` 2 else (n `div` 2) + 1
+
 shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
 shiroData = do
   let wText = FCSV.formatTextAsIs
@@ -1009,7 +1028,7 @@ shiroData = do
       formatPUMAWgts = FCSV.formatWithShow
                        V.:& FCSV.formatWithShow
                        V.:& FCSV.formatWithShow
-                       V.:& wText V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& V.RNil
+                       V.:& wText V.:& FCSV.formatWithShow V.:& wPrintf 2 2 V.:& wPrintf 2 2 V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "state")
                                 ,("CongressionalDistrict","cd")
                                 ,("PUMA","puma")
@@ -1048,7 +1067,7 @@ shiroData = do
   let formatACSByCD = FCSV.formatWithShow V.:& wText V.:& FCSV.formatWithShow -- header
                       V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow -- cats
                       V.:& FCSV.formatWithShow V.:& V.RNil
-  exampleACSByCD <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020)
+  exampleACSByCD <- K.ignoreCacheTimeM (fmap exampleF <$> DDP.cachedACSa5ByCD ACS.acs1Yr2010_20 2020 Nothing)
   K.liftKnit @IO $ FCSV.writeLines "../forShiro/exACSByCD.csv"
     $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatACSByCD ","
     $ FCSV.foldableToStream
