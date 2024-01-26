@@ -244,10 +244,10 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
       compMapToCellLists m = uncurry zip $ bimap rowsToCols rowsToCols $ unzip $ M.elems m
       compMap dName dVecMap = do
         let whenMatched _ c1 c2 = Right (c1, c2)
-            whenMissing t k _ = Left $ "Missing key=" <> show k <> " in " <> t <> " table."
+            whenMissing t1 t2 k _ = Left $ show k <> " in " <> t1 <> " is missing from " <> t2
         K.knitEither $ MM.mergeA
-          (MM.traverseMissing $ whenMissing "ACS")
-          (MM.traverseMissing $ whenMissing dName)
+          (MM.traverseMissing $ whenMissing "Actual" dName)
+          (MM.traverseMissing $ whenMissing dName "Actual")
           (MM.zipWithAMatched $ whenMatched)
           actualVecMap
           dVecMap
@@ -258,16 +258,18 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
             byRegionErrMap <- fmap (uncurry byRegionErrorF.errF) <$> compMap h (FL.fold vecMapFld rf)
             byCellErrList <- fmap (uncurry byCellErrorF.errF) . compMapToCellLists <$> compMap h (FL.fold vecMapFld rf)
             pure $ Just $ ErrorResults h byRegionErrMap byCellErrList
-  K.logLE K.Info "Computing errors by region and by cell:"
+  K.logLE K.Info "Computing errors by region and by cell..."
   resultErrs <- catMaybes . FL.fold FL.list <$> traverse resultToErrsM results
   let errCols = fmap (M.elems . errByRegionMap) resultErrs
       errColHeaders = errSourceLabel <$> resultErrs
       byRegionErrTableRows = zipWith (\region errs -> ErrTableRow region errs) (fmap show allRegions) (transp errCols)
       byCellErrTableRows = zipWith (\cell errs -> ErrTableRow cell errs) [1..] (transp $ fmap errByCell resultErrs)
+  K.logLE K.Info "Building error-comparison histogram..."
   byRegionErrCompChartVL <- errorCompareHistogram pp pi' (byRegionErrorF.errLabel <> " Histogram")
                             chartDataPrefix (FV.fixedSizeVC 400 400 5) regionType errColHeaders
                             (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionErrCompChartVL
+  K.logLE K.Info "Building error comparison XY scatter..."
   byRegionXYChart <- errorCompareXYScatter pp pi' (byRegionErrorF.errLabel <> " XY") chartDataPrefix (FV.fixedSizeVC 600 600 5)
                      regionType errColHeaders (byRegionErrorF.errLabel, byRegionErrorF.errChartScale) byRegionErrTableRows
   _ <- K.addHvega Nothing Nothing byRegionXYChart
@@ -280,13 +282,13 @@ compareResults pp pi' showTables showScatters chartDataPrefix (regionType, regio
 -}
 
 --  _ <- traverse (uncurry byRegionXY) $ allPairs $ zip errColHeaders byRegionErrTableRows
-
+  K.logLE K.Info "Building error comparison by cell..."
   byCellErrCompChartVL <- errorCompareScatter pp pi' (byCellErrorF.errLabel <> " by Cell")
                           chartDataPrefix (FV.fixedSizeVC 400 400 5) "Cell" errColHeaders
                           (byCellErrorF.errLabel, byCellErrorF.errChartScale) byCellErrTableRows
   _ <- K.addHvega Nothing Nothing byCellErrCompChartVL
 
-  K.logLE K.Info "Computing per position Errors:"
+  K.logLE K.Info "Computing per position Errors..."
 {-
        computeErr d rk = errF acsV dV where
         acsV = toVecF $ F.filterFrame ((== rk) . regionKey . F.rcast) actual
@@ -706,13 +708,23 @@ compareASR_ASE cmdLine postInfo = do
                       False
                       (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeledRaw) <- K.ignoreCacheTime pumaTestRaw_C
+    (pumaTraining_C, pumaTesting_C) <- KC.wctSplit
+                                       $ fmap (splitGEOs (view GT.stateAbbreviation) (view GT.pUMA)) byPUMA_C
+    pumaTestSplit_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
+                        (DTP.viaOptimalWeights DTP.euclideanFull)
+                        (Right "ASR_ASE_BySplitPUMA")
+                        (Right  "model/demographic/split_asr_ase")
+                        True
+                        (show . view GT.pUMA) cmdLine Nothing Nothing pumaTraining_C pumaTesting_C
+    (pumaSplitProduct, pumaSplitFull) <- K.ignoreCacheTime pumaTestSplit_C
+
     pumaTestMean_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                        (DTP.viaOptimalWeights DTP.euclideanFull)
                        (Right "ASR_ASE_ByPUMA")
                        (Right  "model/demographic/mean_asr_ase")
                        True
                        (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
-    (pumaProduct, pumaMeanFull) <- K.ignoreCacheTime pumaTestMean_C
+    (_, pumaMeanFull) <- K.ignoreCacheTime pumaTestMean_C
 
     let aRE = DED.averagingMatrix @(F.Record DMC.ASRE) @(F.Record [DT.Race5C, DT.Education4C]) F.rcast
         mId :: LA.Matrix Double = LA.ident 200
@@ -768,7 +780,7 @@ compareASR_ASE cmdLine postInfo = do
                          (Right  "model/demographic/asr_ase_onlyER")
                          False
                          (show . view GT.pUMA) cmdLine Nothing (Just subsetsER) byPUMA_C testPUMAs_C
-    (pumaProduct', pumaModeledOnlyER) <- K.ignoreCacheTime pumaTestOnlyER_C
+    (_, pumaModeledOnlyER) <- K.ignoreCacheTime pumaTestOnlyER_C
 
     let raceOrder = show <$> S.toList (Keyed.elements @DT.Race5)
         ageOrder = show <$> S.toList (Keyed.elements @DT.Age5)
@@ -777,6 +789,11 @@ compareASR_ASE cmdLine postInfo = do
         pumaPopMap = FL.fold (FL.premap (\r -> (pumaKey r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testPUMAs
         cdPopMap = FL.fold (FL.premap (\r -> (DDP.districtKeyT r, r ^. DT.popCount)) $ FL.foldByKeyMap FL.sum) testCDs
         showCellKey r =  show (r ^. GT.stateAbbreviation, r ^. DT.age5C, r ^. DT.sexC, r ^. DT.education4C, r ^. DT.race5C)
+    pumaTesting <- K.ignoreCacheTime pumaTesting_C
+    let pumaKey r = (r ^. GT.stateAbbreviation, r ^. GT.pUMA)
+        testPUMASet = FL.fold (FL.premap pumaKey FL.set) pumaTesting
+        filterToTestPUMAs = F.filterFrame ((`S.member` testPUMASet) . pumaKey)
+--    K.logLE K.Info $ "testPUMAs=" <> show testPUMASet
     pumaModelPaths <- postPaths "Model_ASR_ASE_ByPUMA" cmdLine
     BRK.brNewPost pumaModelPaths postInfo "Model_ASR_ASE_ByPUMA" $ do
       compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
@@ -800,6 +817,26 @@ compareASR_ASE cmdLine postInfo = do
         ,MethodResult (fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full") (Just "NS: Full")
 --        ,MethodResult (fmap F.rcast pumaMeanFull) (Just "NS: Mean Only") (Just "NS: Mean Only (L2)") (Just "NS: Mean Only")
         ]
+      compareResults @(DMC.PUMAOuterKeyR V.++ DMC.ASER)
+        pumaModelPaths postInfo False False "ASR_ASE" ("PUMA", pumaPopMap, pumaKey) Nothing --(Just "NY")
+        (F.rcast @DMC.ASER)
+        (\r -> (r ^. DT.sexC, r ^. DT.race5C))
+        (\r -> (r ^. DT.education4C, r ^. DT.age5C))
+        showCellKey
+        Nothing --(Just ("Race", show . view DT.race5C, Just raceOrder))
+        Nothing --(Just ("Age", show . view DT.age5C, Just ageOrder))
+        (ErrorFunction "L1 Error" l1Err pctFmt (* 100))
+        (ErrorFunction "Standardized Mean" stdMeanErr pctFmt id)
+        (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER pumaTesting)
+        [MethodResult (fmap F.rcast $ testRowsWithZeros @DMC.PUMAOuterKeyR @DMC.ASER pumaTesting) (Just "Actual") Nothing Nothing
+        ,MethodResult (filterToTestPUMAs $ fmap F.rcast pumaSplitProduct) (Just "Product") (Just "Marginal Product") (Just "Product")
+        ,MethodResult (filterToTestPUMAs $ fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full") (Just "NS: Full")
+        ,MethodResult (fmap F.rcast pumaSplitFull) (Just "NS: Split") (Just "NS: Split") (Just "NS: Split")
+        ]
+
+
+
+
 {-
     cdFromPUMAModeledRaw_C <- DDP.cachedPUMAsToCDs @DMC.ASER "model/demographic/asr_ase_CDFromPUMA.bin" $ fmap snd pumaTestRaw_C
     cdFromPUMAModeledRaw <- K.ignoreCacheTime cdFromPUMAModeledRaw_C
@@ -1004,7 +1041,8 @@ type ShiroACS k = (k V.++ DMC.CASER V.++ '[DT.PopCount])
 type ShiroMicro k = (k V.++ DMC.CASER V.++ '[ACS.PUMSWeight])
 
 -- split within each outer, keeping inner together
-splitGEOs :: forall a b rs r . (FSI.RecVec rs, K.KnitEffects r, Eq a, Eq b) => (F.Record rs -> a) -> (F.Record rs -> b) -> F.FrameRec rs -> (F.FrameRec rs, F.FrameRec rs)
+splitGEOs :: forall a b rs . (FSI.RecVec rs, Eq a, Eq b)
+          => (F.Record rs -> a) -> (F.Record rs -> b) -> F.FrameRec rs -> (F.FrameRec rs, F.FrameRec rs)
 splitGEOs outer inner = f . FL.fold FL.list where
   f :: [F.Record rs] -> (F.FrameRec rs, F.FrameRec rs)
   f = reassemble . unzip . fmap randomPartition . innersInOuters

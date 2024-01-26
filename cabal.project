@@ -40,10 +40,10 @@ flags: +streamly9
 --  tag: 763460b1b64c456b3328a5b92cfd87edb46b662e
 --  subdir: core
 
-source-repository-package
-  type: git
-  location: https://github.com/adamConnerSax/streamly-bytestring
-  tag: f5f73ebc0208370f7969635ddc34493ebd224fce
+--source-repository-package
+--  type: git
+--  location: https://github.com/adamConnerSax/streamly-bytestring
+--  tag: f5f73ebc0208370f7969635ddc34493ebd224fce
 
 
 --source-repository-package
