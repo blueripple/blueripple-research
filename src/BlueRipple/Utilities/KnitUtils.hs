@@ -80,7 +80,7 @@ cacheFromDirE dirE n = do
 
 clearIfPresentD' :: (K.KnitEffects r, CacheEffects r) => T.Text -> K.Sem r Text
 clearIfPresentD' k = do
-  K.logLE K.Diagnostic $ "Clearing cached item with key=" <> show k
+  K.logLE K.Warning $ "Clearing cached item with key=" <> show k
   K.clearIfPresent @T.Text @CacheData k
   pure k
 

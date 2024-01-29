@@ -34,6 +34,9 @@ import qualified BlueRipple.Utilities.KnitUtils as BRK
 
 import qualified Knit.Report as K
 import qualified Knit.Effect.AtomicCache as KC
+import qualified Polysemy.RandomFu as PR
+import qualified Data.Random as R
+import qualified System.Random as SR
 import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
@@ -41,6 +44,7 @@ import qualified Colonnade as C
 import GHC.TypeLits (Symbol)
 
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map.Strict as M
 import qualified Data.Map.Merge.Strict as MM
 import Data.Type.Equality (type (~))
@@ -54,6 +58,7 @@ import qualified Numeric
 import qualified Numeric.LinearAlgebra as LA
 import qualified Control.Foldl as FL
 import qualified Control.Foldl.Statistics as FL
+import qualified Control.Monad as M
 import qualified Frames as F
 import qualified Frames.Transform as FT
 import qualified Frames.Melt as F
@@ -78,7 +83,6 @@ import qualified Graphics.Vega.VegaLite.Configuration as FV
 import qualified Graphics.Vega.VegaLite.JSON as VJ
 --import Data.Monoid (Sum(getSum))
 
-import System.Random as SR
 
 templateVars ∷ M.Map String String
 templateVars =
@@ -688,7 +692,7 @@ compareCSR_ASR cmdLine postInfo = do
 
 
 --type ASR_ASE_OuterKey =
-compareASR_ASE :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
+compareASR_ASE :: (K.KnitMany r, K.KnitEffects r, BRK.CacheEffects r, K.Member PR.RandomFu r) => BR.CommandLine -> BR.PostInfo -> K.Sem r ()
 compareASR_ASE cmdLine postInfo = do
     K.logLE K.Info "Building test CD-level products for ASR x ASE -> ASER"
     let filterToState sa r = r ^. GT.stateAbbreviation == sa
@@ -709,12 +713,12 @@ compareASR_ASE cmdLine postInfo = do
                       (show . view GT.pUMA) cmdLine Nothing Nothing byPUMA_C testPUMAs_C
     (pumaProduct, pumaModeledRaw) <- K.ignoreCacheTime pumaTestRaw_C
     (pumaTraining_C, pumaTesting_C) <- KC.wctSplit
-                                       $ fmap (splitGEOs (view GT.stateAbbreviation) (view GT.pUMA)) byPUMA_C
+                                       $ KC.wctBind (splitGEOs testHalf (view GT.stateAbbreviation) (view GT.pUMA)) byPUMA_C
     pumaTestSplit_C <-  testNS @DMC.PUMAOuterKeyR @DMC.ASER @'[DT.Race5C] @'[DT.Education4C]
                         (DTP.viaOptimalWeights DTP.euclideanFull)
-                        (Right "ASR_ASE_BySplitPUMA")
-                        (Right  "model/demographic/split_asr_ase")
-                        True
+                        (Right "ASR_ASE_TestHalfPUMA")
+                        (Right "model/demographic/testHalf_asr_ase")
+                        False
                         (show . view GT.pUMA) cmdLine Nothing Nothing pumaTraining_C pumaTesting_C
     (pumaSplitProduct, pumaSplitFull) <- K.ignoreCacheTime pumaTestSplit_C
 
@@ -1003,7 +1007,8 @@ main = do
           , K.serializeDict = BRK.flatSerializeDict
           , K.persistCache = KC.persistStrictByteString (\t → toString (cacheDir <> "/" <> t))
           }
-  resE ← K.knitHtmls knitConfig $ do
+      randomGen = SR.mkStdGen 125 -- so we get the same results each time
+  resE ← K.knitHtmls knitConfig $ PR.runStatefulRandom randomGen $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 {-    byPUMA_C <-  fmap (aggregateAndZeroFillTables @DDP.ACSByPUMAGeoR @DMC.CASR . fmap F.rcast)
@@ -1040,23 +1045,69 @@ main = do
 type ShiroACS k = (k V.++ DMC.CASER V.++ '[DT.PopCount])
 type ShiroMicro k = (k V.++ DMC.CASER V.++ '[ACS.PUMSWeight])
 
+getRandomInt :: K.Member PR.RandomFu r => Int -> K.Sem r Int
+getRandomInt max =
+  PR.sampleRVar $ (R.uniform 0 max)
+
+shuffle :: (K.KnitEffects r, K.Member PR.RandomFu r) => [a] -> K.Sem r [a]
+shuffle l = go l [] where
+  go [] xs = pure xs
+  go ys xs = do
+    sp <- getRandomInt $ (length ys - 1)
+    let (lhl, t) = List.splitAt sp ys
+    neT <- K.knitMaybe "shuffle: empty tail!" $ nonEmpty t
+    let (s, mT) = NE.uncons neT
+        rhl = maybe [] NE.toList mT
+    go (lhl <> rhl) (s : xs)
+
+shuffleNE :: (K.KnitEffects r, K.Member PR.RandomFu r) => NonEmpty a -> K.Sem r (NonEmpty a)
+shuffleNE ne = do
+  shuffled <- shuffle $ NE.toList ne
+  shuffledNE <- K.knitMaybe "shuffleNE: empty list after shuffle!" $ nonEmpty shuffled
+  pure shuffledNE
+
+testHalf :: (K.KnitEffects r, K.Member PR.RandomFu r) => NonEmpty x -> K.Sem r (NonEmpty x, NonEmpty x)
+testHalf ne = do
+  let l = NE.toList ne
+  shuffled <- shuffle l
+  let n = length l
+      sp = let m = n `div` 2 in if even n then m else m + 1
+      (tr, te) = List.splitAt sp shuffled
+  trNE <- K.knitMaybe "testHalf: Training split is empty" $ nonEmpty tr
+  teNE <- K.knitMaybe "testHalf: Testing split is empty" $ nonEmpty te
+  pure (trNE, teNE)
+
+testOne :: (K.KnitEffects r, K.Member PR.RandomFu r) => NonEmpty x -> K.Sem r (NonEmpty x, NonEmpty x)
+testOne ne = do
+  shuffledNE <- shuffleNE ne
+  let teNE = NE.singleton $ head shuffledNE
+  trNE <- K.knitMaybe "testOne: Empty tail of input list" $ nonEmpty $ tail shuffledNE
+  pure (trNE, teNE)
+
 -- split within each outer, keeping inner together
-splitGEOs :: forall a b rs . (FSI.RecVec rs, Eq a, Eq b)
-          => (F.Record rs -> a) -> (F.Record rs -> b) -> F.FrameRec rs -> (F.FrameRec rs, F.FrameRec rs)
-splitGEOs outer inner = f . FL.fold FL.list where
-  f :: [F.Record rs] -> (F.FrameRec rs, F.FrameRec rs)
-  f = reassemble . unzip . fmap randomPartition . innersInOuters
-  randomGen = SR.mkStdGen 125
-  groupBy :: Eq x => (y -> x) -> [y] -> [[y]]
-  groupBy g = List.groupBy (\a b -> g a == g b)
-  innersInOuters :: [F.Record rs] -> [[[F.Record rs]]]
-  innersInOuters = fmap (groupBy inner) . groupBy outer
-  reassemble :: ([[[F.Record rs]]],[[[F.Record rs]]]) -> (F.FrameRec rs, F.FrameRec rs)
-  reassemble (a, b) = (F.toFrame $ mconcat $ mconcat a, F.toFrame $ mconcat $ mconcat b)
-  randomPartition :: [x] -> ([x], [x])
-  randomPartition l = List.splitAt sp $ fmap fst $ List.sortOn snd $ zip l $ unfoldr (Just . SR.uniformR (1::Int, 2)) randomGen
-    where n = length l
-          sp = if even n then n `div` 2 else (n `div` 2) + 1
+splitGEOs :: forall a b rs r . (FSI.RecVec rs, Eq a, Eq b, K.KnitEffects r, K.Member PR.RandomFu r)
+          => (forall x. NonEmpty x -> K.Sem r (NonEmpty x, NonEmpty x))
+          -> (F.Record rs -> a)
+          -> (F.Record rs -> b)
+          -> F.FrameRec rs
+          -> K.Sem r (F.FrameRec rs, F.FrameRec rs)
+splitGEOs split outer inner rows = do
+  let f :: [F.Record rs] -> K.Sem r (F.FrameRec rs, F.FrameRec rs)
+      f = fmap reassemble . restructure . fmap partition . innersInOuters
+      restructure :: [K.Sem r ([x], [x])] -> K.Sem r ([[x]], [[x]])
+      restructure = fmap unzip . sequence
+      groupBy :: Eq x => (y -> x) -> [y] -> [[y]]
+      groupBy g = List.groupBy (\a b -> g a == g b)
+      innersInOuters :: [F.Record rs] -> [[[F.Record rs]]]
+      innersInOuters = fmap (groupBy inner) . groupBy outer
+      reassemble :: ([[[F.Record rs]]],[[[F.Record rs]]]) -> (F.FrameRec rs, F.FrameRec rs)
+      reassemble (a, b) = (F.toFrame $ mconcat $ mconcat a, F.toFrame $ mconcat $ mconcat b)
+      partition :: [x] -> K.Sem r ([x], [x])
+      partition l = do
+        ne <- K.knitMaybe "splitGEOs.partition: Empty list given as input" $ nonEmpty l
+        (trNE, teNE) <- split ne
+        pure $ (NE.toList trNE, NE.toList teNE)
+  f $ FL.fold FL.list rows
 
 shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
 shiroData = do

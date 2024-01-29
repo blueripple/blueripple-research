@@ -473,6 +473,7 @@ executable br-2022-Demographics
                , haskell-stan
                , hs-cmdstan
                , random >= 1.2
+               , random-shuffle
                , pandoc
   mixins:  base hiding (Prelude)
          , relude (Relude as Prelude
