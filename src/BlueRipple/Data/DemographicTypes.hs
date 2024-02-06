@@ -56,6 +56,8 @@ import qualified Graphics.Vega.VegaLite        as GV
 import qualified Relude.Extra as Relude
 import qualified Data.Array as Array
 
+import qualified Numeric
+
 import GHC.TypeLits (Symbol)
 -- Serialize for caching
 -- Binary for caching
@@ -117,27 +119,35 @@ FTH.declareColumn "PWPopPerSqMile" ''Double
 safeDiv :: Double -> Double -> Double
 safeDiv x y = if y == 0 then 0 else x / y
 
-densityAndPopFld' :: (r -> Double) -> (r -> Double) -> (r -> Double) -> FL.Fold r (Double, Double)
-densityAndPopFld' linearCombinationWgtF pplF densityF = (,) <$> pplFld <*> wgtdDensFld
-  where
-    wgt r = linearCombinationWgtF r * pplF r
---    pplFld = FL.premap pplWgtF FL.sum
-    pplFld = FL.premap wgt FL.sum
+safeWgtdLog :: Double -> Double -> Double
+safeWgtdLog wgt x = if wgt > 0 then wgt * Numeric.log x else 0
 
-    wgtdDensFld = safeDiv <$> (FL.premap (\r -> wgt r * densityF r) FL.sum) <*> pplFld
+data MeanType = Arithmetic | Geometric
+data DensityWeightType = UnweightedDensity | PeopleWeightedDensity
+
+densityAndPopFld' :: MeanType -> (r -> Double) -> (r -> Double) -> (r -> Double) -> FL.Fold r (Double, Double)
+densityAndPopFld' mt linearCombinationwgtF pplF densityF = (,) <$> wgtSumFld <*> wgtdDensFld
+  where
+    wgt r = linearCombinationwgtF r * pplF r
+--    pplFld = FL.premap pplWgtF FL.sum
+    wgtSumFld = FL.premap wgt FL.sum
+
+    wgtdDensFld = case mt of
+      Arithmetic -> safeDiv <$> (FL.premap (\r -> wgt r * densityF r) FL.sum) <*> wgtSumFld
+      Geometric -> fmap Numeric.exp (safeDiv <$> (FL.premap (\r -> safeWgtdLog (wgt r) (densityF r)) FL.sum) <*> wgtSumFld)
 {-# INLINEABLE densityAndPopFld' #-}
 
 
-densityAndPopFld :: (r -> Double) -> (r -> Int) -> (r -> Double) -> FL.Fold r (Int, Double)
-densityAndPopFld linearCombinationWgtF numPeopleF densityF = fmap (first round) $ densityAndPopFld' linearCombinationWgtF (realToFrac . numPeopleF) densityF
+densityAndPopFld :: MeanType -> (r -> Double) -> (r -> Int) -> (r -> Double) -> FL.Fold r (Int, Double)
+densityAndPopFld mt linearCombinationWgtF numPeopleF densityF = fmap (first round) $ densityAndPopFld' mt linearCombinationWgtF (realToFrac . numPeopleF) densityF
 {-# INLINEABLE densityAndPopFld #-}
 
-pwDensityAndPopFldRecG :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
-pwDensityAndPopFldRecG = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld fst (view popCount . snd) (view pWPopPerSqMile . snd)
+pwDensityAndPopFldRecG :: MeanType -> (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (Double, F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+pwDensityAndPopFldRecG mt = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld mt fst (view popCount . snd) (view pWPopPerSqMile . snd)
 {-# INLINEABLE pwDensityAndPopFldRecG #-}
 
-pwDensityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => FL.Fold (F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
-pwDensityAndPopFldRec = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld (const 1) (view popCount) (view pWPopPerSqMile)
+pwDensityAndPopFldRec :: (F.ElemOf rs PopCount, F.ElemOf rs PWPopPerSqMile) => MeanType -> FL.Fold (F.Record rs) (F.Record [PopCount, PWPopPerSqMile])
+pwDensityAndPopFldRec mt = fmap (\(x, y) -> x F.&: y F.&: V.RNil) $ densityAndPopFld mt (const 1) (view popCount) (view pWPopPerSqMile)
 {-# INLINEABLE pwDensityAndPopFldRec #-}
 
 {-

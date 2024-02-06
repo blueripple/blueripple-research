@@ -252,7 +252,7 @@ summarizeASER_Fld = FMR.concatFold
           raceFF r = fracOfF $ (== r) . view DT.race5C
           gradWhiteFF = fracOfF (\r -> r ^. DT.race5C == DT.R5_WhiteNonHispanic && r ^. DT.education4C == DT.E4_CollegeGrad)
           safeDFilter r = let d = r ^. DT.pWPopPerSqMile in d > 0 && d < 1e6
-          densAndPopFld = FL.prefilter safeDFilter (DT.densityAndPopFld' (const 1) (realToFrac . view DT.popCount) (view DT.pWPopPerSqMile))
+          densAndPopFld = FL.prefilter safeDFilter (DT.densityAndPopFld' DT.Geometric (const 1) (realToFrac . view DT.popCount) (view DT.pWPopPerSqMile))
       in
         (\a1 a2 a3 o a4 a5 s1 s2 e1 e2 e3 e4 r1 r2 r3 r4 r5 gw pd
           -> a1 F.&: a2 F.&: a3 F.&: o F.&: a4 F.&: a5

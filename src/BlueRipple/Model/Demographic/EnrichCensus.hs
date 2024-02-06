@@ -463,7 +463,7 @@ logitMarginals :: LA.Matrix Double -> VS.Vector Double -> VS.Vector Double
 logitMarginals cMat prodDistV = VS.map (DTM3.bLogit 1e-10) (cMat LA.#> prodDistV)
 
 popAndpwDensityFld :: FL.Fold DMS.CellWithDensity (Double, Double)
-popAndpwDensityFld = DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity
+popAndpwDensityFld = DT.densityAndPopFld' DT.Geometric (const 1) DMS.cwdWgt DMS.cwdDensity
 
 
 -- NB: The predictor needs to be built with the same cs as bs

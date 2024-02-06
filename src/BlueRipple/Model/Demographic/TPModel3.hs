@@ -138,7 +138,7 @@ cwdListToLogitVec = VS.fromList . fmap (bLogit 1e-10 . DMS.cwdWgt)
 
 cwdListToLogPWDensity :: [DMS.CellWithDensity] -> Double
 cwdListToLogPWDensity = --FL.fold (safeLogDiv <$> FL.premap (\cw -> DMS.cwdWgt cw * DMS.cwdDensity cw) FL.sum <*> FL.premap DMS.cwdWgt FL.sum)
-  posLog . snd . FL.fold (DT.densityAndPopFld' (const 1) DMS.cwdWgt DMS.cwdDensity)
+  posLog . snd . FL.fold (DT.densityAndPopFld' DT.Geometric (const 1) DMS.cwdWgt DMS.cwdDensity)
 
 posLog :: Double -> Double
 posLog z = if z < 1 then 0 else Numeric.log z

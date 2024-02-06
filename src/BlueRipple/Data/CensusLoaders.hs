@@ -378,7 +378,7 @@ reToR4HFld =
 
 reToR5Fld :: FL.Fold (F.Record [BRC.RaceEthnicityC, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Race5C, DT.PopCount, DT.PWPopPerSqMile])
 reToR5Fld =
-  let withRE re = FL.prefilter ((== re) . view BRC.raceEthnicityC) $ FL.premap (F.rcast @[DT.PopCount, DT.PWPopPerSqMile]) DT.pwDensityAndPopFldRec
+  let withRE re = FL.prefilter ((== re) . view BRC.raceEthnicityC) $ FL.premap (F.rcast @[DT.PopCount, DT.PWPopPerSqMile]) (DT.pwDensityAndPopFldRec DT.Geometric)
       wFld = withRE BRC.R_White
       bFld = withRE BRC.R_Black
       aFld = withRE BRC.R_Asian
@@ -415,7 +415,7 @@ age14ToAge5FFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
     g :: DT.Age5F -> BRC.Age14 -> Bool
     g a5f a14 = BRC.age14ToAge5F a14 == a5f
     ageAggFRec = BRK.toAggFRec ageAggF
-    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
+    collapse = BRK.dataFoldCollapseBool (DT.pwDensityAndPopFldRec DT.Geometric)
 
 
 age14ToAge6Fld :: FL.Fold (F.Record [BRC.Age14C, DT.PopCount, DT.PWPopPerSqMile]) (F.FrameRec [DT.Age6C, DT.PopCount, DT.PWPopPerSqMile])
@@ -425,7 +425,7 @@ age14ToAge6Fld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
     g :: DT.Age6 -> BRC.Age14 -> Bool
     g a6 a14 = BRC.age14ToAge6 a14 == a6
     ageAggFRec = BRK.toAggFRec ageAggF
-    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
+    collapse = BRK.dataFoldCollapseBool (DT.pwDensityAndPopFldRec DT.Geometric)
 
 
 edToCGFld :: FL.Fold (F.Record [DT.Education4C, DT.PopCount]) (F.FrameRec [DT.CollegeGradC, DT.PopCount])
@@ -452,7 +452,7 @@ cToCFld = fmap F.toFrame $ BRK.aggFoldAllRec ageAggFRec collapse
     g DT.NonCitizen BRC.NonCitizen = True
     g _ _ = False
     ageAggFRec = BRK.toAggFRec cAggF
-    collapse = BRK.dataFoldCollapseBool DT.pwDensityAndPopFldRec
+    collapse = BRK.dataFoldCollapseBool (DT.pwDensityAndPopFldRec DT.Geometric)
 
 censusDemographicsRecode :: F.FrameRec CensusSERR -> F.FrameRec CensusRecodedR
 censusDemographicsRecode rows =

@@ -837,6 +837,9 @@ compareASR_ASE cmdLine postInfo = do
         ,MethodResult (filterToTestPUMAs $ fmap F.rcast pumaModeledRaw) (Just "NS: Full") (Just "NS: Full") (Just "NS: Full")
         ,MethodResult (fmap F.rcast pumaSplitFull) (Just "NS: Split") (Just "NS: Split") (Just "NS: Split")
         ]
+    pumaASERToCSV "True.csv" $ fmap F.rcast pumaTesting
+    pumaASERToCSV "Product.csv" $  F.filterFrame ((`S.member` testPUMASet) . pumaKey) $ fmap F.rcast pumaSplitProduct
+    pumaASERToCSV "NS.csv" $ fmap F.rcast pumaSplitFull
 
 
 
@@ -1108,6 +1111,28 @@ splitGEOs split outer inner rows = do
         (trNE, teNE) <- split ne
         pure $ (NE.toList trNE, NE.toList teNE)
   f $ FL.fold FL.list rows
+
+
+type ToCsvR = [GT.StateAbbreviation, GT.PUMA, DT.Age5C, DT.SexC, DT.Education4C, DT.Race5C, DT.PopCount]
+
+pumaASERToCSV :: K.KnitEffects r => Text -> F.FrameRec ToCsvR -> K.Sem r ()
+pumaASERToCSV fileName rows = do
+  let newHeaderMap = M.fromList [("StateAbbreviation", "state")
+                                ,("PUMA","puma")
+                                , ("PopCount", "pop_count")
+                                , ("Age5C", "age_5")
+                                , ("SexC", "sex_2")
+                                , ("Education4C", "education_4")
+                                , ("Race5C", "race_5")
+                                ]
+      formatRows :: V.Rec (V.Lift (->) V.ElField (V.Const Text)) ToCsvR
+      formatRows = FCSV.formatTextAsIs V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow
+                   V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& FCSV.formatWithShow V.:& V.RNil
+  K.liftKnit @IO $ FCSV.writeLines ("../forPhilip/" <> toString fileName)
+    $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatRows ","
+    $ FCSV.foldableToStream
+    $ fmap F.rcast rows
+
 
 shiroData :: (K.KnitEffects r, BRK.CacheEffects r) => K.Sem r ()
 shiroData = do

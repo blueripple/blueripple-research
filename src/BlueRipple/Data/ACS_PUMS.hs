@@ -563,8 +563,8 @@ wgtdDensityF =
 geomWgtdDensityF :: FL.Fold (Double, Double) Double
 geomWgtdDensityF =
   let wgtF = FL.premap fst FL.sum
-      wgtSumF = Numeric.exp <$> FL.premap (\(w, d) -> w * Numeric.log d) FL.sum
-  in safeDiv <$> wgtSumF <*> wgtF
+      wgtSumF = FL.premap (\(w, d) -> w * Numeric.log d) FL.sum
+  in fmap Numeric.exp (safeDiv <$> wgtSumF <*> wgtF)
 {-# INLINE geomWgtdDensityF #-}
 
 pctNativeEnglishF :: FL.Fold (Double, DT.Language) Double
@@ -656,7 +656,7 @@ pumsRowCount2F =
 --      nonCitF = FL.prefilter (not . citizen) $ FL.premap wgt FL.sum
 
       pctInMetroF = FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF
-      popPerSqMileF = FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) wgtdDensityF
+      popPerSqMileF = FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) geomWgtdDensityF
       nativeEnglishF = FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF
       noEnglishF = FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF
       unemploymentF = FL.premap (wgtAnd (F.rgetField @DT.EmploymentStatusC)) pctUnemploymentF
@@ -689,7 +689,7 @@ pumsRowCountF =
       pplF = FL.premap wgt FL.sum
   in FF.sequenceRecFold
      $ FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @GT.CensusMetroC)) metroF)
-     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) wgtdDensityF)
+     V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.PopPerSqMile)) geomWgtdDensityF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.LanguageC)) pctNativeEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.SpeaksEnglishC)) pctNoEnglishF)
      V.:& FF.toFoldRecord (FL.premap (wgtAnd (F.rgetField @DT.EmploymentStatusC)) pctUnemploymentF)
