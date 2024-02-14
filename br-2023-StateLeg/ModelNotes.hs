@@ -330,7 +330,7 @@ to join the data to population-density data from the 5-year American Community
 Survey ([ACS](https://www.census.gov/programs-surveys/acs/microdata.html)) data, using
 the sample ending the same year as the CES survey was done.
 
-We then fit a multi-level regression of that data, one for
+We then fit a hierarchical multi-level regression of that data, one for
 turnout, one for party-preference and one for both jointly.
 To compute expected turnout, party-preference of voters or DPL in a district,
 we  “post-stratify” the model using the demographics of the district. That
@@ -401,14 +401,14 @@ specific fixed probability of voting and the voters among them a
 different probability of voting for the Democratic candidate. This would lead to a binomial model of vote
 counts. This is obviously a simplification but a fairly standard one, and a reasonable fit
 to the data. As mentioned above, we have non-whole counts. So we use a generalization of the
-binomial model^[bg] which allows for this.
+binomial model[^bg] which allows for this.
 
 [bg]: Specifically, we use the binomial density but just allow non-integer “successes” and “failures”.
 This is not an actual probability density and gives slightly lower likelihood
 to very low and very high counts than it should. Fixing this is one project for our
 next version!
 
-Our specific probability is a linear function of the log-density^[lpd] plus a number for each of the categories
+Our specific probability is a linear function of the log-density[^lpd] plus a number for each of the categories
 and some of their combinations. In particular we estimate using “alphas” for
 state, age, sex, education, race/ethnicity, the combination of age and education, age and race/ethnicity,
 education and race, and state and race. For the state factor and all the combination factors,
@@ -429,7 +429,7 @@ We use [Stan](https://mc-stan.org), which then runs a
 to estimate the parameters. Because of how Monte-Carlo methods work, we end up with
 not only our expected parameter values but also their distributions, allowing us to
 capture uncertainties. This is also true of post-stratifications,
-which then provide with distributions of outcomes and thus things like confidence intervals.
+which then provide us with distributions of outcomes and thus things like confidence intervals.
 
 There’s an important last step. We post-stratify these modeled probabilities
 across an entire state, giving the expected number of votes in that state. But
