@@ -403,7 +403,7 @@ counts. This is obviously a simplification but a fairly standard one, and a reas
 to the data. As mentioned above, we have non-whole counts. So we use a generalization of the
 binomial model[^bg] which allows for this.
 
-[bg]: Specifically, we use the binomial density but just allow non-integer “successes” and “failures”.
+[^bg]: Specifically, we use the binomial density but just allow non-integer “successes” and “failures”.
 This is not an actual probability density and gives slightly lower likelihood
 to very low and very high counts than it should. Fixing this is one project for our
 next version!
@@ -415,7 +415,7 @@ education and race, and state and race. For the state factor and all the combina
 we use “partial-pooling” which means we allow the model itself to estimate how big an overall
 factor these variations should be.
 
-[lpd]: For modeling, we use logarithmic population density.
+[^lpd]: For modeling, we use logarithmic population density.
 Population density in the US varies by several orders of magnitude, from 10s
 of people per square mile in the most rural places to over 100,000 per square mile
 in the densest places, like New York City. That makes it difficult to use as a

@@ -185,8 +185,8 @@ main = do
           }
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
---    modelNotesPost cmdLine
-
+    modelNotesPost cmdLine
+{-
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
         histCompetitive :: F.Record AnalyzeStateR -> Bool
         histCompetitive r = let x = r ^. ET.demShare in (x > 0.40 && x < 0.60)
@@ -206,7 +206,7 @@ main = do
           , ("PA", histCompetitive)
           ]
     traverse_ (uncurry $ analyzeStatePost cmdLine postInfo stateUpperOnlyM dlccMap) postsToDo
-
+-}
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
@@ -842,7 +842,7 @@ aggregatePS = FL.fold f . DP.unPSData
     f :: FL.Fold (F.Record (DP.PSDataR SLDKeyR)) (F.FrameRec (AndSLDKey2 ks '[DT.PopCount, DT.PWPopPerSqMile]))
     f = FMR.concatFold
         $ FMR.mapReduceFold FMR.noUnpack (FMR.assignKeysAndData @(AndSLDKey ks) @[DT.PopCount, DT.PWPopPerSqMile])
-        (FMR.foldAndAddKey DT.pwDensityAndPopFldRec)
+        (FMR.foldAndAddKey $ DT.pwDensityAndPopFldRec DT.Geometric)
 
 distSummaryColonnade :: (FC.ElemsOf rs DistSummaryR, FC.ElemsOf rs [GT.StateAbbreviation, GT.DistrictTypeC, GT.DistrictName, ET.DemShare, MR.ModelCI])
                      => BR.CellStyleF (F.Record rs) [Char] -> C.Colonnade C.Headed (F.Record rs) K.Cell

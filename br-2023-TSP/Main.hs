@@ -22,8 +22,6 @@ where
 import qualified BlueRipple.Model.TSP_Religion.Model as RM
 import qualified BlueRipple.Model.Election2.DataPrep as DP
 import qualified BlueRipple.Model.Election2.ModelCommon as MC
---import BlueRipple.Model.Election2.ModelCommon (ModelConfig)
---import qualified BlueRipple.Model.Election2.ModelCommon2 as MC2
 import qualified BlueRipple.Model.Election2.ModelRunner as MR
 import qualified BlueRipple.Model.Demographic.DataPrep as DDP
 import qualified BlueRipple.Model.Demographic.EnrichCensus as DMC
@@ -50,7 +48,6 @@ import qualified Text.Pandoc.Error as Pandoc
 import qualified System.Console.CmdArgs as CmdArgs
 import qualified Colonnade as C
 
-
 import qualified Stan.ModelBuilder as SMB
 import qualified Stan.ModelRunner as SMR
 import qualified Stan.ModelBuilder.TypedExpressions.Types as TE
@@ -72,7 +69,6 @@ import qualified Frames.Constraints as FC
 import qualified Frames.Streamly.TH as FS
 import qualified Frames.Streamly.InCore as FI
 import qualified Frames.Streamly.CSV as FCSV
---import qualified Frames.Streamly.Transform as FST
 
 import Frames.Streamly.Streaming.Streamly (StreamlyStream, Stream)
 import qualified Frames.Serialize as FS
@@ -100,6 +96,8 @@ FS.declareColumn "WhiteVAP" ''Int
 FS.declareColumn "WhiteEv" ''Int
 FS.declareColumn "TSPStateId" ''Text
 FS.declareColumn "Chamber" ''Text
+FS.declareColumn "Pct18To24" ''Double
+FS.declareColumn "Pct18To34" ''Double
 
 templateVars ∷ Map String String
 templateVars =
@@ -123,7 +121,7 @@ aggregation :: MC.SurveyAggregation TE.ECVec
 aggregation = MC.WeightedAggregation MC.ContinuousBinomial
 
 alphaModel :: MC.Alphas
-alphaModel = MC.St_A_S_E_R_StA  --MC.St_A_S_E_R_AE_AR_ER_StR
+alphaModel = MC.St_A_S_E_R_StR  --MC.St_A_S_E_R_AE_AR_ER_StR
 
 type SLDKeyR = '[GT.StateAbbreviation] V.++ BRC.LDLocationR
 type ModeledR = SLDKeyR V.++ '[MR.ModelCI]
@@ -148,63 +146,117 @@ main = do
   resE ← K.knitHtmls knitConfig $ do
     K.logLE K.Info $ "Command Line: " <> show cmdLine
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
-        psName = "GivenWWH"
-        psType = RM.PSGiven "E" psName ((`elem` [DT.R5_WhiteNonHispanic, DT.R5_Hispanic]) . view DT.race5C)
-        cacheStructure cy = MR.CacheStructure (Right $ "model/evangelical/stan/CES" <> show (CCES.cesYear cy)) (Right "model/evangelical")
-                            psName () ()
-        modelConfig am = RM.ModelConfig aggregation am (contramap F.rcast dmr)
-        modeledToCSVFrame = F.toFrame . fmap (\(k, v) -> k F.<+> FT.recordSingleton @MR.ModelCI v) . M.toList . MC.unPSMap . fst
-    modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
---    districtPSData <- K.ignoreCacheTime modeledACSBySLDPSData_C
-    let dBDInnerF :: FL.Fold (F.Record '[DT.Race5C, DT.PopCount]) (F.Record [DT.PopCount, WhiteVAP])
-        dBDInnerF =
-          let pop = view DT.popCount
-              race = view DT.race5C
-              isWhite = (== DT.R5_WhiteNonHispanic) . race
-              popF = FL.premap pop FL.sum
-              whiteF = FL.prefilter isWhite popF
-          in (\p w -> p F.&: w F.&: V.RNil) <$> popF <*> whiteF
-        dataByDistrictF = FMR.concatFold
-                          $ FMR.mapReduceFold
-                          FMR.noUnpack
-                          (FMR.assignKeysAndData @SLDKeyR @[DT.Race5C, DT.PopCount])
-                          (FMR.foldAndAddKey dBDInnerF)
-    dataByDistrict <-  fmap (FL.fold dataByDistrictF . DP.unPSData) $ K.ignoreCacheTime modeledACSBySLDPSData_C
-
-    let addDistrictData :: K.KnitEffects r
-                        =>  F.FrameRec (SLDKeyR V.++ '[MR.ModelCI])
-                        -> K.Sem r (F.FrameRec (SLDKeyR V.++ [MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv]))
-        addDistrictData x =  do
-          let (joined, missing) = FJ.leftJoinWithMissing @SLDKeyR x dataByDistrict
-          when (not $ null missing) $ K.logLE K.Error $ "Missing keys in result/district data join=" <> show missing
-          let addEv r = r F.<+> FT.recordSingleton @WhiteEv (round $ MT.ciMid (r ^. MR.modelCI) * realToFrac (r ^. DT.popCount))
-          pure $ fmap addEv joined
---    modeledEvangelical_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R) modeledACSBySLDPSData_C
---    modeledEvangelical_AR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_AR) modeledACSBySLDPSData_C
---    modeledEvangelical_StA_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StA) modeledACSBySLDPSData_C
-    modeledEvangelical22_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2022 (cacheStructure CCES.CES2022) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
---    modeledEvangelical20_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
-    let compareOn f x y = compare (f x) (f y)
-        compareRows x y = compareOn (view GT.stateAbbreviation) x y
-                          <> compareOn (view GT.districtTypeC) x y
-                          <> GT.districtNameCompare (x ^. GT.districtName) (y ^. GT.districtName)
-        csvSort = F.toFrame . sortBy compareRows . FL.fold FL.list
---    modeledEvangelical <-
---    K.ignoreCacheTime modeledEvangelical_C >>= writeModeled "modeledEvangelical_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
---    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
---    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
-    K.ignoreCacheTime modeledEvangelical22_StR_C
-      >>= fmap (fmap addTSPId) . addDistrictData . csvSort . fmap F.rcast . modeledToCSVFrame
-      >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . fmap F.rcast
---    K.ignoreCacheTime modeledEvangelical20_StR_C >>= writeModeled "modeledEvangelical20_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
---    let modeledEvangelicalFrame = modeledToCSVFrame modeledEvangelical
---    writeModeled "modeledEvangelical_StA_GivenWWH" $ fmap F.rcast modeledEvangelicalFrame
---    K.logLE K.Info $ show $ MC.unPSMap $ fst $ modeledEvangelical
-
+--    modelWhiteEvangelicals cmdLine
+    youthPct cmdLine
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
+
+youthCountFld :: FL.Fold (F.Record (DP.PSDataR SLDKeyR)) (F.FrameRec (SLDKeyR V.++ [Pct18To24, Pct18To34]))
+youthCountFld =
+  let popFld = FL.premap (view DT.popCount) FL.sum
+      under25 = (< DT.A5_25To34) . view DT.age5C
+      under35 = (< DT.A5_35To44) . view DT.age5C
+      innerFld :: FL.Fold (F.Record [DT.PopCount, DT.Age5C]) (F.Record [Pct18To24, Pct18To34])
+      innerFld = (\x y p -> 100 * realToFrac x / realToFrac p F.&: 100 * realToFrac y / realToFrac p F.&: V.RNil)
+                 <$> FL.prefilter under25 popFld <*> FL.prefilter under35 popFld <*> popFld
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     FMR.noUnpack
+     (FMR.assignKeysAndData @SLDKeyR @[DT.PopCount, DT.Age5C])
+     (FMR.foldAndAddKey innerFld)
+
+writeYouthCount :: (K.KnitEffects r)
+             => Text -> F.FrameRec [TSPStateId, GT.StateAbbreviation, Chamber, Pct18To24, Pct18To34] -> K.Sem r ()
+writeYouthCount csvName ycF = do
+  let wText = FCSV.formatTextAsIs
+      printNum n m = PF.printf ("%" <> show n <> "." <> show m <> "g")
+      wPrintf :: (V.KnownField t, V.Snd t ~ Double) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
+      wPrintf n m = FCSV.liftFieldFormatter $ toText @String . printNum n m
+--      wPrint :: (V.KnownField t, V.Snd t ~ Double) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
+--      wPrintf n m = FCSV.liftFieldFormatter $ toText @String . printNum n m
+      wCI :: (V.KnownField t, V.Snd t ~ MT.ConfidenceInterval) => Int -> Int -> V.Lift (->) V.ElField (V.Const Text) t
+      wCI n m = FCSV.liftFieldFormatter
+                $ toText @String .
+                \ci -> printNum n m (100 * MT.ciLower ci) <> ","
+                       <> printNum n m (100 * MT.ciMid ci) <> ","
+                       <> printNum n m (100 * MT.ciUpper ci)
+      formatModeled = FCSV.quoteField FCSV.formatTextAsIs
+                       V.:& FCSV.formatTextAsIs
+                       V.:& FCSV.formatTextAsIs
+                       V.:& wPrintf 2 2
+                       V.:& wPrintf 2 2
+                       V.:& V.RNil
+      newHeaderMap = M.fromList [("StateAbbreviation", "state_code")
+                                , ("TSPStateId", "state_district_id")
+                                , ("Chamber", "chamber_name")
+                                , ("Pct180To24", "18 To 24 (%)")
+                                , ("Pct180To24", "18 To 34 (%)")
+                                ]
+  K.liftKnit @IO $ FCSV.writeLines (toString $ "../forTSP/" <> csvName <> ".csv") $ FCSV.streamSV' @_ @(StreamlyStream Stream) newHeaderMap formatModeled "," $ FCSV.foldableToStream ycF
+
+youthPct :: (K.KnitEffects r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+youthPct cmdLine = do
+  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+  acsBySLD <- DP.unPSData <$> K.ignoreCacheTime modeledACSBySLDPSData_C
+  let youthPctBySLD = FL.fold youthCountFld acsBySLD
+  writeYouthCount "youthPct" $ fmap (F.rcast . addTSPId) youthPctBySLD
+
+modelWhiteEvangelicals :: (K.KnitEffects r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+modelWhiteEvangelicals cmdLine = do
+  let psName = "GivenWWH"
+      psType = RM.PSGiven "E" psName ((`elem` [DT.R5_WhiteNonHispanic, DT.R5_Hispanic]) . view DT.race5C)
+      cacheStructure cy = MR.CacheStructure (Right $ "model/evangelical/stan/CES" <> show (CCES.cesYear cy)) (Right "model/evangelical")
+                          psName () ()
+      modelConfig am = RM.ModelConfig aggregation am (contramap F.rcast dmr)
+      modeledToCSVFrame = F.toFrame . fmap (\(k, v) -> k F.<+> FT.recordSingleton @MR.ModelCI v) . M.toList . MC.unPSMap . fst
+  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+--    districtPSData <- K.ignoreCacheTime modeledACSBySLDPSData_C
+  let dBDInnerF :: FL.Fold (F.Record '[DT.Race5C, DT.PopCount]) (F.Record [DT.PopCount, WhiteVAP])
+      dBDInnerF =
+        let pop = view DT.popCount
+            race = view DT.race5C
+            isWhite = (== DT.R5_WhiteNonHispanic) . race
+            popF = FL.premap pop FL.sum
+            whiteF = FL.prefilter isWhite popF
+        in (\p w -> p F.&: w F.&: V.RNil) <$> popF <*> whiteF
+      dataByDistrictF = FMR.concatFold
+                        $ FMR.mapReduceFold
+                        FMR.noUnpack
+                        (FMR.assignKeysAndData @SLDKeyR @[DT.Race5C, DT.PopCount])
+                        (FMR.foldAndAddKey dBDInnerF)
+  dataByDistrict <-  fmap (FL.fold dataByDistrictF . DP.unPSData) $ K.ignoreCacheTime modeledACSBySLDPSData_C
+
+  let addDistrictData :: K.KnitEffects r
+                      =>  F.FrameRec (SLDKeyR V.++ '[MR.ModelCI])
+                      -> K.Sem r (F.FrameRec (SLDKeyR V.++ [MR.ModelCI, DT.PopCount, WhiteVAP, WhiteEv]))
+      addDistrictData x =  do
+        let (joined, missing) = FJ.leftJoinWithMissing @SLDKeyR x dataByDistrict
+        when (not $ null missing) $ K.logLE K.Error $ "Missing keys in result/district data join=" <> show missing
+        let addEv r = r F.<+> FT.recordSingleton @WhiteEv (round $ MT.ciMid (r ^. MR.modelCI) * realToFrac (r ^. DT.popCount))
+        pure $ fmap addEv joined
+--    modeledEvangelical_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R) modeledACSBySLDPSData_C
+--    modeledEvangelical_AR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_AR) modeledACSBySLDPSData_C
+--    modeledEvangelical_StA_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StA) modeledACSBySLDPSData_C
+  modeledEvangelical22_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2022 (cacheStructure CCES.CES2022) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
+--    modeledEvangelical20_StR_C <- RM.runEvangelicalModel @SLDKeyR CCES.CES2020 (cacheStructure CCES.CES2020) cmdLine psType (modelConfig MC.St_A_S_E_R_StR) modeledACSBySLDPSData_C
+  let compareOn f x y = compare (f x) (f y)
+      compareRows x y = compareOn (view GT.stateAbbreviation) x y
+                        <> compareOn (view GT.districtTypeC) x y
+                        <> GT.districtNameCompare (x ^. GT.districtName) (y ^. GT.districtName)
+      csvSort = F.toFrame . sortBy compareRows . FL.fold FL.list
+--    modeledEvangelical <-
+--    K.ignoreCacheTime modeledEvangelical_C >>= writeModeled "modeledEvangelical_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical_AR_C >>= writeModeled "modeledEvangelical_AR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    K.ignoreCacheTime modeledEvangelical_StA_C >>= writeModeled "modeledEvangelical_StA_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+  K.ignoreCacheTime modeledEvangelical22_StR_C
+    >>= fmap (fmap addTSPId) . addDistrictData . csvSort . fmap F.rcast . modeledToCSVFrame
+    >>= writeModeled "modeledEvangelical22_StR_GivenWWH" . fmap F.rcast
+--    K.ignoreCacheTime modeledEvangelical20_StR_C >>= writeModeled "modeledEvangelical20_StR_GivenWWH" . csvSort . fmap F.rcast . modeledToCSVFrame
+--    let modeledEvangelicalFrame = modeledToCSVFrame modeledEvangelical
+--    writeModeled "modeledEvangelical_StA_GivenWWH" $ fmap F.rcast modeledEvangelicalFrame
+--    K.logLE K.Info $ show $ MC.unPSMap $ fst $ modeledEvangelical
 
 lowerHouseNameMap :: Map Text (Text, Text)
 lowerHouseNameMap = M.fromList [("CA", ("Assembly", "A"))
