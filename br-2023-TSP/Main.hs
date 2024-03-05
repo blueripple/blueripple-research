@@ -148,13 +148,14 @@ main = do
     let postInfo = BR.PostInfo (BR.postStage cmdLine) (BR.PubTimes BR.Unpublished Nothing)
 --    modelWhiteEvangelicals cmdLine
     youthPct cmdLine
+    youthPctPre cmdLine
   case resE of
     Right namedDocs →
       K.writeAllPandocResultsWithInfoAsHtml "" namedDocs
     Left err → putTextLn $ "Pandoc Error: " <> Pandoc.renderError err
 
-youthCountFld :: FL.Fold (F.Record (DP.PSDataR SLDKeyR)) (F.FrameRec (SLDKeyR V.++ [Pct18To24, Pct18To34]))
-youthCountFld =
+youthCountFld5 :: (FC.ElemsOf rs SLDKeyR, FC.ElemsOf rs [DT.Age5C, DT.PopCount]) => FL.Fold (F.Record rs) (F.FrameRec (SLDKeyR V.++ [Pct18To24, Pct18To34]))
+youthCountFld5 =
   let popFld = FL.premap (view DT.popCount) FL.sum
       under25 = (< DT.A5_25To34) . view DT.age5C
       under35 = (< DT.A5_35To44) . view DT.age5C
@@ -167,8 +168,23 @@ youthCountFld =
      (FMR.assignKeysAndData @SLDKeyR @[DT.PopCount, DT.Age5C])
      (FMR.foldAndAddKey innerFld)
 
+youthCountFld6 :: (FC.ElemsOf rs SLDKeyR, FC.ElemsOf rs [DT.Age6C, DT.PopCount]) => FL.Fold (F.Record rs) (F.FrameRec (SLDKeyR V.++ [Pct18To24, Pct18To34]))
+youthCountFld6 =
+  let over18 = (> DT.A6_Under18) . view DT.age6C
+      popFld = FL.prefilter over18 (FL.premap (view DT.popCount) FL.sum)
+      under25 = (< DT.A6_25To34) . view DT.age6C
+      under35 = (< DT.A6_35To44) . view DT.age6C
+      innerFld :: FL.Fold (F.Record [DT.PopCount, DT.Age6C]) (F.Record [Pct18To24, Pct18To34])
+      innerFld = (\x y p -> 100 * realToFrac x / realToFrac p F.&: 100 * realToFrac y / realToFrac p F.&: V.RNil)
+                 <$> FL.prefilter under25 popFld <*> FL.prefilter under35 popFld <*> popFld
+  in FMR.concatFold
+     $ FMR.mapReduceFold
+     FMR.noUnpack
+     (FMR.assignKeysAndData @SLDKeyR @[DT.PopCount, DT.Age6C])
+     (FMR.foldAndAddKey innerFld)
+
 writeYouthCount :: (K.KnitEffects r)
-             => Text -> F.FrameRec [TSPStateId, GT.StateAbbreviation, Chamber, Pct18To24, Pct18To34] -> K.Sem r ()
+             => Text -> F.FrameRec [GT.DistrictName, TSPStateId, GT.StateAbbreviation, Chamber, Pct18To24, Pct18To34] -> K.Sem r ()
 writeYouthCount csvName ycF = do
   let wText = FCSV.formatTextAsIs
       printNum n m = PF.printf ("%" <> show n <> "." <> show m <> "g")
@@ -183,11 +199,12 @@ writeYouthCount csvName ycF = do
                        <> printNum n m (100 * MT.ciMid ci) <> ","
                        <> printNum n m (100 * MT.ciUpper ci)
       formatModeled = FCSV.quoteField FCSV.formatTextAsIs
-                       V.:& FCSV.formatTextAsIs
-                       V.:& FCSV.formatTextAsIs
-                       V.:& wPrintf 2 2
-                       V.:& wPrintf 2 2
-                       V.:& V.RNil
+                      V.:& FCSV.quoteField FCSV.formatTextAsIs
+                      V.:& FCSV.formatTextAsIs
+                      V.:& FCSV.formatTextAsIs
+                      V.:& wPrintf 2 2
+                      V.:& wPrintf 2 2
+                      V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "state_code")
                                 , ("TSPStateId", "state_district_id")
                                 , ("Chamber", "chamber_name")
@@ -198,10 +215,17 @@ writeYouthCount csvName ycF = do
 
 youthPct :: (K.KnitEffects r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 youthPct cmdLine = do
-  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine BRC.TY2022
   acsBySLD <- DP.unPSData <$> K.ignoreCacheTime modeledACSBySLDPSData_C
-  let youthPctBySLD = FL.fold youthCountFld acsBySLD
+  let youthPctBySLD = FL.fold youthCountFld5 acsBySLD
   writeYouthCount "youthPct" $ fmap (F.rcast . addTSPId) youthPctBySLD
+
+youthPctPre :: (K.KnitEffects r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
+youthPctPre cmdLine = do
+  asrBySLD <- givenASRBySLD BRC.TY2022
+  let youthPctBySLD = FL.fold youthCountFld6 asrBySLD
+  writeYouthCount "youthPctPre" $ fmap (F.rcast . addTSPId) youthPctBySLD
+
 
 modelWhiteEvangelicals :: (K.KnitEffects r, BR.CacheEffects r) => BR.CommandLine -> K.Sem r ()
 modelWhiteEvangelicals cmdLine = do
@@ -211,7 +235,7 @@ modelWhiteEvangelicals cmdLine = do
                           psName () ()
       modelConfig am = RM.ModelConfig aggregation am (contramap F.rcast dmr)
       modeledToCSVFrame = F.toFrame . fmap (\(k, v) -> k F.<+> FT.recordSingleton @MR.ModelCI v) . M.toList . MC.unPSMap . fst
-  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine
+  modeledACSBySLDPSData_C <- modeledACSBySLD cmdLine BRC.TY2021
 --    districtPSData <- K.ignoreCacheTime modeledACSBySLDPSData_C
   let dBDInnerF :: FL.Fold (F.Record '[DT.Race5C, DT.PopCount]) (F.Record [DT.PopCount, WhiteVAP])
       dBDInnerF =
@@ -303,13 +327,13 @@ writeModeled csvName modeledEv = do
                        <> printNum n m (100 * MT.ciMid ci) <> ","
                        <> printNum n m (100 * MT.ciUpper ci)
       formatModeled = FCSV.quoteField FCSV.formatTextAsIs
-                       V.:& FCSV.formatTextAsIs
-                       V.:& FCSV.formatTextAsIs
-                       V.:& wCI 2 1
-                       V.:& FCSV.formatWithShow
-                       V.:& FCSV.formatWithShow
-                       V.:& FCSV.formatWithShow
-                       V.:& V.RNil
+                      V.:& FCSV.formatTextAsIs
+                      V.:& FCSV.formatTextAsIs
+                      V.:& wCI 2 1
+                      V.:& FCSV.formatWithShow
+                      V.:& FCSV.formatWithShow
+                      V.:& FCSV.formatWithShow
+                      V.:& V.RNil
       newHeaderMap = M.fromList [("StateAbbreviation", "state_code")
                                 , ("TSPStateId", "state_district_id")
                                 , ("Chamber", "chamber_name")
@@ -391,8 +415,8 @@ maNameFix GT.StateUpper n =
   in maybe n T.toUpper $ M.lookup n $ M.fromList maSenateNames
 maNameFix _ x = x
 
-modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
-modeledACSBySLD cmdLine = do
+modeledACSBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BR.CommandLine -> BRC.TableYear -> K.Sem r (K.ActionWithCacheTime r (DP.PSData SLDKeyR))
+modeledACSBySLD cmdLine ty = do
   (jointFromMarginalPredictorCSR_ASR_C, _) <- DDP.cachedACSa5ByPUMA  ACS.acs1Yr2012_21 2021 -- most recent available
                                                  >>= DMC.predictorModel3 @'[DT.CitizenC] @'[DT.Age5C] @DMC.SRCA @DMC.SR
                                                  (Right "CSR_ASR_ByPUMA")
@@ -405,9 +429,18 @@ modeledACSBySLD cmdLine = do
                                                   (Right "model/demographic/casr_ase_PUMA")
                                                   False -- use model, not just mean
                                                   cmdLine Nothing Nothing . fmap (fmap F.rcast)
-  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 BRC.TY2021
+  (acsCASERBySLD, _products) <- BRC.censusTablesForSLDs 2024 ty
                                 >>= DMC.predictedCensusCASER' (DTP.viaNearestOnSimplex) (Right "model/election2/sldDemographics")
                                 jointFromMarginalPredictorCSR_ASR_C
                                 jointFromMarginalPredictorCASR_ASE_C
-  BRK.retrieveOrMakeD "model/election2/data/sldPSData.bin" acsCASERBySLD
+  BRK.retrieveOrMakeD ("model/election2/data/sldPSData" <> BRC.yearsText 2024 ty <> ".bin") acsCASERBySLD
     $ \x -> DP.PSData . fmap F.rcast <$> (BRL.addStateAbbrUsingFIPS $ F.filterFrame ((== DT.Citizen) . view DT.citizenC) x)
+
+
+type ASRR = '[BR.Year, GT.StateAbbreviation] V.++ BRC.LDLocationR V.++ [DT.Age6C, DT.SexC, BRC.RaceEthnicityC, DT.PopCount]
+
+givenASRBySLD :: (K.KnitEffects r, BRK.CacheEffects r) => BRC.TableYear -> K.Sem r (F.FrameRec ASRR)
+givenASRBySLD ty = do
+  asr <- BRC.ageSexRace <$> (K.ignoreCacheTimeM $ BRC.censusTablesForSLDs 2024 ty)
+  asr' <- BRL.addStateAbbrUsingFIPS asr
+  pure $ fmap F.rcast asr'

@@ -21,6 +21,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 import qualified Data.Csv as CSV
 import qualified Data.Vector as Vec
+import qualified Say
 
 {-
 newtype TableKey a = TableKey { unTableKey :: a }
@@ -111,7 +112,7 @@ decodeCSVTablesFromFile :: forall a b.(CSV.FromNamedRecord a)
                         => Map b [Text]
                         -> FilePath
                         -> IO (Either Text (CSV.Header, Vec.Vector (RawTablesRow a b)))
-decodeCSVTablesFromFile tableHeaders fp = decodeCSVTables tableHeaders <$> readFileLBS fp
+decodeCSVTablesFromFile tableHeaders fp = Say.say ("decodeTablesFromCSV: loading from " <> toText fp) >> decodeCSVTables tableHeaders <$> readFileLBS fp
 
 typeOneTable' :: (Ord b, Show b, Show a, Show c) => (b -> Map c Text) -> RawTablesRow a b -> b -> Either Text (Map c Int)
 typeOneTable' tableDescription rtr@(TableRow _ cm) tableKey = do
